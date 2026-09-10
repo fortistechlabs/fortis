@@ -1,0 +1,191 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">fortis</string>
+
+    <string name="action_back">Назад</string>
+    <string name="action_cancel">Отмена</string>
+    <string name="action_continue">Продолжить</string>
+    <string name="action_save">Сохранить</string>
+    <string name="action_done">Готово</string>
+    <string name="action_show">Показать</string>
+    <string name="action_hide">Скрыть</string>
+    <string name="action_copy">Копировать</string>
+    <string name="action_share">Поделиться</string>
+    <string name="action_open">Открыть</string>
+    <string name="action_remove">Удалить</string>
+    <string name="action_rename">Переименовать</string>
+    <string name="action_unlock">Разблокировать</string>
+    <string name="action_add_wallet">Добавить кошелёк</string>
+    <string name="action_view">Открыть</string>
+    <string name="action_refresh">Обновить</string>
+    <string name="action_reconnect">Переподключиться</string>
+    <string name="action_review">Проверить</string>
+    <string name="action_sign_send">Подписать и отправить</string>
+    <string name="action_new_address">Новый адрес</string>
+    <string name="action_scan_qr">Сканировать QR-код</string>
+    <string name="action_lock">Заблокировать</string>
+    <string name="action_lock_app">Заблокировать приложение</string>
+    <string name="action_copy_xpub">Скопировать xpub</string>
+    <string name="action_recovery_phrase">Фраза восстановления</string>
+    <string name="toast_copied">Скопировано</string>
+    <string name="cd_dismiss">Закрыть</string>
+
+    <string name="onboard_add_title">Добавить кошелёк</string>
+    <string name="onboard_tagline">некастодиальный кошелёк для Bitcoin XBT и Bitcoin BTC</string>
+    <string name="onboard_create">Создать новый кошелёк</string>
+    <string name="onboard_restore">Восстановить из фразы восстановления</string>
+
+    <string name="gen_title">Добавьте немного случайности</string>
+    <string name="gen_body">Телефон уже создал надёжный сид. Потрясите его — или порисуйте на поле — чтобы добавить дополнительную энтропию с датчиков движения и колебаний времени. Для подстраховки.</string>
+    <string name="gen_words_24">24 слова</string>
+    <string name="gen_words_12">12 слов</string>
+    <string name="gen_words_hint">Оба варианта безопасны; 12 проще записать.</string>
+    <string name="gen_pad_hint">потрясите или порисуйте здесь</string>
+    <string name="gen_entropy_full">достаточно дополнительной энтропии — базовый сид уже надёжен</string>
+    <string name="gen_entropy_partial">добавлено ~%1$d дополнительных бит</string>
+    <string name="gen_generate">Создать кошелёк</string>
+
+    <string name="create_phrase_title">Ваша фраза восстановления</string>
+    <string name="create_phrase_body">Запишите эти %1$d слов на бумаге, офлайн. Тот, у кого они есть, распоряжается вашими средствами.</string>
+    <string name="create_passphrase_hint">«25-е слово» — дополнительный секрет, который не хранится. Если вы его зададите, для восстановления понадобятся и фраза, и оно. Оставьте пустым, если не уверены.</string>
+    <string name="create_ack">Я записал(а) фразу</string>
+
+    <string name="restore_title">Восстановить кошелёк</string>
+    <string name="restore_body">Введите 12 или 24 слова через пробел.</string>
+    <string name="restore_clone_hint">После добавления вы также можете завести этот кошелёк в %1$s через «Управление кошельками» — та же фраза, те же адреса.</string>
+    <string name="action_restore">Восстановить</string>
+
+    <string name="field_wallet_name">Название кошелька</string>
+    <string name="field_passphrase">Пароль-фраза BIP-39 (необязательно)</string>
+    <string name="field_app_password">Пароль приложения</string>
+    <string name="field_confirm_password">Подтвердите пароль</string>
+    <string name="field_to_address">Адрес получателя</string>
+    <string name="field_amount">Сумма</string>
+    <string name="field_custom_feerate">своё значение sat/vB (необязательно)</string>
+
+    <string name="reveal_title">Фраза восстановления</string>
+    <string name="reveal_warning">Любой, кто увидит эти слова — и пароль-фразу, если она задана — сможет потратить средства этого кошелька. Смотрите на них только в приватной обстановке. Никогда не вводите их на сайтах или в приложениях. Здесь снимки экрана заблокированы.</string>
+    <string name="reveal_failed">Не удалось расшифровать этот кошелёк.</string>
+    <string name="reveal_passphrase_label">Пароль-фраза BIP-39</string>
+    <string name="reveal_no_passphrase">У этого кошелька нет пароль-фразы BIP-39.</string>
+
+    <string name="nav_home">Главная</string>
+    <string name="nav_wallet">Кошелёк</string>
+    <string name="nav_settings">Настройки</string>
+    <string name="tab_receive">Получить</string>
+    <string name="tab_send">Отправить</string>
+    <string name="tab_history">История</string>
+
+    <string name="home_title">Ваши кошельки</string>
+    <string name="home_open">открыт</string>
+    <string name="home_tap_to_open">нажмите, чтобы открыть</string>
+    <string name="wallets_max">Достигнут предел в %1$d кошельков.</string>
+
+    <string name="lock_password_prompt">Введите пароль приложения.</string>
+    <string name="biometric_setup_title">Настройка блокировки приложения</string>
+    <string name="biometric_unlock_title">Разблокировать Fortis Wallet</string>
+    <string name="biometric_subtitle">Fortis Wallet</string>
+    <string name="biometric_invalidated">Блокировка экрана вашего устройства изменилась, поэтому приложение больше нельзя разблокировать здесь. Переустановите и восстановите каждый кошелёк из его фразы восстановления.</string>
+    <string name="lock_choice_use_biometric">Блокировать приложение отпечатком или PIN-кодом</string>
+    <string name="lock_choice_biometric_note">Одна разблокировка открывает все ваши кошельки. Не нужно запоминать пароль — вход по отпечатку/лицу или PIN-коду блокировки экрана.</string>
+    <string name="lock_choice_password_note">Этот пароль разблокирует приложение и все кошельки в нём.</string>
+
+    <string name="settings_title">Настройки</string>
+    <string name="settings_wallets">Кошельки</string>
+    <string name="settings_security">Безопасность</string>
+    <string name="settings_connection">Подключение</string>
+    <string name="settings_app_lock">Блокировка приложения</string>
+    <string name="lock_mode_biometric">Отпечаток / PIN устройства</string>
+    <string name="lock_mode_password">Пароль</string>
+    <string name="settings_one_unlock">Одна разблокировка открывает каждый кошелёк в приложении.</string>
+    <string name="settings_language">Язык</string>
+    <string name="language_system_default">Системный по умолчанию</string>
+    <string name="settings_status">Статус</string>
+    <string name="settings_chain_height">Высота цепи</string>
+    <string name="settings_degraded_note">Сервис fortis недоступен — пока используются публичные данные блоков. Переключение назад произойдёт автоматически.</string>
+    <string name="settings_version">fortis %1$s</string>
+    <string name="xpub_loading">ещё загружается — повторите</string>
+    <string name="also_add_on">Также добавить в %1$s</string>
+    <string name="dialog_rename_title">Переименовать кошелёк</string>
+    <string name="dialog_reveal_title">Показать фразу восстановления для %1$s?</string>
+    <string name="dialog_reveal_body">Фраза восстановления (и пароль-фраза, если вы её задали) — единственное, чем можно восстановить этот кошелёк, и любой, у кого она есть, может потратить ваши средства. Показывайте её только в приватной обстановке, чтобы никто не видел. Следующий экран блокирует снимки экрана.</string>
+    <string name="dialog_remove_title">Удалить %1$s?</string>
+    <string name="dialog_remove_body">Это лишь удаляет кошелёк из приложения. В блокчейне ничего не меняется, и вы можете добавить его снова в любой момент по фразе восстановления (и пароль-фразе, если она задана). Убедитесь, что фраза записана.</string>
+
+    <string name="status_offline">не в сети</string>
+    <string name="status_rescanning">повторное сканирование %1$d%%</string>
+    <string name="status_limited">ограниченный сервис</string>
+    <string name="status_connected">подключено</string>
+    <string name="status_syncing">синхронизация</string>
+
+    <string name="wallet_none_open">Кошелёк не открыт</string>
+    <string name="wallet_choose">Выбрать кошелёк</string>
+    <string name="wallet_pending">%1$s %2$s в ожидании</string>
+    <string name="wallet_block">блок %1$s</string>
+    <string name="wallet_rescanning">повторное сканирование %1$d%%</string>
+    <string name="wallet_syncing">синхронизация</string>
+    <string name="wallet_limited_suffix">%1$s  ·  ограниченный сервис</string>
+    <string name="wallet_connecting">подключение…</string>
+    <string name="fiat_approx">≈ %1$s</string>
+
+    <string name="sent_title">Платёж отправлен</string>
+    <string name="sent_txid">%1$s… · нажмите, чтобы скопировать</string>
+
+    <string name="cd_address_qr">QR-код адреса</string>
+    <string name="receive_address_n">адрес №%1$d · нажмите, чтобы скопировать</string>
+    <string name="share_address_chooser">Поделиться адресом</string>
+
+    <string name="scan_prompt">Отсканируйте платёжный адрес</string>
+    <string name="send_sweep">Отправить максимум (свип)</string>
+    <string name="send_alt_coin">= %1$s %2$s</string>
+    <string name="send_alt_sat">= %1$s sat</string>
+    <string name="send_alt_fiat">  ·  %1$s</string>
+    <string name="fee_fast">Быстро</string>
+    <string name="fee_normal">Обычно</string>
+    <string name="fee_slow">Медленно</string>
+    <string name="send_replay_protect">Защита от повтора XBT (OP_RETURN 100 байт)</string>
+    <string name="send_replay_note">Добавляет ~110 vB комиссии. Нестандартно для стандартного relay Bitcoin — транслируйте через узел/сервис, принимающий большие OP_RETURN.</string>
+    <string name="send_service_fee">Сервисная комиссия: %1$s%% от отправляемой суммы (мин. %2$d sat) — поддерживает этот размещённый узел.</string>
+    <string name="cd_amount_unit">единица суммы</string>
+    <string name="unit_sat">sat</string>
+
+    <string name="history_empty">транзакций пока нет</string>
+    <string name="history_send">отправка</string>
+    <string name="history_receive">получение</string>
+    <string name="history_row_subtitle">%1$s · %2$s…</string>
+    <string name="history_pending">в ожидании</string>
+    <string name="history_conf_n">%1$d подтв.</string>
+    <string name="history_confirmed">подтверждена</string>
+    <string name="history_hint">нажмите транзакцию, чтобы открыть её в обозревателе · удерживайте, чтобы скопировать id</string>
+
+    <string name="confirm_sweep_title">Подтвердите свип</string>
+    <string name="confirm_payment_title">Подтвердите платёж</string>
+    <string name="confirm_to">Кому</string>
+    <string name="confirm_amount">Сумма</string>
+    <string name="confirm_network_fee">Комиссия сети</string>
+    <string name="confirm_network_fee_value">%1$s %2$s · %3$d sat/vB</string>
+    <string name="confirm_service_fee">Сервисная комиссия</string>
+    <string name="confirm_change">Сдача</string>
+    <string name="confirm_replay">Защита от повтора</string>
+    <string name="confirm_replay_value">вкл. · OP_RETURN 100 байт</string>
+    <string name="confirm_total">Итого</string>
+    <string name="value_with_fiat">%1$s %2$s  ·  %3$s</string>
+
+    <string name="mnemonic_not_in_list">%1$d не из списка слов</string>
+    <string name="mnemonic_looks_good">всё в порядке</string>
+    <string name="mnemonic_status">%1$s  ·  %2$s</string>
+
+    <string name="error_wallet_max">На одном устройстве можно хранить до %1$d кошельков.</string>
+    <string name="error_clone_exists">«%1$s» уже есть в %2$s.</string>
+    <string name="error_lock_setup_failed">не удалось настроить блокировку приложения</string>
+    <string name="error_enter_amount">введите сумму</string>
+    <string name="error_no_coins">нет подтверждённых монет для траты</string>
+    <string name="error_open_wallet">не удалось открыть кошелёк</string>
+
+    <plurals name="word_count">
+        <item quantity="one">%1$d слово</item>
+        <item quantity="few">%1$d слова</item>
+        <item quantity="many">%1$d слов</item>
+        <item quantity="other">%1$d слова</item>
+    </plurals>
+</resources>

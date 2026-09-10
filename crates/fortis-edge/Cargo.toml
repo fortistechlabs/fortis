@@ -1,0 +1,30 @@
+[package]
+name = "fortis-edge"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "public edge for the fortis wallet backends: per-install tokens, rate limiting, response caching, CORS, metrics — in front of fortis-index (XBT) and an Esplora upstream (BTC)."
+
+[[bin]]
+name = "fortis-edge"
+path = "src/main.rs"
+
+[dependencies]
+fortis-node = { path = "../fortis-node" }
+anyhow = "1"
+bitcoin = { workspace = true }
+clap = { version = "4", features = ["derive"] }
+serde_json = { workspace = true }
+hex = { workspace = true }
+getrandom = "0.2"
+hmac = "0.12"
+sha2 = "0.10"
+tiny_http = "0.12"
+ureq = { version = "2", default-features = false, features = ["json", "native-tls"] }
+native-tls = "0.2"
+
+[dev-dependencies]
+wallet-core = { path = "../wallet-core" }
+

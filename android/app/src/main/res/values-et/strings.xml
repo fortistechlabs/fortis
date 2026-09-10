@@ -1,0 +1,189 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">fortis</string>
+
+    <string name="action_back">Tagasi</string>
+    <string name="action_cancel">Tühista</string>
+    <string name="action_continue">Jätka</string>
+    <string name="action_save">Salvesta</string>
+    <string name="action_done">Valmis</string>
+    <string name="action_show">Näita</string>
+    <string name="action_hide">Peida</string>
+    <string name="action_copy">Kopeeri</string>
+    <string name="action_share">Jaga</string>
+    <string name="action_open">Ava</string>
+    <string name="action_remove">Eemalda</string>
+    <string name="action_rename">Nimeta ümber</string>
+    <string name="action_unlock">Ava lukk</string>
+    <string name="action_add_wallet">Lisa rahakott</string>
+    <string name="action_view">Vaata</string>
+    <string name="action_refresh">Värskenda</string>
+    <string name="action_reconnect">Ühenda uuesti</string>
+    <string name="action_review">Vaata üle</string>
+    <string name="action_sign_send">Allkirjasta ja saada</string>
+    <string name="action_new_address">Uus aadress</string>
+    <string name="action_scan_qr">Skanni QR-kood</string>
+    <string name="action_lock">Lukusta</string>
+    <string name="action_lock_app">Lukusta rakendus</string>
+    <string name="action_copy_xpub">Kopeeri xpub</string>
+    <string name="action_recovery_phrase">Taastefraas</string>
+    <string name="toast_copied">Kopeeritud</string>
+    <string name="cd_dismiss">Sulge</string>
+
+    <string name="onboard_add_title">Lisa rahakott</string>
+    <string name="onboard_tagline">mittehoiustav rahakott Bitcoin XBT ja Bitcoin BTC jaoks</string>
+    <string name="onboard_create">Loo uus rahakott</string>
+    <string name="onboard_restore">Taasta taastefraasist</string>
+
+    <string name="gen_title">Lisa veidi juhuslikkust</string>
+    <string name="gen_body">Su telefon genereeris juba turvalise seemne. Raputa seda — või kritselda alale — et segada juurde lisaentroopiat liikumisanduritest ja ajastuse kõikumisest. Igaks juhuks.</string>
+    <string name="gen_words_24">24 sõna</string>
+    <string name="gen_words_12">12 sõna</string>
+    <string name="gen_words_hint">Mõlemad on turvalised; 12 on lihtsam üles kirjutada.</string>
+    <string name="gen_pad_hint">raputa või kritselda siia</string>
+    <string name="gen_entropy_full">rohkelt lisaentroopiat — põhiseeme on juba turvaline</string>
+    <string name="gen_entropy_partial">segati juurde ~%1$d lisabitti</string>
+    <string name="gen_generate">Genereeri rahakott</string>
+
+    <string name="create_phrase_title">Sinu taastefraas</string>
+    <string name="create_phrase_body">Kirjuta need %1$d sõna paberile, võrguühenduseta. Igaüks, kellel need on, kontrollib su raha.</string>
+    <string name="create_passphrase_hint">„25. sõna” — lisasaladus, mida ei salvestata. Kui selle määrad, vajad taastamiseks nii fraasi kui ka seda. Kui pole kindel, jäta tühjaks.</string>
+    <string name="create_ack">Olen fraasi üles kirjutanud</string>
+
+    <string name="restore_title">Taasta rahakott</string>
+    <string name="restore_body">Sisesta oma 12 või 24 sõna, tühikutega eraldatuna.</string>
+    <string name="restore_clone_hint">Pärast lisamist saad selle rahakoti loetleda ka teenuses %1$s jaotisest „Halda rahakotte” — sama fraas, samad aadressid.</string>
+    <string name="action_restore">Taasta</string>
+
+    <string name="field_wallet_name">Rahakoti nimi</string>
+    <string name="field_passphrase">BIP-39 paroolifraas (valikuline)</string>
+    <string name="field_app_password">Rakenduse parool</string>
+    <string name="field_confirm_password">Kinnita parool</string>
+    <string name="field_to_address">Saaja aadress</string>
+    <string name="field_amount">Summa</string>
+    <string name="field_custom_feerate">kohandatud sat/vB (valikuline)</string>
+
+    <string name="reveal_title">Taastefraas</string>
+    <string name="reveal_warning">Igaüks, kes neid sõnu näeb — ja paroolifraasi, kui see on määratud — saab selle rahakoti raha kulutada. Vaata neid ainult privaatses kohas. Ära kunagi sisesta neid veebisaidile ega rakendusse. Ekraanipildid on siin blokeeritud.</string>
+    <string name="reveal_failed">Selle rahakoti dekrüptimine ebaõnnestus.</string>
+    <string name="reveal_passphrase_label">BIP-39 paroolifraas</string>
+    <string name="reveal_no_passphrase">Sellel rahakotil pole BIP-39 paroolifraasi.</string>
+
+    <string name="nav_home">Avaleht</string>
+    <string name="nav_wallet">Rahakott</string>
+    <string name="nav_settings">Seaded</string>
+    <string name="tab_receive">Võta vastu</string>
+    <string name="tab_send">Saada</string>
+    <string name="tab_history">Ajalugu</string>
+
+    <string name="home_title">Sinu rahakotid</string>
+    <string name="home_open">avatud</string>
+    <string name="home_tap_to_open">puuduta avamiseks</string>
+    <string name="wallets_max">Maksimaalne arv %1$d rahakotti on täis.</string>
+
+    <string name="lock_password_prompt">Sisesta rakenduse parool.</string>
+    <string name="biometric_setup_title">Seadista rakenduse lukk</string>
+    <string name="biometric_unlock_title">Ava Fortis Wallet</string>
+    <string name="biometric_subtitle">Fortis Wallet</string>
+    <string name="biometric_invalidated">Su seadme ekraanilukk muutus, seega rakendust ei saa siin enam avada. Installi uuesti ja taasta iga rahakott selle taastefraasist.</string>
+    <string name="lock_choice_use_biometric">Lukusta rakendus sõrmejälje või PIN-koodiga</string>
+    <string name="lock_choice_biometric_note">Üks avamine avab kõik su rahakotid. Pole parooli, mida meelde jätta — sisse pääsed seadme sõrmejälje/näo või ekraaniluku PIN-koodiga.</string>
+    <string name="lock_choice_password_note">See parool avab rakenduse ja iga selles oleva rahakoti.</string>
+
+    <string name="settings_title">Seaded</string>
+    <string name="settings_wallets">Rahakotid</string>
+    <string name="settings_security">Turvalisus</string>
+    <string name="settings_connection">Ühendus</string>
+    <string name="settings_app_lock">Rakenduse lukk</string>
+    <string name="lock_mode_biometric">Sõrmejälg / seadme PIN</string>
+    <string name="lock_mode_password">Parool</string>
+    <string name="settings_one_unlock">Üks avamine avab iga rahakoti rakenduses.</string>
+    <string name="settings_language">Keel</string>
+    <string name="language_system_default">Süsteemi vaikeväärtus</string>
+    <string name="settings_status">Olek</string>
+    <string name="settings_chain_height">Ahela kõrgus</string>
+    <string name="settings_degraded_note">Teenus fortis pole kättesaadav — praegu kasutatakse avalikke plokiandmeid. See lülitub automaatselt tagasi.</string>
+    <string name="settings_version">fortis %1$s</string>
+    <string name="xpub_loading">laadib veel — proovi uuesti</string>
+    <string name="also_add_on">Lisa ka teenusesse %1$s</string>
+    <string name="dialog_rename_title">Nimeta rahakott ümber</string>
+    <string name="dialog_reveal_title">Kas näidata rahakoti %1$s taastefraasi?</string>
+    <string name="dialog_reveal_body">Taastefraas (ja paroolifraas, kui selle määrasid) on ainus, mis saab selle rahakoti taastada — ja igaüks, kellel see on, saab su raha kulutada. Avalda seda ainult privaatses kohas, kui keegi ei vaata. Järgmine ekraan blokeerib ekraanipildid.</string>
+    <string name="dialog_remove_title">Kas eemaldada %1$s?</string>
+    <string name="dialog_remove_body">See eemaldab rahakoti ainult sellest rakendusest. Plokiahelas ei muutu midagi ja saad selle igal ajal tagasi lisada taastefraasi (ja paroolifraasi, kui selle määrasid) abil. Veendu, et fraas on üles kirjutatud.</string>
+
+    <string name="status_offline">võrguühenduseta</string>
+    <string name="status_rescanning">taasskannimine %1$d%%</string>
+    <string name="status_limited">piiratud teenus</string>
+    <string name="status_connected">ühendatud</string>
+    <string name="status_syncing">sünkroonimine</string>
+
+    <string name="wallet_none_open">Ühtki rahakotti pole avatud</string>
+    <string name="wallet_choose">Vali rahakott</string>
+    <string name="wallet_pending">%1$s %2$s ootel</string>
+    <string name="wallet_block">plokk %1$s</string>
+    <string name="wallet_rescanning">taasskannimine %1$d%%</string>
+    <string name="wallet_syncing">sünkroonimine</string>
+    <string name="wallet_limited_suffix">%1$s  ·  piiratud teenus</string>
+    <string name="wallet_connecting">ühendamine…</string>
+    <string name="fiat_approx">≈ %1$s</string>
+
+    <string name="sent_title">Makse saadetud</string>
+    <string name="sent_txid">%1$s… · puuduta kopeerimiseks</string>
+
+    <string name="cd_address_qr">aadressi QR-kood</string>
+    <string name="receive_address_n">aadress nr %1$d · puuduta kopeerimiseks</string>
+    <string name="share_address_chooser">Jaga aadressi</string>
+
+    <string name="scan_prompt">Skanni makseaadress</string>
+    <string name="send_sweep">Saada maksimum (sweep)</string>
+    <string name="send_alt_coin">= %1$s %2$s</string>
+    <string name="send_alt_sat">= %1$s sat</string>
+    <string name="send_alt_fiat">  ·  %1$s</string>
+    <string name="fee_fast">Kiire</string>
+    <string name="fee_normal">Tavaline</string>
+    <string name="fee_slow">Aeglane</string>
+    <string name="send_replay_protect">XBT kordusrünnaku kaitse (100-baidine OP_RETURN)</string>
+    <string name="send_replay_note">Lisab ~110 vB tasu. Mittestandardne Bitcoini vaikereleel — edasta sõlme/teenuse kaudu, mis aktsepteerib suuri OP_RETURN-e.</string>
+    <string name="send_service_fee">Teenustasu: %1$s%% saadetud summast (min %2$d sat) — toetab seda majutatud sõlme.</string>
+    <string name="cd_amount_unit">summa ühik</string>
+    <string name="unit_sat">sat</string>
+
+    <string name="history_empty">tehinguid veel pole</string>
+    <string name="history_send">saatmine</string>
+    <string name="history_receive">vastuvõtmine</string>
+    <string name="history_row_subtitle">%1$s · %2$s…</string>
+    <string name="history_pending">ootel</string>
+    <string name="history_conf_n">%1$d kinnit.</string>
+    <string name="history_confirmed">kinnitatud</string>
+    <string name="history_hint">puuduta tehingut, et avada see exploreris · hoia all id-i kopeerimiseks</string>
+
+    <string name="confirm_sweep_title">Kinnita sweep</string>
+    <string name="confirm_payment_title">Kinnita makse</string>
+    <string name="confirm_to">Kellele</string>
+    <string name="confirm_amount">Summa</string>
+    <string name="confirm_network_fee">Võrgutasu</string>
+    <string name="confirm_network_fee_value">%1$s %2$s · %3$d sat/vB</string>
+    <string name="confirm_service_fee">Teenustasu</string>
+    <string name="confirm_change">Vahetusraha</string>
+    <string name="confirm_replay">Kordusrünnaku kaitse</string>
+    <string name="confirm_replay_value">sees · 100-baidine OP_RETURN</string>
+    <string name="confirm_total">Kokku</string>
+    <string name="value_with_fiat">%1$s %2$s  ·  %3$s</string>
+
+    <string name="mnemonic_not_in_list">%1$d pole sõnaloendis</string>
+    <string name="mnemonic_looks_good">tundub korras</string>
+    <string name="mnemonic_status">%1$s  ·  %2$s</string>
+
+    <string name="error_wallet_max">Ühes seadmes saad hoida kuni %1$d rahakotti.</string>
+    <string name="error_clone_exists">„%1$s” on juba teenuses %2$s.</string>
+    <string name="error_lock_setup_failed">rakenduse luku seadistamine ebaõnnestus</string>
+    <string name="error_enter_amount">sisesta summa</string>
+    <string name="error_no_coins">pole kinnitatud münte, mida kulutada</string>
+    <string name="error_open_wallet">rahakoti avamine ebaõnnestus</string>
+
+    <plurals name="word_count">
+        <item quantity="one">%1$d sõna</item>
+        <item quantity="other">%1$d sõna</item>
+    </plurals>
+</resources>

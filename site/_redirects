@@ -1,0 +1,7 @@
+# Cloudflare Pages redirects — https://developers.cloudflare.com/pages/configuration/redirects/
+
+# Lightning address  info@fortistechlabs.com
+# LNURL-pay resolves via https://fortistechlabs.com/.well-known/lnurlp/info ;
+# forward it to the backing wallet. Change the target to move custodians / to a
+# self-hosted LNURL server later.
+/.well-known/lnurlp/info  https://primal.net/.well-known/lnurlp/zippycatfish23  302

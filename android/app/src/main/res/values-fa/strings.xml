@@ -1,0 +1,189 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">fortis</string>
+
+    <string name="action_back">بازگشت</string>
+    <string name="action_cancel">لغو</string>
+    <string name="action_continue">ادامه</string>
+    <string name="action_save">ذخیره</string>
+    <string name="action_done">تمام</string>
+    <string name="action_show">نمایش</string>
+    <string name="action_hide">پنهان کردن</string>
+    <string name="action_copy">کپی</string>
+    <string name="action_share">هم‌رسانی</string>
+    <string name="action_open">باز کردن</string>
+    <string name="action_remove">حذف</string>
+    <string name="action_rename">تغییر نام</string>
+    <string name="action_unlock">باز کردن قفل</string>
+    <string name="action_add_wallet">افزودن کیف پول</string>
+    <string name="action_view">مشاهده</string>
+    <string name="action_refresh">تازه‌سازی</string>
+    <string name="action_reconnect">اتصال مجدد</string>
+    <string name="action_review">بررسی</string>
+    <string name="action_sign_send">امضا و ارسال</string>
+    <string name="action_new_address">نشانی جدید</string>
+    <string name="action_scan_qr">اسکن کد QR</string>
+    <string name="action_lock">قفل کردن</string>
+    <string name="action_lock_app">قفل کردن برنامه</string>
+    <string name="action_copy_xpub">کپی xpub</string>
+    <string name="action_recovery_phrase">عبارت بازیابی</string>
+    <string name="toast_copied">کپی شد</string>
+    <string name="cd_dismiss">رد کردن</string>
+
+    <string name="onboard_add_title">افزودن کیف پول</string>
+    <string name="onboard_tagline">یک کیف پول غیرامانی برای Bitcoin XBT و Bitcoin BTC</string>
+    <string name="onboard_create">ساخت کیف پول جدید</string>
+    <string name="onboard_restore">بازیابی از عبارت بازیابی</string>
+
+    <string name="gen_title">کمی تصادفی‌بودن اضافه کنید</string>
+    <string name="gen_body">تلفن شما از قبل یک بذر امن ساخته است. آن را تکان دهید — یا روی صفحه خط‌خطی کنید — تا آنتروپی اضافی از حسگرهای حرکت و لرزش زمان‌بندی درآمیخته شود. محض احتیاط.</string>
+    <string name="gen_words_24">۲۴ کلمه</string>
+    <string name="gen_words_12">۱۲ کلمه</string>
+    <string name="gen_words_hint">هر دو امن‌اند؛ نوشتن ۱۲ کلمه آسان‌تر است.</string>
+    <string name="gen_pad_hint">تکان دهید یا اینجا خط‌خطی کنید</string>
+    <string name="gen_entropy_full">آنتروپی اضافی فراوان — بذر پایه از قبل امن است</string>
+    <string name="gen_entropy_partial">حدود %1$d بیت اضافی درآمیخته شد</string>
+    <string name="gen_generate">ساخت کیف پول</string>
+
+    <string name="create_phrase_title">عبارت بازیابی شما</string>
+    <string name="create_phrase_body">این %1$d کلمه را روی کاغذ و به‌صورت آفلاین بنویسید. هر کسی که آن‌ها را داشته باشد وجوه شما را کنترل می‌کند.</string>
+    <string name="create_passphrase_hint">یک «کلمه بیست‌وپنجم» — رازی اضافی که ذخیره نمی‌شود. اگر آن را تنظیم کنید، برای بازیابی هم به عبارت و هم به این نیاز دارید. اگر مطمئن نیستید خالی بگذارید.</string>
+    <string name="create_ack">عبارت را نوشتم</string>
+
+    <string name="restore_title">بازیابی کیف پول</string>
+    <string name="restore_body">۱۲ یا ۲۴ کلمه خود را با فاصله جدا کرده وارد کنید.</string>
+    <string name="restore_clone_hint">پس از افزودن، می‌توانید این کیف پول را از «مدیریت کیف پول‌ها» در %1$s نیز فهرست کنید — همان عبارت، همان نشانی‌ها.</string>
+    <string name="action_restore">بازیابی</string>
+
+    <string name="field_wallet_name">نام کیف پول</string>
+    <string name="field_passphrase">عبارت عبور BIP-39 (اختیاری)</string>
+    <string name="field_app_password">گذرواژه برنامه</string>
+    <string name="field_confirm_password">تأیید گذرواژه</string>
+    <string name="field_to_address">نشانی گیرنده</string>
+    <string name="field_amount">مبلغ</string>
+    <string name="field_custom_feerate">‏sat/vB سفارشی (اختیاری)</string>
+
+    <string name="reveal_title">عبارت بازیابی</string>
+    <string name="reveal_warning">هر کسی این کلمات را ببیند — به‌علاوه عبارت عبور در صورت تنظیم — می‌تواند این کیف پول را خرج کند. فقط در جایی خصوصی به آن‌ها نگاه کنید. هرگز آن‌ها را در وب‌سایت یا برنامه تایپ نکنید. اینجا اسکرین‌شات مسدود است.</string>
+    <string name="reveal_failed">رمزگشایی این کیف پول ممکن نشد.</string>
+    <string name="reveal_passphrase_label">عبارت عبور BIP-39</string>
+    <string name="reveal_no_passphrase">این کیف پول عبارت عبور BIP-39 ندارد.</string>
+
+    <string name="nav_home">خانه</string>
+    <string name="nav_wallet">کیف پول</string>
+    <string name="nav_settings">تنظیمات</string>
+    <string name="tab_receive">دریافت</string>
+    <string name="tab_send">ارسال</string>
+    <string name="tab_history">تاریخچه</string>
+
+    <string name="home_title">کیف پول‌های شما</string>
+    <string name="home_open">باز</string>
+    <string name="home_tap_to_open">برای باز کردن ضربه بزنید</string>
+    <string name="wallets_max">به حداکثر %1$d کیف پول رسیدید.</string>
+
+    <string name="lock_password_prompt">گذرواژه برنامه خود را وارد کنید.</string>
+    <string name="biometric_setup_title">راه‌اندازی قفل برنامه</string>
+    <string name="biometric_unlock_title">باز کردن قفل Fortis Wallet</string>
+    <string name="biometric_subtitle">Fortis Wallet</string>
+    <string name="biometric_invalidated">قفل صفحه دستگاه شما تغییر کرد، بنابراین دیگر نمی‌توان قفل برنامه را اینجا باز کرد. دوباره نصب کنید و هر کیف پول را از عبارت بازیابی‌اش بازیابی کنید.</string>
+    <string name="lock_choice_use_biometric">قفل برنامه با اثر انگشت یا PIN</string>
+    <string name="lock_choice_biometric_note">یک بار باز کردن قفل همه کیف پول‌های شما را باز می‌کند. گذرواژه‌ای برای به‌خاطر سپردن نیست — اثر انگشت/چهره یا PIN قفل صفحه دستگاه شما را وارد می‌کند.</string>
+    <string name="lock_choice_password_note">این گذرواژه قفل برنامه و هر کیف پول درون آن را باز می‌کند.</string>
+
+    <string name="settings_title">تنظیمات</string>
+    <string name="settings_wallets">کیف پول‌ها</string>
+    <string name="settings_security">امنیت</string>
+    <string name="settings_connection">اتصال</string>
+    <string name="settings_app_lock">قفل برنامه</string>
+    <string name="lock_mode_biometric">اثر انگشت / PIN دستگاه</string>
+    <string name="lock_mode_password">گذرواژه</string>
+    <string name="settings_one_unlock">یک بار باز کردن قفل هر کیف پول در برنامه را باز می‌کند.</string>
+    <string name="settings_language">زبان</string>
+    <string name="language_system_default">پیش‌فرض سیستم</string>
+    <string name="settings_status">وضعیت</string>
+    <string name="settings_chain_height">ارتفاع زنجیره</string>
+    <string name="settings_degraded_note">سرویس fortis در دسترس نیست — فعلاً از داده‌های عمومی بلاک استفاده می‌شود. به‌صورت خودکار بازمی‌گردد.</string>
+    <string name="settings_version">fortis %1$s</string>
+    <string name="xpub_loading">هنوز در حال بارگیری — دوباره تلاش کنید</string>
+    <string name="also_add_on">همچنین در %1$s اضافه کنید</string>
+    <string name="dialog_rename_title">تغییر نام کیف پول</string>
+    <string name="dialog_reveal_title">عبارت بازیابی برای %1$s نمایش داده شود؟</string>
+    <string name="dialog_reveal_body">عبارت بازیابی (و عبارت عبور، اگر تنظیم کرده باشید) تنها چیزی است که می‌تواند این کیف پول را بازیابی کند — و هر کسی آن را داشته باشد می‌تواند وجوه شما را خرج کند. آن را فقط در جایی خصوصی و بدون تماشای کسی فاش کنید. صفحه بعدی اسکرین‌شات را مسدود می‌کند.</string>
+    <string name="dialog_remove_title">‏%1$s حذف شود؟</string>
+    <string name="dialog_remove_body">این فقط کیف پول را از این برنامه حذف می‌کند. چیزی روی بلاک‌چین تغییر نمی‌کند و می‌توانید هر زمان با عبارت بازیابی‌اش (و عبارت عبور، اگر تنظیم کرده باشید) دوباره آن را اضافه کنید. مطمئن شوید که عبارت نوشته شده است.</string>
+
+    <string name="status_offline">آفلاین</string>
+    <string name="status_rescanning">اسکن مجدد %1$d%%</string>
+    <string name="status_limited">سرویس محدود</string>
+    <string name="status_connected">متصل</string>
+    <string name="status_syncing">در حال همگام‌سازی</string>
+
+    <string name="wallet_none_open">هیچ کیف پولی باز نیست</string>
+    <string name="wallet_choose">یک کیف پول انتخاب کنید</string>
+    <string name="wallet_pending">%1$s %2$s در انتظار</string>
+    <string name="wallet_block">بلاک %1$s</string>
+    <string name="wallet_rescanning">اسکن مجدد %1$d%%</string>
+    <string name="wallet_syncing">در حال همگام‌سازی</string>
+    <string name="wallet_limited_suffix">%1$s  ·  سرویس محدود</string>
+    <string name="wallet_connecting">در حال اتصال…</string>
+    <string name="fiat_approx">≈ %1$s</string>
+
+    <string name="sent_title">پرداخت ارسال شد</string>
+    <string name="sent_txid">%1$s… · برای کپی ضربه بزنید</string>
+
+    <string name="cd_address_qr">کد QR نشانی</string>
+    <string name="receive_address_n">نشانی #%1$d · برای کپی ضربه بزنید</string>
+    <string name="share_address_chooser">هم‌رسانی نشانی</string>
+
+    <string name="scan_prompt">یک نشانی پرداخت اسکن کنید</string>
+    <string name="send_sweep">ارسال حداکثر (sweep)</string>
+    <string name="send_alt_coin">= %1$s %2$s</string>
+    <string name="send_alt_sat">= %1$s sat</string>
+    <string name="send_alt_fiat">  ·  %1$s</string>
+    <string name="fee_fast">سریع</string>
+    <string name="fee_normal">عادی</string>
+    <string name="fee_slow">کند</string>
+    <string name="send_replay_protect">محافظت از بازپخش XBT (‏OP_RETURN ۱۰۰ بایتی)</string>
+    <string name="send_replay_note">حدود ۱۱۰ vB کارمزد اضافه می‌کند. روی رله پیش‌فرض Bitcoin غیراستاندارد است — از طریق نود/سرویسی که OP_RETURN بزرگ را می‌پذیرد پخش کنید.</string>
+    <string name="send_service_fee">کارمزد سرویس: %1$s%% از مبلغ ارسالی (حداقل %2$d sat) — از این نود میزبانی‌شده پشتیبانی می‌کند.</string>
+    <string name="cd_amount_unit">واحد مبلغ</string>
+    <string name="unit_sat">sat</string>
+
+    <string name="history_empty">هنوز تراکنشی نیست</string>
+    <string name="history_send">ارسال</string>
+    <string name="history_receive">دریافت</string>
+    <string name="history_row_subtitle">%1$s · %2$s…</string>
+    <string name="history_pending">در انتظار</string>
+    <string name="history_conf_n">%1$d تأیید</string>
+    <string name="history_confirmed">تأییدشده</string>
+    <string name="history_hint">برای باز کردن تراکنش در کاوشگر روی آن ضربه بزنید · برای کپی شناسه نگه دارید</string>
+
+    <string name="confirm_sweep_title">تأیید sweep</string>
+    <string name="confirm_payment_title">تأیید پرداخت</string>
+    <string name="confirm_to">به</string>
+    <string name="confirm_amount">مبلغ</string>
+    <string name="confirm_network_fee">کارمزد شبکه</string>
+    <string name="confirm_network_fee_value">%1$s %2$s · %3$d sat/vB</string>
+    <string name="confirm_service_fee">کارمزد سرویس</string>
+    <string name="confirm_change">باقی‌مانده</string>
+    <string name="confirm_replay">محافظت از بازپخش</string>
+    <string name="confirm_replay_value">روشن · OP_RETURN ۱۰۰ بایتی</string>
+    <string name="confirm_total">مجموع</string>
+    <string name="value_with_fiat">%1$s %2$s  ·  %3$s</string>
+
+    <string name="mnemonic_not_in_list">%1$d مورد در فهرست کلمات نیست</string>
+    <string name="mnemonic_looks_good">به‌نظر خوب می‌آید</string>
+    <string name="mnemonic_status">%1$s  ·  %2$s</string>
+
+    <string name="error_wallet_max">می‌توانید تا %1$d کیف پول روی یک دستگاه نگه دارید.</string>
+    <string name="error_clone_exists">‏«%1$s» از قبل روی %2$s است.</string>
+    <string name="error_lock_setup_failed">راه‌اندازی قفل برنامه ناموفق بود</string>
+    <string name="error_enter_amount">یک مبلغ وارد کنید</string>
+    <string name="error_no_coins">هیچ سکه تأییدشده‌ای برای خرج کردن نیست</string>
+    <string name="error_open_wallet">باز کردن کیف پول ممکن نشد</string>
+
+    <plurals name="word_count">
+        <item quantity="one">%1$d کلمه</item>
+        <item quantity="other">%1$d کلمه</item>
+    </plurals>
+</resources>

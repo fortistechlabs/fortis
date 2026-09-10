@@ -1,0 +1,46 @@
+# /etc/systemd/system/fortis-edge.service
+
+[Unit]
+Description=fortis-edge (public wallet backend)
+After=network-online.target fortis-index.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=fortis
+Group=fortis
+ExecStart=/usr/local/bin/fortis-edge \
+  --bind 127.0.0.1:8098 \
+  --xbt-upstream http://127.0.0.1:8094 \
+  --btc-upstream https://mempool.space/api \
+  --btc-price-url 'https://api.kraken.com/0/public/Ticker?pair=XBTUSD' \
+  --xbt-price-url https://mempool.kilombino.com/api/v1/prices \
+  --btc-upstream-rate 5 \
+  --btc-haskoin-url https://api.haskoin.com/btc \
+  --secret-file /var/lib/fortis/fortis-edge.secret \
+  --require-token \
+  --trust-forwarded-for \
+  --allow-origin https://wallet.fortis.example \
+  --crash-log /var/log/fortis/crashes.ndjson \
+  --service-fee-address bc1qYOUR_FEE_ADDRESS_HERE
+  # --service-fee-bps 100 (1%) and --service-fee-floor-sat 400 are the defaults.
+  # --btc-upstream-rate 5 (also the default) paces /btc/address/* so a wallet's
+  # ~40-address scan doesn't get 429'd by mempool.space; raise it if the upstream
+  # tolerates more, 0 to disable.
+  # --btc-haskoin-url (default api.haskoin.com/btc) enables POST /btc/prewarm:
+  # the app batch-loads its whole address set in ~2 calls, so the scan is served
+  # from cache and never touches --btc-upstream. Empty string disables.
+  # --btc-rpc-url http://127.0.0.1:8332 (+ --btc-rpc-cookie <.cookie> or
+  # --btc-rpc-auth user:pass) broadcasts POST /btc/tx via your own node so
+  # replay-protected sends (oversized OP_RETURN) reach the network.
+Restart=on-failure
+RestartSec=5
+StateDirectory=fortis
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/var/lib/fortis
+
+[Install]
+WantedBy=multi-user.target

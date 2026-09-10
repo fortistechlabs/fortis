@@ -1,0 +1,189 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">fortis</string>
+
+    <string name="action_back">Voltar</string>
+    <string name="action_cancel">Cancelar</string>
+    <string name="action_continue">Continuar</string>
+    <string name="action_save">Salvar</string>
+    <string name="action_done">Concluído</string>
+    <string name="action_show">Mostrar</string>
+    <string name="action_hide">Ocultar</string>
+    <string name="action_copy">Copiar</string>
+    <string name="action_share">Compartilhar</string>
+    <string name="action_open">Abrir</string>
+    <string name="action_remove">Remover</string>
+    <string name="action_rename">Renomear</string>
+    <string name="action_unlock">Desbloquear</string>
+    <string name="action_add_wallet">Adicionar carteira</string>
+    <string name="action_view">Ver</string>
+    <string name="action_refresh">Atualizar</string>
+    <string name="action_reconnect">Reconectar</string>
+    <string name="action_review">Revisar</string>
+    <string name="action_sign_send">Assinar e enviar</string>
+    <string name="action_new_address">Novo endereço</string>
+    <string name="action_scan_qr">Escanear QR code</string>
+    <string name="action_lock">Bloquear</string>
+    <string name="action_lock_app">Bloquear o app</string>
+    <string name="action_copy_xpub">Copiar xpub</string>
+    <string name="action_recovery_phrase">Frase de recuperação</string>
+    <string name="toast_copied">Copiado</string>
+    <string name="cd_dismiss">Dispensar</string>
+
+    <string name="onboard_add_title">Adicionar uma carteira</string>
+    <string name="onboard_tagline">uma carteira não custodial para Bitcoin XBT e Bitcoin BTC</string>
+    <string name="onboard_create">Criar uma nova carteira</string>
+    <string name="onboard_restore">Restaurar a partir de uma frase de recuperação</string>
+
+    <string name="gen_title">Adicione um pouco de aleatoriedade</string>
+    <string name="gen_body">Seu telefone já gerou uma seed segura. Chacoalhe o aparelho — ou rabisque no quadro — para misturar entropia extra dos sensores de movimento e da variação de tempo. Só por garantia.</string>
+    <string name="gen_words_24">24 palavras</string>
+    <string name="gen_words_12">12 palavras</string>
+    <string name="gen_words_hint">Ambas são seguras; 12 é mais fácil de anotar.</string>
+    <string name="gen_pad_hint">chacoalhe ou rabisque aqui</string>
+    <string name="gen_entropy_full">entropia extra de sobra — a seed base já é segura</string>
+    <string name="gen_entropy_partial">~%1$d bits extras misturados</string>
+    <string name="gen_generate">Gerar carteira</string>
+
+    <string name="create_phrase_title">Sua frase de recuperação</string>
+    <string name="create_phrase_body">Escreva estas %1$d palavras no papel, offline. Quem as tiver controla seus fundos.</string>
+    <string name="create_passphrase_hint">Uma \"25ª palavra\" — um segredo extra, não armazenado. Se você definir uma, precisará da frase e disto para restaurar. Deixe em branco se estiver na dúvida.</string>
+    <string name="create_ack">Anotei a frase</string>
+
+    <string name="restore_title">Restaurar carteira</string>
+    <string name="restore_body">Digite suas 12 ou 24 palavras separadas por espaços.</string>
+    <string name="restore_clone_hint">Depois de adicionar, você também pode listar esta carteira em %1$s pelo Gerenciar carteiras — mesma frase, mesmos endereços.</string>
+    <string name="action_restore">Restaurar</string>
+
+    <string name="field_wallet_name">Nome da carteira</string>
+    <string name="field_passphrase">Passphrase BIP-39 (opcional)</string>
+    <string name="field_app_password">Senha do app</string>
+    <string name="field_confirm_password">Confirmar senha</string>
+    <string name="field_to_address">Endereço de destino</string>
+    <string name="field_amount">Valor</string>
+    <string name="field_custom_feerate">sat/vB personalizado (opcional)</string>
+
+    <string name="reveal_title">Frase de recuperação</string>
+    <string name="reveal_warning">Qualquer pessoa que veja estas palavras — mais a passphrase, se definida — pode gastar esta carteira. Só as veja em um local privado. Nunca as digite em um site ou app. Capturas de tela estão bloqueadas aqui.</string>
+    <string name="reveal_failed">Não foi possível descriptografar esta carteira.</string>
+    <string name="reveal_passphrase_label">Passphrase BIP-39</string>
+    <string name="reveal_no_passphrase">Esta carteira não tem passphrase BIP-39.</string>
+
+    <string name="nav_home">Início</string>
+    <string name="nav_wallet">Carteira</string>
+    <string name="nav_settings">Config.</string>
+    <string name="tab_receive">Receber</string>
+    <string name="tab_send">Enviar</string>
+    <string name="tab_history">Histórico</string>
+
+    <string name="home_title">Suas carteiras</string>
+    <string name="home_open">aberta</string>
+    <string name="home_tap_to_open">toque para abrir</string>
+    <string name="wallets_max">Máximo de %1$d carteiras atingido.</string>
+
+    <string name="lock_password_prompt">Digite a senha do app.</string>
+    <string name="biometric_setup_title">Configurar o bloqueio do app</string>
+    <string name="biometric_unlock_title">Desbloquear a Fortis Wallet</string>
+    <string name="biometric_subtitle">Fortis Wallet</string>
+    <string name="biometric_invalidated">O bloqueio de tela do seu dispositivo mudou, então o app não pode mais ser desbloqueado aqui. Reinstale e restaure cada carteira a partir da frase de recuperação.</string>
+    <string name="lock_choice_use_biometric">Bloquear o app com digital ou PIN</string>
+    <string name="lock_choice_biometric_note">Um desbloqueio abre todas as suas carteiras. Nenhuma senha para lembrar — a digital/o rosto ou o PIN de bloqueio do seu dispositivo dá acesso.</string>
+    <string name="lock_choice_password_note">Esta senha desbloqueia o app e todas as carteiras nele.</string>
+
+    <string name="settings_title">Configurações</string>
+    <string name="settings_wallets">Carteiras</string>
+    <string name="settings_security">Segurança</string>
+    <string name="settings_connection">Conexão</string>
+    <string name="settings_app_lock">Bloqueio do app</string>
+    <string name="lock_mode_biometric">Digital / PIN do dispositivo</string>
+    <string name="lock_mode_password">Senha</string>
+    <string name="settings_one_unlock">Um desbloqueio abre todas as carteiras do app.</string>
+    <string name="settings_language">Idioma</string>
+    <string name="language_system_default">Padrão do sistema</string>
+    <string name="settings_status">Status</string>
+    <string name="settings_chain_height">Altura da cadeia</string>
+    <string name="settings_degraded_note">O serviço fortis está inacessível — usando dados públicos de blocos por enquanto. Voltará automaticamente.</string>
+    <string name="settings_version">fortis %1$s</string>
+    <string name="xpub_loading">ainda carregando — tente de novo</string>
+    <string name="also_add_on">Adicionar também em %1$s</string>
+    <string name="dialog_rename_title">Renomear carteira</string>
+    <string name="dialog_reveal_title">Mostrar a frase de recuperação de %1$s?</string>
+    <string name="dialog_reveal_body">A frase de recuperação (e a passphrase, se você definiu uma) é a única coisa que pode restaurar esta carteira — e quem a tiver pode gastar seus fundos. Só a revele em um local privado, sem ninguém olhando. A próxima tela bloqueia capturas.</string>
+    <string name="dialog_remove_title">Remover %1$s?</string>
+    <string name="dialog_remove_body">Isto só remove a carteira deste app. Nada muda na blockchain e você pode adicioná-la de volta a qualquer momento com a frase de recuperação (e a passphrase, se definida). Confirme que a frase está anotada.</string>
+
+    <string name="status_offline">offline</string>
+    <string name="status_rescanning">reescaneando %1$d%%</string>
+    <string name="status_limited">serviço limitado</string>
+    <string name="status_connected">conectado</string>
+    <string name="status_syncing">sincronizando</string>
+
+    <string name="wallet_none_open">Nenhuma carteira aberta</string>
+    <string name="wallet_choose">Escolher uma carteira</string>
+    <string name="wallet_pending">%1$s %2$s pendente</string>
+    <string name="wallet_block">bloco %1$s</string>
+    <string name="wallet_rescanning">reescaneando %1$d%%</string>
+    <string name="wallet_syncing">sincronizando</string>
+    <string name="wallet_limited_suffix">%1$s  ·  serviço limitado</string>
+    <string name="wallet_connecting">conectando…</string>
+    <string name="fiat_approx">≈ %1$s</string>
+
+    <string name="sent_title">Pagamento enviado</string>
+    <string name="sent_txid">%1$s… · toque para copiar</string>
+
+    <string name="cd_address_qr">QR code do endereço</string>
+    <string name="receive_address_n">endereço nº %1$d · toque para copiar</string>
+    <string name="share_address_chooser">Compartilhar endereço</string>
+
+    <string name="scan_prompt">Escaneie um endereço de pagamento</string>
+    <string name="send_sweep">Enviar o máximo (varredura)</string>
+    <string name="send_alt_coin">= %1$s %2$s</string>
+    <string name="send_alt_sat">= %1$s sat</string>
+    <string name="send_alt_fiat">  ·  %1$s</string>
+    <string name="fee_fast">Rápida</string>
+    <string name="fee_normal">Normal</string>
+    <string name="fee_slow">Lenta</string>
+    <string name="send_replay_protect">Proteção contra repetição XBT (OP_RETURN de 100 bytes)</string>
+    <string name="send_replay_note">Adiciona ~110 vB de taxa. Fora do padrão no relay Bitcoin padrão — transmita por um nó/serviço que aceite OP_RETURN grandes.</string>
+    <string name="send_service_fee">Taxa de serviço: %1$s%% do valor enviado (mín. %2$d sat) — sustenta este nó hospedado.</string>
+    <string name="cd_amount_unit">unidade do valor</string>
+    <string name="unit_sat">sat</string>
+
+    <string name="history_empty">nenhuma transação ainda</string>
+    <string name="history_send">envio</string>
+    <string name="history_receive">recebimento</string>
+    <string name="history_row_subtitle">%1$s · %2$s…</string>
+    <string name="history_pending">pendente</string>
+    <string name="history_conf_n">%1$d conf.</string>
+    <string name="history_confirmed">confirmada</string>
+    <string name="history_hint">toque em uma transação para abri-la no explorador · pressione e segure para copiar o id</string>
+
+    <string name="confirm_sweep_title">Confirmar varredura</string>
+    <string name="confirm_payment_title">Confirmar pagamento</string>
+    <string name="confirm_to">Para</string>
+    <string name="confirm_amount">Valor</string>
+    <string name="confirm_network_fee">Taxa de rede</string>
+    <string name="confirm_network_fee_value">%1$s %2$s · %3$d sat/vB</string>
+    <string name="confirm_service_fee">Taxa de serviço</string>
+    <string name="confirm_change">Troco</string>
+    <string name="confirm_replay">Proteção contra repetição</string>
+    <string name="confirm_replay_value">ativada · OP_RETURN de 100 bytes</string>
+    <string name="confirm_total">Total</string>
+    <string name="value_with_fiat">%1$s %2$s  ·  %3$s</string>
+
+    <string name="mnemonic_not_in_list">%1$d fora da lista de palavras</string>
+    <string name="mnemonic_looks_good">parece certo</string>
+    <string name="mnemonic_status">%1$s  ·  %2$s</string>
+
+    <string name="error_wallet_max">Você pode manter até %1$d carteiras em um dispositivo.</string>
+    <string name="error_clone_exists">“%1$s” já está em %2$s.</string>
+    <string name="error_lock_setup_failed">falha ao configurar o bloqueio do app</string>
+    <string name="error_enter_amount">digite um valor</string>
+    <string name="error_no_coins">nenhuma moeda confirmada para gastar</string>
+    <string name="error_open_wallet">não foi possível abrir a carteira</string>
+
+    <plurals name="word_count">
+        <item quantity="one">%1$d palavra</item>
+        <item quantity="other">%1$d palavras</item>
+    </plurals>
+</resources>

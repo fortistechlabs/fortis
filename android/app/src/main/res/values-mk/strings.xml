@@ -1,0 +1,189 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">fortis</string>
+
+    <string name="action_back">Назад</string>
+    <string name="action_cancel">Откажи</string>
+    <string name="action_continue">Продолжи</string>
+    <string name="action_save">Зачувај</string>
+    <string name="action_done">Готово</string>
+    <string name="action_show">Прикажи</string>
+    <string name="action_hide">Сокриј</string>
+    <string name="action_copy">Копирај</string>
+    <string name="action_share">Сподели</string>
+    <string name="action_open">Отвори</string>
+    <string name="action_remove">Отстрани</string>
+    <string name="action_rename">Преименувај</string>
+    <string name="action_unlock">Отклучи</string>
+    <string name="action_add_wallet">Додај паричник</string>
+    <string name="action_view">Прикажи</string>
+    <string name="action_refresh">Освежи</string>
+    <string name="action_reconnect">Поврзи се повторно</string>
+    <string name="action_review">Провери</string>
+    <string name="action_sign_send">Потпиши и испрати</string>
+    <string name="action_new_address">Нова адреса</string>
+    <string name="action_scan_qr">Скенирај QR-код</string>
+    <string name="action_lock">Заклучи</string>
+    <string name="action_lock_app">Заклучи ја апликацијата</string>
+    <string name="action_copy_xpub">Копирај xpub</string>
+    <string name="action_recovery_phrase">Фраза за обновување</string>
+    <string name="toast_copied">Копирано</string>
+    <string name="cd_dismiss">Отфрли</string>
+
+    <string name="onboard_add_title">Додај паричник</string>
+    <string name="onboard_tagline">несокровишен паричник за Bitcoin XBT и Bitcoin BTC</string>
+    <string name="onboard_create">Создај нов паричник</string>
+    <string name="onboard_restore">Обнови од фраза за обновување</string>
+
+    <string name="gen_title">Додајте малку случајност</string>
+    <string name="gen_body">Вашиот телефон веќе создаде безбеден seed. Протресете го — или чкртајте по полето — за да измешате дополнителна ентропија од сензорите за движење и временските отстапувања. За секој случај.</string>
+    <string name="gen_words_24">24 зборови</string>
+    <string name="gen_words_12">12 зборови</string>
+    <string name="gen_words_hint">И двата се безбедни; 12 полесно се запишуваат.</string>
+    <string name="gen_pad_hint">протресете или чкртајте тука</string>
+    <string name="gen_entropy_full">многу дополнителна ентропија — основниот seed е веќе безбеден</string>
+    <string name="gen_entropy_partial">измешани ~%1$d дополнителни бита</string>
+    <string name="gen_generate">Создај паричник</string>
+
+    <string name="create_phrase_title">Вашата фраза за обновување</string>
+    <string name="create_phrase_body">Запишете ги овие %1$d зборови на хартија, офлајн. Секој што ги има управува со вашите средства.</string>
+    <string name="create_passphrase_hint">„25-ти збор“ — дополнителна тајна што не се складира. Ако поставите една, за обновување ви требаат и фразата и таа. Оставете празно ако не сте сигурни.</string>
+    <string name="create_ack">Ја запишав фразата</string>
+
+    <string name="restore_title">Обнови паричник</string>
+    <string name="restore_body">Внесете ги вашите 12 или 24 зборови, одделени со празни места.</string>
+    <string name="restore_clone_hint">Откако ќе се додаде, овој паричник можете да го наведете и на %1$s преку „Управување со паричници“ — иста фраза, исти адреси.</string>
+    <string name="action_restore">Обнови</string>
+
+    <string name="field_wallet_name">Име на паричникот</string>
+    <string name="field_passphrase">BIP-39 лозинка-фраза (изборно)</string>
+    <string name="field_app_password">Лозинка на апликацијата</string>
+    <string name="field_confirm_password">Потврди ја лозинката</string>
+    <string name="field_to_address">Адреса на примачот</string>
+    <string name="field_amount">Износ</string>
+    <string name="field_custom_feerate">приспособен sat/vB (изборно)</string>
+
+    <string name="reveal_title">Фраза за обновување</string>
+    <string name="reveal_warning">Секој што ќе ги види овие зборови — плус лозинката-фраза, ако е поставена — може да ги потроши средствата од овој паричник. Гледајте ги само на приватно место. Никогаш не ги пишувајте на веб-страница или во апликација. Снимките од екранот тука се блокирани.</string>
+    <string name="reveal_failed">Не може да се дешифрира овој паричник.</string>
+    <string name="reveal_passphrase_label">BIP-39 лозинка-фраза</string>
+    <string name="reveal_no_passphrase">Нема BIP-39 лозинка-фраза на овој паричник.</string>
+
+    <string name="nav_home">Почетна</string>
+    <string name="nav_wallet">Паричник</string>
+    <string name="nav_settings">Поставки</string>
+    <string name="tab_receive">Прими</string>
+    <string name="tab_send">Испрати</string>
+    <string name="tab_history">Историја</string>
+
+    <string name="home_title">Вашите паричници</string>
+    <string name="home_open">отворен</string>
+    <string name="home_tap_to_open">допрете за да отворите</string>
+    <string name="wallets_max">Достигнат е максимумот од %1$d паричници.</string>
+
+    <string name="lock_password_prompt">Внесете ја лозинката на апликацијата.</string>
+    <string name="biometric_setup_title">Поставете заклучување на апликацијата</string>
+    <string name="biometric_unlock_title">Отклучи Fortis Wallet</string>
+    <string name="biometric_subtitle">Fortis Wallet</string>
+    <string name="biometric_invalidated">Заклучувањето на екранот на вашиот уред се промени, па апликацијата повеќе не може да се отклучи тука. Инсталирајте ја повторно и обновете го секој паричник од неговата фраза за обновување.</string>
+    <string name="lock_choice_use_biometric">Заклучувај ја апликацијата со отпечаток или PIN</string>
+    <string name="lock_choice_biometric_note">Едно отклучување ги отвора сите ваши паричници. Нема лозинка за помнење — отпечатокот/лицето или PIN-от за заклучување на екранот на вашиот уред ве пушта внатре.</string>
+    <string name="lock_choice_password_note">Оваа лозинка ја отклучува апликацијата и секој паричник во неа.</string>
+
+    <string name="settings_title">Поставки</string>
+    <string name="settings_wallets">Паричници</string>
+    <string name="settings_security">Безбедност</string>
+    <string name="settings_connection">Врска</string>
+    <string name="settings_app_lock">Заклучување на апликацијата</string>
+    <string name="lock_mode_biometric">Отпечаток / PIN на уредот</string>
+    <string name="lock_mode_password">Лозинка</string>
+    <string name="settings_one_unlock">Едно отклучување отвора секој паричник во апликацијата.</string>
+    <string name="settings_language">Јазик</string>
+    <string name="language_system_default">Стандардно за системот</string>
+    <string name="settings_status">Статус</string>
+    <string name="settings_chain_height">Височина на синџирот</string>
+    <string name="settings_degraded_note">Услугата fortis е недостапна — засега се користат јавни податоци за блокови. Автоматски ќе се врати назад.</string>
+    <string name="settings_version">fortis %1$s</string>
+    <string name="xpub_loading">сè уште се вчитува — обидете се повторно</string>
+    <string name="also_add_on">Додај и на %1$s</string>
+    <string name="dialog_rename_title">Преименувај го паричникот</string>
+    <string name="dialog_reveal_title">Да се прикаже фразата за обновување за %1$s?</string>
+    <string name="dialog_reveal_body">Фразата за обновување (и лозинката-фраза, ако сте поставиле една) е единственото нешто што може да го обнови овој паричник — и секој што ја има може да ги потроши вашите средства. Откријте ја само на приватно место, кога никој не гледа. Следниот екран ги блокира снимките од екранот.</string>
+    <string name="dialog_remove_title">Да се отстрани %1$s?</string>
+    <string name="dialog_remove_body">Ова го отстранува паричникот само од оваа апликација. Ништо не се менува на блокчејнот и можете да го додадете назад во секое време со неговата фраза за обновување (и лозинката-фраза, ако сте поставиле една). Проверете дека фразата е запишана.</string>
+
+    <string name="status_offline">офлајн</string>
+    <string name="status_rescanning">повторно скенирање %1$d%%</string>
+    <string name="status_limited">ограничена услуга</string>
+    <string name="status_connected">поврзан</string>
+    <string name="status_syncing">синхронизирање</string>
+
+    <string name="wallet_none_open">Нема отворен паричник</string>
+    <string name="wallet_choose">Изберете паричник</string>
+    <string name="wallet_pending">%1$s %2$s во исчекување</string>
+    <string name="wallet_block">блок %1$s</string>
+    <string name="wallet_rescanning">повторно скенирање %1$d%%</string>
+    <string name="wallet_syncing">синхронизирање</string>
+    <string name="wallet_limited_suffix">%1$s  ·  ограничена услуга</string>
+    <string name="wallet_connecting">поврзување…</string>
+    <string name="fiat_approx">≈ %1$s</string>
+
+    <string name="sent_title">Плаќањето е испратено</string>
+    <string name="sent_txid">%1$s… · допрете за да копирате</string>
+
+    <string name="cd_address_qr">QR-код на адресата</string>
+    <string name="receive_address_n">адреса бр. %1$d · допрете за да копирате</string>
+    <string name="share_address_chooser">Сподели ја адресата</string>
+
+    <string name="scan_prompt">Скенирајте адреса за плаќање</string>
+    <string name="send_sweep">Испрати максимум (sweep)</string>
+    <string name="send_alt_coin">= %1$s %2$s</string>
+    <string name="send_alt_sat">= %1$s sat</string>
+    <string name="send_alt_fiat">  ·  %1$s</string>
+    <string name="fee_fast">Брзо</string>
+    <string name="fee_normal">Нормално</string>
+    <string name="fee_slow">Бавно</string>
+    <string name="send_replay_protect">XBT заштита од повторување (100-бајтен OP_RETURN)</string>
+    <string name="send_replay_note">Додава ~110 vB такса. Нестандардно на стандардното реле на Bitcoin — емитувајте преку јазол/услуга што прифаќа големи OP_RETURN.</string>
+    <string name="send_service_fee">Такса за услугата: %1$s%% од испратениот износ (мин. %2$d sat) — го поддржува овој хостиран јазол.</string>
+    <string name="cd_amount_unit">единица за износот</string>
+    <string name="unit_sat">sat</string>
+
+    <string name="history_empty">сè уште нема трансакции</string>
+    <string name="history_send">испраќање</string>
+    <string name="history_receive">примање</string>
+    <string name="history_row_subtitle">%1$s · %2$s…</string>
+    <string name="history_pending">во исчекување</string>
+    <string name="history_conf_n">%1$d потв.</string>
+    <string name="history_confirmed">потврдена</string>
+    <string name="history_hint">допрете трансакција за да ја отворите во прелистувачот · задржете за да го копирате id</string>
+
+    <string name="confirm_sweep_title">Потврди sweep</string>
+    <string name="confirm_payment_title">Потврди плаќање</string>
+    <string name="confirm_to">До</string>
+    <string name="confirm_amount">Износ</string>
+    <string name="confirm_network_fee">Мрежна такса</string>
+    <string name="confirm_network_fee_value">%1$s %2$s · %3$d sat/vB</string>
+    <string name="confirm_service_fee">Такса за услугата</string>
+    <string name="confirm_change">Кусур</string>
+    <string name="confirm_replay">Заштита од повторување</string>
+    <string name="confirm_replay_value">вкл. · 100-бајтен OP_RETURN</string>
+    <string name="confirm_total">Вкупно</string>
+    <string name="value_with_fiat">%1$s %2$s  ·  %3$s</string>
+
+    <string name="mnemonic_not_in_list">%1$d надвор од списокот со зборови</string>
+    <string name="mnemonic_looks_good">изгледа добро</string>
+    <string name="mnemonic_status">%1$s  ·  %2$s</string>
+
+    <string name="error_wallet_max">Можете да чувате до %1$d паричници на еден уред.</string>
+    <string name="error_clone_exists">„%1$s“ веќе е на %2$s.</string>
+    <string name="error_lock_setup_failed">поставувањето на заклучувањето на апликацијата не успеа</string>
+    <string name="error_enter_amount">внесете износ</string>
+    <string name="error_no_coins">нема потврдени монети за трошење</string>
+    <string name="error_open_wallet">не може да се отвори паричникот</string>
+
+    <plurals name="word_count">
+        <item quantity="one">%1$d збор</item>
+        <item quantity="other">%1$d зборови</item>
+    </plurals>
+</resources>

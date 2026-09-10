@@ -1,0 +1,190 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">fortis</string>
+
+    <string name="action_back">Atgal</string>
+    <string name="action_cancel">Atšaukti</string>
+    <string name="action_continue">Tęsti</string>
+    <string name="action_save">Įrašyti</string>
+    <string name="action_done">Atlikta</string>
+    <string name="action_show">Rodyti</string>
+    <string name="action_hide">Slėpti</string>
+    <string name="action_copy">Kopijuoti</string>
+    <string name="action_share">Bendrinti</string>
+    <string name="action_open">Atidaryti</string>
+    <string name="action_remove">Pašalinti</string>
+    <string name="action_rename">Pervadinti</string>
+    <string name="action_unlock">Atrakinti</string>
+    <string name="action_add_wallet">Pridėti piniginę</string>
+    <string name="action_view">Peržiūrėti</string>
+    <string name="action_refresh">Atnaujinti</string>
+    <string name="action_reconnect">Prisijungti iš naujo</string>
+    <string name="action_review">Peržiūrėti</string>
+    <string name="action_sign_send">Pasirašyti ir siųsti</string>
+    <string name="action_new_address">Naujas adresas</string>
+    <string name="action_scan_qr">Nuskaityti QR kodą</string>
+    <string name="action_lock">Užrakinti</string>
+    <string name="action_lock_app">Užrakinti programą</string>
+    <string name="action_copy_xpub">Kopijuoti xpub</string>
+    <string name="action_recovery_phrase">Atkūrimo frazė</string>
+    <string name="toast_copied">Nukopijuota</string>
+    <string name="cd_dismiss">Atsisakyti</string>
+
+    <string name="onboard_add_title">Pridėti piniginę</string>
+    <string name="onboard_tagline">nesauganti piniginė Bitcoin XBT ir Bitcoin BTC</string>
+    <string name="onboard_create">Sukurti naują piniginę</string>
+    <string name="onboard_restore">Atkurti iš atkūrimo frazės</string>
+
+    <string name="gen_title">Pridėkite šiek tiek atsitiktinumo</string>
+    <string name="gen_body">Jūsų telefonas jau sugeneravo saugią sėklą. Pakratykite jį — arba pieškite ant srities — kad įmaišytumėte papildomos entropijos iš judesio jutiklių ir laiko svyravimų. Dėl viso pikto.</string>
+    <string name="gen_words_24">24 žodžiai</string>
+    <string name="gen_words_12">12 žodžių</string>
+    <string name="gen_words_hint">Abi saugios; 12 lengviau užsirašyti.</string>
+    <string name="gen_pad_hint">pakratykite arba pieškite čia</string>
+    <string name="gen_entropy_full">daug papildomos entropijos — bazinė sėkla jau saugi</string>
+    <string name="gen_entropy_partial">įmaišyta ~%1$d papildomų bitų</string>
+    <string name="gen_generate">Generuoti piniginę</string>
+
+    <string name="create_phrase_title">Jūsų atkūrimo frazė</string>
+    <string name="create_phrase_body">Užrašykite šiuos %1$d žodžius ant popieriaus, neprisijungę. Bet kas, kas juos turi, valdo jūsų lėšas.</string>
+    <string name="create_passphrase_hint">„25-asis žodis“ — papildoma paslaptis, kuri nesaugoma. Jei ją nustatysite, atkūrimui reikės ir frazės, ir jos. Jei nesate tikri, palikite tuščią.</string>
+    <string name="create_ack">Užsirašiau frazę</string>
+
+    <string name="restore_title">Atkurti piniginę</string>
+    <string name="restore_body">Įveskite savo 12 arba 24 žodžius, atskirtus tarpais.</string>
+    <string name="restore_clone_hint">Pridėję šią piniginę taip pat galite įtraukti į %1$s per „Tvarkyti pinigines“ — ta pati frazė, tie patys adresai.</string>
+    <string name="action_restore">Atkurti</string>
+
+    <string name="field_wallet_name">Piniginės pavadinimas</string>
+    <string name="field_passphrase">BIP-39 slaptafrazė (nebūtina)</string>
+    <string name="field_app_password">Programos slaptažodis</string>
+    <string name="field_confirm_password">Patvirtinkite slaptažodį</string>
+    <string name="field_to_address">Gavėjo adresas</string>
+    <string name="field_amount">Suma</string>
+    <string name="field_custom_feerate">tinkintas sat/vB (nebūtina)</string>
+
+    <string name="reveal_title">Atkūrimo frazė</string>
+    <string name="reveal_warning">Bet kas, kas mato šiuos žodžius — ir slaptafrazę, jei ji nustatyta — gali išleisti šios piniginės lėšas. Žiūrėkite į juos tik privačioje vietoje. Niekada neįveskite jų svetainėje ar programoje. Ekrano kopijos čia užblokuotos.</string>
+    <string name="reveal_failed">Nepavyko iššifruoti šios piniginės.</string>
+    <string name="reveal_passphrase_label">BIP-39 slaptafrazė</string>
+    <string name="reveal_no_passphrase">Šioje piniginėje nėra BIP-39 slaptafrazės.</string>
+
+    <string name="nav_home">Pradžia</string>
+    <string name="nav_wallet">Piniginė</string>
+    <string name="nav_settings">Nustatymai</string>
+    <string name="tab_receive">Gauti</string>
+    <string name="tab_send">Siųsti</string>
+    <string name="tab_history">Istorija</string>
+
+    <string name="home_title">Jūsų piniginės</string>
+    <string name="home_open">atidaryta</string>
+    <string name="home_tap_to_open">bakstelėkite, kad atidarytumėte</string>
+    <string name="wallets_max">Pasiektas didžiausias %1$d piniginių skaičius.</string>
+
+    <string name="lock_password_prompt">Įveskite programos slaptažodį.</string>
+    <string name="biometric_setup_title">Nustatyti programos užraktą</string>
+    <string name="biometric_unlock_title">Atrakinti Fortis Wallet</string>
+    <string name="biometric_subtitle">Fortis Wallet</string>
+    <string name="biometric_invalidated">Jūsų įrenginio ekrano užraktas pasikeitė, todėl programos čia nebegalima atrakinti. Įdiekite iš naujo ir atkurkite kiekvieną piniginę iš jos atkūrimo frazės.</string>
+    <string name="lock_choice_use_biometric">Užrakinti programą piršto atspaudu arba PIN kodu</string>
+    <string name="lock_choice_biometric_note">Vienas atrakinimas atidaro visas jūsų pinigines. Nereikia įsiminti slaptažodžio — įleidžia jūsų įrenginio piršto atspaudas / veidas arba ekrano užrakto PIN kodas.</string>
+    <string name="lock_choice_password_note">Šis slaptažodis atrakina programą ir kiekvieną joje esančią piniginę.</string>
+
+    <string name="settings_title">Nustatymai</string>
+    <string name="settings_wallets">Piniginės</string>
+    <string name="settings_security">Sauga</string>
+    <string name="settings_connection">Ryšys</string>
+    <string name="settings_app_lock">Programos užraktas</string>
+    <string name="lock_mode_biometric">Piršto atspaudas / įrenginio PIN</string>
+    <string name="lock_mode_password">Slaptažodis</string>
+    <string name="settings_one_unlock">Vienas atrakinimas atidaro kiekvieną piniginę programoje.</string>
+    <string name="settings_language">Kalba</string>
+    <string name="language_system_default">Sistemos numatytoji</string>
+    <string name="settings_status">Būsena</string>
+    <string name="settings_chain_height">Grandinės aukštis</string>
+    <string name="settings_degraded_note">Paslauga fortis nepasiekiama — kol kas naudojami vieši blokų duomenys. Ji automatiškai persijungs atgal.</string>
+    <string name="settings_version">fortis %1$s</string>
+    <string name="xpub_loading">vis dar kraunama — bandykite dar kartą</string>
+    <string name="also_add_on">Taip pat pridėti prie %1$s</string>
+    <string name="dialog_rename_title">Pervadinti piniginę</string>
+    <string name="dialog_reveal_title">Rodyti %1$s atkūrimo frazę?</string>
+    <string name="dialog_reveal_body">Atkūrimo frazė (ir slaptafrazė, jei ją nustatėte) yra vienintelis dalykas, galintis atkurti šią piniginę — o bet kas, kas ją turi, gali išleisti jūsų lėšas. Atskleiskite ją tik privačioje vietoje, kai niekas nemato. Kitas ekranas blokuoja ekrano kopijas.</string>
+    <string name="dialog_remove_title">Pašalinti %1$s?</string>
+    <string name="dialog_remove_body">Tai pašalina piniginę tik iš šios programos. Blokų grandinėje niekas nesikeičia ir bet kada galite ją pridėti atgal naudodami jos atkūrimo frazę (ir slaptafrazę, jei ją nustatėte). Įsitikinkite, kad frazė užrašyta.</string>
+
+    <string name="status_offline">neprisijungęs</string>
+    <string name="status_rescanning">nuskaitoma iš naujo %1$d%%</string>
+    <string name="status_limited">ribota paslauga</string>
+    <string name="status_connected">prisijungta</string>
+    <string name="status_syncing">sinchronizuojama</string>
+
+    <string name="wallet_none_open">Nėra atidarytos piniginės</string>
+    <string name="wallet_choose">Pasirinkite piniginę</string>
+    <string name="wallet_pending">%1$s %2$s laukiama</string>
+    <string name="wallet_block">blokas %1$s</string>
+    <string name="wallet_rescanning">nuskaitoma iš naujo %1$d%%</string>
+    <string name="wallet_syncing">sinchronizuojama</string>
+    <string name="wallet_limited_suffix">%1$s  ·  ribota paslauga</string>
+    <string name="wallet_connecting">jungiamasi…</string>
+    <string name="fiat_approx">≈ %1$s</string>
+
+    <string name="sent_title">Mokėjimas išsiųstas</string>
+    <string name="sent_txid">%1$s… · bakstelėkite, kad nukopijuotumėte</string>
+
+    <string name="cd_address_qr">adreso QR kodas</string>
+    <string name="receive_address_n">adresas Nr. %1$d · bakstelėkite, kad nukopijuotumėte</string>
+    <string name="share_address_chooser">Bendrinti adresą</string>
+
+    <string name="scan_prompt">Nuskaitykite mokėjimo adresą</string>
+    <string name="send_sweep">Siųsti maksimumą (sweep)</string>
+    <string name="send_alt_coin">= %1$s %2$s</string>
+    <string name="send_alt_sat">= %1$s sat</string>
+    <string name="send_alt_fiat">  ·  %1$s</string>
+    <string name="fee_fast">Greitai</string>
+    <string name="fee_normal">Įprastai</string>
+    <string name="fee_slow">Lėtai</string>
+    <string name="send_replay_protect">XBT apsauga nuo pakartojimo (100 baitų OP_RETURN)</string>
+    <string name="send_replay_note">Prideda ~110 vB mokesčio. Nestandartinis numatytajame Bitcoin relay — transliuokite per mazgą / paslaugą, priimančią didelius OP_RETURN.</string>
+    <string name="send_service_fee">Paslaugos mokestis: %1$s%% siunčiamos sumos (min. %2$d sat) — palaiko šį talpinamą mazgą.</string>
+    <string name="cd_amount_unit">sumos vienetas</string>
+    <string name="unit_sat">sat</string>
+
+    <string name="history_empty">operacijų dar nėra</string>
+    <string name="history_send">siuntimas</string>
+    <string name="history_receive">gavimas</string>
+    <string name="history_row_subtitle">%1$s · %2$s…</string>
+    <string name="history_pending">laukiama</string>
+    <string name="history_conf_n">%1$d patv.</string>
+    <string name="history_confirmed">patvirtinta</string>
+    <string name="history_hint">bakstelėkite operaciją, kad atidarytumėte ją naršyklėje · palaikykite, kad nukopijuotumėte id</string>
+
+    <string name="confirm_sweep_title">Patvirtinti sweep</string>
+    <string name="confirm_payment_title">Patvirtinti mokėjimą</string>
+    <string name="confirm_to">Kam</string>
+    <string name="confirm_amount">Suma</string>
+    <string name="confirm_network_fee">Tinklo mokestis</string>
+    <string name="confirm_network_fee_value">%1$s %2$s · %3$d sat/vB</string>
+    <string name="confirm_service_fee">Paslaugos mokestis</string>
+    <string name="confirm_change">Grąža</string>
+    <string name="confirm_replay">Apsauga nuo pakartojimo</string>
+    <string name="confirm_replay_value">įjungta · 100 baitų OP_RETURN</string>
+    <string name="confirm_total">Iš viso</string>
+    <string name="value_with_fiat">%1$s %2$s  ·  %3$s</string>
+
+    <string name="mnemonic_not_in_list">%1$d nėra žodžių sąraše</string>
+    <string name="mnemonic_looks_good">atrodo gerai</string>
+    <string name="mnemonic_status">%1$s  ·  %2$s</string>
+
+    <string name="error_wallet_max">Viename įrenginyje galite laikyti iki %1$d piniginių.</string>
+    <string name="error_clone_exists">„%1$s“ jau yra %2$s.</string>
+    <string name="error_lock_setup_failed">nepavyko nustatyti programos užrakto</string>
+    <string name="error_enter_amount">įveskite sumą</string>
+    <string name="error_no_coins">nėra patvirtintų monetų išleisti</string>
+    <string name="error_open_wallet">nepavyko atidaryti piniginės</string>
+
+    <plurals name="word_count">
+        <item quantity="one">%1$d žodis</item>
+        <item quantity="few">%1$d žodžiai</item>
+        <item quantity="other">%1$d žodžių</item>
+    </plurals>
+</resources>

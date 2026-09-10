@@ -1,0 +1,189 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">fortis</string>
+
+    <string name="action_back">Буцах</string>
+    <string name="action_cancel">Цуцлах</string>
+    <string name="action_continue">Үргэлжлүүлэх</string>
+    <string name="action_save">Хадгалах</string>
+    <string name="action_done">Болсон</string>
+    <string name="action_show">Харуулах</string>
+    <string name="action_hide">Нуух</string>
+    <string name="action_copy">Хуулах</string>
+    <string name="action_share">Хуваалцах</string>
+    <string name="action_open">Нээх</string>
+    <string name="action_remove">Устгах</string>
+    <string name="action_rename">Нэр өөрчлөх</string>
+    <string name="action_unlock">Түгжээ тайлах</string>
+    <string name="action_add_wallet">Хэтэвч нэмэх</string>
+    <string name="action_view">Үзэх</string>
+    <string name="action_refresh">Сэргээх</string>
+    <string name="action_reconnect">Дахин холбогдох</string>
+    <string name="action_review">Шалгах</string>
+    <string name="action_sign_send">Гарын үсэг зурж илгээх</string>
+    <string name="action_new_address">Шинэ хаяг</string>
+    <string name="action_scan_qr">QR код скан хийх</string>
+    <string name="action_lock">Түгжих</string>
+    <string name="action_lock_app">Аппыг түгжих</string>
+    <string name="action_copy_xpub">xpub хуулах</string>
+    <string name="action_recovery_phrase">Сэргээх хэллэг</string>
+    <string name="toast_copied">Хуулагдлаа</string>
+    <string name="cd_dismiss">Хаах</string>
+
+    <string name="onboard_add_title">Хэтэвч нэмэх</string>
+    <string name="onboard_tagline">Bitcoin XBT болон Bitcoin BTC-д зориулсан хадгаламжгүй хэтэвч</string>
+    <string name="onboard_create">Шинэ хэтэвч үүсгэх</string>
+    <string name="onboard_restore">Сэргээх хэллэгээс сэргээх</string>
+
+    <string name="gen_title">Бага зэрэг санамсаргүй байдал нэмээрэй</string>
+    <string name="gen_body">Таны утас аль хэдийн аюулгүй үр үүсгэсэн. Хөдөлгөөний мэдрэгч болон цагийн хэлбэлзлээс нэмэлт энтропи хольж оруулахын тулд утсаа сэгсрэх — эсвэл талбай дээр зурааралт хийгээрэй. Болгоомжлолын үүднээс.</string>
+    <string name="gen_words_24">24 үг</string>
+    <string name="gen_words_12">12 үг</string>
+    <string name="gen_words_hint">Хоёулаа аюулгүй; 12 үгийг тэмдэглэхэд хялбар.</string>
+    <string name="gen_pad_hint">сэгсрэх, эсвэл энд зурааралт хийх</string>
+    <string name="gen_entropy_full">нэмэлт энтропи хангалттай — суурь үр аль хэдийн аюулгүй</string>
+    <string name="gen_entropy_partial">~%1$d нэмэлт бит холигдлоо</string>
+    <string name="gen_generate">Хэтэвч үүсгэх</string>
+
+    <string name="create_phrase_title">Таны сэргээх хэллэг</string>
+    <string name="create_phrase_body">Эдгээр %1$d үгийг цаасан дээр, офлайнаар бичээрэй. Эдгээрийг эзэмшсэн хэн ч таны хөрөнгийг хянадаг.</string>
+    <string name="create_passphrase_hint">"25 дахь үг" — хадгалагддаггүй нэмэлт нууц. Хэрэв та тохируулбал сэргээхийн тулд хэллэг болон энэ хоёулаа хэрэгтэй. Эргэлзэж байвал хоосон орхи.</string>
+    <string name="create_ack">Би хэллэгийг тэмдэглэсэн</string>
+
+    <string name="restore_title">Хэтэвч сэргээх</string>
+    <string name="restore_body">Өөрийн 12 эсвэл 24 үгийг зайгаар тусгаарлан оруулна уу.</string>
+    <string name="restore_clone_hint">Нэмсний дараа энэ хэтэвчийг "Хэтэвч удирдах" хэсгээс %1$s дээр бас жагсааж болно — ижил хэллэг, ижил хаягууд.</string>
+    <string name="action_restore">Сэргээх</string>
+
+    <string name="field_wallet_name">Хэтэвчний нэр</string>
+    <string name="field_passphrase">BIP-39 нууц хэллэг (сонголтоор)</string>
+    <string name="field_app_password">Аппын нууц үг</string>
+    <string name="field_confirm_password">Нууц үг баталгаажуулах</string>
+    <string name="field_to_address">Хүлээн авагчийн хаяг</string>
+    <string name="field_amount">Дүн</string>
+    <string name="field_custom_feerate">өөрчлөн тохируулсан sat/vB (сонголтоор)</string>
+
+    <string name="reveal_title">Сэргээх хэллэг</string>
+    <string name="reveal_warning">Эдгээр үгийг — тохируулсан бол нууц хэллэгийг мөн — харсан хэн ч энэ хэтэвчийг зарцуулж чадна. Тэдгээрийг зөвхөн хувийн газарт хараарай. Тэдгээрийг вэбсайт эсвэл аппд хэзээ ч бүү бич. Энд дэлгэцийн зураг авахыг хориглосон.</string>
+    <string name="reveal_failed">Энэ хэтэвчийг тайлж чадсангүй.</string>
+    <string name="reveal_passphrase_label">BIP-39 нууц хэллэг</string>
+    <string name="reveal_no_passphrase">Энэ хэтэвчинд BIP-39 нууц хэллэг байхгүй.</string>
+
+    <string name="nav_home">Нүүр</string>
+    <string name="nav_wallet">Хэтэвч</string>
+    <string name="nav_settings">Тохиргоо</string>
+    <string name="tab_receive">Хүлээн авах</string>
+    <string name="tab_send">Илгээх</string>
+    <string name="tab_history">Түүх</string>
+
+    <string name="home_title">Таны хэтэвчнүүд</string>
+    <string name="home_open">нээлттэй</string>
+    <string name="home_tap_to_open">нээхийн тулд товшино уу</string>
+    <string name="wallets_max">%1$d хэтэвчний дээд хязгаарт хүрлээ.</string>
+
+    <string name="lock_password_prompt">Аппын нууц үгээ оруулна уу.</string>
+    <string name="biometric_setup_title">Аппын түгжээ тохируулах</string>
+    <string name="biometric_unlock_title">Fortis Wallet-ийн түгжээ тайлах</string>
+    <string name="biometric_subtitle">Fortis Wallet</string>
+    <string name="biometric_invalidated">Таны төхөөрөмжийн дэлгэцийн түгжээ өөрчлөгдсөн тул аппыг энд дахин тайлж болохгүй. Дахин суулгаж, хэтэвч бүрийг түүний сэргээх хэллэгээс сэргээ.</string>
+    <string name="lock_choice_use_biometric">Аппыг хурууны хээ эсвэл PIN-ээр түгжих</string>
+    <string name="lock_choice_biometric_note">Нэг удаа түгжээ тайлахад таны бүх хэтэвч нээгдэнэ. Санах нууц үг байхгүй — таны төхөөрөмжийн хурууны хээ/царай эсвэл дэлгэцийн түгжээний PIN оруулна.</string>
+    <string name="lock_choice_password_note">Энэ нууц үг апп болон доторх хэтэвч бүрийн түгжээг тайлна.</string>
+
+    <string name="settings_title">Тохиргоо</string>
+    <string name="settings_wallets">Хэтэвчнүүд</string>
+    <string name="settings_security">Аюулгүй байдал</string>
+    <string name="settings_connection">Холболт</string>
+    <string name="settings_app_lock">Аппын түгжээ</string>
+    <string name="lock_mode_biometric">Хурууны хээ / төхөөрөмжийн PIN</string>
+    <string name="lock_mode_password">Нууц үг</string>
+    <string name="settings_one_unlock">Нэг удаа түгжээ тайлахад аппын хэтэвч бүр нээгдэнэ.</string>
+    <string name="settings_language">Хэл</string>
+    <string name="language_system_default">Системийн үндсэн</string>
+    <string name="settings_status">Төлөв</string>
+    <string name="settings_chain_height">Гинжний өндөр</string>
+    <string name="settings_degraded_note">fortis үйлчилгээ хүрэлцэхгүй байна — одоохондоо нийтийн блокийн өгөгдөл ашиглаж байна. Автоматаар буцаж холбогдоно.</string>
+    <string name="settings_version">fortis %1$s</string>
+    <string name="xpub_loading">ачаалж байна — дахин оролдоно уу</string>
+    <string name="also_add_on">%1$s дээр бас нэмэх</string>
+    <string name="dialog_rename_title">Хэтэвчний нэр өөрчлөх</string>
+    <string name="dialog_reveal_title">%1$s-ийн сэргээх хэллэгийг харуулах уу?</string>
+    <string name="dialog_reveal_body">Сэргээх хэллэг (болон тохируулсан бол нууц хэллэг) нь энэ хэтэвчийг сэргээж чадах цорын ганц зүйл бөгөөд түүнийг эзэмшсэн хэн ч таны хөрөнгийг зарцуулж чадна. Хэн ч харахгүй байх үед зөвхөн хувийн газарт задлаарай. Дараагийн дэлгэц дэлгэцийн зургийг хориглоно.</string>
+    <string name="dialog_remove_title">%1$s-ийг устгах уу?</string>
+    <string name="dialog_remove_body">Энэ нь зөвхөн энэ аппаас хэтэвчийг устгана. Блокчэйн дээр юу ч өөрчлөгдөхгүй бөгөөд та түүний сэргээх хэллэг (болон тохируулсан бол нууц хэллэг)-ээр хэдийд ч буцааж нэмж болно. Хэллэг бичигдсэн эсэхийг шалгаарай.</string>
+
+    <string name="status_offline">офлайн</string>
+    <string name="status_rescanning">дахин скан хийж байна %1$d%%</string>
+    <string name="status_limited">хязгаарлагдмал үйлчилгээ</string>
+    <string name="status_connected">холбогдсон</string>
+    <string name="status_syncing">синк хийж байна</string>
+
+    <string name="wallet_none_open">Нээлттэй хэтэвч алга</string>
+    <string name="wallet_choose">Хэтэвч сонгоно уу</string>
+    <string name="wallet_pending">%1$s %2$s хүлээгдэж байна</string>
+    <string name="wallet_block">блок %1$s</string>
+    <string name="wallet_rescanning">дахин скан хийж байна %1$d%%</string>
+    <string name="wallet_syncing">синк хийж байна</string>
+    <string name="wallet_limited_suffix">%1$s  ·  хязгаарлагдмал үйлчилгээ</string>
+    <string name="wallet_connecting">холбогдож байна…</string>
+    <string name="fiat_approx">≈ %1$s</string>
+
+    <string name="sent_title">Төлбөр илгээгдлээ</string>
+    <string name="sent_txid">%1$s… · хуулахын тулд товшино уу</string>
+
+    <string name="cd_address_qr">хаягийн QR код</string>
+    <string name="receive_address_n">хаяг #%1$d · хуулахын тулд товшино уу</string>
+    <string name="share_address_chooser">Хаяг хуваалцах</string>
+
+    <string name="scan_prompt">Төлбөрийн хаяг скан хийнэ үү</string>
+    <string name="send_sweep">Дээд хэмжээгээр илгээх (sweep)</string>
+    <string name="send_alt_coin">= %1$s %2$s</string>
+    <string name="send_alt_sat">= %1$s sat</string>
+    <string name="send_alt_fiat">  ·  %1$s</string>
+    <string name="fee_fast">Хурдан</string>
+    <string name="fee_normal">Хэвийн</string>
+    <string name="fee_slow">Удаан</string>
+    <string name="send_replay_protect">XBT давталтаас хамгаалах (100 байт OP_RETURN)</string>
+    <string name="send_replay_note">~110 vB шимтгэл нэмнэ. Bitcoin-ийн үндсэн реле дээр стандарт бус — том OP_RETURN хүлээн авдаг зангилаа/үйлчилгээгээр дамжуулан цацна уу.</string>
+    <string name="send_service_fee">Үйлчилгээний шимтгэл: илгээсэн дүнгийн %1$s%% (доод тал нь %2$d sat) — энэ байршуулсан зангилааг дэмждэг.</string>
+    <string name="cd_amount_unit">дүнгийн нэгж</string>
+    <string name="unit_sat">sat</string>
+
+    <string name="history_empty">одоохондоо гүйлгээ алга</string>
+    <string name="history_send">илгээх</string>
+    <string name="history_receive">хүлээн авах</string>
+    <string name="history_row_subtitle">%1$s · %2$s…</string>
+    <string name="history_pending">хүлээгдэж байна</string>
+    <string name="history_conf_n">%1$d баталгаа</string>
+    <string name="history_confirmed">баталгаажсан</string>
+    <string name="history_hint">гүйлгээг explorer-т нээхийн тулд товшино уу · id хуулахын тулд удаан дарна уу</string>
+
+    <string name="confirm_sweep_title">sweep баталгаажуулах</string>
+    <string name="confirm_payment_title">Төлбөр баталгаажуулах</string>
+    <string name="confirm_to">Хэнд</string>
+    <string name="confirm_amount">Дүн</string>
+    <string name="confirm_network_fee">Сүлжээний шимтгэл</string>
+    <string name="confirm_network_fee_value">%1$s %2$s · %3$d sat/vB</string>
+    <string name="confirm_service_fee">Үйлчилгээний шимтгэл</string>
+    <string name="confirm_change">Хариулт</string>
+    <string name="confirm_replay">Давталтаас хамгаалах</string>
+    <string name="confirm_replay_value">асаалттай · 100 байт OP_RETURN</string>
+    <string name="confirm_total">Нийт</string>
+    <string name="value_with_fiat">%1$s %2$s  ·  %3$s</string>
+
+    <string name="mnemonic_not_in_list">%1$d үгийн жагсаалтад алга</string>
+    <string name="mnemonic_looks_good">сайхан харагдаж байна</string>
+    <string name="mnemonic_status">%1$s  ·  %2$s</string>
+
+    <string name="error_wallet_max">Нэг төхөөрөмжид та хамгийн ихдээ %1$d хэтэвч хадгалж болно.</string>
+    <string name="error_clone_exists">"%1$s" аль хэдийн %2$s дээр байна.</string>
+    <string name="error_lock_setup_failed">аппын түгжээ тохируулж чадсангүй</string>
+    <string name="error_enter_amount">дүн оруулна уу</string>
+    <string name="error_no_coins">зарцуулах баталгаажсан койн алга</string>
+    <string name="error_open_wallet">хэтэвчийг нээж чадсангүй</string>
+
+    <plurals name="word_count">
+        <item quantity="one">%1$d үг</item>
+        <item quantity="other">%1$d үг</item>
+    </plurals>
+</resources>

@@ -1,0 +1,27 @@
+[package]
+name = "wallet-core"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "fortis wallet core for Bitcoin and its BLAKE2b fork: BIP-32/39 keys, PSBTs, HTLC atomic-swap contracts, the client swap state machine, and seed sealing. Pure / no-I/O; wasm and UniFFI bindings are sibling crates."
+
+[dependencies]
+thiserror = { workspace = true }
+zeroize = { workspace = true }
+hex = { workspace = true }
+bitcoin = { workspace = true }
+bip39 = { workspace = true }
+argon2 = { workspace = true }
+chacha20poly1305 = { workspace = true }
+
+# Phase 1 still to add: miniscript (descriptor wallet), bdk_wallet (coin selection).
+
+[features]
+# Enables real script/consensus verification in the e2e test (bundles libbitcoinconsensus).
+consensus-verify = ["bitcoin/bitcoinconsensus"]
+
+[dev-dependencies]
+hex = { workspace = true }
+serde_json = { workspace = true }

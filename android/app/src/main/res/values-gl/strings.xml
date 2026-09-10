@@ -1,0 +1,189 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">fortis</string>
+
+    <string name="action_back">Atrás</string>
+    <string name="action_cancel">Cancelar</string>
+    <string name="action_continue">Continuar</string>
+    <string name="action_save">Gardar</string>
+    <string name="action_done">Feito</string>
+    <string name="action_show">Mostrar</string>
+    <string name="action_hide">Agochar</string>
+    <string name="action_copy">Copiar</string>
+    <string name="action_share">Compartir</string>
+    <string name="action_open">Abrir</string>
+    <string name="action_remove">Eliminar</string>
+    <string name="action_rename">Renomear</string>
+    <string name="action_unlock">Desbloquear</string>
+    <string name="action_add_wallet">Engadir carteira</string>
+    <string name="action_view">Ver</string>
+    <string name="action_refresh">Actualizar</string>
+    <string name="action_reconnect">Reconectar</string>
+    <string name="action_review">Revisar</string>
+    <string name="action_sign_send">Asinar e enviar</string>
+    <string name="action_new_address">Novo enderezo</string>
+    <string name="action_scan_qr">Escanear código QR</string>
+    <string name="action_lock">Bloquear</string>
+    <string name="action_lock_app">Bloquear a app</string>
+    <string name="action_copy_xpub">Copiar xpub</string>
+    <string name="action_recovery_phrase">Frase de recuperación</string>
+    <string name="toast_copied">Copiado</string>
+    <string name="cd_dismiss">Descartar</string>
+
+    <string name="onboard_add_title">Engadir unha carteira</string>
+    <string name="onboard_tagline">unha carteira non custodial para Bitcoin XBT e Bitcoin BTC</string>
+    <string name="onboard_create">Crear unha carteira nova</string>
+    <string name="onboard_restore">Restaurar desde unha frase de recuperación</string>
+
+    <string name="gen_title">Engade algo de aleatoriedade</string>
+    <string name="gen_body">O teu teléfono xa xerou unha semente segura. Axítao — ou garabatea no panel — para engadir entropía extra dos sensores de movemento e das variacións de tempo. Por precaución.</string>
+    <string name="gen_words_24">24 palabras</string>
+    <string name="gen_words_12">12 palabras</string>
+    <string name="gen_words_hint">Ambas son seguras; 12 é máis doado de anotar.</string>
+    <string name="gen_pad_hint">axita ou garabatea aquí</string>
+    <string name="gen_entropy_full">entropía extra de sobra — a semente base xa é segura</string>
+    <string name="gen_entropy_partial">~%1$d bits extra engadidos</string>
+    <string name="gen_generate">Xerar carteira</string>
+
+    <string name="create_phrase_title">A túa frase de recuperación</string>
+    <string name="create_phrase_body">Escribe estas %1$d palabras en papel, sen conexión. Quen as teña controla os teus fondos.</string>
+    <string name="create_passphrase_hint">Unha \"25ª palabra\" — un segredo adicional, non gardado. Se pos unha, precisas tanto a frase como isto para restaurar. Deixa en branco se non estás seguro.</string>
+    <string name="create_ack">Anotei a frase</string>
+
+    <string name="restore_title">Restaurar carteira</string>
+    <string name="restore_body">Introduce as túas 12 ou 24 palabras, separadas por espazos.</string>
+    <string name="restore_clone_hint">Despois de engadila tamén podes listar esta carteira en %1$s desde Xestionar carteiras — a mesma frase, os mesmos enderezos.</string>
+    <string name="action_restore">Restaurar</string>
+
+    <string name="field_wallet_name">Nome da carteira</string>
+    <string name="field_passphrase">Frase de paso BIP-39 (opcional)</string>
+    <string name="field_app_password">Contrasinal da app</string>
+    <string name="field_confirm_password">Confirmar contrasinal</string>
+    <string name="field_to_address">Enderezo de destino</string>
+    <string name="field_amount">Importe</string>
+    <string name="field_custom_feerate">sat/vB personalizado (opcional)</string>
+
+    <string name="reveal_title">Frase de recuperación</string>
+    <string name="reveal_warning">Calquera que vexa estas palabras — e a frase de paso, se a hai — pode gastar esta carteira. Míraas só nun lugar privado. Nunca as escribas nun sitio web nin nunha app. Aquí as capturas de pantalla están bloqueadas.</string>
+    <string name="reveal_failed">Non se puido descifrar esta carteira.</string>
+    <string name="reveal_passphrase_label">Frase de paso BIP-39</string>
+    <string name="reveal_no_passphrase">Esta carteira non ten frase de paso BIP-39.</string>
+
+    <string name="nav_home">Inicio</string>
+    <string name="nav_wallet">Carteira</string>
+    <string name="nav_settings">Axustes</string>
+    <string name="tab_receive">Recibir</string>
+    <string name="tab_send">Enviar</string>
+    <string name="tab_history">Historial</string>
+
+    <string name="home_title">As túas carteiras</string>
+    <string name="home_open">aberta</string>
+    <string name="home_tap_to_open">toca para abrir</string>
+    <string name="wallets_max">Acadouse o máximo de %1$d carteiras.</string>
+
+    <string name="lock_password_prompt">Introduce o contrasinal da app.</string>
+    <string name="biometric_setup_title">Configurar o bloqueo da app</string>
+    <string name="biometric_unlock_title">Desbloquear Fortis Wallet</string>
+    <string name="biometric_subtitle">Fortis Wallet</string>
+    <string name="biometric_invalidated">O bloqueo de pantalla do teu dispositivo cambiou, así que a app xa non se pode desbloquear aquí. Reinstálaa e restaura cada carteira desde a súa frase de recuperación.</string>
+    <string name="lock_choice_use_biometric">Bloquear a app con pegada ou PIN</string>
+    <string name="lock_choice_biometric_note">Un só desbloqueo abre todas as túas carteiras. Sen contrasinal que lembrar — a pegada/cara ou o PIN de bloqueo de pantalla do dispositivo déixante entrar.</string>
+    <string name="lock_choice_password_note">Este contrasinal desbloquea a app e todas as carteiras que contén.</string>
+
+    <string name="settings_title">Axustes</string>
+    <string name="settings_wallets">Carteiras</string>
+    <string name="settings_security">Seguranza</string>
+    <string name="settings_connection">Conexión</string>
+    <string name="settings_app_lock">Bloqueo da app</string>
+    <string name="lock_mode_biometric">Pegada / PIN do dispositivo</string>
+    <string name="lock_mode_password">Contrasinal</string>
+    <string name="settings_one_unlock">Un só desbloqueo abre todas as carteiras da app.</string>
+    <string name="settings_language">Idioma</string>
+    <string name="language_system_default">Predeterminado do sistema</string>
+    <string name="settings_status">Estado</string>
+    <string name="settings_chain_height">Altura da cadea</string>
+    <string name="settings_degraded_note">O servizo fortis non é accesible — usando datos públicos de bloques por agora. Volverá automaticamente.</string>
+    <string name="settings_version">fortis %1$s</string>
+    <string name="xpub_loading">aínda cargando — téntao de novo</string>
+    <string name="also_add_on">Engadir tamén en %1$s</string>
+    <string name="dialog_rename_title">Renomear a carteira</string>
+    <string name="dialog_reveal_title">Mostrar a frase de recuperación de %1$s?</string>
+    <string name="dialog_reveal_body">A frase de recuperación (e a frase de paso, se puxeches unha) é o único que pode restaurar esta carteira — e calquera que a teña pode gastar os teus fondos. Revélaa só nun lugar privado, sen ninguén mirando. A seguinte pantalla bloquea as capturas.</string>
+    <string name="dialog_remove_title">Eliminar %1$s?</string>
+    <string name="dialog_remove_body">Isto só elimina a carteira desta app. Nada cambia na blockchain e podes engadila de novo en calquera momento coa súa frase de recuperación (e frase de paso, se puxeches unha). Asegúrate de que a frase estea anotada.</string>
+
+    <string name="status_offline">sen conexión</string>
+    <string name="status_rescanning">reescaneando %1$d%%</string>
+    <string name="status_limited">servizo limitado</string>
+    <string name="status_connected">conectado</string>
+    <string name="status_syncing">sincronizando</string>
+
+    <string name="wallet_none_open">Ningunha carteira aberta</string>
+    <string name="wallet_choose">Escolle unha carteira</string>
+    <string name="wallet_pending">%1$s %2$s pendente</string>
+    <string name="wallet_block">bloque %1$s</string>
+    <string name="wallet_rescanning">reescaneando %1$d%%</string>
+    <string name="wallet_syncing">sincronizando</string>
+    <string name="wallet_limited_suffix">%1$s  ·  servizo limitado</string>
+    <string name="wallet_connecting">conectando…</string>
+    <string name="fiat_approx">≈ %1$s</string>
+
+    <string name="sent_title">Pagamento enviado</string>
+    <string name="sent_txid">%1$s… · toca para copiar</string>
+
+    <string name="cd_address_qr">código QR do enderezo</string>
+    <string name="receive_address_n">enderezo n.º %1$d · toca para copiar</string>
+    <string name="share_address_chooser">Compartir enderezo</string>
+
+    <string name="scan_prompt">Escanea un enderezo de pagamento</string>
+    <string name="send_sweep">Enviar o máximo (sweep)</string>
+    <string name="send_alt_coin">= %1$s %2$s</string>
+    <string name="send_alt_sat">= %1$s sat</string>
+    <string name="send_alt_fiat">  ·  %1$s</string>
+    <string name="fee_fast">Rápido</string>
+    <string name="fee_normal">Normal</string>
+    <string name="fee_slow">Lento</string>
+    <string name="send_replay_protect">Protección de repetición XBT (OP_RETURN de 100 bytes)</string>
+    <string name="send_replay_note">Engade ~110 vB de comisión. Non estándar no relay por defecto de Bitcoin — difúndeo mediante un nodo/servizo que acepte OP_RETURN grandes.</string>
+    <string name="send_service_fee">Comisión de servizo: %1$s%% do importe enviado (mín. %2$d sat) — apoia este nodo aloxado.</string>
+    <string name="cd_amount_unit">unidade do importe</string>
+    <string name="unit_sat">sat</string>
+
+    <string name="history_empty">aínda sen transaccións</string>
+    <string name="history_send">envío</string>
+    <string name="history_receive">recepción</string>
+    <string name="history_row_subtitle">%1$s · %2$s…</string>
+    <string name="history_pending">pendente</string>
+    <string name="history_conf_n">%1$d conf.</string>
+    <string name="history_confirmed">confirmada</string>
+    <string name="history_hint">toca unha transacción para abrila no explorador · mantén premido para copiar o id</string>
+
+    <string name="confirm_sweep_title">Confirmar sweep</string>
+    <string name="confirm_payment_title">Confirmar pagamento</string>
+    <string name="confirm_to">Para</string>
+    <string name="confirm_amount">Importe</string>
+    <string name="confirm_network_fee">Comisión de rede</string>
+    <string name="confirm_network_fee_value">%1$s %2$s · %3$d sat/vB</string>
+    <string name="confirm_service_fee">Comisión de servizo</string>
+    <string name="confirm_change">Cambio</string>
+    <string name="confirm_replay">Protección de repetición</string>
+    <string name="confirm_replay_value">activada · OP_RETURN de 100 bytes</string>
+    <string name="confirm_total">Total</string>
+    <string name="value_with_fiat">%1$s %2$s  ·  %3$s</string>
+
+    <string name="mnemonic_not_in_list">%1$d fóra da lista de palabras</string>
+    <string name="mnemonic_looks_good">ten bo aspecto</string>
+    <string name="mnemonic_status">%1$s  ·  %2$s</string>
+
+    <string name="error_wallet_max">Podes ter ata %1$d carteiras nun dispositivo.</string>
+    <string name="error_clone_exists">«%1$s» xa está en %2$s.</string>
+    <string name="error_lock_setup_failed">fallou a configuración do bloqueo da app</string>
+    <string name="error_enter_amount">introduce un importe</string>
+    <string name="error_no_coins">non hai moedas confirmadas para gastar</string>
+    <string name="error_open_wallet">non se puido abrir a carteira</string>
+
+    <plurals name="word_count">
+        <item quantity="one">%1$d palabra</item>
+        <item quantity="other">%1$d palabras</item>
+    </plurals>
+</resources>

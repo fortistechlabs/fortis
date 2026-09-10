@@ -1,0 +1,193 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">fortis</string>
+
+    <string name="action_back">رجوع</string>
+    <string name="action_cancel">إلغاء</string>
+    <string name="action_continue">متابعة</string>
+    <string name="action_save">حفظ</string>
+    <string name="action_done">تم</string>
+    <string name="action_show">إظهار</string>
+    <string name="action_hide">إخفاء</string>
+    <string name="action_copy">نسخ</string>
+    <string name="action_share">مشاركة</string>
+    <string name="action_open">فتح</string>
+    <string name="action_remove">إزالة</string>
+    <string name="action_rename">إعادة تسمية</string>
+    <string name="action_unlock">إلغاء القفل</string>
+    <string name="action_add_wallet">إضافة محفظة</string>
+    <string name="action_view">عرض</string>
+    <string name="action_refresh">تحديث</string>
+    <string name="action_reconnect">إعادة الاتصال</string>
+    <string name="action_review">مراجعة</string>
+    <string name="action_sign_send">توقيع وإرسال</string>
+    <string name="action_new_address">عنوان جديد</string>
+    <string name="action_scan_qr">مسح رمز QR</string>
+    <string name="action_lock">قفل</string>
+    <string name="action_lock_app">قفل التطبيق</string>
+    <string name="action_copy_xpub">نسخ xpub</string>
+    <string name="action_recovery_phrase">عبارة الاسترداد</string>
+    <string name="toast_copied">تم النسخ</string>
+    <string name="cd_dismiss">تجاهل</string>
+
+    <string name="onboard_add_title">إضافة محفظة</string>
+    <string name="onboard_tagline">محفظة غير وصائية لـ Bitcoin XBT و Bitcoin BTC</string>
+    <string name="onboard_create">إنشاء محفظة جديدة</string>
+    <string name="onboard_restore">الاسترداد من عبارة استرداد</string>
+
+    <string name="gen_title">أضف بعض العشوائية</string>
+    <string name="gen_body">أنشأ هاتفك بالفعل بذرة آمنة. هزّه — أو اخربش على اللوحة — لمزج إنتروبيا إضافية من مستشعرات الحركة وتذبذب التوقيت. زيادةً في الحيطة.</string>
+    <string name="gen_words_24">24 كلمة</string>
+    <string name="gen_words_12">12 كلمة</string>
+    <string name="gen_words_hint">كلاهما آمن؛ تدوين 12 كلمة أسهل.</string>
+    <string name="gen_pad_hint">هزّ الهاتف أو اخربش هنا</string>
+    <string name="gen_entropy_full">إنتروبيا إضافية وفيرة — البذرة الأساسية آمنة بالفعل</string>
+    <string name="gen_entropy_partial">تم مزج ~%1$d بت إضافي</string>
+    <string name="gen_generate">إنشاء المحفظة</string>
+
+    <string name="create_phrase_title">عبارة الاسترداد الخاصة بك</string>
+    <string name="create_phrase_body">اكتب هذه الكلمات الـ %1$d على ورق، دون اتصال. أي شخص يملكها يتحكم في أموالك.</string>
+    <string name="create_passphrase_hint">‏«الكلمة الخامسة والعشرون» — سرّ إضافي لا يُخزَّن. إذا حددته، تحتاج إلى العبارة وهذا معًا للاسترداد. اتركه فارغًا إذا لم تكن متأكدًا.</string>
+    <string name="create_ack">لقد دوّنت العبارة</string>
+
+    <string name="restore_title">استرداد المحفظة</string>
+    <string name="restore_body">أدخل كلماتك الـ 12 أو 24 مفصولة بمسافات.</string>
+    <string name="restore_clone_hint">بعد الإضافة يمكنك أيضًا إدراج هذه المحفظة على %1$s من «إدارة المحافظ» — نفس العبارة، نفس العناوين.</string>
+    <string name="action_restore">استرداد</string>
+
+    <string name="field_wallet_name">اسم المحفظة</string>
+    <string name="field_passphrase">عبارة مرور BIP-39 (اختياري)</string>
+    <string name="field_app_password">كلمة مرور التطبيق</string>
+    <string name="field_confirm_password">تأكيد كلمة المرور</string>
+    <string name="field_to_address">عنوان المستلم</string>
+    <string name="field_amount">المبلغ</string>
+    <string name="field_custom_feerate">‏sat/vB مخصص (اختياري)</string>
+
+    <string name="reveal_title">عبارة الاسترداد</string>
+    <string name="reveal_warning">أي شخص يرى هذه الكلمات — بالإضافة إلى عبارة المرور إن كانت محددة — يمكنه إنفاق هذه المحفظة. انظر إليها فقط في مكان خاص. لا تكتبها أبدًا في موقع ويب أو تطبيق. لقطات الشاشة محظورة هنا.</string>
+    <string name="reveal_failed">تعذّر فك تشفير هذه المحفظة.</string>
+    <string name="reveal_passphrase_label">عبارة مرور BIP-39</string>
+    <string name="reveal_no_passphrase">لا توجد عبارة مرور BIP-39 على هذه المحفظة.</string>
+
+    <string name="nav_home">الرئيسية</string>
+    <string name="nav_wallet">المحفظة</string>
+    <string name="nav_settings">الإعدادات</string>
+    <string name="tab_receive">استلام</string>
+    <string name="tab_send">إرسال</string>
+    <string name="tab_history">السجل</string>
+
+    <string name="home_title">محافظك</string>
+    <string name="home_open">مفتوحة</string>
+    <string name="home_tap_to_open">اضغط للفتح</string>
+    <string name="wallets_max">تم بلوغ الحد الأقصى وهو %1$d محفظة.</string>
+
+    <string name="lock_password_prompt">أدخل كلمة مرور التطبيق.</string>
+    <string name="biometric_setup_title">إعداد قفل التطبيق</string>
+    <string name="biometric_unlock_title">إلغاء قفل Fortis Wallet</string>
+    <string name="biometric_subtitle">Fortis Wallet</string>
+    <string name="biometric_invalidated">تغيّر قفل شاشة جهازك، لذا لم يعد بالإمكان إلغاء قفل التطبيق هنا. أعد التثبيت واسترد كل محفظة من عبارة استردادها.</string>
+    <string name="lock_choice_use_biometric">اقفل التطبيق ببصمة الإصبع أو رمز PIN</string>
+    <string name="lock_choice_biometric_note">إلغاء قفل واحد يفتح جميع محافظك. لا كلمة مرور لتتذكرها — بصمة إصبع/وجه جهازك أو رمز PIN لقفل الشاشة يُدخلك.</string>
+    <string name="lock_choice_password_note">تلغي كلمة المرور هذه قفل التطبيق وكل محفظة فيه.</string>
+
+    <string name="settings_title">الإعدادات</string>
+    <string name="settings_wallets">المحافظ</string>
+    <string name="settings_security">الأمان</string>
+    <string name="settings_connection">الاتصال</string>
+    <string name="settings_app_lock">قفل التطبيق</string>
+    <string name="lock_mode_biometric">بصمة الإصبع / رمز PIN للجهاز</string>
+    <string name="lock_mode_password">كلمة المرور</string>
+    <string name="settings_one_unlock">إلغاء قفل واحد يفتح كل محفظة في التطبيق.</string>
+    <string name="settings_language">اللغة</string>
+    <string name="language_system_default">إعداد النظام الافتراضي</string>
+    <string name="settings_status">الحالة</string>
+    <string name="settings_chain_height">ارتفاع السلسلة</string>
+    <string name="settings_degraded_note">خدمة fortis غير قابلة للوصول — يتم استخدام بيانات الكتل العامة مؤقتًا. ستعود تلقائيًا.</string>
+    <string name="settings_version">fortis %1$s</string>
+    <string name="xpub_loading">لا يزال قيد التحميل — حاول مرة أخرى</string>
+    <string name="also_add_on">أضف أيضًا على %1$s</string>
+    <string name="dialog_rename_title">إعادة تسمية المحفظة</string>
+    <string name="dialog_reveal_title">عرض عبارة الاسترداد لـ %1$s؟</string>
+    <string name="dialog_reveal_body">عبارة الاسترداد (وعبارة المرور إن حددت واحدة) هي الشيء الوحيد الذي يمكنه استرداد هذه المحفظة — وأي شخص يملكها يمكنه إنفاق أموالك. أظهرها فقط في مكان خاص، دون أن يراقبك أحد. الشاشة التالية تحظر لقطات الشاشة.</string>
+    <string name="dialog_remove_title">إزالة %1$s؟</string>
+    <string name="dialog_remove_body">هذا يزيل المحفظة من هذا التطبيق فقط. لا شيء يتغير على البلوكشين، ويمكنك إضافتها مرة أخرى في أي وقت بعبارة استردادها (وعبارة المرور إن حددت واحدة). تأكد من تدوين العبارة.</string>
+
+    <string name="status_offline">غير متصل</string>
+    <string name="status_rescanning">إعادة الفحص %1$d%%</string>
+    <string name="status_limited">خدمة محدودة</string>
+    <string name="status_connected">متصل</string>
+    <string name="status_syncing">مزامنة</string>
+
+    <string name="wallet_none_open">لا توجد محفظة مفتوحة</string>
+    <string name="wallet_choose">اختر محفظة</string>
+    <string name="wallet_pending">%1$s %2$s قيد الانتظار</string>
+    <string name="wallet_block">الكتلة %1$s</string>
+    <string name="wallet_rescanning">إعادة الفحص %1$d%%</string>
+    <string name="wallet_syncing">مزامنة</string>
+    <string name="wallet_limited_suffix">%1$s  ·  خدمة محدودة</string>
+    <string name="wallet_connecting">جارٍ الاتصال…</string>
+    <string name="fiat_approx">≈ %1$s</string>
+
+    <string name="sent_title">تم إرسال الدفعة</string>
+    <string name="sent_txid">%1$s… · اضغط للنسخ</string>
+
+    <string name="cd_address_qr">رمز QR للعنوان</string>
+    <string name="receive_address_n">العنوان رقم %1$d · اضغط للنسخ</string>
+    <string name="share_address_chooser">مشاركة العنوان</string>
+
+    <string name="scan_prompt">امسح عنوان دفع</string>
+    <string name="send_sweep">إرسال الحد الأقصى (sweep)</string>
+    <string name="send_alt_coin">= %1$s %2$s</string>
+    <string name="send_alt_sat">= %1$s sat</string>
+    <string name="send_alt_fiat">  ·  %1$s</string>
+    <string name="fee_fast">سريع</string>
+    <string name="fee_normal">عادي</string>
+    <string name="fee_slow">بطيء</string>
+    <string name="send_replay_protect">حماية إعادة التشغيل لـ XBT (OP_RETURN بحجم 100 بايت)</string>
+    <string name="send_replay_note">يضيف ~110 vB رسومًا. غير قياسي على مُرحّل Bitcoin الافتراضي — أذِع عبر عقدة/خدمة تقبل OP_RETURN الكبيرة.</string>
+    <string name="send_service_fee">رسوم الخدمة: %1$s%% من المبلغ المُرسَل (بحد أدنى %2$d sat) — تدعم هذه العقدة المستضافة.</string>
+    <string name="cd_amount_unit">وحدة المبلغ</string>
+    <string name="unit_sat">sat</string>
+
+    <string name="history_empty">لا توجد معاملات بعد</string>
+    <string name="history_send">إرسال</string>
+    <string name="history_receive">استلام</string>
+    <string name="history_row_subtitle">%1$s · %2$s…</string>
+    <string name="history_pending">قيد الانتظار</string>
+    <string name="history_conf_n">%1$d تأكيد</string>
+    <string name="history_confirmed">مؤكَّدة</string>
+    <string name="history_hint">اضغط على معاملة لفتحها في المستكشف · اضغط مطولاً لنسخ المعرّف</string>
+
+    <string name="confirm_sweep_title">تأكيد sweep</string>
+    <string name="confirm_payment_title">تأكيد الدفع</string>
+    <string name="confirm_to">إلى</string>
+    <string name="confirm_amount">المبلغ</string>
+    <string name="confirm_network_fee">رسوم الشبكة</string>
+    <string name="confirm_network_fee_value">%1$s %2$s · %3$d sat/vB</string>
+    <string name="confirm_service_fee">رسوم الخدمة</string>
+    <string name="confirm_change">الباقي</string>
+    <string name="confirm_replay">حماية إعادة التشغيل</string>
+    <string name="confirm_replay_value">مفعّلة · OP_RETURN بحجم 100 بايت</string>
+    <string name="confirm_total">الإجمالي</string>
+    <string name="value_with_fiat">%1$s %2$s  ·  %3$s</string>
+
+    <string name="mnemonic_not_in_list">%1$d غير موجودة في قائمة الكلمات</string>
+    <string name="mnemonic_looks_good">يبدو جيدًا</string>
+    <string name="mnemonic_status">%1$s  ·  %2$s</string>
+
+    <string name="error_wallet_max">يمكنك الاحتفاظ بما يصل إلى %1$d محفظة على جهاز واحد.</string>
+    <string name="error_clone_exists">‏«%1$s» موجودة بالفعل على %2$s.</string>
+    <string name="error_lock_setup_failed">فشل إعداد قفل التطبيق</string>
+    <string name="error_enter_amount">أدخل مبلغًا</string>
+    <string name="error_no_coins">لا توجد عملات مؤكَّدة للإنفاق</string>
+    <string name="error_open_wallet">تعذّر فتح المحفظة</string>
+
+    <plurals name="word_count">
+        <item quantity="zero">%1$d كلمة</item>
+        <item quantity="one">كلمة واحدة</item>
+        <item quantity="two">كلمتان</item>
+        <item quantity="few">%1$d كلمات</item>
+        <item quantity="many">%1$d كلمة</item>
+        <item quantity="other">%1$d كلمة</item>
+    </plurals>
+</resources>

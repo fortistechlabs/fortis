@@ -1,0 +1,10 @@
+# Cloudflare Pages headers — https://developers.cloudflare.com/pages/configuration/headers/
+
+# NIP-05 (Nostr identity) — spec requires permissive CORS
+/.well-known/nostr.json
+  Access-Control-Allow-Origin: *
+  Content-Type: application/json
+
+# in-app update check
+/version.json
+  Access-Control-Allow-Origin: *

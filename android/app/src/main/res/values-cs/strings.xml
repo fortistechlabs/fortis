@@ -1,0 +1,191 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">fortis</string>
+
+    <string name="action_back">Zpět</string>
+    <string name="action_cancel">Zrušit</string>
+    <string name="action_continue">Pokračovat</string>
+    <string name="action_save">Uložit</string>
+    <string name="action_done">Hotovo</string>
+    <string name="action_show">Zobrazit</string>
+    <string name="action_hide">Skrýt</string>
+    <string name="action_copy">Kopírovat</string>
+    <string name="action_share">Sdílet</string>
+    <string name="action_open">Otevřít</string>
+    <string name="action_remove">Odebrat</string>
+    <string name="action_rename">Přejmenovat</string>
+    <string name="action_unlock">Odemknout</string>
+    <string name="action_add_wallet">Přidat peněženku</string>
+    <string name="action_view">Zobrazit</string>
+    <string name="action_refresh">Obnovit</string>
+    <string name="action_reconnect">Znovu připojit</string>
+    <string name="action_review">Zkontrolovat</string>
+    <string name="action_sign_send">Podepsat a odeslat</string>
+    <string name="action_new_address">Nová adresa</string>
+    <string name="action_scan_qr">Naskenovat QR kód</string>
+    <string name="action_lock">Zamknout</string>
+    <string name="action_lock_app">Zamknout aplikaci</string>
+    <string name="action_copy_xpub">Kopírovat xpub</string>
+    <string name="action_recovery_phrase">Obnovovací fráze</string>
+    <string name="toast_copied">Zkopírováno</string>
+    <string name="cd_dismiss">Zavřít</string>
+
+    <string name="onboard_add_title">Přidat peněženku</string>
+    <string name="onboard_tagline">nesvěřenecká peněženka pro Bitcoin XBT a Bitcoin BTC</string>
+    <string name="onboard_create">Vytvořit novou peněženku</string>
+    <string name="onboard_restore">Obnovit z obnovovací fráze</string>
+
+    <string name="gen_title">Přidejte trochu náhody</string>
+    <string name="gen_body">Váš telefon už vygeneroval bezpečný seed. Zatřeste s ním — nebo čmárejte po ploše — a přimíchejte tak další entropii z pohybových senzorů a časového kolísání. Pro jistotu.</string>
+    <string name="gen_words_24">24 slov</string>
+    <string name="gen_words_12">12 slov</string>
+    <string name="gen_words_hint">Obě jsou bezpečné; 12 se snáz zapíše.</string>
+    <string name="gen_pad_hint">zatřeste nebo čmárejte zde</string>
+    <string name="gen_entropy_full">spousta další entropie — základní seed je už bezpečný</string>
+    <string name="gen_entropy_partial">přimícháno ~%1$d bitů navíc</string>
+    <string name="gen_generate">Vygenerovat peněženku</string>
+
+    <string name="create_phrase_title">Vaše obnovovací fráze</string>
+    <string name="create_phrase_body">Zapište těchto %1$d slov na papír, offline. Kdokoli, kdo je má, ovládá vaše prostředky.</string>
+    <string name="create_passphrase_hint">„25. slovo“ — další tajemství, které se neukládá. Pokud ho nastavíte, k obnově potřebujete frázi i toto. Pokud si nejste jisti, nechte prázdné.</string>
+    <string name="create_ack">Frázi jsem si zapsal(a)</string>
+
+    <string name="restore_title">Obnovit peněženku</string>
+    <string name="restore_body">Zadejte svých 12 nebo 24 slov oddělených mezerami.</string>
+    <string name="restore_clone_hint">Po přidání můžete tuto peněženku uvést i na %1$s v části Správa peněženek — stejná fráze, stejné adresy.</string>
+    <string name="action_restore">Obnovit</string>
+
+    <string name="field_wallet_name">Název peněženky</string>
+    <string name="field_passphrase">Přístupová fráze BIP-39 (volitelné)</string>
+    <string name="field_app_password">Heslo aplikace</string>
+    <string name="field_confirm_password">Potvrdit heslo</string>
+    <string name="field_to_address">Adresa příjemce</string>
+    <string name="field_amount">Částka</string>
+    <string name="field_custom_feerate">vlastní sat/vB (volitelné)</string>
+
+    <string name="reveal_title">Obnovovací fráze</string>
+    <string name="reveal_warning">Kdokoli, kdo tato slova uvidí — a k tomu přístupovou frázi, je-li nastavena — může tuto peněženku utratit. Dívejte se na ně jen v soukromí. Nikdy je nezadávejte na web ani do aplikace. Snímky obrazovky jsou tu zablokované.</string>
+    <string name="reveal_failed">Tuto peněženku se nepodařilo dešifrovat.</string>
+    <string name="reveal_passphrase_label">Přístupová fráze BIP-39</string>
+    <string name="reveal_no_passphrase">Tato peněženka nemá přístupovou frázi BIP-39.</string>
+
+    <string name="nav_home">Domů</string>
+    <string name="nav_wallet">Peněženka</string>
+    <string name="nav_settings">Nastavení</string>
+    <string name="tab_receive">Přijmout</string>
+    <string name="tab_send">Odeslat</string>
+    <string name="tab_history">Historie</string>
+
+    <string name="home_title">Vaše peněženky</string>
+    <string name="home_open">otevřená</string>
+    <string name="home_tap_to_open">klepnutím otevřete</string>
+    <string name="wallets_max">Dosažen maximální počet %1$d peněženek.</string>
+
+    <string name="lock_password_prompt">Zadejte heslo aplikace.</string>
+    <string name="biometric_setup_title">Nastavit zámek aplikace</string>
+    <string name="biometric_unlock_title">Odemknout Fortis Wallet</string>
+    <string name="biometric_subtitle">Fortis Wallet</string>
+    <string name="biometric_invalidated">Zámek obrazovky vašeho zařízení se změnil, takže aplikaci už zde nelze odemknout. Přeinstalujte ji a obnovte každou peněženku z její obnovovací fráze.</string>
+    <string name="lock_choice_use_biometric">Zamykat aplikaci otiskem prstu nebo PIN kódem</string>
+    <string name="lock_choice_biometric_note">Jedno odemknutí otevře všechny vaše peněženky. Žádné heslo k zapamatování — dovnitř vás pustí otisk prstu/obličej nebo PIN zámku obrazovky vašeho zařízení.</string>
+    <string name="lock_choice_password_note">Toto heslo odemyká aplikaci i každou peněženku v ní.</string>
+
+    <string name="settings_title">Nastavení</string>
+    <string name="settings_wallets">Peněženky</string>
+    <string name="settings_security">Zabezpečení</string>
+    <string name="settings_connection">Připojení</string>
+    <string name="settings_app_lock">Zámek aplikace</string>
+    <string name="lock_mode_biometric">Otisk prstu / PIN zařízení</string>
+    <string name="lock_mode_password">Heslo</string>
+    <string name="settings_one_unlock">Jedno odemknutí otevře každou peněženku v aplikaci.</string>
+    <string name="settings_language">Jazyk</string>
+    <string name="language_system_default">Výchozí nastavení systému</string>
+    <string name="settings_status">Stav</string>
+    <string name="settings_chain_height">Výška řetězce</string>
+    <string name="settings_degraded_note">Služba fortis je nedostupná — zatím se používají veřejná data bloků. Přepne se zpět automaticky.</string>
+    <string name="settings_version">fortis %1$s</string>
+    <string name="xpub_loading">stále se načítá — zkuste to znovu</string>
+    <string name="also_add_on">Přidat také na %1$s</string>
+    <string name="dialog_rename_title">Přejmenovat peněženku</string>
+    <string name="dialog_reveal_title">Zobrazit obnovovací frázi pro %1$s?</string>
+    <string name="dialog_reveal_body">Obnovovací fráze (a přístupová fráze, pokud jste ji nastavili) je jediná věc, která může tuto peněženku obnovit — a kdokoli, kdo ji má, může utratit vaše prostředky. Odhalte ji jen v soukromí, když se nikdo nedívá. Následující obrazovka blokuje snímky obrazovky.</string>
+    <string name="dialog_remove_title">Odebrat %1$s?</string>
+    <string name="dialog_remove_body">Tímto se peněženka odebere pouze z této aplikace. Na blockchainu se nic nemění a kdykoli ji můžete přidat zpět pomocí její obnovovací fráze (a přístupové fráze, pokud jste ji nastavili). Ujistěte se, že máte frázi zapsanou.</string>
+
+    <string name="status_offline">offline</string>
+    <string name="status_rescanning">nové skenování %1$d%%</string>
+    <string name="status_limited">omezená služba</string>
+    <string name="status_connected">připojeno</string>
+    <string name="status_syncing">synchronizace</string>
+
+    <string name="wallet_none_open">Není otevřená žádná peněženka</string>
+    <string name="wallet_choose">Vyberte peněženku</string>
+    <string name="wallet_pending">%1$s %2$s čeká</string>
+    <string name="wallet_block">blok %1$s</string>
+    <string name="wallet_rescanning">nové skenování %1$d%%</string>
+    <string name="wallet_syncing">synchronizace</string>
+    <string name="wallet_limited_suffix">%1$s  ·  omezená služba</string>
+    <string name="wallet_connecting">připojování…</string>
+    <string name="fiat_approx">≈ %1$s</string>
+
+    <string name="sent_title">Platba odeslána</string>
+    <string name="sent_txid">%1$s… · klepnutím zkopírujete</string>
+
+    <string name="cd_address_qr">QR kód adresy</string>
+    <string name="receive_address_n">adresa č. %1$d · klepnutím zkopírujete</string>
+    <string name="share_address_chooser">Sdílet adresu</string>
+
+    <string name="scan_prompt">Naskenujte platební adresu</string>
+    <string name="send_sweep">Odeslat maximum (sweep)</string>
+    <string name="send_alt_coin">= %1$s %2$s</string>
+    <string name="send_alt_sat">= %1$s sat</string>
+    <string name="send_alt_fiat">  ·  %1$s</string>
+    <string name="fee_fast">Rychle</string>
+    <string name="fee_normal">Normálně</string>
+    <string name="fee_slow">Pomalu</string>
+    <string name="send_replay_protect">Ochrana proti přehrání XBT (100bajtový OP_RETURN)</string>
+    <string name="send_replay_note">Přidává ~110 vB poplatku. Nestandardní na výchozím Bitcoin relay — vysílejte přes uzel/službu, která přijímá velké OP_RETURN.</string>
+    <string name="send_service_fee">Servisní poplatek: %1$s%% z odeslané částky (min. %2$d sat) — podporuje tento hostovaný uzel.</string>
+    <string name="cd_amount_unit">jednotka částky</string>
+    <string name="unit_sat">sat</string>
+
+    <string name="history_empty">zatím žádné transakce</string>
+    <string name="history_send">odeslání</string>
+    <string name="history_receive">přijetí</string>
+    <string name="history_row_subtitle">%1$s · %2$s…</string>
+    <string name="history_pending">čeká</string>
+    <string name="history_conf_n">%1$d potvr.</string>
+    <string name="history_confirmed">potvrzená</string>
+    <string name="history_hint">klepnutím na transakci ji otevřete v prohlížeči · podržením zkopírujete id</string>
+
+    <string name="confirm_sweep_title">Potvrdit sweep</string>
+    <string name="confirm_payment_title">Potvrdit platbu</string>
+    <string name="confirm_to">Komu</string>
+    <string name="confirm_amount">Částka</string>
+    <string name="confirm_network_fee">Síťový poplatek</string>
+    <string name="confirm_network_fee_value">%1$s %2$s · %3$d sat/vB</string>
+    <string name="confirm_service_fee">Servisní poplatek</string>
+    <string name="confirm_change">Drobné</string>
+    <string name="confirm_replay">Ochrana proti přehrání</string>
+    <string name="confirm_replay_value">zapnuto · 100bajtový OP_RETURN</string>
+    <string name="confirm_total">Celkem</string>
+    <string name="value_with_fiat">%1$s %2$s  ·  %3$s</string>
+
+    <string name="mnemonic_not_in_list">%1$d mimo seznam slov</string>
+    <string name="mnemonic_looks_good">vypadá dobře</string>
+    <string name="mnemonic_status">%1$s  ·  %2$s</string>
+
+    <string name="error_wallet_max">Na jednom zařízení můžete mít až %1$d peněženek.</string>
+    <string name="error_clone_exists">„%1$s“ už je na %2$s.</string>
+    <string name="error_lock_setup_failed">nastavení zámku aplikace selhalo</string>
+    <string name="error_enter_amount">zadejte částku</string>
+    <string name="error_no_coins">žádné potvrzené mince k utracení</string>
+    <string name="error_open_wallet">peněženku se nepodařilo otevřít</string>
+
+    <plurals name="word_count">
+        <item quantity="one">%1$d slovo</item>
+        <item quantity="few">%1$d slova</item>
+        <item quantity="many">%1$d slova</item>
+        <item quantity="other">%1$d slov</item>
+    </plurals>
+</resources>

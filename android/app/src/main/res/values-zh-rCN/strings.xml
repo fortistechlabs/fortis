@@ -1,0 +1,188 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">fortis</string>
+
+    <string name="action_back">返回</string>
+    <string name="action_cancel">取消</string>
+    <string name="action_continue">继续</string>
+    <string name="action_save">保存</string>
+    <string name="action_done">完成</string>
+    <string name="action_show">显示</string>
+    <string name="action_hide">隐藏</string>
+    <string name="action_copy">复制</string>
+    <string name="action_share">分享</string>
+    <string name="action_open">打开</string>
+    <string name="action_remove">移除</string>
+    <string name="action_rename">重命名</string>
+    <string name="action_unlock">解锁</string>
+    <string name="action_add_wallet">添加钱包</string>
+    <string name="action_view">查看</string>
+    <string name="action_refresh">刷新</string>
+    <string name="action_reconnect">重新连接</string>
+    <string name="action_review">检查</string>
+    <string name="action_sign_send">签名并发送</string>
+    <string name="action_new_address">新地址</string>
+    <string name="action_scan_qr">扫描二维码</string>
+    <string name="action_lock">锁定</string>
+    <string name="action_lock_app">锁定应用</string>
+    <string name="action_copy_xpub">复制 xpub</string>
+    <string name="action_recovery_phrase">恢复助记词</string>
+    <string name="toast_copied">已复制</string>
+    <string name="cd_dismiss">关闭</string>
+
+    <string name="onboard_add_title">添加钱包</string>
+    <string name="onboard_tagline">面向 Bitcoin XBT 和 Bitcoin BTC 的非托管钱包</string>
+    <string name="onboard_create">创建新钱包</string>
+    <string name="onboard_restore">从恢复助记词恢复</string>
+
+    <string name="gen_title">增加一些随机性</string>
+    <string name="gen_body">你的手机已生成安全的种子。摇一摇——或在面板上涂鸦——以从运动传感器和计时抖动中混入额外的熵。以防万一。</string>
+    <string name="gen_words_24">24 个词</string>
+    <string name="gen_words_12">12 个词</string>
+    <string name="gen_words_hint">两者都安全；12 个词更容易记录。</string>
+    <string name="gen_pad_hint">在此摇动或涂鸦</string>
+    <string name="gen_entropy_full">额外的熵充足——基础种子已足够安全</string>
+    <string name="gen_entropy_partial">已混入约 %1$d 个额外比特</string>
+    <string name="gen_generate">生成钱包</string>
+
+    <string name="create_phrase_title">你的恢复助记词</string>
+    <string name="create_phrase_body">请离线将这 %1$d 个词写在纸上。拥有它们的任何人都能控制你的资金。</string>
+    <string name="create_passphrase_hint">“第 25 个词”——一个不会被存储的额外密语。若设置，恢复时需要助记词和它两者。不确定就留空。</string>
+    <string name="create_ack">我已记下助记词</string>
+
+    <string name="restore_title">恢复钱包</string>
+    <string name="restore_body">输入你的 12 或 24 个词，以空格分隔。</string>
+    <string name="restore_clone_hint">添加后，你还可以在“管理钱包”中将此钱包列入 %1$s——相同助记词，相同地址。</string>
+    <string name="action_restore">恢复</string>
+
+    <string name="field_wallet_name">钱包名称</string>
+    <string name="field_passphrase">BIP-39 密语（可选）</string>
+    <string name="field_app_password">应用密码</string>
+    <string name="field_confirm_password">确认密码</string>
+    <string name="field_to_address">收款地址</string>
+    <string name="field_amount">金额</string>
+    <string name="field_custom_feerate">自定义 sat/vB（可选）</string>
+
+    <string name="reveal_title">恢复助记词</string>
+    <string name="reveal_warning">任何看到这些词（以及密语，如已设置）的人都能花掉这个钱包里的钱。只在私密处查看。切勿输入到网站或应用中。此处已禁止截屏。</string>
+    <string name="reveal_failed">无法解密此钱包。</string>
+    <string name="reveal_passphrase_label">BIP-39 密语</string>
+    <string name="reveal_no_passphrase">此钱包没有 BIP-39 密语。</string>
+
+    <string name="nav_home">主页</string>
+    <string name="nav_wallet">钱包</string>
+    <string name="nav_settings">设置</string>
+    <string name="tab_receive">接收</string>
+    <string name="tab_send">发送</string>
+    <string name="tab_history">历史</string>
+
+    <string name="home_title">你的钱包</string>
+    <string name="home_open">已打开</string>
+    <string name="home_tap_to_open">点按打开</string>
+    <string name="wallets_max">已达到 %1$d 个钱包的上限。</string>
+
+    <string name="lock_password_prompt">输入你的应用密码。</string>
+    <string name="biometric_setup_title">设置应用锁</string>
+    <string name="biometric_unlock_title">解锁 Fortis Wallet</string>
+    <string name="biometric_subtitle">Fortis Wallet</string>
+    <string name="biometric_invalidated">你设备的屏幕锁已更改，因此无法再在此解锁应用。请重新安装，并用每个钱包的恢复助记词进行恢复。</string>
+    <string name="lock_choice_use_biometric">用指纹或 PIN 锁定应用</string>
+    <string name="lock_choice_biometric_note">一次解锁即可打开你所有的钱包。无需记住密码——用设备的指纹/面容或屏幕锁 PIN 即可进入。</string>
+    <string name="lock_choice_password_note">此密码可解锁应用及其中的每个钱包。</string>
+
+    <string name="settings_title">设置</string>
+    <string name="settings_wallets">钱包</string>
+    <string name="settings_security">安全</string>
+    <string name="settings_connection">连接</string>
+    <string name="settings_app_lock">应用锁</string>
+    <string name="lock_mode_biometric">指纹 / 设备 PIN</string>
+    <string name="lock_mode_password">密码</string>
+    <string name="settings_one_unlock">一次解锁即可打开应用中的每个钱包。</string>
+    <string name="settings_language">语言</string>
+    <string name="language_system_default">系统默认</string>
+    <string name="settings_status">状态</string>
+    <string name="settings_chain_height">链高度</string>
+    <string name="settings_degraded_note">无法连接 fortis 服务——暂时使用公开区块数据。将自动切换回来。</string>
+    <string name="settings_version">fortis %1$s</string>
+    <string name="xpub_loading">仍在加载——请重试</string>
+    <string name="also_add_on">同时添加到 %1$s</string>
+    <string name="dialog_rename_title">重命名钱包</string>
+    <string name="dialog_reveal_title">显示 %1$s 的恢复助记词？</string>
+    <string name="dialog_reveal_body">恢复助记词（以及密语，如你设置过）是唯一能恢复此钱包的东西——拥有它的任何人都能花掉你的资金。只在无人窥视的私密处显示。下一个屏幕会禁止截屏。</string>
+    <string name="dialog_remove_title">移除 %1$s？</string>
+    <string name="dialog_remove_body">这只会从此应用中移除该钱包。区块链上的一切不变，你随时可以用它的恢复助记词（以及密语，如你设置过）重新添加。请确保助记词已记录下来。</string>
+
+    <string name="status_offline">离线</string>
+    <string name="status_rescanning">正在重新扫描 %1$d%%</string>
+    <string name="status_limited">服务受限</string>
+    <string name="status_connected">已连接</string>
+    <string name="status_syncing">正在同步</string>
+
+    <string name="wallet_none_open">没有打开的钱包</string>
+    <string name="wallet_choose">选择钱包</string>
+    <string name="wallet_pending">%1$s %2$s 待处理</string>
+    <string name="wallet_block">区块 %1$s</string>
+    <string name="wallet_rescanning">正在重新扫描 %1$d%%</string>
+    <string name="wallet_syncing">正在同步</string>
+    <string name="wallet_limited_suffix">%1$s  ·  服务受限</string>
+    <string name="wallet_connecting">正在连接…</string>
+    <string name="fiat_approx">≈ %1$s</string>
+
+    <string name="sent_title">付款已发送</string>
+    <string name="sent_txid">%1$s… · 点按复制</string>
+
+    <string name="cd_address_qr">地址二维码</string>
+    <string name="receive_address_n">地址 #%1$d · 点按复制</string>
+    <string name="share_address_chooser">分享地址</string>
+
+    <string name="scan_prompt">扫描付款地址</string>
+    <string name="send_sweep">发送最大额（清扫）</string>
+    <string name="send_alt_coin">= %1$s %2$s</string>
+    <string name="send_alt_sat">= %1$s sat</string>
+    <string name="send_alt_fiat">  ·  %1$s</string>
+    <string name="fee_fast">快速</string>
+    <string name="fee_normal">正常</string>
+    <string name="fee_slow">慢速</string>
+    <string name="send_replay_protect">XBT 重放保护（100 字节 OP_RETURN）</string>
+    <string name="send_replay_note">增加约 110 vB 手续费。在默认的 Bitcoin 中继上属于非标准——请通过接受大型 OP_RETURN 的节点/服务广播。</string>
+    <string name="send_service_fee">服务费：发送金额的 %1$s%%（最低 %2$d sat）——用于支持此托管节点。</string>
+    <string name="cd_amount_unit">金额单位</string>
+    <string name="unit_sat">sat</string>
+
+    <string name="history_empty">暂无交易</string>
+    <string name="history_send">发送</string>
+    <string name="history_receive">接收</string>
+    <string name="history_row_subtitle">%1$s · %2$s…</string>
+    <string name="history_pending">待处理</string>
+    <string name="history_conf_n">%1$d 次确认</string>
+    <string name="history_confirmed">已确认</string>
+    <string name="history_hint">点按交易可在浏览器中打开 · 长按可复制 id</string>
+
+    <string name="confirm_sweep_title">确认清扫</string>
+    <string name="confirm_payment_title">确认付款</string>
+    <string name="confirm_to">收款方</string>
+    <string name="confirm_amount">金额</string>
+    <string name="confirm_network_fee">网络费</string>
+    <string name="confirm_network_fee_value">%1$s %2$s · %3$d sat/vB</string>
+    <string name="confirm_service_fee">服务费</string>
+    <string name="confirm_change">找零</string>
+    <string name="confirm_replay">重放保护</string>
+    <string name="confirm_replay_value">开启 · 100 字节 OP_RETURN</string>
+    <string name="confirm_total">合计</string>
+    <string name="value_with_fiat">%1$s %2$s  ·  %3$s</string>
+
+    <string name="mnemonic_not_in_list">%1$d 个不在词表中</string>
+    <string name="mnemonic_looks_good">看起来没问题</string>
+    <string name="mnemonic_status">%1$s  ·  %2$s</string>
+
+    <string name="error_wallet_max">一台设备最多可保存 %1$d 个钱包。</string>
+    <string name="error_clone_exists">“%1$s”已在 %2$s 上。</string>
+    <string name="error_lock_setup_failed">应用锁设置失败</string>
+    <string name="error_enter_amount">请输入金额</string>
+    <string name="error_no_coins">没有可花费的已确认币</string>
+    <string name="error_open_wallet">无法打开钱包</string>
+
+    <plurals name="word_count">
+        <item quantity="other">%1$d 个词</item>
+    </plurals>
+</resources>

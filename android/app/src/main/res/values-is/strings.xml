@@ -1,0 +1,189 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">fortis</string>
+
+    <string name="action_back">Til baka</string>
+    <string name="action_cancel">Hætta við</string>
+    <string name="action_continue">Halda áfram</string>
+    <string name="action_save">Vista</string>
+    <string name="action_done">Lokið</string>
+    <string name="action_show">Sýna</string>
+    <string name="action_hide">Fela</string>
+    <string name="action_copy">Afrita</string>
+    <string name="action_share">Deila</string>
+    <string name="action_open">Opna</string>
+    <string name="action_remove">Fjarlægja</string>
+    <string name="action_rename">Endurnefna</string>
+    <string name="action_unlock">Aflæsa</string>
+    <string name="action_add_wallet">Bæta við veski</string>
+    <string name="action_view">Skoða</string>
+    <string name="action_refresh">Endurnýja</string>
+    <string name="action_reconnect">Tengjast aftur</string>
+    <string name="action_review">Yfirfara</string>
+    <string name="action_sign_send">Undirrita og senda</string>
+    <string name="action_new_address">Nýtt vistfang</string>
+    <string name="action_scan_qr">Skanna QR-kóða</string>
+    <string name="action_lock">Læsa</string>
+    <string name="action_lock_app">Læsa forriti</string>
+    <string name="action_copy_xpub">Afrita xpub</string>
+    <string name="action_recovery_phrase">Endurheimtarsetning</string>
+    <string name="toast_copied">Afritað</string>
+    <string name="cd_dismiss">Loka</string>
+
+    <string name="onboard_add_title">Bæta við veski</string>
+    <string name="onboard_tagline">veski án vörslu fyrir Bitcoin XBT og Bitcoin BTC</string>
+    <string name="onboard_create">Búa til nýtt veski</string>
+    <string name="onboard_restore">Endurheimta úr endurheimtarsetningu</string>
+
+    <string name="gen_title">Bættu við smá tilviljun</string>
+    <string name="gen_body">Síminn þinn bjó þegar til öruggt fræ. Hristu hann — eða krotaðu á svæðið — til að blanda inn auka óreiðu frá hreyfiskynjurunum og tímaflökti. Til öryggis.</string>
+    <string name="gen_words_24">24 orð</string>
+    <string name="gen_words_12">12 orð</string>
+    <string name="gen_words_hint">Bæði eru örugg; auðveldara er að skrifa niður 12.</string>
+    <string name="gen_pad_hint">hristu, eða krotaðu hér</string>
+    <string name="gen_entropy_full">nóg af auka óreiðu — grunnfræið er þegar öruggt</string>
+    <string name="gen_entropy_partial">~%1$d auka bitum blandað inn</string>
+    <string name="gen_generate">Búa til veski</string>
+
+    <string name="create_phrase_title">Endurheimtarsetningin þín</string>
+    <string name="create_phrase_body">Skrifaðu þessi %1$d orð á pappír, án nettengingar. Hver sem hefur þau ræður yfir fé þínu.</string>
+    <string name="create_passphrase_hint">\"25. orð\" — auka leyndarmál sem er ekki vistað. Ef þú setur eitt þarftu bæði setninguna og það til að endurheimta. Hafðu autt ef þú ert í vafa.</string>
+    <string name="create_ack">Ég hef skrifað setninguna niður</string>
+
+    <string name="restore_title">Endurheimta veski</string>
+    <string name="restore_body">Sláðu inn 12 eða 24 orðin þín, aðskilin með bilum.</string>
+    <string name="restore_clone_hint">Eftir að því er bætt við geturðu líka skráð þetta veski á %1$s í Stjórna veskjum — sama setning, sömu vistföng.</string>
+    <string name="action_restore">Endurheimta</string>
+
+    <string name="field_wallet_name">Heiti veskis</string>
+    <string name="field_passphrase">BIP-39 aðgangssetning (valfrjálst)</string>
+    <string name="field_app_password">Lykilorð forrits</string>
+    <string name="field_confirm_password">Staðfesta lykilorð</string>
+    <string name="field_to_address">Móttökuvistfang</string>
+    <string name="field_amount">Upphæð</string>
+    <string name="field_custom_feerate">sérsniðið sat/vB (valfrjálst)</string>
+
+    <string name="reveal_title">Endurheimtarsetning</string>
+    <string name="reveal_warning">Hver sem sér þessi orð — auk aðgangssetningarinnar, ef hún er sett — getur eytt úr þessu veski. Skoðaðu þau aðeins á einkastað. Sláðu þau aldrei inn á vefsíðu eða í forrit. Skjámyndir eru læstar hér.</string>
+    <string name="reveal_failed">Ekki tókst að afkóða þetta veski.</string>
+    <string name="reveal_passphrase_label">BIP-39 aðgangssetning</string>
+    <string name="reveal_no_passphrase">Engin BIP-39 aðgangssetning á þessu veski.</string>
+
+    <string name="nav_home">Heim</string>
+    <string name="nav_wallet">Veski</string>
+    <string name="nav_settings">Stillingar</string>
+    <string name="tab_receive">Taka á móti</string>
+    <string name="tab_send">Senda</string>
+    <string name="tab_history">Saga</string>
+
+    <string name="home_title">Veskin þín</string>
+    <string name="home_open">opið</string>
+    <string name="home_tap_to_open">ýttu til að opna</string>
+    <string name="wallets_max">Hámarki %1$d veskja náð.</string>
+
+    <string name="lock_password_prompt">Sláðu inn lykilorð forritsins.</string>
+    <string name="biometric_setup_title">Setja upp forritalás</string>
+    <string name="biometric_unlock_title">Aflæsa Fortis Wallet</string>
+    <string name="biometric_subtitle">Fortis Wallet</string>
+    <string name="biometric_invalidated">Skjálás tækisins þíns breyttist, svo ekki er lengur hægt að aflæsa forritinu hér. Settu upp aftur og endurheimtu hvert veski úr endurheimtarsetningu þess.</string>
+    <string name="lock_choice_use_biometric">Læsa forritinu með fingrafari eða PIN-númeri</string>
+    <string name="lock_choice_biometric_note">Ein aflæsing opnar öll veskin þín. Ekkert lykilorð til að muna — fingrafar/andlit tækisins eða skjáláss-PIN hleypir þér inn.</string>
+    <string name="lock_choice_password_note">Þetta lykilorð aflæsir forritinu og hverju veski í því.</string>
+
+    <string name="settings_title">Stillingar</string>
+    <string name="settings_wallets">Veski</string>
+    <string name="settings_security">Öryggi</string>
+    <string name="settings_connection">Tenging</string>
+    <string name="settings_app_lock">Forritalás</string>
+    <string name="lock_mode_biometric">Fingrafar / PIN tækis</string>
+    <string name="lock_mode_password">Lykilorð</string>
+    <string name="settings_one_unlock">Ein aflæsing opnar hvert veski í forritinu.</string>
+    <string name="settings_language">Tungumál</string>
+    <string name="language_system_default">Sjálfgefið kerfis</string>
+    <string name="settings_status">Staða</string>
+    <string name="settings_chain_height">Keðjuhæð</string>
+    <string name="settings_degraded_note">Ekki næst í fortis-þjónustuna — notast við opinber blokkgögn í bili. Það skiptir sjálfkrafa til baka.</string>
+    <string name="settings_version">fortis %1$s</string>
+    <string name="xpub_loading">enn að hlaða — reyndu aftur</string>
+    <string name="also_add_on">Bæta líka við á %1$s</string>
+    <string name="dialog_rename_title">Endurnefna veski</string>
+    <string name="dialog_reveal_title">Sýna endurheimtarsetninguna fyrir %1$s?</string>
+    <string name="dialog_reveal_body">Endurheimtarsetningin (og aðgangssetningin, ef þú settir eina) er það eina sem getur endurheimt þetta veski — og hver sem hefur hana getur eytt fé þínu. Sýndu hana aðeins á einkastað, án þess að nokkur horfi. Næsti skjár læsir skjámyndum.</string>
+    <string name="dialog_remove_title">Fjarlægja %1$s?</string>
+    <string name="dialog_remove_body">Þetta fjarlægir aðeins veskið úr þessu forriti. Ekkert breytist á blokkkeðjunni og þú getur bætt því við aftur hvenær sem er með endurheimtarsetningu þess (og aðgangssetningu, ef þú settir eina). Gakktu úr skugga um að setningin sé skrifuð niður.</string>
+
+    <string name="status_offline">án nettengingar</string>
+    <string name="status_rescanning">endurskanna %1$d%%</string>
+    <string name="status_limited">takmörkuð þjónusta</string>
+    <string name="status_connected">tengt</string>
+    <string name="status_syncing">samstillir</string>
+
+    <string name="wallet_none_open">Ekkert veski opið</string>
+    <string name="wallet_choose">Veldu veski</string>
+    <string name="wallet_pending">%1$s %2$s í bið</string>
+    <string name="wallet_block">blokk %1$s</string>
+    <string name="wallet_rescanning">endurskanna %1$d%%</string>
+    <string name="wallet_syncing">samstillir</string>
+    <string name="wallet_limited_suffix">%1$s  ·  takmörkuð þjónusta</string>
+    <string name="wallet_connecting">tengist…</string>
+    <string name="fiat_approx">≈ %1$s</string>
+
+    <string name="sent_title">Greiðsla send</string>
+    <string name="sent_txid">%1$s… · ýttu til að afrita</string>
+
+    <string name="cd_address_qr">QR-kóði vistfangs</string>
+    <string name="receive_address_n">vistfang #%1$d · ýttu til að afrita</string>
+    <string name="share_address_chooser">Deila vistfangi</string>
+
+    <string name="scan_prompt">Skannaðu greiðsluvistfang</string>
+    <string name="send_sweep">Senda hámark (sweep)</string>
+    <string name="send_alt_coin">= %1$s %2$s</string>
+    <string name="send_alt_sat">= %1$s sat</string>
+    <string name="send_alt_fiat">  ·  %1$s</string>
+    <string name="fee_fast">Hratt</string>
+    <string name="fee_normal">Venjulegt</string>
+    <string name="fee_slow">Hægt</string>
+    <string name="send_replay_protect">XBT endurspilunarvörn (100 bæta OP_RETURN)</string>
+    <string name="send_replay_note">Bætir við ~110 vB í gjald. Óstaðlað á sjálfgefnu Bitcoin-relái — sendu út um hnút/þjónustu sem tekur við stórum OP_RETURN.</string>
+    <string name="send_service_fee">Þjónustugjald: %1$s%% af sendri upphæð (lágm. %2$d sat) — styður þennan hýsta hnút.</string>
+    <string name="cd_amount_unit">eining upphæðar</string>
+    <string name="unit_sat">sat</string>
+
+    <string name="history_empty">engar færslur enn</string>
+    <string name="history_send">senda</string>
+    <string name="history_receive">taka á móti</string>
+    <string name="history_row_subtitle">%1$s · %2$s…</string>
+    <string name="history_pending">í bið</string>
+    <string name="history_conf_n">%1$d staðf.</string>
+    <string name="history_confirmed">staðfest</string>
+    <string name="history_hint">ýttu á færslu til að opna hana í vafranum · haltu inni til að afrita auðkennið</string>
+
+    <string name="confirm_sweep_title">Staðfesta sweep</string>
+    <string name="confirm_payment_title">Staðfesta greiðslu</string>
+    <string name="confirm_to">Til</string>
+    <string name="confirm_amount">Upphæð</string>
+    <string name="confirm_network_fee">Netgjald</string>
+    <string name="confirm_network_fee_value">%1$s %2$s · %3$d sat/vB</string>
+    <string name="confirm_service_fee">Þjónustugjald</string>
+    <string name="confirm_change">Skiptimynt</string>
+    <string name="confirm_replay">Endurspilunarvörn</string>
+    <string name="confirm_replay_value">á · 100 bæta OP_RETURN</string>
+    <string name="confirm_total">Samtals</string>
+    <string name="value_with_fiat">%1$s %2$s  ·  %3$s</string>
+
+    <string name="mnemonic_not_in_list">%1$d ekki á orðalistanum</string>
+    <string name="mnemonic_looks_good">lítur vel út</string>
+    <string name="mnemonic_status">%1$s  ·  %2$s</string>
+
+    <string name="error_wallet_max">Þú getur haft allt að %1$d veski í einu tæki.</string>
+    <string name="error_clone_exists">„%1$s“ er þegar á %2$s.</string>
+    <string name="error_lock_setup_failed">uppsetning forritaláss mistókst</string>
+    <string name="error_enter_amount">sláðu inn upphæð</string>
+    <string name="error_no_coins">engir staðfestir myntir til að eyða</string>
+    <string name="error_open_wallet">ekki tókst að opna veskið</string>
+
+    <plurals name="word_count">
+        <item quantity="one">%1$d orð</item>
+        <item quantity="other">%1$d orð</item>
+    </plurals>
+</resources>

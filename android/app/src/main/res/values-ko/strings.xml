@@ -1,0 +1,188 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">fortis</string>
+
+    <string name="action_back">뒤로</string>
+    <string name="action_cancel">취소</string>
+    <string name="action_continue">계속</string>
+    <string name="action_save">저장</string>
+    <string name="action_done">완료</string>
+    <string name="action_show">표시</string>
+    <string name="action_hide">숨기기</string>
+    <string name="action_copy">복사</string>
+    <string name="action_share">공유</string>
+    <string name="action_open">열기</string>
+    <string name="action_remove">제거</string>
+    <string name="action_rename">이름 변경</string>
+    <string name="action_unlock">잠금 해제</string>
+    <string name="action_add_wallet">지갑 추가</string>
+    <string name="action_view">보기</string>
+    <string name="action_refresh">새로고침</string>
+    <string name="action_reconnect">다시 연결</string>
+    <string name="action_review">검토</string>
+    <string name="action_sign_send">서명 후 전송</string>
+    <string name="action_new_address">새 주소</string>
+    <string name="action_scan_qr">QR 코드 스캔</string>
+    <string name="action_lock">잠금</string>
+    <string name="action_lock_app">앱 잠금</string>
+    <string name="action_copy_xpub">xpub 복사</string>
+    <string name="action_recovery_phrase">복구 문구</string>
+    <string name="toast_copied">복사됨</string>
+    <string name="cd_dismiss">닫기</string>
+
+    <string name="onboard_add_title">지갑 추가</string>
+    <string name="onboard_tagline">Bitcoin XBT과 Bitcoin BTC를 위한 비수탁형 지갑</string>
+    <string name="onboard_create">새 지갑 만들기</string>
+    <string name="onboard_restore">복구 문구로 복원</string>
+
+    <string name="gen_title">무작위성을 더하세요</string>
+    <string name="gen_body">휴대폰이 이미 안전한 시드를 생성했습니다. 흔들거나 패드에 낙서하여 모션 센서와 타이밍 지터에서 추가 엔트로피를 섞어 넣으세요. 만일을 위해서입니다.</string>
+    <string name="gen_words_24">24단어</string>
+    <string name="gen_words_12">12단어</string>
+    <string name="gen_words_hint">둘 다 안전합니다. 12단어가 적어두기 더 쉽습니다.</string>
+    <string name="gen_pad_hint">흔들거나 여기에 낙서하세요</string>
+    <string name="gen_entropy_full">추가 엔트로피가 충분합니다 — 기본 시드는 이미 안전합니다</string>
+    <string name="gen_entropy_partial">약 %1$d비트의 추가분이 섞였습니다</string>
+    <string name="gen_generate">지갑 생성</string>
+
+    <string name="create_phrase_title">복구 문구</string>
+    <string name="create_phrase_body">이 %1$d개 단어를 오프라인으로 종이에 적으세요. 이를 가진 사람은 누구든 자금을 통제할 수 있습니다.</string>
+    <string name="create_passphrase_hint">\"25번째 단어\" — 저장되지 않는 추가 비밀입니다. 설정하면 복원 시 문구와 이것이 모두 필요합니다. 확실하지 않으면 비워 두세요.</string>
+    <string name="create_ack">문구를 적어 두었습니다</string>
+
+    <string name="restore_title">지갑 복원</string>
+    <string name="restore_body">12개 또는 24개 단어를 공백으로 구분하여 입력하세요.</string>
+    <string name="restore_clone_hint">추가한 후 \'지갑 관리\'에서 이 지갑을 %1$s에도 등록할 수 있습니다 — 같은 문구, 같은 주소입니다.</string>
+    <string name="action_restore">복원</string>
+
+    <string name="field_wallet_name">지갑 이름</string>
+    <string name="field_passphrase">BIP-39 패스프레이즈(선택 사항)</string>
+    <string name="field_app_password">앱 비밀번호</string>
+    <string name="field_confirm_password">비밀번호 확인</string>
+    <string name="field_to_address">받는 주소</string>
+    <string name="field_amount">금액</string>
+    <string name="field_custom_feerate">사용자 지정 sat/vB(선택 사항)</string>
+
+    <string name="reveal_title">복구 문구</string>
+    <string name="reveal_warning">이 단어들(설정된 경우 패스프레이즈 포함)을 보는 사람은 누구든 이 지갑을 사용할 수 있습니다. 사적인 공간에서만 확인하세요. 웹사이트나 앱에 절대 입력하지 마세요. 여기서는 스크린샷이 차단됩니다.</string>
+    <string name="reveal_failed">이 지갑을 복호화할 수 없습니다.</string>
+    <string name="reveal_passphrase_label">BIP-39 패스프레이즈</string>
+    <string name="reveal_no_passphrase">이 지갑에는 BIP-39 패스프레이즈가 없습니다.</string>
+
+    <string name="nav_home">홈</string>
+    <string name="nav_wallet">지갑</string>
+    <string name="nav_settings">설정</string>
+    <string name="tab_receive">받기</string>
+    <string name="tab_send">보내기</string>
+    <string name="tab_history">기록</string>
+
+    <string name="home_title">내 지갑</string>
+    <string name="home_open">열림</string>
+    <string name="home_tap_to_open">탭하여 열기</string>
+    <string name="wallets_max">최대 %1$d개 지갑에 도달했습니다.</string>
+
+    <string name="lock_password_prompt">앱 비밀번호를 입력하세요.</string>
+    <string name="biometric_setup_title">앱 잠금 설정</string>
+    <string name="biometric_unlock_title">Fortis Wallet 잠금 해제</string>
+    <string name="biometric_subtitle">Fortis Wallet</string>
+    <string name="biometric_invalidated">기기의 화면 잠금이 변경되어 여기서 앱 잠금을 해제할 수 없습니다. 다시 설치하고 각 지갑을 복구 문구로 복원하세요.</string>
+    <string name="lock_choice_use_biometric">지문 또는 PIN으로 앱 잠금</string>
+    <string name="lock_choice_biometric_note">한 번의 잠금 해제로 모든 지갑이 열립니다. 기억할 비밀번호 없음 — 기기의 지문/얼굴 또는 화면 잠금 PIN으로 들어갑니다.</string>
+    <string name="lock_choice_password_note">이 비밀번호로 앱과 그 안의 모든 지갑 잠금을 해제합니다.</string>
+
+    <string name="settings_title">설정</string>
+    <string name="settings_wallets">지갑</string>
+    <string name="settings_security">보안</string>
+    <string name="settings_connection">연결</string>
+    <string name="settings_app_lock">앱 잠금</string>
+    <string name="lock_mode_biometric">지문 / 기기 PIN</string>
+    <string name="lock_mode_password">비밀번호</string>
+    <string name="settings_one_unlock">한 번의 잠금 해제로 앱의 모든 지갑이 열립니다.</string>
+    <string name="settings_language">언어</string>
+    <string name="language_system_default">시스템 기본값</string>
+    <string name="settings_status">상태</string>
+    <string name="settings_chain_height">체인 높이</string>
+    <string name="settings_degraded_note">fortis 서비스에 연결할 수 없습니다 — 현재 공개 블록 데이터를 사용 중입니다. 자동으로 다시 전환됩니다.</string>
+    <string name="settings_version">fortis %1$s</string>
+    <string name="xpub_loading">아직 로드 중입니다 — 다시 시도하세요</string>
+    <string name="also_add_on">%1$s에도 추가</string>
+    <string name="dialog_rename_title">지갑 이름 변경</string>
+    <string name="dialog_reveal_title">%1$s의 복구 문구를 표시할까요?</string>
+    <string name="dialog_reveal_body">복구 문구(설정한 경우 패스프레이즈)는 이 지갑을 복원할 수 있는 유일한 수단이며, 이를 가진 사람은 누구든 자금을 사용할 수 있습니다. 아무도 보지 않는 사적인 공간에서만 공개하세요. 다음 화면에서는 스크린샷이 차단됩니다.</string>
+    <string name="dialog_remove_title">%1$s을(를) 제거할까요?</string>
+    <string name="dialog_remove_body">이는 이 앱에서만 지갑을 제거합니다. 블록체인에서는 아무것도 변경되지 않으며, 복구 문구(설정한 경우 패스프레이즈)로 언제든 다시 추가할 수 있습니다. 문구를 적어 두었는지 확인하세요.</string>
+
+    <string name="status_offline">오프라인</string>
+    <string name="status_rescanning">다시 스캔 중 %1$d%%</string>
+    <string name="status_limited">제한된 서비스</string>
+    <string name="status_connected">연결됨</string>
+    <string name="status_syncing">동기화 중</string>
+
+    <string name="wallet_none_open">열린 지갑 없음</string>
+    <string name="wallet_choose">지갑 선택</string>
+    <string name="wallet_pending">%1$s %2$s 대기 중</string>
+    <string name="wallet_block">블록 %1$s</string>
+    <string name="wallet_rescanning">다시 스캔 중 %1$d%%</string>
+    <string name="wallet_syncing">동기화 중</string>
+    <string name="wallet_limited_suffix">%1$s  ·  제한된 서비스</string>
+    <string name="wallet_connecting">연결 중…</string>
+    <string name="fiat_approx">≈ %1$s</string>
+
+    <string name="sent_title">결제를 보냈습니다</string>
+    <string name="sent_txid">%1$s… · 탭하여 복사</string>
+
+    <string name="cd_address_qr">주소 QR 코드</string>
+    <string name="receive_address_n">주소 #%1$d · 탭하여 복사</string>
+    <string name="share_address_chooser">주소 공유</string>
+
+    <string name="scan_prompt">결제 주소를 스캔하세요</string>
+    <string name="send_sweep">최대 금액 보내기(sweep)</string>
+    <string name="send_alt_coin">= %1$s %2$s</string>
+    <string name="send_alt_sat">= %1$s sat</string>
+    <string name="send_alt_fiat">  ·  %1$s</string>
+    <string name="fee_fast">빠름</string>
+    <string name="fee_normal">보통</string>
+    <string name="fee_slow">느림</string>
+    <string name="send_replay_protect">XBT 재전송 방지(100바이트 OP_RETURN)</string>
+    <string name="send_replay_note">수수료가 약 110 vB 추가됩니다. 기본 Bitcoin 릴레이에서는 비표준입니다 — 큰 OP_RETURN을 허용하는 노드/서비스를 통해 브로드캐스트하세요.</string>
+    <string name="send_service_fee">서비스 수수료: 보낸 금액의 %1$s%%(최소 %2$d sat) — 이 호스팅 노드를 지원합니다.</string>
+    <string name="cd_amount_unit">금액 단위</string>
+    <string name="unit_sat">sat</string>
+
+    <string name="history_empty">아직 거래 없음</string>
+    <string name="history_send">보내기</string>
+    <string name="history_receive">받기</string>
+    <string name="history_row_subtitle">%1$s · %2$s…</string>
+    <string name="history_pending">대기 중</string>
+    <string name="history_conf_n">%1$d 확인</string>
+    <string name="history_confirmed">확인됨</string>
+    <string name="history_hint">거래를 탭하면 탐색기에서 열립니다 · 길게 눌러 ID 복사</string>
+
+    <string name="confirm_sweep_title">sweep 확인</string>
+    <string name="confirm_payment_title">결제 확인</string>
+    <string name="confirm_to">받는 사람</string>
+    <string name="confirm_amount">금액</string>
+    <string name="confirm_network_fee">네트워크 수수료</string>
+    <string name="confirm_network_fee_value">%1$s %2$s · %3$d sat/vB</string>
+    <string name="confirm_service_fee">서비스 수수료</string>
+    <string name="confirm_change">거스름돈</string>
+    <string name="confirm_replay">재전송 방지</string>
+    <string name="confirm_replay_value">켬 · 100바이트 OP_RETURN</string>
+    <string name="confirm_total">합계</string>
+    <string name="value_with_fiat">%1$s %2$s  ·  %3$s</string>
+
+    <string name="mnemonic_not_in_list">%1$d개가 단어 목록에 없음</string>
+    <string name="mnemonic_looks_good">양호합니다</string>
+    <string name="mnemonic_status">%1$s  ·  %2$s</string>
+
+    <string name="error_wallet_max">한 기기에 최대 %1$d개의 지갑을 보관할 수 있습니다.</string>
+    <string name="error_clone_exists">\"%1$s\"은(는) 이미 %2$s에 있습니다.</string>
+    <string name="error_lock_setup_failed">앱 잠금 설정에 실패했습니다</string>
+    <string name="error_enter_amount">금액을 입력하세요</string>
+    <string name="error_no_coins">사용할 확인된 코인이 없습니다</string>
+    <string name="error_open_wallet">지갑을 열 수 없습니다</string>
+
+    <plurals name="word_count">
+        <item quantity="other">%1$d단어</item>
+    </plurals>
+</resources>

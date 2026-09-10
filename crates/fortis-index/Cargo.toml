@@ -1,0 +1,22 @@
+[package]
+name = "fortis-index"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "fortis address indexer: an Esplora-shaped REST API over a Bitcoin Knots / BLAKE2b node, so many wallets can share one backend without per-user node state."
+
+[[bin]]
+name = "fortis-index"
+path = "src/main.rs"
+
+[dependencies]
+fortis-node = { path = "../fortis-node" }
+bitcoin = { workspace = true }
+anyhow = "1"
+hex = { workspace = true }
+serde_json = { workspace = true }
+clap = { version = "4", features = ["derive"] }
+rusqlite = { version = "0.32", features = ["bundled"] }
+tiny_http = "0.12"

@@ -1,0 +1,189 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">fortis</string>
+
+    <string name="action_back">Rudi</string>
+    <string name="action_cancel">Ghairi</string>
+    <string name="action_continue">Endelea</string>
+    <string name="action_save">Hifadhi</string>
+    <string name="action_done">Imekamilika</string>
+    <string name="action_show">Onyesha</string>
+    <string name="action_hide">Ficha</string>
+    <string name="action_copy">Nakili</string>
+    <string name="action_share">Shiriki</string>
+    <string name="action_open">Fungua</string>
+    <string name="action_remove">Ondoa</string>
+    <string name="action_rename">Badilisha jina</string>
+    <string name="action_unlock">Fungua</string>
+    <string name="action_add_wallet">Ongeza pochi</string>
+    <string name="action_view">Tazama</string>
+    <string name="action_refresh">Onyesha upya</string>
+    <string name="action_reconnect">Unganisha tena</string>
+    <string name="action_review">Kagua</string>
+    <string name="action_sign_send">Tia sahihi na utume</string>
+    <string name="action_new_address">Anwani mpya</string>
+    <string name="action_scan_qr">Changanua msimbo wa QR</string>
+    <string name="action_lock">Funga</string>
+    <string name="action_lock_app">Funga programu</string>
+    <string name="action_copy_xpub">Nakili xpub</string>
+    <string name="action_recovery_phrase">Kifungu cha kurejesha</string>
+    <string name="toast_copied">Imenakiliwa</string>
+    <string name="cd_dismiss">Ondoa</string>
+
+    <string name="onboard_add_title">Ongeza pochi</string>
+    <string name="onboard_tagline">pochi isiyo ya uhifadhi kwa Bitcoin XBT na Bitcoin BTC</string>
+    <string name="onboard_create">Unda pochi mpya</string>
+    <string name="onboard_restore">Rejesha kutoka kwa kifungu cha kurejesha</string>
+
+    <string name="gen_title">Ongeza nasibu kidogo</string>
+    <string name="gen_body">Simu yako tayari imezalisha mbegu salama. Itikise — au chora kwenye pedi — ili kuchanganya entropia ya ziada kutoka kwa vitambuzi vya mwendo na mabadiliko ya muda. Kwa tahadhari.</string>
+    <string name="gen_words_24">Maneno 24</string>
+    <string name="gen_words_12">Maneno 12</string>
+    <string name="gen_words_hint">Zote mbili ni salama; 12 ni rahisi kuandika.</string>
+    <string name="gen_pad_hint">tikisa, au chora hapa</string>
+    <string name="gen_entropy_full">entropia ya ziada tele — mbegu ya msingi tayari ni salama</string>
+    <string name="gen_entropy_partial">biti za ziada ~%1$d zimechanganywa</string>
+    <string name="gen_generate">Zalisha pochi</string>
+
+    <string name="create_phrase_title">Kifungu chako cha kurejesha</string>
+    <string name="create_phrase_body">Andika maneno haya %1$d kwenye karatasi, nje ya mtandao. Yeyote aliye nayo anadhibiti fedha zako.</string>
+    <string name="create_passphrase_hint">\"Neno la 25\" — siri ya ziada isiyohifadhiwa. Ukiliweka, unahitaji kifungu na hili ili kurejesha. Acha wazi ikiwa huna uhakika.</string>
+    <string name="create_ack">Nimeandika kifungu</string>
+
+    <string name="restore_title">Rejesha pochi</string>
+    <string name="restore_body">Weka maneno yako 12 au 24, yakitenganishwa kwa nafasi.</string>
+    <string name="restore_clone_hint">Baada ya kuongezwa unaweza pia kuorodhesha pochi hii kwenye %1$s kutoka Dhibiti pochi — kifungu kilekile, anwani zilezile.</string>
+    <string name="action_restore">Rejesha</string>
+
+    <string name="field_wallet_name">Jina la pochi</string>
+    <string name="field_passphrase">Kifungu cha siri cha BIP-39 (hiari)</string>
+    <string name="field_app_password">Nenosiri la programu</string>
+    <string name="field_confirm_password">Thibitisha nenosiri</string>
+    <string name="field_to_address">Anwani ya mpokeaji</string>
+    <string name="field_amount">Kiasi</string>
+    <string name="field_custom_feerate">sat/vB maalum (hiari)</string>
+
+    <string name="reveal_title">Kifungu cha kurejesha</string>
+    <string name="reveal_warning">Yeyote anayeona maneno haya — pamoja na kifungu cha siri, kikiwekwa — anaweza kutumia pochi hii. Yatazame tu mahali pa faragha. Usiwahi kuyaandika kwenye tovuti au programu. Picha za skrini zimezuiwa hapa.</string>
+    <string name="reveal_failed">Haikuwezekana kusimbua pochi hii.</string>
+    <string name="reveal_passphrase_label">Kifungu cha siri cha BIP-39</string>
+    <string name="reveal_no_passphrase">Hakuna kifungu cha siri cha BIP-39 kwenye pochi hii.</string>
+
+    <string name="nav_home">Mwanzo</string>
+    <string name="nav_wallet">Pochi</string>
+    <string name="nav_settings">Mipangilio</string>
+    <string name="tab_receive">Pokea</string>
+    <string name="tab_send">Tuma</string>
+    <string name="tab_history">Historia</string>
+
+    <string name="home_title">Pochi zako</string>
+    <string name="home_open">imefunguliwa</string>
+    <string name="home_tap_to_open">gusa ili kufungua</string>
+    <string name="wallets_max">Kikomo cha juu cha pochi %1$d kimefikiwa.</string>
+
+    <string name="lock_password_prompt">Weka nenosiri lako la programu.</string>
+    <string name="biometric_setup_title">Sanidi kufunga programu</string>
+    <string name="biometric_unlock_title">Fungua Fortis Wallet</string>
+    <string name="biometric_subtitle">Fortis Wallet</string>
+    <string name="biometric_invalidated">Kufunga skrini ya kifaa chako kumebadilika, kwa hivyo programu haiwezi kufunguliwa hapa tena. Sakinusha tena na urejeshe kila pochi kutoka kwa kifungu chake cha kurejesha.</string>
+    <string name="lock_choice_use_biometric">Funga programu kwa alama ya kidole au PIN</string>
+    <string name="lock_choice_biometric_note">Kufungua mara moja hufungua pochi zako zote. Hakuna nenosiri la kukumbuka — alama ya kidole/uso wa kifaa chako au PIN ya kufunga skrini hukuruhusu kuingia.</string>
+    <string name="lock_choice_password_note">Nenosiri hili hufungua programu na kila pochi ndani yake.</string>
+
+    <string name="settings_title">Mipangilio</string>
+    <string name="settings_wallets">Pochi</string>
+    <string name="settings_security">Usalama</string>
+    <string name="settings_connection">Muunganisho</string>
+    <string name="settings_app_lock">Kufunga programu</string>
+    <string name="lock_mode_biometric">Alama ya kidole / PIN ya kifaa</string>
+    <string name="lock_mode_password">Nenosiri</string>
+    <string name="settings_one_unlock">Kufungua mara moja hufungua kila pochi katika programu.</string>
+    <string name="settings_language">Lugha</string>
+    <string name="language_system_default">Chaguo-msingi la mfumo</string>
+    <string name="settings_status">Hali</string>
+    <string name="settings_chain_height">Urefu wa mnyororo</string>
+    <string name="settings_degraded_note">Huduma ya fortis haipatikani — inatumia data ya umma ya vitalu kwa sasa. Itarudi kiotomatiki.</string>
+    <string name="settings_version">fortis %1$s</string>
+    <string name="xpub_loading">bado inapakia — jaribu tena</string>
+    <string name="also_add_on">Ongeza pia kwenye %1$s</string>
+    <string name="dialog_rename_title">Badilisha jina la pochi</string>
+    <string name="dialog_reveal_title">Onyesha kifungu cha kurejesha cha %1$s?</string>
+    <string name="dialog_reveal_body">Kifungu cha kurejesha (na kifungu cha siri, ukiweka kimoja) ndicho kitu pekee kinachoweza kurejesha pochi hii — na yeyote aliye nacho anaweza kutumia fedha zako. Kifunue tu mahali pa faragha, bila mtu yeyote kuangalia. Skrini inayofuata huzuia picha za skrini.</string>
+    <string name="dialog_remove_title">Ondoa %1$s?</string>
+    <string name="dialog_remove_body">Hii huondoa pochi kwenye programu hii pekee. Hakuna kinachobadilika kwenye blockchain, na unaweza kuiongeza tena wakati wowote kwa kifungu chake cha kurejesha (na kifungu cha siri, ukiweka kimoja). Hakikisha kifungu kimeandikwa.</string>
+
+    <string name="status_offline">nje ya mtandao</string>
+    <string name="status_rescanning">inachanganua tena %1$d%%</string>
+    <string name="status_limited">huduma finyu</string>
+    <string name="status_connected">imeunganishwa</string>
+    <string name="status_syncing">inasawazisha</string>
+
+    <string name="wallet_none_open">Hakuna pochi iliyofunguliwa</string>
+    <string name="wallet_choose">Chagua pochi</string>
+    <string name="wallet_pending">%1$s %2$s inasubiri</string>
+    <string name="wallet_block">kitalu %1$s</string>
+    <string name="wallet_rescanning">inachanganua tena %1$d%%</string>
+    <string name="wallet_syncing">inasawazisha</string>
+    <string name="wallet_limited_suffix">%1$s  ·  huduma finyu</string>
+    <string name="wallet_connecting">inaunganisha…</string>
+    <string name="fiat_approx">≈ %1$s</string>
+
+    <string name="sent_title">Malipo yametumwa</string>
+    <string name="sent_txid">%1$s… · gusa ili kunakili</string>
+
+    <string name="cd_address_qr">msimbo wa QR wa anwani</string>
+    <string name="receive_address_n">anwani #%1$d · gusa ili kunakili</string>
+    <string name="share_address_chooser">Shiriki anwani</string>
+
+    <string name="scan_prompt">Changanua anwani ya malipo</string>
+    <string name="send_sweep">Tuma kiwango cha juu (sweep)</string>
+    <string name="send_alt_coin">= %1$s %2$s</string>
+    <string name="send_alt_sat">= %1$s sat</string>
+    <string name="send_alt_fiat">  ·  %1$s</string>
+    <string name="fee_fast">Haraka</string>
+    <string name="fee_normal">Kawaida</string>
+    <string name="fee_slow">Polepole</string>
+    <string name="send_replay_protect">Ulinzi wa kurudia wa XBT (OP_RETURN ya baiti 100)</string>
+    <string name="send_replay_note">Huongeza ada ya ~110 vB. Si ya kawaida kwenye relay chaguo-msingi ya Bitcoin — sambaza kupitia nodi/huduma inayokubali OP_RETURN kubwa.</string>
+    <string name="send_service_fee">Ada ya huduma: %1$s%% ya kiasi kilichotumwa (chini kabisa %2$d sat) — inasaidia nodi hii inayopangishwa.</string>
+    <string name="cd_amount_unit">kipimo cha kiasi</string>
+    <string name="unit_sat">sat</string>
+
+    <string name="history_empty">bado hakuna miamala</string>
+    <string name="history_send">tuma</string>
+    <string name="history_receive">pokea</string>
+    <string name="history_row_subtitle">%1$s · %2$s…</string>
+    <string name="history_pending">inasubiri</string>
+    <string name="history_conf_n">uthibitisho %1$d</string>
+    <string name="history_confirmed">imethibitishwa</string>
+    <string name="history_hint">gusa muamala ili kuufungua kwenye kivinjari · shikilia ili kunakili id</string>
+
+    <string name="confirm_sweep_title">Thibitisha sweep</string>
+    <string name="confirm_payment_title">Thibitisha malipo</string>
+    <string name="confirm_to">Kwa</string>
+    <string name="confirm_amount">Kiasi</string>
+    <string name="confirm_network_fee">Ada ya mtandao</string>
+    <string name="confirm_network_fee_value">%1$s %2$s · %3$d sat/vB</string>
+    <string name="confirm_service_fee">Ada ya huduma</string>
+    <string name="confirm_change">Chenji</string>
+    <string name="confirm_replay">Ulinzi wa kurudia</string>
+    <string name="confirm_replay_value">imewashwa · OP_RETURN ya baiti 100</string>
+    <string name="confirm_total">Jumla</string>
+    <string name="value_with_fiat">%1$s %2$s  ·  %3$s</string>
+
+    <string name="mnemonic_not_in_list">%1$d hayamo kwenye orodha ya maneno</string>
+    <string name="mnemonic_looks_good">inaonekana sawa</string>
+    <string name="mnemonic_status">%1$s  ·  %2$s</string>
+
+    <string name="error_wallet_max">Unaweza kuweka hadi pochi %1$d kwenye kifaa kimoja.</string>
+    <string name="error_clone_exists">“%1$s” tayari iko kwenye %2$s.</string>
+    <string name="error_lock_setup_failed">usanidi wa kufunga programu umeshindwa</string>
+    <string name="error_enter_amount">weka kiasi</string>
+    <string name="error_no_coins">hakuna sarafu zilizothibitishwa za kutumia</string>
+    <string name="error_open_wallet">haikuwezekana kufungua pochi</string>
+
+    <plurals name="word_count">
+        <item quantity="one">neno %1$d</item>
+        <item quantity="other">maneno %1$d</item>
+    </plurals>
+</resources>

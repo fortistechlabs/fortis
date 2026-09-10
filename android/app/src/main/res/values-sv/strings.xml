@@ -1,0 +1,189 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">fortis</string>
+
+    <string name="action_back">Tillbaka</string>
+    <string name="action_cancel">Avbryt</string>
+    <string name="action_continue">Fortsätt</string>
+    <string name="action_save">Spara</string>
+    <string name="action_done">Klar</string>
+    <string name="action_show">Visa</string>
+    <string name="action_hide">Dölj</string>
+    <string name="action_copy">Kopiera</string>
+    <string name="action_share">Dela</string>
+    <string name="action_open">Öppna</string>
+    <string name="action_remove">Ta bort</string>
+    <string name="action_rename">Byt namn</string>
+    <string name="action_unlock">Lås upp</string>
+    <string name="action_add_wallet">Lägg till plånbok</string>
+    <string name="action_view">Visa</string>
+    <string name="action_refresh">Uppdatera</string>
+    <string name="action_reconnect">Anslut igen</string>
+    <string name="action_review">Granska</string>
+    <string name="action_sign_send">Signera och skicka</string>
+    <string name="action_new_address">Ny adress</string>
+    <string name="action_scan_qr">Skanna QR-kod</string>
+    <string name="action_lock">Lås</string>
+    <string name="action_lock_app">Lås appen</string>
+    <string name="action_copy_xpub">Kopiera xpub</string>
+    <string name="action_recovery_phrase">Återställningsfras</string>
+    <string name="toast_copied">Kopierat</string>
+    <string name="cd_dismiss">Stäng</string>
+
+    <string name="onboard_add_title">Lägg till en plånbok</string>
+    <string name="onboard_tagline">en icke-förvaltande plånbok för Bitcoin XBT och Bitcoin BTC</string>
+    <string name="onboard_create">Skapa en ny plånbok</string>
+    <string name="onboard_restore">Återställ från en återställningsfras</string>
+
+    <string name="gen_title">Lägg till lite slump</string>
+    <string name="gen_body">Din telefon har redan genererat ett säkert frö. Skaka den — eller klottra på ytan — för att blanda in extra entropi från rörelsesensorerna och tidsvariationer. För säkerhets skull.</string>
+    <string name="gen_words_24">24 ord</string>
+    <string name="gen_words_12">12 ord</string>
+    <string name="gen_words_hint">Båda är säkra; 12 är lättare att skriva ner.</string>
+    <string name="gen_pad_hint">skaka, eller klottra här</string>
+    <string name="gen_entropy_full">gott om extra entropi — grundfröet är redan säkert</string>
+    <string name="gen_entropy_partial">~%1$d extra bitar inblandade</string>
+    <string name="gen_generate">Generera plånbok</string>
+
+    <string name="create_phrase_title">Din återställningsfras</string>
+    <string name="create_phrase_body">Skriv ner dessa %1$d ord på papper, offline. Den som har dem kontrollerar dina pengar.</string>
+    <string name="create_passphrase_hint">Ett \"25:e ord\" — en extra hemlighet som inte sparas. Om du anger en behöver du både frasen och den för att återställa. Lämna tomt om du är osäker.</string>
+    <string name="create_ack">Jag har skrivit ner frasen</string>
+
+    <string name="restore_title">Återställ plånbok</string>
+    <string name="restore_body">Ange dina 12 eller 24 ord, åtskilda med mellanslag.</string>
+    <string name="restore_clone_hint">När den lagts till kan du även lista den här plånboken på %1$s via Hantera plånböcker — samma fras, samma adresser.</string>
+    <string name="action_restore">Återställ</string>
+
+    <string name="field_wallet_name">Plånbokens namn</string>
+    <string name="field_passphrase">BIP-39-lösenfras (valfritt)</string>
+    <string name="field_app_password">Applösenord</string>
+    <string name="field_confirm_password">Bekräfta lösenord</string>
+    <string name="field_to_address">Till adress</string>
+    <string name="field_amount">Belopp</string>
+    <string name="field_custom_feerate">anpassad sat/vB (valfritt)</string>
+
+    <string name="reveal_title">Återställningsfras</string>
+    <string name="reveal_warning">Alla som ser dessa ord — plus lösenfrasen, om den är angiven — kan spendera denna plånbok. Titta bara på dem på en privat plats. Skriv aldrig in dem på en webbplats eller i en app. Skärmbilder är blockerade här.</string>
+    <string name="reveal_failed">Det gick inte att dekryptera denna plånbok.</string>
+    <string name="reveal_passphrase_label">BIP-39-lösenfras</string>
+    <string name="reveal_no_passphrase">Ingen BIP-39-lösenfras på denna plånbok.</string>
+
+    <string name="nav_home">Hem</string>
+    <string name="nav_wallet">Plånbok</string>
+    <string name="nav_settings">Inställningar</string>
+    <string name="tab_receive">Ta emot</string>
+    <string name="tab_send">Skicka</string>
+    <string name="tab_history">Historik</string>
+
+    <string name="home_title">Dina plånböcker</string>
+    <string name="home_open">öppen</string>
+    <string name="home_tap_to_open">tryck för att öppna</string>
+    <string name="wallets_max">Högsta antalet på %1$d plånböcker har nåtts.</string>
+
+    <string name="lock_password_prompt">Ange ditt applösenord.</string>
+    <string name="biometric_setup_title">Ställ in applås</string>
+    <string name="biometric_unlock_title">Lås upp Fortis Wallet</string>
+    <string name="biometric_subtitle">Fortis Wallet</string>
+    <string name="biometric_invalidated">Enhetens skärmlås har ändrats, så appen kan inte längre låsas upp här. Installera om och återställ varje plånbok från dess återställningsfras.</string>
+    <string name="lock_choice_use_biometric">Lås appen med fingeravtryck eller PIN-kod</string>
+    <string name="lock_choice_biometric_note">En upplåsning öppnar alla dina plånböcker. Inget lösenord att komma ihåg — enhetens fingeravtryck/ansikte eller skärmlås-PIN släpper in dig.</string>
+    <string name="lock_choice_password_note">Detta lösenord låser upp appen och varje plånbok i den.</string>
+
+    <string name="settings_title">Inställningar</string>
+    <string name="settings_wallets">Plånböcker</string>
+    <string name="settings_security">Säkerhet</string>
+    <string name="settings_connection">Anslutning</string>
+    <string name="settings_app_lock">Applås</string>
+    <string name="lock_mode_biometric">Fingeravtryck / enhetens PIN</string>
+    <string name="lock_mode_password">Lösenord</string>
+    <string name="settings_one_unlock">En upplåsning öppnar varje plånbok i appen.</string>
+    <string name="settings_language">Språk</string>
+    <string name="language_system_default">Systemstandard</string>
+    <string name="settings_status">Status</string>
+    <string name="settings_chain_height">Kedjehöjd</string>
+    <string name="settings_degraded_note">Fortis-tjänsten är inte tillgänglig — använder offentliga blockdata tills vidare. Den växlar tillbaka automatiskt.</string>
+    <string name="settings_version">fortis %1$s</string>
+    <string name="xpub_loading">laddar fortfarande — försök igen</string>
+    <string name="also_add_on">Lägg även till på %1$s</string>
+    <string name="dialog_rename_title">Byt namn på plånbok</string>
+    <string name="dialog_reveal_title">Visa återställningsfrasen för %1$s?</string>
+    <string name="dialog_reveal_body">Återställningsfrasen (och lösenfrasen, om du angav en) är det enda som kan återställa denna plånbok — och alla som har den kan spendera dina pengar. Visa den bara på en privat plats, utan att någon tittar. Nästa skärm blockerar skärmbilder.</string>
+    <string name="dialog_remove_title">Ta bort %1$s?</string>
+    <string name="dialog_remove_body">Detta tar bara bort plånboken från den här appen. Inget ändras på blockkedjan och du kan lägga tillbaka den när som helst med dess återställningsfras (och lösenfras, om du angav en). Se till att frasen är nedskriven.</string>
+
+    <string name="status_offline">offline</string>
+    <string name="status_rescanning">skannar om %1$d%%</string>
+    <string name="status_limited">begränsad tjänst</string>
+    <string name="status_connected">ansluten</string>
+    <string name="status_syncing">synkar</string>
+
+    <string name="wallet_none_open">Ingen plånbok öppen</string>
+    <string name="wallet_choose">Välj en plånbok</string>
+    <string name="wallet_pending">%1$s %2$s väntar</string>
+    <string name="wallet_block">block %1$s</string>
+    <string name="wallet_rescanning">skannar om %1$d%%</string>
+    <string name="wallet_syncing">synkar</string>
+    <string name="wallet_limited_suffix">%1$s  ·  begränsad tjänst</string>
+    <string name="wallet_connecting">ansluter…</string>
+    <string name="fiat_approx">≈ %1$s</string>
+
+    <string name="sent_title">Betalning skickad</string>
+    <string name="sent_txid">%1$s… · tryck för att kopiera</string>
+
+    <string name="cd_address_qr">QR-kod för adress</string>
+    <string name="receive_address_n">adress #%1$d · tryck för att kopiera</string>
+    <string name="share_address_chooser">Dela adress</string>
+
+    <string name="scan_prompt">Skanna en betalningsadress</string>
+    <string name="send_sweep">Skicka maximalt (sweep)</string>
+    <string name="send_alt_coin">= %1$s %2$s</string>
+    <string name="send_alt_sat">= %1$s sat</string>
+    <string name="send_alt_fiat">  ·  %1$s</string>
+    <string name="fee_fast">Snabb</string>
+    <string name="fee_normal">Normal</string>
+    <string name="fee_slow">Långsam</string>
+    <string name="send_replay_protect">XBT-replayskydd (100-byte OP_RETURN)</string>
+    <string name="send_replay_note">Lägger till ~110 vB i avgift. Icke-standard på Bitcoins standardrelä — sänd via en nod/tjänst som accepterar stora OP_RETURN.</string>
+    <string name="send_service_fee">Serviceavgift: %1$s%% av det skickade beloppet (min %2$d sat) — stödjer denna hostade nod.</string>
+    <string name="cd_amount_unit">beloppsenhet</string>
+    <string name="unit_sat">sat</string>
+
+    <string name="history_empty">inga transaktioner än</string>
+    <string name="history_send">skicka</string>
+    <string name="history_receive">ta emot</string>
+    <string name="history_row_subtitle">%1$s · %2$s…</string>
+    <string name="history_pending">väntar</string>
+    <string name="history_conf_n">%1$d bekr.</string>
+    <string name="history_confirmed">bekräftad</string>
+    <string name="history_hint">tryck på en transaktion för att öppna den i utforskaren · håll nedtryckt för att kopiera id:t</string>
+
+    <string name="confirm_sweep_title">Bekräfta sweep</string>
+    <string name="confirm_payment_title">Bekräfta betalning</string>
+    <string name="confirm_to">Till</string>
+    <string name="confirm_amount">Belopp</string>
+    <string name="confirm_network_fee">Nätverksavgift</string>
+    <string name="confirm_network_fee_value">%1$s %2$s · %3$d sat/vB</string>
+    <string name="confirm_service_fee">Serviceavgift</string>
+    <string name="confirm_change">Växel</string>
+    <string name="confirm_replay">Replayskydd</string>
+    <string name="confirm_replay_value">på · 100-byte OP_RETURN</string>
+    <string name="confirm_total">Totalt</string>
+    <string name="value_with_fiat">%1$s %2$s  ·  %3$s</string>
+
+    <string name="mnemonic_not_in_list">%1$d saknas i ordlistan</string>
+    <string name="mnemonic_looks_good">ser bra ut</string>
+    <string name="mnemonic_status">%1$s  ·  %2$s</string>
+
+    <string name="error_wallet_max">Du kan ha upp till %1$d plånböcker på en enhet.</string>
+    <string name="error_clone_exists">”%1$s” finns redan på %2$s.</string>
+    <string name="error_lock_setup_failed">det gick inte att ställa in applås</string>
+    <string name="error_enter_amount">ange ett belopp</string>
+    <string name="error_no_coins">inga bekräftade mynt att spendera</string>
+    <string name="error_open_wallet">det gick inte att öppna plånboken</string>
+
+    <plurals name="word_count">
+        <item quantity="one">%1$d ord</item>
+        <item quantity="other">%1$d ord</item>
+    </plurals>
+</resources>

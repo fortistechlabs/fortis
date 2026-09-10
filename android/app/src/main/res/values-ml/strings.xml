@@ -1,0 +1,189 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">fortis</string>
+
+    <string name="action_back">തിരികെ</string>
+    <string name="action_cancel">റദ്ദാക്കുക</string>
+    <string name="action_continue">തുടരുക</string>
+    <string name="action_save">സംരക്ഷിക്കുക</string>
+    <string name="action_done">പൂർത്തിയായി</string>
+    <string name="action_show">കാണിക്കുക</string>
+    <string name="action_hide">മറയ്ക്കുക</string>
+    <string name="action_copy">പകർത്തുക</string>
+    <string name="action_share">പങ്കിടുക</string>
+    <string name="action_open">തുറക്കുക</string>
+    <string name="action_remove">നീക്കംചെയ്യുക</string>
+    <string name="action_rename">പേരുമാറ്റുക</string>
+    <string name="action_unlock">അൺലോക്ക് ചെയ്യുക</string>
+    <string name="action_add_wallet">വാലറ്റ് ചേർക്കുക</string>
+    <string name="action_view">കാണുക</string>
+    <string name="action_refresh">പുതുക്കുക</string>
+    <string name="action_reconnect">വീണ്ടും കണക്റ്റ് ചെയ്യുക</string>
+    <string name="action_review">അവലോകനം ചെയ്യുക</string>
+    <string name="action_sign_send">ഒപ്പിട്ട് അയയ്ക്കുക</string>
+    <string name="action_new_address">പുതിയ വിലാസം</string>
+    <string name="action_scan_qr">QR കോഡ് സ്കാൻ ചെയ്യുക</string>
+    <string name="action_lock">ലോക്ക് ചെയ്യുക</string>
+    <string name="action_lock_app">ആപ്പ് ലോക്ക് ചെയ്യുക</string>
+    <string name="action_copy_xpub">xpub പകർത്തുക</string>
+    <string name="action_recovery_phrase">വീണ്ടെടുക്കൽ വാക്യം</string>
+    <string name="toast_copied">പകർത്തി</string>
+    <string name="cd_dismiss">നിരാകരിക്കുക</string>
+
+    <string name="onboard_add_title">വാലറ്റ് ചേർക്കുക</string>
+    <string name="onboard_tagline">Bitcoin XBT-നും Bitcoin BTC-നും വേണ്ടിയുള്ള നോൺ-കസ്റ്റോഡിയൽ വാലറ്റ്</string>
+    <string name="onboard_create">പുതിയ വാലറ്റ് സൃഷ്ടിക്കുക</string>
+    <string name="onboard_restore">വീണ്ടെടുക്കൽ വാക്യത്തിൽ നിന്ന് പുനഃസ്ഥാപിക്കുക</string>
+
+    <string name="gen_title">കുറച്ച് ക്രമരാഹിത്യം ചേർക്കുക</string>
+    <string name="gen_body">നിങ്ങളുടെ ഫോൺ ഇതിനകം സുരക്ഷിതമായ സീഡ് സൃഷ്ടിച്ചു. ചലന സെൻസറുകളിൽ നിന്നും സമയ വ്യതിയാനങ്ങളിൽ നിന്നും അധിക എൻട്രോപ്പി കലർത്താൻ അത് കുലുക്കുക — അല്ലെങ്കിൽ പാഡിൽ കുത്തിവരയ്ക്കുക. മുൻകരുതലായി.</string>
+    <string name="gen_words_24">24 വാക്കുകൾ</string>
+    <string name="gen_words_12">12 വാക്കുകൾ</string>
+    <string name="gen_words_hint">രണ്ടും സുരക്ഷിതമാണ്; 12 എഴുതിവയ്ക്കാൻ എളുപ്പമാണ്.</string>
+    <string name="gen_pad_hint">കുലുക്കുക, അല്ലെങ്കിൽ ഇവിടെ കുത്തിവരയ്ക്കുക</string>
+    <string name="gen_entropy_full">ധാരാളം അധിക എൻട്രോപ്പി — അടിസ്ഥാന സീഡ് ഇതിനകം സുരക്ഷിതമാണ്</string>
+    <string name="gen_entropy_partial">~%1$d അധിക ബിറ്റുകൾ കലർത്തി</string>
+    <string name="gen_generate">വാലറ്റ് സൃഷ്ടിക്കുക</string>
+
+    <string name="create_phrase_title">നിങ്ങളുടെ വീണ്ടെടുക്കൽ വാക്യം</string>
+    <string name="create_phrase_body">ഈ %1$d വാക്കുകൾ കടലാസിൽ, ഓഫ്‌ലൈനായി എഴുതുക. ഇവ ഉള്ള ആർക്കും നിങ്ങളുടെ ഫണ്ട് നിയന്ത്രിക്കാം.</string>
+    <string name="create_passphrase_hint">ഒരു «25-ാമത്തെ വാക്ക്» — സംഭരിക്കാത്ത ഒരു അധിക രഹസ്യം. നിങ്ങൾ സജ്ജമാക്കിയാൽ, പുനഃസ്ഥാപിക്കാൻ വാക്യവും ഇതും വേണം. സംശയമുണ്ടെങ്കിൽ ശൂന്യമായി വിടുക.</string>
+    <string name="create_ack">ഞാൻ വാക്യം എഴുതിവച്ചു</string>
+
+    <string name="restore_title">വാലറ്റ് പുനഃസ്ഥാപിക്കുക</string>
+    <string name="restore_body">നിങ്ങളുടെ 12 അല്ലെങ്കിൽ 24 വാക്കുകൾ സ്‌പേസുകളാൽ വേർതിരിച്ച് നൽകുക.</string>
+    <string name="restore_clone_hint">ചേർത്ത ശേഷം «വാലറ്റുകൾ കൈകാര്യം ചെയ്യുക»യിൽ നിന്ന് ഈ വാലറ്റ് %1$s-ലും ലിസ്റ്റ് ചെയ്യാം — അതേ വാക്യം, അതേ വിലാസങ്ങൾ.</string>
+    <string name="action_restore">പുനഃസ്ഥാപിക്കുക</string>
+
+    <string name="field_wallet_name">വാലറ്റ് പേര്</string>
+    <string name="field_passphrase">BIP-39 പാസ്‌ഫ്രെയ്‌സ് (ഓപ്ഷണൽ)</string>
+    <string name="field_app_password">ആപ്പ് പാസ്‌വേഡ്</string>
+    <string name="field_confirm_password">പാസ്‌വേഡ് സ്ഥിരീകരിക്കുക</string>
+    <string name="field_to_address">സ്വീകർത്താവിന്റെ വിലാസം</string>
+    <string name="field_amount">തുക</string>
+    <string name="field_custom_feerate">ഇഷ്‌ടാനുസൃത sat/vB (ഓപ്ഷണൽ)</string>
+
+    <string name="reveal_title">വീണ്ടെടുക്കൽ വാക്യം</string>
+    <string name="reveal_warning">ഈ വാക്കുകൾ — സജ്ജമാക്കിയിട്ടുണ്ടെങ്കിൽ പാസ്‌ഫ്രെയ്‌സും — കാണുന്ന ആർക്കും ഈ വാലറ്റിൽ നിന്ന് ചെലവഴിക്കാം. അവ സ്വകാര്യ സ്ഥലത്ത് മാത്രം നോക്കുക. അവ ഒരിക്കലും വെബ്‌സൈറ്റിലോ ആപ്പിലോ ടൈപ്പ് ചെയ്യരുത്. ഇവിടെ സ്ക്രീൻഷോട്ടുകൾ ബ്ലോക്ക് ചെയ്‌തിരിക്കുന്നു.</string>
+    <string name="reveal_failed">ഈ വാലറ്റ് ഡീക്രിപ്റ്റ് ചെയ്യാനായില്ല.</string>
+    <string name="reveal_passphrase_label">BIP-39 പാസ്‌ഫ്രെയ്‌സ്</string>
+    <string name="reveal_no_passphrase">ഈ വാലറ്റിൽ BIP-39 പാസ്‌ഫ്രെയ്‌സ് ഇല്ല.</string>
+
+    <string name="nav_home">ഹോം</string>
+    <string name="nav_wallet">വാലറ്റ്</string>
+    <string name="nav_settings">ക്രമീകരണങ്ങൾ</string>
+    <string name="tab_receive">സ്വീകരിക്കുക</string>
+    <string name="tab_send">അയയ്ക്കുക</string>
+    <string name="tab_history">ചരിത്രം</string>
+
+    <string name="home_title">നിങ്ങളുടെ വാലറ്റുകൾ</string>
+    <string name="home_open">തുറന്നു</string>
+    <string name="home_tap_to_open">തുറക്കാൻ ടാപ്പ് ചെയ്യുക</string>
+    <string name="wallets_max">%1$d വാലറ്റുകളുടെ പരമാവധി പരിധിയിലെത്തി.</string>
+
+    <string name="lock_password_prompt">നിങ്ങളുടെ ആപ്പ് പാസ്‌വേഡ് നൽകുക.</string>
+    <string name="biometric_setup_title">ആപ്പ് ലോക്ക് സജ്ജമാക്കുക</string>
+    <string name="biometric_unlock_title">Fortis Wallet അൺലോക്ക് ചെയ്യുക</string>
+    <string name="biometric_subtitle">Fortis Wallet</string>
+    <string name="biometric_invalidated">നിങ്ങളുടെ ഉപകരണത്തിന്റെ സ്ക്രീൻ ലോക്ക് മാറി, അതിനാൽ ആപ്പ് ഇവിടെ ഇനി അൺലോക്ക് ചെയ്യാനാവില്ല. വീണ്ടും ഇൻസ്റ്റാൾ ചെയ്‌ത് ഓരോ വാലറ്റും അതിന്റെ വീണ്ടെടുക്കൽ വാക്യത്തിൽ നിന്ന് പുനഃസ്ഥാപിക്കുക.</string>
+    <string name="lock_choice_use_biometric">ആപ്പ് ഫിംഗർപ്രിന്റ് അല്ലെങ്കിൽ PIN ഉപയോഗിച്ച് ലോക്ക് ചെയ്യുക</string>
+    <string name="lock_choice_biometric_note">ഒരു തവണ അൺലോക്ക് ചെയ്യുന്നത് നിങ്ങളുടെ എല്ലാ വാലറ്റുകളും തുറക്കുന്നു. ഓർത്തിരിക്കാൻ പാസ്‌വേഡ് ഇല്ല — നിങ്ങളുടെ ഉപകരണത്തിന്റെ ഫിംഗർപ്രിന്റ്/മുഖം അല്ലെങ്കിൽ സ്ക്രീൻ-ലോക്ക് PIN നിങ്ങളെ അകത്ത് പ്രവേശിപ്പിക്കുന്നു.</string>
+    <string name="lock_choice_password_note">ഈ പാസ്‌വേഡ് ആപ്പും അതിലെ ഓരോ വാലറ്റും അൺലോക്ക് ചെയ്യുന്നു.</string>
+
+    <string name="settings_title">ക്രമീകരണങ്ങൾ</string>
+    <string name="settings_wallets">വാലറ്റുകൾ</string>
+    <string name="settings_security">സുരക്ഷ</string>
+    <string name="settings_connection">കണക്ഷൻ</string>
+    <string name="settings_app_lock">ആപ്പ് ലോക്ക്</string>
+    <string name="lock_mode_biometric">ഫിംഗർപ്രിന്റ് / ഉപകരണ PIN</string>
+    <string name="lock_mode_password">പാസ്‌വേഡ്</string>
+    <string name="settings_one_unlock">ഒരു തവണ അൺലോക്ക് ചെയ്യുന്നത് ആപ്പിലെ ഓരോ വാലറ്റും തുറക്കുന്നു.</string>
+    <string name="settings_language">ഭാഷ</string>
+    <string name="language_system_default">സിസ്റ്റം ഡിഫോൾട്ട്</string>
+    <string name="settings_status">നില</string>
+    <string name="settings_chain_height">ചെയിൻ ഉയരം</string>
+    <string name="settings_degraded_note">fortis സേവനം ലഭ്യമല്ല — തൽക്കാലം പൊതു ബ്ലോക്ക് ഡാറ്റ ഉപയോഗിക്കുന്നു. ഇത് സ്വയമേവ തിരികെ മാറും.</string>
+    <string name="settings_version">fortis %1$s</string>
+    <string name="xpub_loading">ഇപ്പോഴും ലോഡ് ചെയ്യുന്നു — വീണ്ടും ശ്രമിക്കുക</string>
+    <string name="also_add_on">%1$s-ലും ചേർക്കുക</string>
+    <string name="dialog_rename_title">വാലറ്റ് പേരുമാറ്റുക</string>
+    <string name="dialog_reveal_title">%1$s-നായുള്ള വീണ്ടെടുക്കൽ വാക്യം കാണിക്കണോ?</string>
+    <string name="dialog_reveal_body">വീണ്ടെടുക്കൽ വാക്യം (നിങ്ങൾ സജ്ജമാക്കിയെങ്കിൽ പാസ്‌ഫ്രെയ്‌സും) ഈ വാലറ്റ് പുനഃസ്ഥാപിക്കാൻ കഴിയുന്ന ഏക കാര്യമാണ് — അത് ഉള്ള ആർക്കും നിങ്ങളുടെ ഫണ്ട് ചെലവഴിക്കാം. ആരും കാണാത്ത സ്വകാര്യ സ്ഥലത്ത് മാത്രം അത് വെളിപ്പെടുത്തുക. അടുത്ത സ്ക്രീൻ സ്ക്രീൻഷോട്ടുകൾ ബ്ലോക്ക് ചെയ്യുന്നു.</string>
+    <string name="dialog_remove_title">%1$s നീക്കംചെയ്യണോ?</string>
+    <string name="dialog_remove_body">ഇത് ഈ ആപ്പിൽ നിന്ന് മാത്രം വാലറ്റ് നീക്കംചെയ്യുന്നു. ബ്ലോക്ക്‌ചെയിനിൽ ഒന്നും മാറുന്നില്ല, കൂടാതെ അതിന്റെ വീണ്ടെടുക്കൽ വാക്യം (നിങ്ങൾ സജ്ജമാക്കിയെങ്കിൽ പാസ്‌ഫ്രെയ്‌സും) ഉപയോഗിച്ച് എപ്പോൾ വേണമെങ്കിലും ഇത് വീണ്ടും ചേർക്കാം. വാക്യം എഴുതിവച്ചിട്ടുണ്ടെന്ന് ഉറപ്പാക്കുക.</string>
+
+    <string name="status_offline">ഓഫ്‌ലൈൻ</string>
+    <string name="status_rescanning">വീണ്ടും സ്കാൻ ചെയ്യുന്നു %1$d%%</string>
+    <string name="status_limited">പരിമിത സേവനം</string>
+    <string name="status_connected">കണക്റ്റ് ചെയ്‌തു</string>
+    <string name="status_syncing">സമന്വയിപ്പിക്കുന്നു</string>
+
+    <string name="wallet_none_open">ഒരു വാലറ്റും തുറന്നിട്ടില്ല</string>
+    <string name="wallet_choose">ഒരു വാലറ്റ് തിരഞ്ഞെടുക്കുക</string>
+    <string name="wallet_pending">%1$s %2$s തീർപ്പാക്കാത്തത്</string>
+    <string name="wallet_block">ബ്ലോക്ക് %1$s</string>
+    <string name="wallet_rescanning">വീണ്ടും സ്കാൻ ചെയ്യുന്നു %1$d%%</string>
+    <string name="wallet_syncing">സമന്വയിപ്പിക്കുന്നു</string>
+    <string name="wallet_limited_suffix">%1$s  ·  പരിമിത സേവനം</string>
+    <string name="wallet_connecting">കണക്റ്റ് ചെയ്യുന്നു…</string>
+    <string name="fiat_approx">≈ %1$s</string>
+
+    <string name="sent_title">പേയ്‌മെന്റ് അയച്ചു</string>
+    <string name="sent_txid">%1$s… · പകർത്താൻ ടാപ്പ് ചെയ്യുക</string>
+
+    <string name="cd_address_qr">വിലാസത്തിന്റെ QR കോഡ്</string>
+    <string name="receive_address_n">വിലാസം #%1$d · പകർത്താൻ ടാപ്പ് ചെയ്യുക</string>
+    <string name="share_address_chooser">വിലാസം പങ്കിടുക</string>
+
+    <string name="scan_prompt">ഒരു പേയ്‌മെന്റ് വിലാസം സ്കാൻ ചെയ്യുക</string>
+    <string name="send_sweep">പരമാവധി അയയ്ക്കുക (sweep)</string>
+    <string name="send_alt_coin">= %1$s %2$s</string>
+    <string name="send_alt_sat">= %1$s sat</string>
+    <string name="send_alt_fiat">  ·  %1$s</string>
+    <string name="fee_fast">വേഗം</string>
+    <string name="fee_normal">സാധാരണം</string>
+    <string name="fee_slow">പതുക്കെ</string>
+    <string name="send_replay_protect">XBT റീപ്ലേ പരിരക്ഷ (100-ബൈറ്റ് OP_RETURN)</string>
+    <string name="send_replay_note">~110 vB ഫീസ് ചേർക്കുന്നു. ഡിഫോൾട്ട് Bitcoin റിലേയിൽ നിലവാരമില്ലാത്തത് — വലിയ OP_RETURN സ്വീകരിക്കുന്ന നോഡ്/സേവനം വഴി പ്രക്ഷേപണം ചെയ്യുക.</string>
+    <string name="send_service_fee">സേവന ഫീസ്: അയച്ച തുകയുടെ %1$s%% (കുറഞ്ഞത് %2$d sat) — ഇത് ഈ ഹോസ്റ്റ് ചെയ്‌ത നോഡിനെ പിന്തുണയ്ക്കുന്നു.</string>
+    <string name="cd_amount_unit">തുകയുടെ യൂണിറ്റ്</string>
+    <string name="unit_sat">sat</string>
+
+    <string name="history_empty">ഇതുവരെ ഇടപാടുകളൊന്നുമില്ല</string>
+    <string name="history_send">അയയ്ക്കൽ</string>
+    <string name="history_receive">സ്വീകരിക്കൽ</string>
+    <string name="history_row_subtitle">%1$s · %2$s…</string>
+    <string name="history_pending">തീർപ്പാക്കാത്തത്</string>
+    <string name="history_conf_n">%1$d സ്ഥിരീകരണം</string>
+    <string name="history_confirmed">സ്ഥിരീകരിച്ചു</string>
+    <string name="history_hint">ഇടപാട് എക്സ്‌പ്ലോററിൽ തുറക്കാൻ ടാപ്പ് ചെയ്യുക · id പകർത്താൻ അമർത്തിപ്പിടിക്കുക</string>
+
+    <string name="confirm_sweep_title">sweep സ്ഥിരീകരിക്കുക</string>
+    <string name="confirm_payment_title">പേയ്‌മെന്റ് സ്ഥിരീകരിക്കുക</string>
+    <string name="confirm_to">സ്വീകർത്താവ്</string>
+    <string name="confirm_amount">തുക</string>
+    <string name="confirm_network_fee">നെറ്റ്‌വർക്ക് ഫീസ്</string>
+    <string name="confirm_network_fee_value">%1$s %2$s · %3$d sat/vB</string>
+    <string name="confirm_service_fee">സേവന ഫീസ്</string>
+    <string name="confirm_change">ബാക്കി</string>
+    <string name="confirm_replay">റീപ്ലേ പരിരക്ഷ</string>
+    <string name="confirm_replay_value">ഓൺ · 100-ബൈറ്റ് OP_RETURN</string>
+    <string name="confirm_total">ആകെ</string>
+    <string name="value_with_fiat">%1$s %2$s  ·  %3$s</string>
+
+    <string name="mnemonic_not_in_list">%1$d വാക്ക് പട്ടികയിലില്ല</string>
+    <string name="mnemonic_looks_good">ശരിയായി തോന്നുന്നു</string>
+    <string name="mnemonic_status">%1$s  ·  %2$s</string>
+
+    <string name="error_wallet_max">ഒരു ഉപകരണത്തിൽ %1$d വാലറ്റുകൾ വരെ സൂക്ഷിക്കാം.</string>
+    <string name="error_clone_exists">«%1$s» ഇതിനകം %2$s-ൽ ഉണ്ട്.</string>
+    <string name="error_lock_setup_failed">ആപ്പ് ലോക്ക് സജ്ജീകരണം പരാജയപ്പെട്ടു</string>
+    <string name="error_enter_amount">ഒരു തുക നൽകുക</string>
+    <string name="error_no_coins">ചെലവഴിക്കാൻ സ്ഥിരീകരിച്ച കോയിനുകളില്ല</string>
+    <string name="error_open_wallet">വാലറ്റ് തുറക്കാനായില്ല</string>
+
+    <plurals name="word_count">
+        <item quantity="one">%1$d വാക്ക്</item>
+        <item quantity="other">%1$d വാക്കുകൾ</item>
+    </plurals>
+</resources>

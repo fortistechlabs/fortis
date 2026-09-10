@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1024" y2="1024" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#141C31"/>
+      <stop offset="1" stop-color="#080A12"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="512" cy="470" r="580" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#37509A" stop-opacity="0.62"/>
+      <stop offset="0.55" stop-color="#26386A" stop-opacity="0.28"/>
+      <stop offset="1" stop-color="#26386A" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="sh" x1="250" y1="180" x2="790" y2="860" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#B2D0FF"/>
+      <stop offset="1" stop-color="#4A73D0"/>
+    </linearGradient>
+    <clipPath id="gate"><path d="M44,81 V51 a10,10 0 0 1 20,0 V81 Z"/></clipPath>
+  </defs>
+  <rect width="1024" height="1024" fill="url(#bg)"/>
+  <rect width="1024" height="1024" fill="url(#glow)"/>
+  <g transform="translate(-40.9 -18.35) scale(9.7)">
+    <path d="M22,22 h8 v8 h6 v-8 h8 v8 h6 v-8 h8 v8 h6 v-8 h8 v8 h6 v-8 h8 V58 C86,72 73,82 54,89 C35,82 22,72 22,58 Z"
+          fill="url(#sh)" stroke="#22386A" stroke-width="1.4" stroke-linejoin="round"/>
+    <path d="M44,81 V51 a10,10 0 0 1 20,0 V81 Z" fill="#0A0C16"/>
+    <g clip-path="url(#gate)" stroke="#9CC2FF" stroke-width="2" stroke-linecap="round">
+      <path d="M49,49 V82 M54,47 V82 M59,49 V82"/>
+      <path d="M43,56 H65 M43,64 H65 M43,72 H65"/>
+    </g>
+  </g>
+</svg>

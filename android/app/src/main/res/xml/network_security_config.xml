@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Release: HTTPS only. The debug source set overrides this with a config that
+     also allows cleartext to localhost / the emulator host / the dev LAN. -->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false" />
+</network-security-config>

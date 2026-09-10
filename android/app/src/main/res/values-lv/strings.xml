@@ -1,0 +1,190 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">fortis</string>
+
+    <string name="action_back">Atpakaļ</string>
+    <string name="action_cancel">Atcelt</string>
+    <string name="action_continue">Turpināt</string>
+    <string name="action_save">Saglabāt</string>
+    <string name="action_done">Gatavs</string>
+    <string name="action_show">Rādīt</string>
+    <string name="action_hide">Slēpt</string>
+    <string name="action_copy">Kopēt</string>
+    <string name="action_share">Kopīgot</string>
+    <string name="action_open">Atvērt</string>
+    <string name="action_remove">Noņemt</string>
+    <string name="action_rename">Pārdēvēt</string>
+    <string name="action_unlock">Atbloķēt</string>
+    <string name="action_add_wallet">Pievienot maku</string>
+    <string name="action_view">Skatīt</string>
+    <string name="action_refresh">Atsvaidzināt</string>
+    <string name="action_reconnect">Atkārtoti savienot</string>
+    <string name="action_review">Pārskatīt</string>
+    <string name="action_sign_send">Parakstīt un sūtīt</string>
+    <string name="action_new_address">Jauna adrese</string>
+    <string name="action_scan_qr">Skenēt QR kodu</string>
+    <string name="action_lock">Bloķēt</string>
+    <string name="action_lock_app">Bloķēt lietotni</string>
+    <string name="action_copy_xpub">Kopēt xpub</string>
+    <string name="action_recovery_phrase">Atkopšanas frāze</string>
+    <string name="toast_copied">Nokopēts</string>
+    <string name="cd_dismiss">Aizvērt</string>
+
+    <string name="onboard_add_title">Pievienot maku</string>
+    <string name="onboard_tagline">bezturēšanas maks priekš Bitcoin XBT un Bitcoin BTC</string>
+    <string name="onboard_create">Izveidot jaunu maku</string>
+    <string name="onboard_restore">Atjaunot no atkopšanas frāzes</string>
+
+    <string name="gen_title">Pievienojiet nedaudz nejaušības</string>
+    <string name="gen_body">Jūsu tālrunis jau ir izveidojis drošu sēklu. Pakratiet to — vai zīmējiet uz laukuma — lai piejauktu papildu entropiju no kustību sensoriem un laika svārstībām. Katram gadījumam.</string>
+    <string name="gen_words_24">24 vārdi</string>
+    <string name="gen_words_12">12 vārdi</string>
+    <string name="gen_words_hint">Abas ir drošas; 12 ir vieglāk pierakstīt.</string>
+    <string name="gen_pad_hint">pakratiet vai zīmējiet šeit</string>
+    <string name="gen_entropy_full">daudz papildu entropijas — pamatsēkla jau ir droša</string>
+    <string name="gen_entropy_partial">piejaukti ~%1$d papildu biti</string>
+    <string name="gen_generate">Ģenerēt maku</string>
+
+    <string name="create_phrase_title">Jūsu atkopšanas frāze</string>
+    <string name="create_phrase_body">Uzrakstiet šos %1$d vārdus uz papīra, bezsaistē. Ikviens, kam tie ir, kontrolē jūsu līdzekļus.</string>
+    <string name="create_passphrase_hint">„25. vārds” — papildu noslēpums, kas netiek saglabāts. Ja to iestatāt, atjaunošanai nepieciešama gan frāze, gan tas. Ja neesat pārliecināts, atstājiet tukšu.</string>
+    <string name="create_ack">Esmu pierakstījis frāzi</string>
+
+    <string name="restore_title">Atjaunot maku</string>
+    <string name="restore_body">Ievadiet savus 12 vai 24 vārdus, atdalītus ar atstarpēm.</string>
+    <string name="restore_clone_hint">Pēc pievienošanas šo maku varat iekļaut arī pakalpojumā %1$s sadaļā „Pārvaldīt makus” — tā pati frāze, tās pašas adreses.</string>
+    <string name="action_restore">Atjaunot</string>
+
+    <string name="field_wallet_name">Maka nosaukums</string>
+    <string name="field_passphrase">BIP-39 paroles frāze (neobligāti)</string>
+    <string name="field_app_password">Lietotnes parole</string>
+    <string name="field_confirm_password">Apstiprināt paroli</string>
+    <string name="field_to_address">Saņēmēja adrese</string>
+    <string name="field_amount">Summa</string>
+    <string name="field_custom_feerate">pielāgots sat/vB (neobligāti)</string>
+
+    <string name="reveal_title">Atkopšanas frāze</string>
+    <string name="reveal_warning">Ikviens, kas redz šos vārdus — un paroles frāzi, ja tā iestatīta — var iztērēt šo maku. Skatieties uz tiem tikai privātā vietā. Nekad neievadiet tos vietnē vai lietotnē. Ekrānuzņēmumi šeit ir bloķēti.</string>
+    <string name="reveal_failed">Neizdevās atšifrēt šo maku.</string>
+    <string name="reveal_passphrase_label">BIP-39 paroles frāze</string>
+    <string name="reveal_no_passphrase">Šim makam nav BIP-39 paroles frāzes.</string>
+
+    <string name="nav_home">Sākums</string>
+    <string name="nav_wallet">Maks</string>
+    <string name="nav_settings">Iestatījumi</string>
+    <string name="tab_receive">Saņemt</string>
+    <string name="tab_send">Sūtīt</string>
+    <string name="tab_history">Vēsture</string>
+
+    <string name="home_title">Jūsu maki</string>
+    <string name="home_open">atvērts</string>
+    <string name="home_tap_to_open">pieskarieties, lai atvērtu</string>
+    <string name="wallets_max">Sasniegts maksimālais %1$d maku skaits.</string>
+
+    <string name="lock_password_prompt">Ievadiet lietotnes paroli.</string>
+    <string name="biometric_setup_title">Iestatīt lietotnes bloķēšanu</string>
+    <string name="biometric_unlock_title">Atbloķēt Fortis Wallet</string>
+    <string name="biometric_subtitle">Fortis Wallet</string>
+    <string name="biometric_invalidated">Jūsu ierīces ekrāna bloķēšana mainījās, tāpēc lietotni šeit vairs nevar atbloķēt. Instalējiet to atkārtoti un atjaunojiet katru maku no tā atkopšanas frāzes.</string>
+    <string name="lock_choice_use_biometric">Bloķēt lietotni ar pirksta nospiedumu vai PIN</string>
+    <string name="lock_choice_biometric_note">Viena atbloķēšana atver visus jūsu makus. Nav jāatceras parole — iekšā jūs ielaiž ierīces pirksta nospiedums/seja vai ekrāna bloķēšanas PIN.</string>
+    <string name="lock_choice_password_note">Šī parole atbloķē lietotni un katru maku tajā.</string>
+
+    <string name="settings_title">Iestatījumi</string>
+    <string name="settings_wallets">Maki</string>
+    <string name="settings_security">Drošība</string>
+    <string name="settings_connection">Savienojums</string>
+    <string name="settings_app_lock">Lietotnes bloķēšana</string>
+    <string name="lock_mode_biometric">Pirksta nospiedums / ierīces PIN</string>
+    <string name="lock_mode_password">Parole</string>
+    <string name="settings_one_unlock">Viena atbloķēšana atver katru maku lietotnē.</string>
+    <string name="settings_language">Valoda</string>
+    <string name="language_system_default">Sistēmas noklusējums</string>
+    <string name="settings_status">Statuss</string>
+    <string name="settings_chain_height">Ķēdes augstums</string>
+    <string name="settings_degraded_note">Pakalpojums fortis nav sasniedzams — pagaidām tiek izmantoti publiski bloku dati. Tas automātiski pārslēgsies atpakaļ.</string>
+    <string name="settings_version">fortis %1$s</string>
+    <string name="xpub_loading">joprojām ielādējas — mēģiniet vēlreiz</string>
+    <string name="also_add_on">Pievienot arī pakalpojumā %1$s</string>
+    <string name="dialog_rename_title">Pārdēvēt maku</string>
+    <string name="dialog_reveal_title">Rādīt %1$s atkopšanas frāzi?</string>
+    <string name="dialog_reveal_body">Atkopšanas frāze (un paroles frāze, ja to iestatījāt) ir vienīgais, kas var atjaunot šo maku — un ikviens, kam tā ir, var iztērēt jūsu līdzekļus. Atklājiet to tikai privātā vietā, kad neviens neskatās. Nākamais ekrāns bloķē ekrānuzņēmumus.</string>
+    <string name="dialog_remove_title">Noņemt %1$s?</string>
+    <string name="dialog_remove_body">Tas noņem maku tikai no šīs lietotnes. Blokķēdē nekas nemainās, un jūs varat to jebkurā laikā pievienot atpakaļ, izmantojot tā atkopšanas frāzi (un paroles frāzi, ja to iestatījāt). Pārliecinieties, ka frāze ir pierakstīta.</string>
+
+    <string name="status_offline">bezsaistē</string>
+    <string name="status_rescanning">atkārtota skenēšana %1$d%%</string>
+    <string name="status_limited">ierobežots pakalpojums</string>
+    <string name="status_connected">savienots</string>
+    <string name="status_syncing">sinhronizē</string>
+
+    <string name="wallet_none_open">Nav atvērts neviens maks</string>
+    <string name="wallet_choose">Izvēlieties maku</string>
+    <string name="wallet_pending">%1$s %2$s gaidīšanā</string>
+    <string name="wallet_block">bloks %1$s</string>
+    <string name="wallet_rescanning">atkārtota skenēšana %1$d%%</string>
+    <string name="wallet_syncing">sinhronizē</string>
+    <string name="wallet_limited_suffix">%1$s  ·  ierobežots pakalpojums</string>
+    <string name="wallet_connecting">savienojas…</string>
+    <string name="fiat_approx">≈ %1$s</string>
+
+    <string name="sent_title">Maksājums nosūtīts</string>
+    <string name="sent_txid">%1$s… · pieskarieties, lai kopētu</string>
+
+    <string name="cd_address_qr">adreses QR kods</string>
+    <string name="receive_address_n">adrese Nr. %1$d · pieskarieties, lai kopētu</string>
+    <string name="share_address_chooser">Kopīgot adresi</string>
+
+    <string name="scan_prompt">Skenējiet maksājuma adresi</string>
+    <string name="send_sweep">Sūtīt maksimumu (sweep)</string>
+    <string name="send_alt_coin">= %1$s %2$s</string>
+    <string name="send_alt_sat">= %1$s sat</string>
+    <string name="send_alt_fiat">  ·  %1$s</string>
+    <string name="fee_fast">Ātri</string>
+    <string name="fee_normal">Normāli</string>
+    <string name="fee_slow">Lēni</string>
+    <string name="send_replay_protect">XBT aizsardzība pret atkārtošanu (100 baitu OP_RETURN)</string>
+    <string name="send_replay_note">Pievieno ~110 vB maksas. Nestandarta noklusējuma Bitcoin relejā — pārraidiet, izmantojot mezglu/pakalpojumu, kas pieņem lielus OP_RETURN.</string>
+    <string name="send_service_fee">Pakalpojuma maksa: %1$s%% no nosūtītās summas (min. %2$d sat) — atbalsta šo mitināto mezglu.</string>
+    <string name="cd_amount_unit">summas vienība</string>
+    <string name="unit_sat">sat</string>
+
+    <string name="history_empty">vēl nav darījumu</string>
+    <string name="history_send">sūtīšana</string>
+    <string name="history_receive">saņemšana</string>
+    <string name="history_row_subtitle">%1$s · %2$s…</string>
+    <string name="history_pending">gaidīšanā</string>
+    <string name="history_conf_n">%1$d apst.</string>
+    <string name="history_confirmed">apstiprināts</string>
+    <string name="history_hint">pieskarieties darījumam, lai atvērtu to pārlūkā · turiet nospiestu, lai kopētu id</string>
+
+    <string name="confirm_sweep_title">Apstiprināt sweep</string>
+    <string name="confirm_payment_title">Apstiprināt maksājumu</string>
+    <string name="confirm_to">Kam</string>
+    <string name="confirm_amount">Summa</string>
+    <string name="confirm_network_fee">Tīkla maksa</string>
+    <string name="confirm_network_fee_value">%1$s %2$s · %3$d sat/vB</string>
+    <string name="confirm_service_fee">Pakalpojuma maksa</string>
+    <string name="confirm_change">Atlikums</string>
+    <string name="confirm_replay">Aizsardzība pret atkārtošanu</string>
+    <string name="confirm_replay_value">ieslēgts · 100 baitu OP_RETURN</string>
+    <string name="confirm_total">Kopā</string>
+    <string name="value_with_fiat">%1$s %2$s  ·  %3$s</string>
+
+    <string name="mnemonic_not_in_list">%1$d nav vārdu sarakstā</string>
+    <string name="mnemonic_looks_good">izskatās labi</string>
+    <string name="mnemonic_status">%1$s  ·  %2$s</string>
+
+    <string name="error_wallet_max">Vienā ierīcē varat glabāt līdz %1$d makiem.</string>
+    <string name="error_clone_exists">„%1$s” jau ir pakalpojumā %2$s.</string>
+    <string name="error_lock_setup_failed">neizdevās iestatīt lietotnes bloķēšanu</string>
+    <string name="error_enter_amount">ievadiet summu</string>
+    <string name="error_no_coins">nav apstiprinātu monētu, ko tērēt</string>
+    <string name="error_open_wallet">neizdevās atvērt maku</string>
+
+    <plurals name="word_count">
+        <item quantity="zero">%1$d vārdu</item>
+        <item quantity="one">%1$d vārds</item>
+        <item quantity="other">%1$d vārdi</item>
+    </plurals>
+</resources>

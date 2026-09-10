@@ -1,0 +1,189 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">fortis</string>
+
+    <string name="action_back">ተመለስ</string>
+    <string name="action_cancel">ሰርዝ</string>
+    <string name="action_continue">ቀጥል</string>
+    <string name="action_save">አስቀምጥ</string>
+    <string name="action_done">ተከናውኗል</string>
+    <string name="action_show">አሳይ</string>
+    <string name="action_hide">ደብቅ</string>
+    <string name="action_copy">ቅዳ</string>
+    <string name="action_share">አጋራ</string>
+    <string name="action_open">ክፈት</string>
+    <string name="action_remove">አስወግድ</string>
+    <string name="action_rename">ዳግም ሰይም</string>
+    <string name="action_unlock">ክፈት</string>
+    <string name="action_add_wallet">ዋሌት አክል</string>
+    <string name="action_view">እይ</string>
+    <string name="action_refresh">አድስ</string>
+    <string name="action_reconnect">እንደገና አገናኝ</string>
+    <string name="action_review">ገምግም</string>
+    <string name="action_sign_send">ፈርመህ ላክ</string>
+    <string name="action_new_address">አዲስ አድራሻ</string>
+    <string name="action_scan_qr">የQR ኮድ ቃኝ</string>
+    <string name="action_lock">ቆልፍ</string>
+    <string name="action_lock_app">መተግበሪያውን ቆልፍ</string>
+    <string name="action_copy_xpub">xpub ቅዳ</string>
+    <string name="action_recovery_phrase">የመልሶ ማግኛ ሐረግ</string>
+    <string name="toast_copied">ተቀድቷል</string>
+    <string name="cd_dismiss">አሰናብት</string>
+
+    <string name="onboard_add_title">ዋሌት አክል</string>
+    <string name="onboard_tagline">ለ Bitcoin XBT እና ለ Bitcoin BTC የማይያዝ ዋሌት</string>
+    <string name="onboard_create">አዲስ ዋሌት ፍጠር</string>
+    <string name="onboard_restore">ከመልሶ ማግኛ ሐረግ መልሰህ ወደነበረበት አድርስ</string>
+
+    <string name="gen_title">ትንሽ የዘፈቀደነት አክል</string>
+    <string name="gen_body">ስልክህ ቀድሞውኑ ደህንነቱ የተጠበቀ ዘር አመንጭቷል። ከእንቅስቃሴ ዳሳሾች እና ከጊዜ መዋዠቅ ተጨማሪ ኢንትሮፒ ለማደባለቅ አናውጠው — ወይም በሰሌዳው ላይ ጫር። ለጥንቃቄ ያህል።</string>
+    <string name="gen_words_24">24 ቃላት</string>
+    <string name="gen_words_12">12 ቃላት</string>
+    <string name="gen_words_hint">ሁለቱም ደህንነታቸው የተጠበቀ ነው፤ 12 ለመጻፍ ቀላል ነው።</string>
+    <string name="gen_pad_hint">አናውጥ ወይም እዚህ ጫር</string>
+    <string name="gen_entropy_full">በቂ ተጨማሪ ኢንትሮፒ — መሠረታዊው ዘር ቀድሞውኑ ደህንነቱ የተጠበቀ ነው</string>
+    <string name="gen_entropy_partial">~%1$d ተጨማሪ ቢቶች ተደባልቀዋል</string>
+    <string name="gen_generate">ዋሌት አመንጭ</string>
+
+    <string name="create_phrase_title">የመልሶ ማግኛ ሐረግህ</string>
+    <string name="create_phrase_body">እነዚህን %1$d ቃላት በወረቀት ላይ፣ ከመስመር ውጭ ጻፍ። እነሱን የያዘ ማንኛውም ሰው ገንዘብህን ይቆጣጠራል።</string>
+    <string name="create_passphrase_hint">«25ኛ ቃል» — የማይቀመጥ ተጨማሪ ሚስጥር። ካዘጋጀህ ለመመለስ ሐረጉንም ይህንንም ትፈልጋለህ። እርግጠኛ ካልሆንክ ባዶ ተወው።</string>
+    <string name="create_ack">ሐረጉን ጽፌዋለሁ</string>
+
+    <string name="restore_title">ዋሌት መልሰህ ወደነበረበት አድርስ</string>
+    <string name="restore_body">12 ወይም 24 ቃላትህን በክፍተቶች ለይተህ አስገባ።</string>
+    <string name="restore_clone_hint">ከተጨመረ በኋላ ይህን ዋሌት ከ«ዋሌቶችን አስተዳድር» ወደ %1$s ላይም ማስፈር ትችላለህ — ተመሳሳይ ሐረግ፣ ተመሳሳይ አድራሻዎች።</string>
+    <string name="action_restore">መልሰህ አድርስ</string>
+
+    <string name="field_wallet_name">የዋሌት ስም</string>
+    <string name="field_passphrase">BIP-39 የይለፍ ሐረግ (አማራጭ)</string>
+    <string name="field_app_password">የመተግበሪያ የይለፍ ቃል</string>
+    <string name="field_confirm_password">የይለፍ ቃል አረጋግጥ</string>
+    <string name="field_to_address">የተቀባይ አድራሻ</string>
+    <string name="field_amount">መጠን</string>
+    <string name="field_custom_feerate">ብጁ sat/vB (አማራጭ)</string>
+
+    <string name="reveal_title">የመልሶ ማግኛ ሐረግ</string>
+    <string name="reveal_warning">እነዚህን ቃላት — ከተዘጋጀ የይለፍ ሐረጉንም — የሚያይ ማንኛውም ሰው ከዚህ ዋሌት ማውጣት ይችላል። እነሱን በግል ቦታ ብቻ ተመልከት። በፍጹም ወደ ድር ጣቢያ ወይም መተግበሪያ አትጻፋቸው። እዚህ ቅጽበታዊ ገጽ እይታዎች ታግደዋል።</string>
+    <string name="reveal_failed">ይህን ዋሌት መፍታት አልተቻለም።</string>
+    <string name="reveal_passphrase_label">BIP-39 የይለፍ ሐረግ</string>
+    <string name="reveal_no_passphrase">በዚህ ዋሌት ላይ BIP-39 የይለፍ ሐረግ የለም።</string>
+
+    <string name="nav_home">መነሻ</string>
+    <string name="nav_wallet">ዋሌት</string>
+    <string name="nav_settings">ቅንብሮች</string>
+    <string name="tab_receive">ተቀበል</string>
+    <string name="tab_send">ላክ</string>
+    <string name="tab_history">ታሪክ</string>
+
+    <string name="home_title">ዋሌቶችህ</string>
+    <string name="home_open">ክፍት</string>
+    <string name="home_tap_to_open">ለመክፈት ንካ</string>
+    <string name="wallets_max">ከፍተኛው %1$d ዋሌቶች ደርሷል።</string>
+
+    <string name="lock_password_prompt">የመተግበሪያ የይለፍ ቃልህን አስገባ።</string>
+    <string name="biometric_setup_title">የመተግበሪያ ቁልፍ አዘጋጅ</string>
+    <string name="biometric_unlock_title">Fortis Wallet ክፈት</string>
+    <string name="biometric_subtitle">Fortis Wallet</string>
+    <string name="biometric_invalidated">የመሣሪያህ የማያ ገጽ ቁልፍ ተቀይሯል፣ ስለዚህ መተግበሪያው ከዚህ ከእንግዲህ ሊከፈት አይችልም። እንደገና ጫን እና እያንዳንዱን ዋሌት ከመልሶ ማግኛ ሐረጉ መልሰህ አድርስ።</string>
+    <string name="lock_choice_use_biometric">መተግበሪያውን በጣት አሻራ ወይም PIN ቆልፍ</string>
+    <string name="lock_choice_biometric_note">አንድ ጊዜ መክፈት ሁሉንም ዋሌቶችህን ይከፍታል። የሚታወስ የይለፍ ቃል የለም — የመሣሪያህ የጣት አሻራ/ፊት ወይም የማያ ገጽ ቁልፍ PIN ያስገባሃል።</string>
+    <string name="lock_choice_password_note">ይህ የይለፍ ቃል መተግበሪያውን እና በውስጡ ያለውን እያንዳንዱን ዋሌት ይከፍታል።</string>
+
+    <string name="settings_title">ቅንብሮች</string>
+    <string name="settings_wallets">ዋሌቶች</string>
+    <string name="settings_security">ደህንነት</string>
+    <string name="settings_connection">ግንኙነት</string>
+    <string name="settings_app_lock">የመተግበሪያ ቁልፍ</string>
+    <string name="lock_mode_biometric">የጣት አሻራ / የመሣሪያ PIN</string>
+    <string name="lock_mode_password">የይለፍ ቃል</string>
+    <string name="settings_one_unlock">አንድ ጊዜ መክፈት በመተግበሪያው ውስጥ ያለውን እያንዳንዱን ዋሌት ይከፍታል።</string>
+    <string name="settings_language">ቋንቋ</string>
+    <string name="language_system_default">የስርዓት ነባሪ</string>
+    <string name="settings_status">ሁኔታ</string>
+    <string name="settings_chain_height">የሰንሰለት ቁመት</string>
+    <string name="settings_degraded_note">የ fortis አገልግሎት ተደራሽ አይደለም — ለአሁኑ ይፋዊ የብሎክ ውሂብ በመጠቀም ላይ። በራስ-ሰር ወደ ኋላ ይመለሳል።</string>
+    <string name="settings_version">fortis %1$s</string>
+    <string name="xpub_loading">አሁንም በመጫን ላይ — እንደገና ሞክር</string>
+    <string name="also_add_on">በ %1$s ላይም አክል</string>
+    <string name="dialog_rename_title">ዋሌት ዳግም ሰይም</string>
+    <string name="dialog_reveal_title">ለ %1$s የመልሶ ማግኛ ሐረግ ይታይ?</string>
+    <string name="dialog_reveal_body">የመልሶ ማግኛ ሐረግ (እና ካዘጋጀህ የይለፍ ሐረግ) ይህን ዋሌት መልሶ ማግኘት የሚችለው ብቸኛው ነገር ነው — እና የያዘው ማንኛውም ሰው ገንዘብህን ማውጣት ይችላል። ማንም ሳያይ በግል ቦታ ብቻ ግለጠው። ቀጣዩ ማያ ገጽ ቅጽበታዊ ገጽ እይታዎችን ያግዳል።</string>
+    <string name="dialog_remove_title">%1$s ይወገድ?</string>
+    <string name="dialog_remove_body">ይህ ዋሌቱን ከዚህ መተግበሪያ ብቻ ያስወግዳል። በብሎክቼይን ላይ ምንም አይቀየርም፣ እና በመልሶ ማግኛ ሐረጉ (እና ካዘጋጀህ የይለፍ ሐረግ) በማንኛውም ጊዜ መልሰህ ማከል ትችላለህ። ሐረጉ መጻፉን አረጋግጥ።</string>
+
+    <string name="status_offline">ከመስመር ውጭ</string>
+    <string name="status_rescanning">እንደገና በመቃኘት ላይ %1$d%%</string>
+    <string name="status_limited">የተገደበ አገልግሎት</string>
+    <string name="status_connected">ተገናኝቷል</string>
+    <string name="status_syncing">በማመሳሰል ላይ</string>
+
+    <string name="wallet_none_open">ምንም ዋሌት አልተከፈተም</string>
+    <string name="wallet_choose">ዋሌት ምረጥ</string>
+    <string name="wallet_pending">%1$s %2$s በመጠባበቅ ላይ</string>
+    <string name="wallet_block">ብሎክ %1$s</string>
+    <string name="wallet_rescanning">እንደገና በመቃኘት ላይ %1$d%%</string>
+    <string name="wallet_syncing">በማመሳሰል ላይ</string>
+    <string name="wallet_limited_suffix">%1$s  ·  የተገደበ አገልግሎት</string>
+    <string name="wallet_connecting">በመገናኘት ላይ…</string>
+    <string name="fiat_approx">≈ %1$s</string>
+
+    <string name="sent_title">ክፍያ ተልኳል</string>
+    <string name="sent_txid">%1$s… · ለመቅዳት ንካ</string>
+
+    <string name="cd_address_qr">የአድራሻ QR ኮድ</string>
+    <string name="receive_address_n">አድራሻ #%1$d · ለመቅዳት ንካ</string>
+    <string name="share_address_chooser">አድራሻ አጋራ</string>
+
+    <string name="scan_prompt">የክፍያ አድራሻ ቃኝ</string>
+    <string name="send_sweep">ከፍተኛውን ላክ (sweep)</string>
+    <string name="send_alt_coin">= %1$s %2$s</string>
+    <string name="send_alt_sat">= %1$s sat</string>
+    <string name="send_alt_fiat">  ·  %1$s</string>
+    <string name="fee_fast">ፈጣን</string>
+    <string name="fee_normal">መደበኛ</string>
+    <string name="fee_slow">ዝግተኛ</string>
+    <string name="send_replay_protect">XBT የድጋሚ ጥበቃ (100-ባይት OP_RETURN)</string>
+    <string name="send_replay_note">~110 vB ክፍያ ይጨምራል። በነባሪ የ Bitcoin ማስተላለፊያ ላይ ደረጃውን ያልጠበቀ ነው — ትልቅ OP_RETURN የሚቀበል ኖድ/አገልግሎት በኩል አሰራጭ።</string>
+    <string name="send_service_fee">የአገልግሎት ክፍያ፦ ከተላከው መጠን %1$s%% (ቢያንስ %2$d sat) — ይህን የተስተናገደ ኖድ ይደግፋል።</string>
+    <string name="cd_amount_unit">የመጠን አሃድ</string>
+    <string name="unit_sat">sat</string>
+
+    <string name="history_empty">እስካሁን ምንም ግብይቶች የሉም</string>
+    <string name="history_send">ላክ</string>
+    <string name="history_receive">ተቀበል</string>
+    <string name="history_row_subtitle">%1$s · %2$s…</string>
+    <string name="history_pending">በመጠባበቅ ላይ</string>
+    <string name="history_conf_n">%1$d ማረጋገጫ</string>
+    <string name="history_confirmed">ተረጋግጧል</string>
+    <string name="history_hint">ግብይቱን በአሳሽ ውስጥ ለመክፈት ንካ · id ለመቅዳት ተጭነህ ያዝ</string>
+
+    <string name="confirm_sweep_title">sweep አረጋግጥ</string>
+    <string name="confirm_payment_title">ክፍያ አረጋግጥ</string>
+    <string name="confirm_to">ለ</string>
+    <string name="confirm_amount">መጠን</string>
+    <string name="confirm_network_fee">የአውታረ መረብ ክፍያ</string>
+    <string name="confirm_network_fee_value">%1$s %2$s · %3$d sat/vB</string>
+    <string name="confirm_service_fee">የአገልግሎት ክፍያ</string>
+    <string name="confirm_change">ተመላሽ</string>
+    <string name="confirm_replay">የድጋሚ ጥበቃ</string>
+    <string name="confirm_replay_value">በርቷል · 100-ባይት OP_RETURN</string>
+    <string name="confirm_total">ጠቅላላ</string>
+    <string name="value_with_fiat">%1$s %2$s  ·  %3$s</string>
+
+    <string name="mnemonic_not_in_list">%1$d በቃላት ዝርዝር ውስጥ የለም</string>
+    <string name="mnemonic_looks_good">ጥሩ ይመስላል</string>
+    <string name="mnemonic_status">%1$s  ·  %2$s</string>
+
+    <string name="error_wallet_max">በአንድ መሣሪያ ላይ እስከ %1$d ዋሌቶች መያዝ ትችላለህ።</string>
+    <string name="error_clone_exists">«%1$s» ቀድሞውኑ በ %2$s ላይ ነው።</string>
+    <string name="error_lock_setup_failed">የመተግበሪያ ቁልፍ ማዋቀር አልተሳካም</string>
+    <string name="error_enter_amount">መጠን አስገባ</string>
+    <string name="error_no_coins">ለማውጣት የተረጋገጡ ሳንቲሞች የሉም</string>
+    <string name="error_open_wallet">ዋሌቱን መክፈት አልተቻለም</string>
+
+    <plurals name="word_count">
+        <item quantity="one">%1$d ቃል</item>
+        <item quantity="other">%1$d ቃላት</item>
+    </plurals>
+</resources>

@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Debug only. HTTPS everywhere except local dev hosts, so the wallet can reach
+     a plaintext fortisd / fortis-edge on regtest. Never ships in release. -->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false" />
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="true">10.0.2.2</domain>   <!-- emulator → host -->
+        <domain includeSubdomains="true">127.0.0.1</domain>
+        <domain includeSubdomains="true">localhost</domain>
+        <domain includeSubdomains="true">192.168.0.34</domain>  <!-- this PC on the LAN; update if DHCP changes it -->
+    </domain-config>
+</network-security-config>

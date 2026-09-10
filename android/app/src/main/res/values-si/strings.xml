@@ -1,0 +1,189 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">fortis</string>
+
+    <string name="action_back">ආපසු</string>
+    <string name="action_cancel">අවලංගු කරන්න</string>
+    <string name="action_continue">ඉදිරියට</string>
+    <string name="action_save">සුරකින්න</string>
+    <string name="action_done">නිමයි</string>
+    <string name="action_show">පෙන්වන්න</string>
+    <string name="action_hide">සඟවන්න</string>
+    <string name="action_copy">පිටපත් කරන්න</string>
+    <string name="action_share">බෙදාගන්න</string>
+    <string name="action_open">විවෘත කරන්න</string>
+    <string name="action_remove">ඉවත් කරන්න</string>
+    <string name="action_rename">නැවත නම් කරන්න</string>
+    <string name="action_unlock">අගුළු අරින්න</string>
+    <string name="action_add_wallet">පසුම්බිය එක් කරන්න</string>
+    <string name="action_view">බලන්න</string>
+    <string name="action_refresh">නැවුම් කරන්න</string>
+    <string name="action_reconnect">නැවත සම්බන්ධ වන්න</string>
+    <string name="action_review">සමාලෝචනය කරන්න</string>
+    <string name="action_sign_send">අත්සන් කර යවන්න</string>
+    <string name="action_new_address">නව ලිපිනය</string>
+    <string name="action_scan_qr">QR කේතය ස්කෑන් කරන්න</string>
+    <string name="action_lock">අගුළු දමන්න</string>
+    <string name="action_lock_app">යෙදුම අගුළු දමන්න</string>
+    <string name="action_copy_xpub">xpub පිටපත් කරන්න</string>
+    <string name="action_recovery_phrase">ප්‍රතිසාධන වාක්‍ය ඛණ්ඩය</string>
+    <string name="toast_copied">පිටපත් විය</string>
+    <string name="cd_dismiss">ඉවත් කරන්න</string>
+
+    <string name="onboard_add_title">පසුම්බියක් එක් කරන්න</string>
+    <string name="onboard_tagline">Bitcoin XBT සහ Bitcoin BTC සඳහා භාරකාරී නොවන පසුම්බියක්</string>
+    <string name="onboard_create">නව පසුම්බියක් සාදන්න</string>
+    <string name="onboard_restore">ප්‍රතිසාධන වාක්‍ය ඛණ්ඩයකින් ප්‍රතිසාධනය කරන්න</string>
+
+    <string name="gen_title">තරමක් අහඹුබව එක් කරන්න</string>
+    <string name="gen_body">ඔබේ දුරකථනය දැනටමත් ආරක්ෂිත බීජයක් සාදා ඇත. චලන සංවේදක සහ කාල උච්චාවචනවලින් අමතර එන්ට්‍රොපිය මිශ්‍ර කිරීමට එය සොලවන්න — නැතහොත් පෑඩ් එකේ අඳින්න. ආරක්ෂාව සඳහා.</string>
+    <string name="gen_words_24">වචන 24</string>
+    <string name="gen_words_12">වචන 12</string>
+    <string name="gen_words_hint">දෙකම ආරක්ෂිතයි; 12 ලිවීම පහසුය.</string>
+    <string name="gen_pad_hint">සොලවන්න, නැතහොත් මෙහි අඳින්න</string>
+    <string name="gen_entropy_full">අමතර එන්ට්‍රොපිය බහුලයි — මූලික බීජය දැනටමත් ආරක්ෂිතයි</string>
+    <string name="gen_entropy_partial">~%1$d අමතර බිට් මිශ්‍ර විය</string>
+    <string name="gen_generate">පසුම්බිය සාදන්න</string>
+
+    <string name="create_phrase_title">ඔබේ ප්‍රතිසාධන වාක්‍ය ඛණ්ඩය</string>
+    <string name="create_phrase_body">මෙම වචන %1$d කඩදාසියක, නොබැඳිව ලියන්න. ඒවා ඇති ඕනෑම කෙනෙකුට ඔබේ අරමුදල් පාලනය කළ හැක.</string>
+    <string name="create_passphrase_hint">«25 වැනි වචනය» — ගබඩා නොවන අමතර රහසක්. ඔබ එය සකසන්නේ නම්, ප්‍රතිසාධනයට වාක්‍ය ඛණ්ඩය සහ මෙයද අවශ්‍යයි. විශ්වාස නැත්නම් හිස්ව තබන්න.</string>
+    <string name="create_ack">මම වාක්‍ය ඛණ්ඩය ලියා ගත්තා</string>
+
+    <string name="restore_title">පසුම්බිය ප්‍රතිසාධනය කරන්න</string>
+    <string name="restore_body">ඔබේ වචන 12 හෝ 24, හිස්තැන්වලින් වෙන් කර ඇතුළත් කරන්න.</string>
+    <string name="restore_clone_hint">එක් කිරීමෙන් පසු «පසුම්බි කළමනාකරණය»න් මෙම පසුම්බිය %1$s හිද ලැයිස්තුගත කළ හැක — එම වාක්‍ය ඛණ්ඩය, එම ලිපින.</string>
+    <string name="action_restore">ප්‍රතිසාධනය කරන්න</string>
+
+    <string name="field_wallet_name">පසුම්බියේ නම</string>
+    <string name="field_passphrase">BIP-39 මුරපද වැකිය (විකල්ප)</string>
+    <string name="field_app_password">යෙදුම් මුරපදය</string>
+    <string name="field_confirm_password">මුරපදය තහවුරු කරන්න</string>
+    <string name="field_to_address">ලබන්නාගේ ලිපිනය</string>
+    <string name="field_amount">මුදල</string>
+    <string name="field_custom_feerate">අභිරුචි sat/vB (විකල්ප)</string>
+
+    <string name="reveal_title">ප්‍රතිසාධන වාක්‍ය ඛණ්ඩය</string>
+    <string name="reveal_warning">මෙම වචන — සකසා ඇත්නම් මුරපද වැකියද — දකින ඕනෑම කෙනෙකුට මෙම පසුම්බියෙන් වියදම් කළ හැක. ඒවා පෞද්ගලික ස්ථානයක පමණක් බලන්න. ඒවා කිසිවිටෙක වෙබ් අඩවියක හෝ යෙදුමක ටයිප් නොකරන්න. මෙහි තිර රුප ගැනීම් අවහිර කර ඇත.</string>
+    <string name="reveal_failed">මෙම පසුම්බිය විකේතනය කළ නොහැකි විය.</string>
+    <string name="reveal_passphrase_label">BIP-39 මුරපද වැකිය</string>
+    <string name="reveal_no_passphrase">මෙම පසුම්බියේ BIP-39 මුරපද වැකියක් නැත.</string>
+
+    <string name="nav_home">මුල් පිටුව</string>
+    <string name="nav_wallet">පසුම්බිය</string>
+    <string name="nav_settings">සැකසීම්</string>
+    <string name="tab_receive">ලබාගන්න</string>
+    <string name="tab_send">යවන්න</string>
+    <string name="tab_history">ඉතිහාසය</string>
+
+    <string name="home_title">ඔබේ පසුම්බි</string>
+    <string name="home_open">විවෘතයි</string>
+    <string name="home_tap_to_open">විවෘත කිරීමට තට්ටු කරන්න</string>
+    <string name="wallets_max">පසුම්බි %1$d ක උපරිමයට ළඟා විය.</string>
+
+    <string name="lock_password_prompt">ඔබේ යෙදුම් මුරපදය ඇතුළත් කරන්න.</string>
+    <string name="biometric_setup_title">යෙදුම් අගුල සකසන්න</string>
+    <string name="biometric_unlock_title">Fortis Wallet අගුළු අරින්න</string>
+    <string name="biometric_subtitle">Fortis Wallet</string>
+    <string name="biometric_invalidated">ඔබේ උපාංගයේ තිර අගුල වෙනස් විය, එබැවින් යෙදුම මෙහි තවදුරටත් අගුළු ඇරිය නොහැක. නැවත ස්ථාපනය කර සෑම පසුම්බියක්ම එහි ප්‍රතිසාධන වාක්‍ය ඛණ්ඩයෙන් ප්‍රතිසාධනය කරන්න.</string>
+    <string name="lock_choice_use_biometric">යෙදුම ඇඟිලි සලකුණෙන් හෝ PIN එකෙන් අගුළු දමන්න</string>
+    <string name="lock_choice_biometric_note">එක් වරක් අගුළු ඇරීමෙන් ඔබේ සියලුම පසුම්බි විවෘත වේ. මතක තබාගැනීමට මුරපදයක් නැත — ඔබේ උපාංගයේ ඇඟිලි සලකුණ/මුහුණ හෝ තිර අගුලේ PIN ඔබව ඇතුළට ගනී.</string>
+    <string name="lock_choice_password_note">මෙම මුරපදය යෙදුම සහ එහි සෑම පසුම්බියක්ම අගුළු අරියි.</string>
+
+    <string name="settings_title">සැකසීම්</string>
+    <string name="settings_wallets">පසුම්බි</string>
+    <string name="settings_security">ආරක්ෂාව</string>
+    <string name="settings_connection">සම්බන්ධතාව</string>
+    <string name="settings_app_lock">යෙදුම් අගුල</string>
+    <string name="lock_mode_biometric">ඇඟිලි සලකුණ / උපාංග PIN</string>
+    <string name="lock_mode_password">මුරපදය</string>
+    <string name="settings_one_unlock">එක් වරක් අගුළු ඇරීමෙන් යෙදුමේ සෑම පසුම්බියක්ම විවෘත වේ.</string>
+    <string name="settings_language">භාෂාව</string>
+    <string name="language_system_default">පද්ධති පෙරනිමිය</string>
+    <string name="settings_status">තත්ත්වය</string>
+    <string name="settings_chain_height">දාම උස</string>
+    <string name="settings_degraded_note">fortis සේවාවට ළඟා විය නොහැක — දැනට පොදු බ්ලොක් දත්ත භාවිතා කරයි. එය ස්වයංක්‍රීයව නැවත මාරු වේ.</string>
+    <string name="settings_version">fortis %1$s</string>
+    <string name="xpub_loading">තවම පූරණය වෙමින් — නැවත උත්සාහ කරන්න</string>
+    <string name="also_add_on">%1$s හිද එක් කරන්න</string>
+    <string name="dialog_rename_title">පසුම්බිය නැවත නම් කරන්න</string>
+    <string name="dialog_reveal_title">%1$s සඳහා ප්‍රතිසාධන වාක්‍ය ඛණ්ඩය පෙන්වන්නද?</string>
+    <string name="dialog_reveal_body">ප්‍රතිසාධන වාක්‍ය ඛණ්ඩය (සහ ඔබ සකසා ඇත්නම් මුරපද වැකිය) මෙම පසුම්බිය ප්‍රතිසාධනය කළ හැකි එකම දෙය වේ — එය ඇති ඕනෑම කෙනෙකුට ඔබේ අරමුදල් වියදම් කළ හැක. එය කිසිවෙකු නොබලන පෞද්ගලික ස්ථානයක පමණක් හෙළි කරන්න. ඊළඟ තිරය තිර රුප ගැනීම් අවහිර කරයි.</string>
+    <string name="dialog_remove_title">%1$s ඉවත් කරන්නද?</string>
+    <string name="dialog_remove_body">මෙය මෙම යෙදුමෙන් පමණක් පසුම්බිය ඉවත් කරයි. බ්ලොක්චේන් හි කිසිවක් වෙනස් නොවේ, තවද ඔබට එහි ප්‍රතිසාධන වාක්‍ය ඛණ්ඩය (සහ සකසා ඇත්නම් මුරපද වැකිය) සමඟ ඕනෑම වේලාවක එය නැවත එක් කළ හැක. වාක්‍ය ඛණ්ඩය ලියා ඇති බව සහතික කරගන්න.</string>
+
+    <string name="status_offline">නොබැඳි</string>
+    <string name="status_rescanning">නැවත ස්කෑන් වෙමින් %1$d%%</string>
+    <string name="status_limited">සීමිත සේවාව</string>
+    <string name="status_connected">සම්බන්ධයි</string>
+    <string name="status_syncing">සමමුහූර්ත වෙමින්</string>
+
+    <string name="wallet_none_open">පසුම්බියක් විවෘත නැත</string>
+    <string name="wallet_choose">පසුම්බියක් තෝරන්න</string>
+    <string name="wallet_pending">%1$s %2$s පොරොත්තුවෙන්</string>
+    <string name="wallet_block">බ්ලොක් %1$s</string>
+    <string name="wallet_rescanning">නැවත ස්කෑන් වෙමින් %1$d%%</string>
+    <string name="wallet_syncing">සමමුහූර්ත වෙමින්</string>
+    <string name="wallet_limited_suffix">%1$s  ·  සීමිත සේවාව</string>
+    <string name="wallet_connecting">සම්බන්ධ වෙමින්…</string>
+    <string name="fiat_approx">≈ %1$s</string>
+
+    <string name="sent_title">ගෙවීම යවන ලදී</string>
+    <string name="sent_txid">%1$s… · පිටපත් කිරීමට තට්ටු කරන්න</string>
+
+    <string name="cd_address_qr">ලිපිනයේ QR කේතය</string>
+    <string name="receive_address_n">ලිපිනය #%1$d · පිටපත් කිරීමට තට්ටු කරන්න</string>
+    <string name="share_address_chooser">ලිපිනය බෙදාගන්න</string>
+
+    <string name="scan_prompt">ගෙවීම් ලිපිනයක් ස්කෑන් කරන්න</string>
+    <string name="send_sweep">උපරිමය යවන්න (sweep)</string>
+    <string name="send_alt_coin">= %1$s %2$s</string>
+    <string name="send_alt_sat">= %1$s sat</string>
+    <string name="send_alt_fiat">  ·  %1$s</string>
+    <string name="fee_fast">වේගවත්</string>
+    <string name="fee_normal">සාමාන්‍ය</string>
+    <string name="fee_slow">මන්දගාමී</string>
+    <string name="send_replay_protect">XBT නැවත ධාවන ආරක්ෂාව (බයිට් 100 OP_RETURN)</string>
+    <string name="send_replay_note">~110 vB ගාස්තුවක් එක් කරයි. පෙරනිමි Bitcoin රිලේ හි සම්මත නොවේ — විශාල OP_RETURN පිළිගන්නා node/සේවාවක් හරහා විකාශනය කරන්න.</string>
+    <string name="send_service_fee">සේවා ගාස්තුව: යවන ලද මුදලෙන් %1$s%% (අවම %2$d sat) — මෙය මෙම සත්කාරක node ට සහාය වේ.</string>
+    <string name="cd_amount_unit">මුදල් ඒකකය</string>
+    <string name="unit_sat">sat</string>
+
+    <string name="history_empty">තවම ගනුදෙනු නැත</string>
+    <string name="history_send">යැවීම</string>
+    <string name="history_receive">ලැබීම</string>
+    <string name="history_row_subtitle">%1$s · %2$s…</string>
+    <string name="history_pending">පොරොත්තුවෙන්</string>
+    <string name="history_conf_n">තහවුරු %1$d</string>
+    <string name="history_confirmed">තහවුරු කළා</string>
+    <string name="history_hint">ගනුදෙනුව එක්ස්ප්ලෝරර් හි විවෘත කිරීමට තට්ටු කරන්න · id පිටපත් කිරීමට තද කර අල්ලාගන්න</string>
+
+    <string name="confirm_sweep_title">sweep තහවුරු කරන්න</string>
+    <string name="confirm_payment_title">ගෙවීම තහවුරු කරන්න</string>
+    <string name="confirm_to">වෙත</string>
+    <string name="confirm_amount">මුදල</string>
+    <string name="confirm_network_fee">ජාල ගාස්තුව</string>
+    <string name="confirm_network_fee_value">%1$s %2$s · %3$d sat/vB</string>
+    <string name="confirm_service_fee">සේවා ගාස්තුව</string>
+    <string name="confirm_change">ඉතිරිය</string>
+    <string name="confirm_replay">නැවත ධාවන ආරක්ෂාව</string>
+    <string name="confirm_replay_value">ක්‍රියාත්මකයි · බයිට් 100 OP_RETURN</string>
+    <string name="confirm_total">එකතුව</string>
+    <string name="value_with_fiat">%1$s %2$s  ·  %3$s</string>
+
+    <string name="mnemonic_not_in_list">%1$d ක් වචන ලැයිස්තුවේ නැත</string>
+    <string name="mnemonic_looks_good">හොඳින් පෙනේ</string>
+    <string name="mnemonic_status">%1$s  ·  %2$s</string>
+
+    <string name="error_wallet_max">ඔබට එක් උපාංගයක පසුම්බි %1$d ක් දක්වා තබාගත හැක.</string>
+    <string name="error_clone_exists">«%1$s» දැනටමත් %2$s හි ඇත.</string>
+    <string name="error_lock_setup_failed">යෙදුම් අගුල සැකසීම අසාර්ථක විය</string>
+    <string name="error_enter_amount">මුදලක් ඇතුළත් කරන්න</string>
+    <string name="error_no_coins">වියදම් කිරීමට තහවුරු කළ කාසි නැත</string>
+    <string name="error_open_wallet">පසුම්බිය විවෘත කළ නොහැකි විය</string>
+
+    <plurals name="word_count">
+        <item quantity="one">වචන %1$d</item>
+        <item quantity="other">වචන %1$d</item>
+    </plurals>
+</resources>

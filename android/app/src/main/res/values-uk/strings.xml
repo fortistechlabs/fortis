@@ -1,0 +1,191 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">fortis</string>
+
+    <string name="action_back">Назад</string>
+    <string name="action_cancel">Скасувати</string>
+    <string name="action_continue">Продовжити</string>
+    <string name="action_save">Зберегти</string>
+    <string name="action_done">Готово</string>
+    <string name="action_show">Показати</string>
+    <string name="action_hide">Сховати</string>
+    <string name="action_copy">Копіювати</string>
+    <string name="action_share">Поділитися</string>
+    <string name="action_open">Відкрити</string>
+    <string name="action_remove">Видалити</string>
+    <string name="action_rename">Перейменувати</string>
+    <string name="action_unlock">Розблокувати</string>
+    <string name="action_add_wallet">Додати гаманець</string>
+    <string name="action_view">Відкрити</string>
+    <string name="action_refresh">Оновити</string>
+    <string name="action_reconnect">Перепідключитися</string>
+    <string name="action_review">Перевірити</string>
+    <string name="action_sign_send">Підписати й надіслати</string>
+    <string name="action_new_address">Нова адреса</string>
+    <string name="action_scan_qr">Сканувати QR-код</string>
+    <string name="action_lock">Заблокувати</string>
+    <string name="action_lock_app">Заблокувати застосунок</string>
+    <string name="action_copy_xpub">Скопіювати xpub</string>
+    <string name="action_recovery_phrase">Фраза відновлення</string>
+    <string name="toast_copied">Скопійовано</string>
+    <string name="cd_dismiss">Закрити</string>
+
+    <string name="onboard_add_title">Додати гаманець</string>
+    <string name="onboard_tagline">некастодіальний гаманець для Bitcoin XBT та Bitcoin BTC</string>
+    <string name="onboard_create">Створити новий гаманець</string>
+    <string name="onboard_restore">Відновити з фрази відновлення</string>
+
+    <string name="gen_title">Додайте трохи випадковості</string>
+    <string name="gen_body">Ваш телефон уже згенерував надійний сід. Потрусіть його — або помалюйте на полі — щоб додати додаткову ентропію з датчиків руху та часових коливань. Про всяк випадок.</string>
+    <string name="gen_words_24">24 слова</string>
+    <string name="gen_words_12">12 слів</string>
+    <string name="gen_words_hint">Обидва варіанти безпечні; 12 легше записати.</string>
+    <string name="gen_pad_hint">потрусіть або помалюйте тут</string>
+    <string name="gen_entropy_full">достатньо додаткової ентропії — базовий сід уже надійний</string>
+    <string name="gen_entropy_partial">додано ~%1$d додаткових біт</string>
+    <string name="gen_generate">Згенерувати гаманець</string>
+
+    <string name="create_phrase_title">Ваша фраза відновлення</string>
+    <string name="create_phrase_body">Запишіть ці %1$d слів на папері, офлайн. Той, хто їх має, розпоряджається вашими коштами.</string>
+    <string name="create_passphrase_hint">«25-те слово» — додатковий секрет, який не зберігається. Якщо його встановити, для відновлення знадобляться і фраза, і воно. Залиште порожнім, якщо не впевнені.</string>
+    <string name="create_ack">Я записав(-ла) фразу</string>
+
+    <string name="restore_title">Відновити гаманець</string>
+    <string name="restore_body">Введіть 12 або 24 слова через пробіл.</string>
+    <string name="restore_clone_hint">Після додавання ви також можете завести цей гаманець у %1$s через «Керування гаманцями» — та сама фраза, ті самі адреси.</string>
+    <string name="action_restore">Відновити</string>
+
+    <string name="field_wallet_name">Назва гаманця</string>
+    <string name="field_passphrase">Пароль-фраза BIP-39 (необовʼязково)</string>
+    <string name="field_app_password">Пароль застосунку</string>
+    <string name="field_confirm_password">Підтвердіть пароль</string>
+    <string name="field_to_address">Адреса отримувача</string>
+    <string name="field_amount">Сума</string>
+    <string name="field_custom_feerate">власне значення sat/vB (необовʼязково)</string>
+
+    <string name="reveal_title">Фраза відновлення</string>
+    <string name="reveal_warning">Будь-хто, хто побачить ці слова — і пароль-фразу, якщо її встановлено — зможе витратити кошти цього гаманця. Дивіться на них лише в приватному місці. Ніколи не вводьте їх на сайтах чи в застосунках. Тут знімки екрана заблоковано.</string>
+    <string name="reveal_failed">Не вдалося розшифрувати цей гаманець.</string>
+    <string name="reveal_passphrase_label">Пароль-фраза BIP-39</string>
+    <string name="reveal_no_passphrase">У цього гаманця немає пароль-фрази BIP-39.</string>
+
+    <string name="nav_home">Головна</string>
+    <string name="nav_wallet">Гаманець</string>
+    <string name="nav_settings">Налаштування</string>
+    <string name="tab_receive">Отримати</string>
+    <string name="tab_send">Надіслати</string>
+    <string name="tab_history">Історія</string>
+
+    <string name="home_title">Ваші гаманці</string>
+    <string name="home_open">відкрито</string>
+    <string name="home_tap_to_open">торкніться, щоб відкрити</string>
+    <string name="wallets_max">Досягнуто межі в %1$d гаманців.</string>
+
+    <string name="lock_password_prompt">Введіть пароль застосунку.</string>
+    <string name="biometric_setup_title">Налаштування блокування застосунку</string>
+    <string name="biometric_unlock_title">Розблокувати Fortis Wallet</string>
+    <string name="biometric_subtitle">Fortis Wallet</string>
+    <string name="biometric_invalidated">Блокування екрана вашого пристрою змінилося, тож застосунок більше не можна розблокувати тут. Перевстановіть і відновіть кожен гаманець з його фрази відновлення.</string>
+    <string name="lock_choice_use_biometric">Блокувати застосунок відбитком або PIN-кодом</string>
+    <string name="lock_choice_biometric_note">Одне розблокування відкриває всі ваші гаманці. Не треба памʼятати пароль — вхід за відбитком/обличчям або PIN-кодом блокування екрана.</string>
+    <string name="lock_choice_password_note">Цей пароль розблоковує застосунок і кожен гаманець у ньому.</string>
+
+    <string name="settings_title">Налаштування</string>
+    <string name="settings_wallets">Гаманці</string>
+    <string name="settings_security">Безпека</string>
+    <string name="settings_connection">Підключення</string>
+    <string name="settings_app_lock">Блокування застосунку</string>
+    <string name="lock_mode_biometric">Відбиток / PIN пристрою</string>
+    <string name="lock_mode_password">Пароль</string>
+    <string name="settings_one_unlock">Одне розблокування відкриває кожен гаманець у застосунку.</string>
+    <string name="settings_language">Мова</string>
+    <string name="language_system_default">Системна за замовчуванням</string>
+    <string name="settings_status">Статус</string>
+    <string name="settings_chain_height">Висота ланцюга</string>
+    <string name="settings_degraded_note">Сервіс fortis недоступний — поки що використовуються публічні дані блоків. Перемикання назад відбудеться автоматично.</string>
+    <string name="settings_version">fortis %1$s</string>
+    <string name="xpub_loading">ще завантажується — повторіть</string>
+    <string name="also_add_on">Також додати в %1$s</string>
+    <string name="dialog_rename_title">Перейменувати гаманець</string>
+    <string name="dialog_reveal_title">Показати фразу відновлення для %1$s?</string>
+    <string name="dialog_reveal_body">Фраза відновлення (і пароль-фраза, якщо ви її встановили) — єдине, чим можна відновити цей гаманець, і будь-хто, хто її має, може витратити ваші кошти. Показуйте її лише в приватному місці, щоб ніхто не бачив. Наступний екран блокує знімки екрана.</string>
+    <string name="dialog_remove_title">Видалити %1$s?</string>
+    <string name="dialog_remove_body">Це лише видаляє гаманець із застосунку. У блокчейні нічого не змінюється, і ви можете додати його знову будь-коли за фразою відновлення (і пароль-фразою, якщо її встановлено). Переконайтеся, що фразу записано.</string>
+
+    <string name="status_offline">офлайн</string>
+    <string name="status_rescanning">повторне сканування %1$d%%</string>
+    <string name="status_limited">обмежений сервіс</string>
+    <string name="status_connected">підключено</string>
+    <string name="status_syncing">синхронізація</string>
+
+    <string name="wallet_none_open">Гаманець не відкрито</string>
+    <string name="wallet_choose">Виберіть гаманець</string>
+    <string name="wallet_pending">%1$s %2$s в очікуванні</string>
+    <string name="wallet_block">блок %1$s</string>
+    <string name="wallet_rescanning">повторне сканування %1$d%%</string>
+    <string name="wallet_syncing">синхронізація</string>
+    <string name="wallet_limited_suffix">%1$s  ·  обмежений сервіс</string>
+    <string name="wallet_connecting">підключення…</string>
+    <string name="fiat_approx">≈ %1$s</string>
+
+    <string name="sent_title">Платіж надіслано</string>
+    <string name="sent_txid">%1$s… · торкніться, щоб скопіювати</string>
+
+    <string name="cd_address_qr">QR-код адреси</string>
+    <string name="receive_address_n">адреса №%1$d · торкніться, щоб скопіювати</string>
+    <string name="share_address_chooser">Поділитися адресою</string>
+
+    <string name="scan_prompt">Відскануйте платіжну адресу</string>
+    <string name="send_sweep">Надіслати максимум (світ)</string>
+    <string name="send_alt_coin">= %1$s %2$s</string>
+    <string name="send_alt_sat">= %1$s sat</string>
+    <string name="send_alt_fiat">  ·  %1$s</string>
+    <string name="fee_fast">Швидко</string>
+    <string name="fee_normal">Звичайно</string>
+    <string name="fee_slow">Повільно</string>
+    <string name="send_replay_protect">Захист від повтору XBT (OP_RETURN 100 байтів)</string>
+    <string name="send_replay_note">Додає ~110 vB комісії. Нестандартно для стандартного relay Bitcoin — транслюйте через вузол/сервіс, що приймає великі OP_RETURN.</string>
+    <string name="send_service_fee">Сервісна комісія: %1$s%% від суми надсилання (мін. %2$d sat) — підтримує цей розміщений вузол.</string>
+    <string name="cd_amount_unit">одиниця суми</string>
+    <string name="unit_sat">sat</string>
+
+    <string name="history_empty">транзакцій поки немає</string>
+    <string name="history_send">надсилання</string>
+    <string name="history_receive">отримання</string>
+    <string name="history_row_subtitle">%1$s · %2$s…</string>
+    <string name="history_pending">в очікуванні</string>
+    <string name="history_conf_n">%1$d підтв.</string>
+    <string name="history_confirmed">підтверджена</string>
+    <string name="history_hint">торкніться транзакції, щоб відкрити її в оглядачі · утримуйте, щоб скопіювати id</string>
+
+    <string name="confirm_sweep_title">Підтвердьте світ</string>
+    <string name="confirm_payment_title">Підтвердьте платіж</string>
+    <string name="confirm_to">Кому</string>
+    <string name="confirm_amount">Сума</string>
+    <string name="confirm_network_fee">Комісія мережі</string>
+    <string name="confirm_network_fee_value">%1$s %2$s · %3$d sat/vB</string>
+    <string name="confirm_service_fee">Сервісна комісія</string>
+    <string name="confirm_change">Решта</string>
+    <string name="confirm_replay">Захист від повтору</string>
+    <string name="confirm_replay_value">увімк. · OP_RETURN 100 байтів</string>
+    <string name="confirm_total">Разом</string>
+    <string name="value_with_fiat">%1$s %2$s  ·  %3$s</string>
+
+    <string name="mnemonic_not_in_list">%1$d не зі списку слів</string>
+    <string name="mnemonic_looks_good">усе гаразд</string>
+    <string name="mnemonic_status">%1$s  ·  %2$s</string>
+
+    <string name="error_wallet_max">На одному пристрої можна зберігати до %1$d гаманців.</string>
+    <string name="error_clone_exists">«%1$s» уже є в %2$s.</string>
+    <string name="error_lock_setup_failed">не вдалося налаштувати блокування застосунку</string>
+    <string name="error_enter_amount">введіть суму</string>
+    <string name="error_no_coins">немає підтверджених монет для витрати</string>
+    <string name="error_open_wallet">не вдалося відкрити гаманець</string>
+
+    <plurals name="word_count">
+        <item quantity="one">%1$d слово</item>
+        <item quantity="few">%1$d слова</item>
+        <item quantity="many">%1$d слів</item>
+        <item quantity="other">%1$d слова</item>
+    </plurals>
+</resources>

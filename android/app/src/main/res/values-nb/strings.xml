@@ -1,0 +1,189 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">fortis</string>
+
+    <string name="action_back">Tilbake</string>
+    <string name="action_cancel">Avbryt</string>
+    <string name="action_continue">Fortsett</string>
+    <string name="action_save">Lagre</string>
+    <string name="action_done">Ferdig</string>
+    <string name="action_show">Vis</string>
+    <string name="action_hide">Skjul</string>
+    <string name="action_copy">Kopier</string>
+    <string name="action_share">Del</string>
+    <string name="action_open">Åpne</string>
+    <string name="action_remove">Fjern</string>
+    <string name="action_rename">Gi nytt navn</string>
+    <string name="action_unlock">Lås opp</string>
+    <string name="action_add_wallet">Legg til lommebok</string>
+    <string name="action_view">Vis</string>
+    <string name="action_refresh">Oppdater</string>
+    <string name="action_reconnect">Koble til på nytt</string>
+    <string name="action_review">Se gjennom</string>
+    <string name="action_sign_send">Signer og send</string>
+    <string name="action_new_address">Ny adresse</string>
+    <string name="action_scan_qr">Skann QR-kode</string>
+    <string name="action_lock">Lås</string>
+    <string name="action_lock_app">Lås appen</string>
+    <string name="action_copy_xpub">Kopier xpub</string>
+    <string name="action_recovery_phrase">Gjenopprettingsfrase</string>
+    <string name="toast_copied">Kopiert</string>
+    <string name="cd_dismiss">Lukk</string>
+
+    <string name="onboard_add_title">Legg til en lommebok</string>
+    <string name="onboard_tagline">en ikke-forvaltet lommebok for Bitcoin XBT og Bitcoin BTC</string>
+    <string name="onboard_create">Opprett en ny lommebok</string>
+    <string name="onboard_restore">Gjenopprett fra en gjenopprettingsfrase</string>
+
+    <string name="gen_title">Legg til litt tilfeldighet</string>
+    <string name="gen_body">Telefonen din har allerede generert et sikkert frø. Rist den — eller rabl på feltet — for å blande inn ekstra entropi fra bevegelsessensorene og tidsvariasjoner. For sikkerhets skyld.</string>
+    <string name="gen_words_24">24 ord</string>
+    <string name="gen_words_12">12 ord</string>
+    <string name="gen_words_hint">Begge er sikre; 12 er lettere å skrive ned.</string>
+    <string name="gen_pad_hint">rist, eller rabl her</string>
+    <string name="gen_entropy_full">rikelig med ekstra entropi — grunnfrøet er allerede sikkert</string>
+    <string name="gen_entropy_partial">~%1$d ekstra bit blandet inn</string>
+    <string name="gen_generate">Generer lommebok</string>
+
+    <string name="create_phrase_title">Gjenopprettingsfrasen din</string>
+    <string name="create_phrase_body">Skriv disse %1$d ordene ned på papir, frakoblet. Alle som har dem, kontrollerer midlene dine.</string>
+    <string name="create_passphrase_hint">Et \"25. ord\" — en ekstra hemmelighet som ikke lagres. Setter du en, trenger du både frasen og denne for å gjenopprette. La stå tomt hvis du er usikker.</string>
+    <string name="create_ack">Jeg har skrevet ned frasen</string>
+
+    <string name="restore_title">Gjenopprett lommebok</string>
+    <string name="restore_body">Skriv inn de 12 eller 24 ordene dine, atskilt med mellomrom.</string>
+    <string name="restore_clone_hint">Etter at den er lagt til, kan du også vise denne lommeboken på %1$s fra Administrer lommebøker — samme frase, samme adresser.</string>
+    <string name="action_restore">Gjenopprett</string>
+
+    <string name="field_wallet_name">Lommeboknavn</string>
+    <string name="field_passphrase">BIP-39-passfrase (valgfritt)</string>
+    <string name="field_app_password">App-passord</string>
+    <string name="field_confirm_password">Bekreft passord</string>
+    <string name="field_to_address">Til-adresse</string>
+    <string name="field_amount">Beløp</string>
+    <string name="field_custom_feerate">egendefinert sat/vB (valgfritt)</string>
+
+    <string name="reveal_title">Gjenopprettingsfrase</string>
+    <string name="reveal_warning">Alle som ser disse ordene — pluss passfrasen, hvis den er satt — kan bruke denne lommeboken. Se bare på dem et privat sted. Skriv dem aldri inn på et nettsted eller i en app. Skjermbilder er blokkert her.</string>
+    <string name="reveal_failed">Kunne ikke dekryptere denne lommeboken.</string>
+    <string name="reveal_passphrase_label">BIP-39-passfrase</string>
+    <string name="reveal_no_passphrase">Ingen BIP-39-passfrase på denne lommeboken.</string>
+
+    <string name="nav_home">Hjem</string>
+    <string name="nav_wallet">Lommebok</string>
+    <string name="nav_settings">Innstillinger</string>
+    <string name="tab_receive">Motta</string>
+    <string name="tab_send">Send</string>
+    <string name="tab_history">Historikk</string>
+
+    <string name="home_title">Lommebøkene dine</string>
+    <string name="home_open">åpen</string>
+    <string name="home_tap_to_open">trykk for å åpne</string>
+    <string name="wallets_max">Maksimalt %1$d lommebøker er nådd.</string>
+
+    <string name="lock_password_prompt">Skriv inn app-passordet ditt.</string>
+    <string name="biometric_setup_title">Sett opp app-lås</string>
+    <string name="biometric_unlock_title">Lås opp Fortis Wallet</string>
+    <string name="biometric_subtitle">Fortis Wallet</string>
+    <string name="biometric_invalidated">Skjermlåsen på enheten din er endret, så appen kan ikke lenger låses opp her. Installer på nytt og gjenopprett hver lommebok fra gjenopprettingsfrasen.</string>
+    <string name="lock_choice_use_biometric">Lås appen med fingeravtrykk eller PIN-kode</string>
+    <string name="lock_choice_biometric_note">Én opplåsing åpner alle lommebøkene dine. Ingen passord å huske — enhetens fingeravtrykk/ansikt eller skjermlås-PIN slipper deg inn.</string>
+    <string name="lock_choice_password_note">Dette passordet låser opp appen og hver lommebok i den.</string>
+
+    <string name="settings_title">Innstillinger</string>
+    <string name="settings_wallets">Lommebøker</string>
+    <string name="settings_security">Sikkerhet</string>
+    <string name="settings_connection">Tilkobling</string>
+    <string name="settings_app_lock">App-lås</string>
+    <string name="lock_mode_biometric">Fingeravtrykk / enhets-PIN</string>
+    <string name="lock_mode_password">Passord</string>
+    <string name="settings_one_unlock">Én opplåsing åpner hver lommebok i appen.</string>
+    <string name="settings_language">Språk</string>
+    <string name="language_system_default">Systemstandard</string>
+    <string name="settings_status">Status</string>
+    <string name="settings_chain_height">Kjedehøyde</string>
+    <string name="settings_degraded_note">Fortis-tjenesten er utilgjengelig — bruker offentlige blokkdata inntil videre. Den bytter tilbake automatisk.</string>
+    <string name="settings_version">fortis %1$s</string>
+    <string name="xpub_loading">laster fortsatt — prøv igjen</string>
+    <string name="also_add_on">Legg også til på %1$s</string>
+    <string name="dialog_rename_title">Gi lommeboken nytt navn</string>
+    <string name="dialog_reveal_title">Vise gjenopprettingsfrasen for %1$s?</string>
+    <string name="dialog_reveal_body">Gjenopprettingsfrasen (og passfrasen, hvis du satte en) er det eneste som kan gjenopprette denne lommeboken — og alle som har den, kan bruke midlene dine. Vis den bare et privat sted, uten at noen ser på. Neste skjerm blokkerer skjermbilder.</string>
+    <string name="dialog_remove_title">Fjerne %1$s?</string>
+    <string name="dialog_remove_body">Dette fjerner bare lommeboken fra denne appen. Ingenting endres på blokkjeden, og du kan legge den til igjen når som helst med gjenopprettingsfrasen (og passfrasen, hvis du satte en). Sørg for at frasen er skrevet ned.</string>
+
+    <string name="status_offline">frakoblet</string>
+    <string name="status_rescanning">skanner på nytt %1$d%%</string>
+    <string name="status_limited">begrenset tjeneste</string>
+    <string name="status_connected">tilkoblet</string>
+    <string name="status_syncing">synkroniserer</string>
+
+    <string name="wallet_none_open">Ingen lommebok åpen</string>
+    <string name="wallet_choose">Velg en lommebok</string>
+    <string name="wallet_pending">%1$s %2$s venter</string>
+    <string name="wallet_block">blokk %1$s</string>
+    <string name="wallet_rescanning">skanner på nytt %1$d%%</string>
+    <string name="wallet_syncing">synkroniserer</string>
+    <string name="wallet_limited_suffix">%1$s  ·  begrenset tjeneste</string>
+    <string name="wallet_connecting">kobler til…</string>
+    <string name="fiat_approx">≈ %1$s</string>
+
+    <string name="sent_title">Betaling sendt</string>
+    <string name="sent_txid">%1$s… · trykk for å kopiere</string>
+
+    <string name="cd_address_qr">QR-kode for adresse</string>
+    <string name="receive_address_n">adresse #%1$d · trykk for å kopiere</string>
+    <string name="share_address_chooser">Del adresse</string>
+
+    <string name="scan_prompt">Skann en betalingsadresse</string>
+    <string name="send_sweep">Send maksimum (sweep)</string>
+    <string name="send_alt_coin">= %1$s %2$s</string>
+    <string name="send_alt_sat">= %1$s sat</string>
+    <string name="send_alt_fiat">  ·  %1$s</string>
+    <string name="fee_fast">Rask</string>
+    <string name="fee_normal">Normal</string>
+    <string name="fee_slow">Treg</string>
+    <string name="send_replay_protect">XBT-replaybeskyttelse (100-byte OP_RETURN)</string>
+    <string name="send_replay_note">Legger til ~110 vB i gebyr. Ikke-standard på Bitcoins standardrelé — kringkast via en node/tjeneste som godtar store OP_RETURN.</string>
+    <string name="send_service_fee">Servicegebyr: %1$s%% av beløpet som sendes (min. %2$d sat) — støtter denne vertsnoden.</string>
+    <string name="cd_amount_unit">beløpsenhet</string>
+    <string name="unit_sat">sat</string>
+
+    <string name="history_empty">ingen transaksjoner ennå</string>
+    <string name="history_send">send</string>
+    <string name="history_receive">motta</string>
+    <string name="history_row_subtitle">%1$s · %2$s…</string>
+    <string name="history_pending">venter</string>
+    <string name="history_conf_n">%1$d bekr.</string>
+    <string name="history_confirmed">bekreftet</string>
+    <string name="history_hint">trykk på en transaksjon for å åpne den i utforskeren · hold inne for å kopiere id-en</string>
+
+    <string name="confirm_sweep_title">Bekreft sweep</string>
+    <string name="confirm_payment_title">Bekreft betaling</string>
+    <string name="confirm_to">Til</string>
+    <string name="confirm_amount">Beløp</string>
+    <string name="confirm_network_fee">Nettverksgebyr</string>
+    <string name="confirm_network_fee_value">%1$s %2$s · %3$d sat/vB</string>
+    <string name="confirm_service_fee">Servicegebyr</string>
+    <string name="confirm_change">Veksel</string>
+    <string name="confirm_replay">Replaybeskyttelse</string>
+    <string name="confirm_replay_value">på · 100-byte OP_RETURN</string>
+    <string name="confirm_total">Totalt</string>
+    <string name="value_with_fiat">%1$s %2$s  ·  %3$s</string>
+
+    <string name="mnemonic_not_in_list">%1$d ikke på ordlisten</string>
+    <string name="mnemonic_looks_good">ser bra ut</string>
+    <string name="mnemonic_status">%1$s  ·  %2$s</string>
+
+    <string name="error_wallet_max">Du kan ha opptil %1$d lommebøker på én enhet.</string>
+    <string name="error_clone_exists">«%1$s» er allerede på %2$s.</string>
+    <string name="error_lock_setup_failed">oppsett av app-lås mislyktes</string>
+    <string name="error_enter_amount">skriv inn et beløp</string>
+    <string name="error_no_coins">ingen bekreftede mynter å bruke</string>
+    <string name="error_open_wallet">kunne ikke åpne lommeboken</string>
+
+    <plurals name="word_count">
+        <item quantity="one">%1$d ord</item>
+        <item quantity="other">%1$d ord</item>
+    </plurals>
+</resources>

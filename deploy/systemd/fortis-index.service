@@ -1,0 +1,32 @@
+# /etc/systemd/system/fortis-index.service
+# Native (no Docker) install on a Linux VPS. Assumes the binaries are at
+# /usr/local/bin and the Knots node runs on this host with an rpcauth entry.
+
+[Unit]
+Description=fortis-index (XBT address index)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=fortis
+Group=fortis
+ExecStart=/usr/local/bin/fortis-index \
+  --network mainnet \
+  --rpc-url http://127.0.0.1:8332 \
+  --rpc-auth ${XBT_RPC_AUTH} \
+  --db /var/lib/fortis/fortis-index.sqlite \
+  --bind 127.0.0.1:8094
+Environment=XBT_RPC_AUTH=fortis:CHANGE_ME
+Restart=on-failure
+RestartSec=5
+StateDirectory=fortis
+# hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/var/lib/fortis
+
+[Install]
+WantedBy=multi-user.target

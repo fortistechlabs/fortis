@@ -1,0 +1,189 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">fortis</string>
+
+    <string name="action_back">Tilbage</string>
+    <string name="action_cancel">Annuller</string>
+    <string name="action_continue">Fortsæt</string>
+    <string name="action_save">Gem</string>
+    <string name="action_done">Færdig</string>
+    <string name="action_show">Vis</string>
+    <string name="action_hide">Skjul</string>
+    <string name="action_copy">Kopiér</string>
+    <string name="action_share">Del</string>
+    <string name="action_open">Åbn</string>
+    <string name="action_remove">Fjern</string>
+    <string name="action_rename">Omdøb</string>
+    <string name="action_unlock">Lås op</string>
+    <string name="action_add_wallet">Tilføj tegnebog</string>
+    <string name="action_view">Vis</string>
+    <string name="action_refresh">Opdater</string>
+    <string name="action_reconnect">Opret forbindelse igen</string>
+    <string name="action_review">Gennemse</string>
+    <string name="action_sign_send">Signér og send</string>
+    <string name="action_new_address">Ny adresse</string>
+    <string name="action_scan_qr">Scan QR-kode</string>
+    <string name="action_lock">Lås</string>
+    <string name="action_lock_app">Lås appen</string>
+    <string name="action_copy_xpub">Kopiér xpub</string>
+    <string name="action_recovery_phrase">Gendannelsessætning</string>
+    <string name="toast_copied">Kopieret</string>
+    <string name="cd_dismiss">Afvis</string>
+
+    <string name="onboard_add_title">Tilføj en tegnebog</string>
+    <string name="onboard_tagline">en ikke-forvaltende tegnebog til Bitcoin XBT og Bitcoin BTC</string>
+    <string name="onboard_create">Opret en ny tegnebog</string>
+    <string name="onboard_restore">Gendan fra en gendannelsessætning</string>
+
+    <string name="gen_title">Tilføj lidt tilfældighed</string>
+    <string name="gen_body">Din telefon har allerede genereret et sikkert seed. Ryst den — eller krads på feltet — for at blande ekstra entropi ind fra bevægelsessensorerne og timing-jitter. For en sikkerheds skyld.</string>
+    <string name="gen_words_24">24 ord</string>
+    <string name="gen_words_12">12 ord</string>
+    <string name="gen_words_hint">Begge er sikre; 12 er lettere at skrive ned.</string>
+    <string name="gen_pad_hint">ryst, eller krads her</string>
+    <string name="gen_entropy_full">masser af ekstra entropi — grund-seedet er allerede sikkert</string>
+    <string name="gen_entropy_partial">~%1$d ekstra bit blandet ind</string>
+    <string name="gen_generate">Generér tegnebog</string>
+
+    <string name="create_phrase_title">Din gendannelsessætning</string>
+    <string name="create_phrase_body">Skriv disse %1$d ord ned på papir, offline. Enhver med dem kontrollerer dine midler.</string>
+    <string name="create_passphrase_hint">Et \"25. ord\" — en ekstra hemmelighed, der ikke gemmes. Sætter du en, skal du bruge både sætningen og denne for at gendanne. Lad stå tomt, hvis du er i tvivl.</string>
+    <string name="create_ack">Jeg har skrevet sætningen ned</string>
+
+    <string name="restore_title">Gendan tegnebog</string>
+    <string name="restore_body">Indtast dine 12 eller 24 ord adskilt af mellemrum.</string>
+    <string name="restore_clone_hint">Når den er tilføjet, kan du også vise denne tegnebog på %1$s via Administrer tegnebøger — samme sætning, samme adresser.</string>
+    <string name="action_restore">Gendan</string>
+
+    <string name="field_wallet_name">Tegnebogens navn</string>
+    <string name="field_passphrase">BIP-39-adgangssætning (valgfri)</string>
+    <string name="field_app_password">App-adgangskode</string>
+    <string name="field_confirm_password">Bekræft adgangskode</string>
+    <string name="field_to_address">Til-adresse</string>
+    <string name="field_amount">Beløb</string>
+    <string name="field_custom_feerate">tilpasset sat/vB (valgfri)</string>
+
+    <string name="reveal_title">Gendannelsessætning</string>
+    <string name="reveal_warning">Alle, der ser disse ord — plus adgangssætningen, hvis den er sat — kan bruge denne tegnebog. Se kun på dem et privat sted. Skriv dem aldrig ind på et websted eller i en app. Skærmbilleder er blokeret her.</string>
+    <string name="reveal_failed">Kunne ikke dekryptere denne tegnebog.</string>
+    <string name="reveal_passphrase_label">BIP-39-adgangssætning</string>
+    <string name="reveal_no_passphrase">Ingen BIP-39-adgangssætning på denne tegnebog.</string>
+
+    <string name="nav_home">Hjem</string>
+    <string name="nav_wallet">Tegnebog</string>
+    <string name="nav_settings">Indstillinger</string>
+    <string name="tab_receive">Modtag</string>
+    <string name="tab_send">Send</string>
+    <string name="tab_history">Historik</string>
+
+    <string name="home_title">Dine tegnebøger</string>
+    <string name="home_open">åben</string>
+    <string name="home_tap_to_open">tryk for at åbne</string>
+    <string name="wallets_max">Maksimum på %1$d tegnebøger er nået.</string>
+
+    <string name="lock_password_prompt">Indtast din app-adgangskode.</string>
+    <string name="biometric_setup_title">Konfigurer app-lås</string>
+    <string name="biometric_unlock_title">Lås Fortis Wallet op</string>
+    <string name="biometric_subtitle">Fortis Wallet</string>
+    <string name="biometric_invalidated">Din enheds skærmlås er ændret, så appen kan ikke længere låses op her. Geninstaller, og gendan hver tegnebog fra dens gendannelsessætning.</string>
+    <string name="lock_choice_use_biometric">Lås appen med fingeraftryk eller PIN-kode</string>
+    <string name="lock_choice_biometric_note">Én oplåsning åbner alle dine tegnebøger. Ingen adgangskode at huske — din enheds fingeraftryk/ansigt eller skærmlås-PIN lukker dig ind.</string>
+    <string name="lock_choice_password_note">Denne adgangskode låser appen op og hver tegnebog i den.</string>
+
+    <string name="settings_title">Indstillinger</string>
+    <string name="settings_wallets">Tegnebøger</string>
+    <string name="settings_security">Sikkerhed</string>
+    <string name="settings_connection">Forbindelse</string>
+    <string name="settings_app_lock">App-lås</string>
+    <string name="lock_mode_biometric">Fingeraftryk / enheds-PIN</string>
+    <string name="lock_mode_password">Adgangskode</string>
+    <string name="settings_one_unlock">Én oplåsning åbner hver tegnebog i appen.</string>
+    <string name="settings_language">Sprog</string>
+    <string name="language_system_default">Systemstandard</string>
+    <string name="settings_status">Status</string>
+    <string name="settings_chain_height">Kædehøjde</string>
+    <string name="settings_degraded_note">Fortis-tjenesten kan ikke nås — bruger offentlige blokdata indtil videre. Den skifter tilbage automatisk.</string>
+    <string name="settings_version">fortis %1$s</string>
+    <string name="xpub_loading">indlæser stadig — prøv igen</string>
+    <string name="also_add_on">Tilføj også på %1$s</string>
+    <string name="dialog_rename_title">Omdøb tegnebog</string>
+    <string name="dialog_reveal_title">Vis gendannelsessætningen for %1$s?</string>
+    <string name="dialog_reveal_body">Gendannelsessætningen (og adgangssætningen, hvis du satte en) er det eneste, der kan gendanne denne tegnebog — og enhver, der har den, kan bruge dine midler. Vis den kun et privat sted, uden nogen kigger med. Den næste skærm blokerer skærmbilleder.</string>
+    <string name="dialog_remove_title">Fjern %1$s?</string>
+    <string name="dialog_remove_body">Dette fjerner kun tegnebogen fra denne app. Intet ændres på blockchainen, og du kan tilføje den igen når som helst med dens gendannelsessætning (og adgangssætning, hvis du satte en). Sørg for, at sætningen er skrevet ned.</string>
+
+    <string name="status_offline">offline</string>
+    <string name="status_rescanning">genscanner %1$d%%</string>
+    <string name="status_limited">begrænset tjeneste</string>
+    <string name="status_connected">forbundet</string>
+    <string name="status_syncing">synkroniserer</string>
+
+    <string name="wallet_none_open">Ingen tegnebog åben</string>
+    <string name="wallet_choose">Vælg en tegnebog</string>
+    <string name="wallet_pending">%1$s %2$s afventer</string>
+    <string name="wallet_block">blok %1$s</string>
+    <string name="wallet_rescanning">genscanner %1$d%%</string>
+    <string name="wallet_syncing">synkroniserer</string>
+    <string name="wallet_limited_suffix">%1$s  ·  begrænset tjeneste</string>
+    <string name="wallet_connecting">forbinder…</string>
+    <string name="fiat_approx">≈ %1$s</string>
+
+    <string name="sent_title">Betaling sendt</string>
+    <string name="sent_txid">%1$s… · tryk for at kopiere</string>
+
+    <string name="cd_address_qr">QR-kode for adresse</string>
+    <string name="receive_address_n">adresse #%1$d · tryk for at kopiere</string>
+    <string name="share_address_chooser">Del adresse</string>
+
+    <string name="scan_prompt">Scan en betalingsadresse</string>
+    <string name="send_sweep">Send maksimum (sweep)</string>
+    <string name="send_alt_coin">= %1$s %2$s</string>
+    <string name="send_alt_sat">= %1$s sat</string>
+    <string name="send_alt_fiat">  ·  %1$s</string>
+    <string name="fee_fast">Hurtig</string>
+    <string name="fee_normal">Normal</string>
+    <string name="fee_slow">Langsom</string>
+    <string name="send_replay_protect">XBT-replaybeskyttelse (100-byte OP_RETURN)</string>
+    <string name="send_replay_note">Tilføjer ~110 vB i gebyr. Ikke-standard på Bitcoins standardrelæ — udsend via en node/tjeneste, der accepterer store OP_RETURN.</string>
+    <string name="send_service_fee">Servicegebyr: %1$s%% af det sendte beløb (min. %2$d sat) — støtter denne hostede node.</string>
+    <string name="cd_amount_unit">beløbsenhed</string>
+    <string name="unit_sat">sat</string>
+
+    <string name="history_empty">ingen transaktioner endnu</string>
+    <string name="history_send">send</string>
+    <string name="history_receive">modtag</string>
+    <string name="history_row_subtitle">%1$s · %2$s…</string>
+    <string name="history_pending">afventer</string>
+    <string name="history_conf_n">%1$d bekr.</string>
+    <string name="history_confirmed">bekræftet</string>
+    <string name="history_hint">tryk på en transaktion for at åbne den i explorer · hold nede for at kopiere id\'et</string>
+
+    <string name="confirm_sweep_title">Bekræft sweep</string>
+    <string name="confirm_payment_title">Bekræft betaling</string>
+    <string name="confirm_to">Til</string>
+    <string name="confirm_amount">Beløb</string>
+    <string name="confirm_network_fee">Netværksgebyr</string>
+    <string name="confirm_network_fee_value">%1$s %2$s · %3$d sat/vB</string>
+    <string name="confirm_service_fee">Servicegebyr</string>
+    <string name="confirm_change">Byttepenge</string>
+    <string name="confirm_replay">Replaybeskyttelse</string>
+    <string name="confirm_replay_value">til · 100-byte OP_RETURN</string>
+    <string name="confirm_total">I alt</string>
+    <string name="value_with_fiat">%1$s %2$s  ·  %3$s</string>
+
+    <string name="mnemonic_not_in_list">%1$d ikke på ordlisten</string>
+    <string name="mnemonic_looks_good">ser godt ud</string>
+    <string name="mnemonic_status">%1$s  ·  %2$s</string>
+
+    <string name="error_wallet_max">Du kan have op til %1$d tegnebøger på én enhed.</string>
+    <string name="error_clone_exists">“%1$s” er allerede på %2$s.</string>
+    <string name="error_lock_setup_failed">konfiguration af app-lås mislykkedes</string>
+    <string name="error_enter_amount">indtast et beløb</string>
+    <string name="error_no_coins">ingen bekræftede mønter at bruge</string>
+    <string name="error_open_wallet">kunne ikke åbne tegnebogen</string>
+
+    <plurals name="word_count">
+        <item quantity="one">%1$d ord</item>
+        <item quantity="other">%1$d ord</item>
+    </plurals>
+</resources>

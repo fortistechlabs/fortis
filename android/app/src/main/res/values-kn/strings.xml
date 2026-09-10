@@ -1,0 +1,189 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">fortis</string>
+
+    <string name="action_back">ಹಿಂದೆ</string>
+    <string name="action_cancel">ರದ್ದುಮಾಡಿ</string>
+    <string name="action_continue">ಮುಂದುವರಿಸಿ</string>
+    <string name="action_save">ಉಳಿಸಿ</string>
+    <string name="action_done">ಆಯಿತು</string>
+    <string name="action_show">ತೋರಿಸಿ</string>
+    <string name="action_hide">ಮರೆಮಾಡಿ</string>
+    <string name="action_copy">ನಕಲಿಸಿ</string>
+    <string name="action_share">ಹಂಚಿಕೊಳ್ಳಿ</string>
+    <string name="action_open">ತೆರೆಯಿರಿ</string>
+    <string name="action_remove">ತೆಗೆದುಹಾಕಿ</string>
+    <string name="action_rename">ಮರುಹೆಸರಿಸಿ</string>
+    <string name="action_unlock">ಅನ್‌ಲಾಕ್ ಮಾಡಿ</string>
+    <string name="action_add_wallet">ವಾಲೆಟ್ ಸೇರಿಸಿ</string>
+    <string name="action_view">ವೀಕ್ಷಿಸಿ</string>
+    <string name="action_refresh">ರಿಫ್ರೆಶ್ ಮಾಡಿ</string>
+    <string name="action_reconnect">ಮತ್ತೆ ಸಂಪರ್ಕಿಸಿ</string>
+    <string name="action_review">ಪರಿಶೀಲಿಸಿ</string>
+    <string name="action_sign_send">ಸಹಿ ಮಾಡಿ ಕಳುಹಿಸಿ</string>
+    <string name="action_new_address">ಹೊಸ ವಿಳಾಸ</string>
+    <string name="action_scan_qr">QR ಕೋಡ್ ಸ್ಕ್ಯಾನ್ ಮಾಡಿ</string>
+    <string name="action_lock">ಲಾಕ್ ಮಾಡಿ</string>
+    <string name="action_lock_app">ಆ್ಯಪ್ ಲಾಕ್ ಮಾಡಿ</string>
+    <string name="action_copy_xpub">xpub ನಕಲಿಸಿ</string>
+    <string name="action_recovery_phrase">ಮರುಪಡೆಯುವಿಕೆ ನುಡಿಗಟ್ಟು</string>
+    <string name="toast_copied">ನಕಲಿಸಲಾಗಿದೆ</string>
+    <string name="cd_dismiss">ವಜಾಗೊಳಿಸಿ</string>
+
+    <string name="onboard_add_title">ವಾಲೆಟ್ ಸೇರಿಸಿ</string>
+    <string name="onboard_tagline">Bitcoin XBT ಮತ್ತು Bitcoin BTC ಗಾಗಿ ಒಂದು ನಾನ್-ಕಸ್ಟೋಡಿಯಲ್ ವಾಲೆಟ್</string>
+    <string name="onboard_create">ಹೊಸ ವಾಲೆಟ್ ರಚಿಸಿ</string>
+    <string name="onboard_restore">ಮರುಪಡೆಯುವಿಕೆ ನುಡಿಗಟ್ಟಿನಿಂದ ಮರುಸ್ಥಾಪಿಸಿ</string>
+
+    <string name="gen_title">ಸ್ವಲ್ಪ ಯಾದೃಚ್ಛಿಕತೆ ಸೇರಿಸಿ</string>
+    <string name="gen_body">ನಿಮ್ಮ ಫೋನ್ ಈಗಾಗಲೇ ಸುರಕ್ಷಿತ ಸೀಡ್ ರಚಿಸಿದೆ. ಚಲನೆ ಸೆನ್ಸರ್‌ಗಳು ಮತ್ತು ಸಮಯದ ಏರಿಳಿತಗಳಿಂದ ಹೆಚ್ಚುವರಿ ಎಂಟ್ರೊಪಿಯನ್ನು ಬೆರೆಸಲು ಅದನ್ನು ಅಲುಗಾಡಿಸಿ — ಅಥವಾ ಪ್ಯಾಡ್ ಮೇಲೆ ಗೀಚಿ. ಮುನ್ನೆಚ್ಚರಿಕೆಗಾಗಿ.</string>
+    <string name="gen_words_24">24 ಪದಗಳು</string>
+    <string name="gen_words_12">12 ಪದಗಳು</string>
+    <string name="gen_words_hint">ಎರಡೂ ಸುರಕ್ಷಿತ; 12 ಬರೆದಿಡುವುದು ಸುಲಭ.</string>
+    <string name="gen_pad_hint">ಅಲುಗಾಡಿಸಿ, ಅಥವಾ ಇಲ್ಲಿ ಗೀಚಿ</string>
+    <string name="gen_entropy_full">ಸಾಕಷ್ಟು ಹೆಚ್ಚುವರಿ ಎಂಟ್ರೊಪಿ — ಮೂಲ ಸೀಡ್ ಈಗಾಗಲೇ ಸುರಕ್ಷಿತ</string>
+    <string name="gen_entropy_partial">~%1$d ಹೆಚ್ಚುವರಿ ಬಿಟ್‌ಗಳು ಬೆರೆಸಲಾಗಿದೆ</string>
+    <string name="gen_generate">ವಾಲೆಟ್ ರಚಿಸಿ</string>
+
+    <string name="create_phrase_title">ನಿಮ್ಮ ಮರುಪಡೆಯುವಿಕೆ ನುಡಿಗಟ್ಟು</string>
+    <string name="create_phrase_body">ಈ %1$d ಪದಗಳನ್ನು ಕಾಗದದ ಮೇಲೆ, ಆಫ್‌ಲೈನ್‌ನಲ್ಲಿ ಬರೆಯಿರಿ. ಅವುಗಳನ್ನು ಹೊಂದಿರುವ ಯಾರಾದರೂ ನಿಮ್ಮ ನಿಧಿಯನ್ನು ನಿಯಂತ್ರಿಸುತ್ತಾರೆ.</string>
+    <string name="create_passphrase_hint">ಒಂದು «25ನೇ ಪದ» — ಸಂಗ್ರಹಿಸದ ಹೆಚ್ಚುವರಿ ರಹಸ್ಯ. ನೀವು ಹೊಂದಿಸಿದರೆ ಮರುಸ್ಥಾಪನೆಗೆ ನುಡಿಗಟ್ಟು ಮತ್ತು ಇದು ಎರಡೂ ಬೇಕು. ಖಚಿತವಿಲ್ಲದಿದ್ದರೆ ಖಾಲಿ ಬಿಡಿ.</string>
+    <string name="create_ack">ನಾನು ನುಡಿಗಟ್ಟನ್ನು ಬರೆದಿದ್ದೇನೆ</string>
+
+    <string name="restore_title">ವಾಲೆಟ್ ಮರುಸ್ಥಾಪಿಸಿ</string>
+    <string name="restore_body">ನಿಮ್ಮ 12 ಅಥವಾ 24 ಪದಗಳನ್ನು ಸ್ಪೇಸ್‌ಗಳಿಂದ ಬೇರ್ಪಡಿಸಿ ನಮೂದಿಸಿ.</string>
+    <string name="restore_clone_hint">ಸೇರಿಸಿದ ನಂತರ «ವಾಲೆಟ್‌ಗಳನ್ನು ನಿರ್ವಹಿಸಿ»ನಿಂದ ಈ ವಾಲೆಟ್ ಅನ್ನು %1$s ನಲ್ಲೂ ಪಟ್ಟಿ ಮಾಡಬಹುದು — ಅದೇ ನುಡಿಗಟ್ಟು, ಅದೇ ವಿಳಾಸಗಳು.</string>
+    <string name="action_restore">ಮರುಸ್ಥಾಪಿಸಿ</string>
+
+    <string name="field_wallet_name">ವಾಲೆಟ್ ಹೆಸರು</string>
+    <string name="field_passphrase">BIP-39 ಪಾಸ್‌ಫ್ರೇಸ್ (ಐಚ್ಛಿಕ)</string>
+    <string name="field_app_password">ಆ್ಯಪ್ ಪಾಸ್‌ವರ್ಡ್</string>
+    <string name="field_confirm_password">ಪಾಸ್‌ವರ್ಡ್ ದೃಢೀಕರಿಸಿ</string>
+    <string name="field_to_address">ಸ್ವೀಕರಿಸುವವರ ವಿಳಾಸ</string>
+    <string name="field_amount">ಮೊತ್ತ</string>
+    <string name="field_custom_feerate">ಕಸ್ಟಮ್ sat/vB (ಐಚ್ಛಿಕ)</string>
+
+    <string name="reveal_title">ಮರುಪಡೆಯುವಿಕೆ ನುಡಿಗಟ್ಟು</string>
+    <string name="reveal_warning">ಈ ಪದಗಳನ್ನು — ಹೊಂದಿಸಿದ್ದರೆ ಪಾಸ್‌ಫ್ರೇಸ್ ಅನ್ನೂ — ನೋಡುವ ಯಾರಾದರೂ ಈ ವಾಲೆಟ್‌ನಿಂದ ಖರ್ಚು ಮಾಡಬಹುದು. ಅವುಗಳನ್ನು ಖಾಸಗಿ ಸ್ಥಳದಲ್ಲಿ ಮಾತ್ರ ನೋಡಿ. ಅವುಗಳನ್ನು ಎಂದಿಗೂ ವೆಬ್‌ಸೈಟ್ ಅಥವಾ ಆ್ಯಪ್‌ನಲ್ಲಿ ಟೈಪ್ ಮಾಡಬೇಡಿ. ಇಲ್ಲಿ ಸ್ಕ್ರೀನ್‌ಶಾಟ್‌ಗಳನ್ನು ನಿರ್ಬಂಧಿಸಲಾಗಿದೆ.</string>
+    <string name="reveal_failed">ಈ ವಾಲೆಟ್ ಅನ್ನು ಡೀಕ್ರಿಪ್ಟ್ ಮಾಡಲಾಗಲಿಲ್ಲ.</string>
+    <string name="reveal_passphrase_label">BIP-39 ಪಾಸ್‌ಫ್ರೇಸ್</string>
+    <string name="reveal_no_passphrase">ಈ ವಾಲೆಟ್‌ನಲ್ಲಿ BIP-39 ಪಾಸ್‌ಫ್ರೇಸ್ ಇಲ್ಲ.</string>
+
+    <string name="nav_home">ಮುಖಪುಟ</string>
+    <string name="nav_wallet">ವಾಲೆಟ್</string>
+    <string name="nav_settings">ಸೆಟ್ಟಿಂಗ್‌ಗಳು</string>
+    <string name="tab_receive">ಸ್ವೀಕರಿಸಿ</string>
+    <string name="tab_send">ಕಳುಹಿಸಿ</string>
+    <string name="tab_history">ಇತಿಹಾಸ</string>
+
+    <string name="home_title">ನಿಮ್ಮ ವಾಲೆಟ್‌ಗಳು</string>
+    <string name="home_open">ತೆರೆದಿದೆ</string>
+    <string name="home_tap_to_open">ತೆರೆಯಲು ಟ್ಯಾಪ್ ಮಾಡಿ</string>
+    <string name="wallets_max">%1$d ವಾಲೆಟ್‌ಗಳ ಗರಿಷ್ಠ ಮಿತಿ ತಲುಪಿದೆ.</string>
+
+    <string name="lock_password_prompt">ನಿಮ್ಮ ಆ್ಯಪ್ ಪಾಸ್‌ವರ್ಡ್ ನಮೂದಿಸಿ.</string>
+    <string name="biometric_setup_title">ಆ್ಯಪ್ ಲಾಕ್ ಹೊಂದಿಸಿ</string>
+    <string name="biometric_unlock_title">Fortis Wallet ಅನ್‌ಲಾಕ್ ಮಾಡಿ</string>
+    <string name="biometric_subtitle">Fortis Wallet</string>
+    <string name="biometric_invalidated">ನಿಮ್ಮ ಸಾಧನದ ಸ್ಕ್ರೀನ್ ಲಾಕ್ ಬದಲಾಗಿದೆ, ಆದ್ದರಿಂದ ಆ್ಯಪ್ ಅನ್ನು ಇಲ್ಲಿ ಇನ್ನು ಅನ್‌ಲಾಕ್ ಮಾಡಲಾಗುವುದಿಲ್ಲ. ಮತ್ತೆ ಇನ್‌ಸ್ಟಾಲ್ ಮಾಡಿ ಮತ್ತು ಪ್ರತಿ ವಾಲೆಟ್ ಅನ್ನು ಅದರ ಮರುಪಡೆಯುವಿಕೆ ನುಡಿಗಟ್ಟಿನಿಂದ ಮರುಸ್ಥಾಪಿಸಿ.</string>
+    <string name="lock_choice_use_biometric">ಆ್ಯಪ್ ಅನ್ನು ಫಿಂಗರ್‌ಪ್ರಿಂಟ್ ಅಥವಾ PIN ನಿಂದ ಲಾಕ್ ಮಾಡಿ</string>
+    <string name="lock_choice_biometric_note">ಒಮ್ಮೆ ಅನ್‌ಲಾಕ್ ಮಾಡಿದರೆ ನಿಮ್ಮ ಎಲ್ಲಾ ವಾಲೆಟ್‌ಗಳು ತೆರೆಯುತ್ತವೆ. ನೆನಪಿಡಲು ಪಾಸ್‌ವರ್ಡ್ ಇಲ್ಲ — ನಿಮ್ಮ ಸಾಧನದ ಫಿಂಗರ್‌ಪ್ರಿಂಟ್/ಮುಖ ಅಥವಾ ಸ್ಕ್ರೀನ್-ಲಾಕ್ PIN ನಿಮ್ಮನ್ನು ಒಳಗೆ ಬಿಡುತ್ತದೆ.</string>
+    <string name="lock_choice_password_note">ಈ ಪಾಸ್‌ವರ್ಡ್ ಆ್ಯಪ್ ಮತ್ತು ಅದರೊಳಗಿನ ಪ್ರತಿ ವಾಲೆಟ್ ಅನ್ನು ಅನ್‌ಲಾಕ್ ಮಾಡುತ್ತದೆ.</string>
+
+    <string name="settings_title">ಸೆಟ್ಟಿಂಗ್‌ಗಳು</string>
+    <string name="settings_wallets">ವಾಲೆಟ್‌ಗಳು</string>
+    <string name="settings_security">ಭದ್ರತೆ</string>
+    <string name="settings_connection">ಸಂಪರ್ಕ</string>
+    <string name="settings_app_lock">ಆ್ಯಪ್ ಲಾಕ್</string>
+    <string name="lock_mode_biometric">ಫಿಂಗರ್‌ಪ್ರಿಂಟ್ / ಸಾಧನ PIN</string>
+    <string name="lock_mode_password">ಪಾಸ್‌ವರ್ಡ್</string>
+    <string name="settings_one_unlock">ಒಮ್ಮೆ ಅನ್‌ಲಾಕ್ ಮಾಡಿದರೆ ಆ್ಯಪ್‌ನ ಪ್ರತಿ ವಾಲೆಟ್ ತೆರೆಯುತ್ತದೆ.</string>
+    <string name="settings_language">ಭಾಷೆ</string>
+    <string name="language_system_default">ಸಿಸ್ಟಂ ಡೀಫಾಲ್ಟ್</string>
+    <string name="settings_status">ಸ್ಥಿತಿ</string>
+    <string name="settings_chain_height">ಚೈನ್ ಎತ್ತರ</string>
+    <string name="settings_degraded_note">fortis ಸೇವೆ ಲಭ್ಯವಿಲ್ಲ — ಸದ್ಯಕ್ಕೆ ಸಾರ್ವಜನಿಕ ಬ್ಲಾಕ್ ಡೇಟಾ ಬಳಸಲಾಗುತ್ತಿದೆ. ಇದು ಸ್ವಯಂಚಾಲಿತವಾಗಿ ಮರಳುತ್ತದೆ.</string>
+    <string name="settings_version">fortis %1$s</string>
+    <string name="xpub_loading">ಇನ್ನೂ ಲೋಡ್ ಆಗುತ್ತಿದೆ — ಮತ್ತೆ ಪ್ರಯತ್ನಿಸಿ</string>
+    <string name="also_add_on">%1$s ನಲ್ಲೂ ಸೇರಿಸಿ</string>
+    <string name="dialog_rename_title">ವಾಲೆಟ್ ಮರುಹೆಸರಿಸಿ</string>
+    <string name="dialog_reveal_title">%1$s ಗಾಗಿ ಮರುಪಡೆಯುವಿಕೆ ನುಡಿಗಟ್ಟನ್ನು ತೋರಿಸಬೇಕೇ?</string>
+    <string name="dialog_reveal_body">ಮರುಪಡೆಯುವಿಕೆ ನುಡಿಗಟ್ಟು (ಮತ್ತು ನೀವು ಹೊಂದಿಸಿದ್ದರೆ ಪಾಸ್‌ಫ್ರೇಸ್) ಈ ವಾಲೆಟ್ ಅನ್ನು ಮರುಸ್ಥಾಪಿಸಬಲ್ಲ ಏಕೈಕ ವಿಷಯ — ಅದನ್ನು ಹೊಂದಿರುವ ಯಾರಾದರೂ ನಿಮ್ಮ ನಿಧಿಯನ್ನು ಖರ್ಚು ಮಾಡಬಹುದು. ಯಾರೂ ನೋಡದ ಖಾಸಗಿ ಸ್ಥಳದಲ್ಲಿ ಮಾತ್ರ ಅದನ್ನು ಬಹಿರಂಗಪಡಿಸಿ. ಮುಂದಿನ ಸ್ಕ್ರೀನ್ ಸ್ಕ್ರೀನ್‌ಶಾಟ್‌ಗಳನ್ನು ನಿರ್ಬಂಧಿಸುತ್ತದೆ.</string>
+    <string name="dialog_remove_title">%1$s ಅನ್ನು ತೆಗೆದುಹಾಕಬೇಕೇ?</string>
+    <string name="dialog_remove_body">ಇದು ಈ ಆ್ಯಪ್‌ನಿಂದ ಮಾತ್ರ ವಾಲೆಟ್ ಅನ್ನು ತೆಗೆದುಹಾಕುತ್ತದೆ. ಬ್ಲಾಕ್‌ಚೈನ್‌ನಲ್ಲಿ ಏನೂ ಬದಲಾಗುವುದಿಲ್ಲ, ಮತ್ತು ನೀವು ಅದರ ಮರುಪಡೆಯುವಿಕೆ ನುಡಿಗಟ್ಟು (ಮತ್ತು ಹೊಂದಿಸಿದ್ದರೆ ಪಾಸ್‌ಫ್ರೇಸ್) ಮೂಲಕ ಯಾವಾಗ ಬೇಕಾದರೂ ಅದನ್ನು ಮತ್ತೆ ಸೇರಿಸಬಹುದು. ನುಡಿಗಟ್ಟನ್ನು ಬರೆದಿಟ್ಟಿರುವುದನ್ನು ಖಚಿತಪಡಿಸಿಕೊಳ್ಳಿ.</string>
+
+    <string name="status_offline">ಆಫ್‌ಲೈನ್</string>
+    <string name="status_rescanning">ಮತ್ತೆ ಸ್ಕ್ಯಾನ್ ಆಗುತ್ತಿದೆ %1$d%%</string>
+    <string name="status_limited">ಸೀಮಿತ ಸೇವೆ</string>
+    <string name="status_connected">ಸಂಪರ್ಕಗೊಂಡಿದೆ</string>
+    <string name="status_syncing">ಸಿಂಕ್ ಆಗುತ್ತಿದೆ</string>
+
+    <string name="wallet_none_open">ಯಾವುದೇ ವಾಲೆಟ್ ತೆರೆದಿಲ್ಲ</string>
+    <string name="wallet_choose">ವಾಲೆಟ್ ಆಯ್ಕೆಮಾಡಿ</string>
+    <string name="wallet_pending">%1$s %2$s ಬಾಕಿ</string>
+    <string name="wallet_block">ಬ್ಲಾಕ್ %1$s</string>
+    <string name="wallet_rescanning">ಮತ್ತೆ ಸ್ಕ್ಯಾನ್ ಆಗುತ್ತಿದೆ %1$d%%</string>
+    <string name="wallet_syncing">ಸಿಂಕ್ ಆಗುತ್ತಿದೆ</string>
+    <string name="wallet_limited_suffix">%1$s  ·  ಸೀಮಿತ ಸೇವೆ</string>
+    <string name="wallet_connecting">ಸಂಪರ್ಕಿಸುತ್ತಿದೆ…</string>
+    <string name="fiat_approx">≈ %1$s</string>
+
+    <string name="sent_title">ಪಾವತಿ ಕಳುಹಿಸಲಾಗಿದೆ</string>
+    <string name="sent_txid">%1$s… · ನಕಲಿಸಲು ಟ್ಯಾಪ್ ಮಾಡಿ</string>
+
+    <string name="cd_address_qr">ವಿಳಾಸದ QR ಕೋಡ್</string>
+    <string name="receive_address_n">ವಿಳಾಸ #%1$d · ನಕಲಿಸಲು ಟ್ಯಾಪ್ ಮಾಡಿ</string>
+    <string name="share_address_chooser">ವಿಳಾಸ ಹಂಚಿಕೊಳ್ಳಿ</string>
+
+    <string name="scan_prompt">ಪಾವತಿ ವಿಳಾಸವನ್ನು ಸ್ಕ್ಯಾನ್ ಮಾಡಿ</string>
+    <string name="send_sweep">ಗರಿಷ್ಠ ಕಳುಹಿಸಿ (sweep)</string>
+    <string name="send_alt_coin">= %1$s %2$s</string>
+    <string name="send_alt_sat">= %1$s sat</string>
+    <string name="send_alt_fiat">  ·  %1$s</string>
+    <string name="fee_fast">ವೇಗ</string>
+    <string name="fee_normal">ಸಾಮಾನ್ಯ</string>
+    <string name="fee_slow">ನಿಧಾನ</string>
+    <string name="send_replay_protect">XBT ರೀಪ್ಲೇ ರಕ್ಷಣೆ (100-ಬೈಟ್ OP_RETURN)</string>
+    <string name="send_replay_note">~110 vB ಶುಲ್ಕ ಸೇರಿಸುತ್ತದೆ. ಡೀಫಾಲ್ಟ್ Bitcoin ರಿಲೇಯಲ್ಲಿ ಪ್ರಮಾಣಿತವಲ್ಲ — ದೊಡ್ಡ OP_RETURN ಸ್ವೀಕರಿಸುವ ನೋಡ್/ಸೇವೆ ಮೂಲಕ ಪ್ರಸಾರ ಮಾಡಿ.</string>
+    <string name="send_service_fee">ಸೇವಾ ಶುಲ್ಕ: ಕಳುಹಿಸಿದ ಮೊತ್ತದ %1$s%% (ಕನಿಷ್ಠ %2$d sat) — ಇದು ಈ ಹೋಸ್ಟ್ ಮಾಡಿದ ನೋಡ್‌ಗೆ ಬೆಂಬಲ ನೀಡುತ್ತದೆ.</string>
+    <string name="cd_amount_unit">ಮೊತ್ತದ ಘಟಕ</string>
+    <string name="unit_sat">sat</string>
+
+    <string name="history_empty">ಇನ್ನೂ ಯಾವುದೇ ವಹಿವಾಟುಗಳಿಲ್ಲ</string>
+    <string name="history_send">ಕಳುಹಿಸುವಿಕೆ</string>
+    <string name="history_receive">ಸ್ವೀಕರಿಸುವಿಕೆ</string>
+    <string name="history_row_subtitle">%1$s · %2$s…</string>
+    <string name="history_pending">ಬಾಕಿ</string>
+    <string name="history_conf_n">%1$d ದೃಢೀಕರಣ</string>
+    <string name="history_confirmed">ದೃಢೀಕರಿಸಲಾಗಿದೆ</string>
+    <string name="history_hint">ವಹಿವಾಟನ್ನು ಎಕ್ಸ್‌ಪ್ಲೋರರ್‌ನಲ್ಲಿ ತೆರೆಯಲು ಟ್ಯಾಪ್ ಮಾಡಿ · id ನಕಲಿಸಲು ದೀರ್ಘ ಒತ್ತಿ</string>
+
+    <string name="confirm_sweep_title">sweep ದೃಢೀಕರಿಸಿ</string>
+    <string name="confirm_payment_title">ಪಾವತಿ ದೃಢೀಕರಿಸಿ</string>
+    <string name="confirm_to">ಸ್ವೀಕರಿಸುವವರು</string>
+    <string name="confirm_amount">ಮೊತ್ತ</string>
+    <string name="confirm_network_fee">ನೆಟ್‌ವರ್ಕ್ ಶುಲ್ಕ</string>
+    <string name="confirm_network_fee_value">%1$s %2$s · %3$d sat/vB</string>
+    <string name="confirm_service_fee">ಸೇವಾ ಶುಲ್ಕ</string>
+    <string name="confirm_change">ಚಿಲ್ಲರೆ</string>
+    <string name="confirm_replay">ರೀಪ್ಲೇ ರಕ್ಷಣೆ</string>
+    <string name="confirm_replay_value">ಆನ್ · 100-ಬೈಟ್ OP_RETURN</string>
+    <string name="confirm_total">ಒಟ್ಟು</string>
+    <string name="value_with_fiat">%1$s %2$s  ·  %3$s</string>
+
+    <string name="mnemonic_not_in_list">%1$d ಪದ ಪಟ್ಟಿಯಲ್ಲಿ ಇಲ್ಲ</string>
+    <string name="mnemonic_looks_good">ಸರಿಯಾಗಿ ಕಾಣುತ್ತಿದೆ</string>
+    <string name="mnemonic_status">%1$s  ·  %2$s</string>
+
+    <string name="error_wallet_max">ನೀವು ಒಂದು ಸಾಧನದಲ್ಲಿ %1$d ವರೆಗೆ ವಾಲೆಟ್‌ಗಳನ್ನು ಇಟ್ಟುಕೊಳ್ಳಬಹುದು.</string>
+    <string name="error_clone_exists">«%1$s» ಈಗಾಗಲೇ %2$s ನಲ್ಲಿದೆ.</string>
+    <string name="error_lock_setup_failed">ಆ್ಯಪ್ ಲಾಕ್ ಸೆಟಪ್ ವಿಫಲವಾಗಿದೆ</string>
+    <string name="error_enter_amount">ಮೊತ್ತ ನಮೂದಿಸಿ</string>
+    <string name="error_no_coins">ಖರ್ಚು ಮಾಡಲು ದೃಢೀಕೃತ ಕಾಯಿನ್‌ಗಳಿಲ್ಲ</string>
+    <string name="error_open_wallet">ವಾಲೆಟ್ ತೆರೆಯಲಾಗಲಿಲ್ಲ</string>
+
+    <plurals name="word_count">
+        <item quantity="one">%1$d ಪದ</item>
+        <item quantity="other">%1$d ಪದಗಳು</item>
+    </plurals>
+</resources>

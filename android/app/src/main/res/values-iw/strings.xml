@@ -1,0 +1,191 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">fortis</string>
+
+    <string name="action_back">חזרה</string>
+    <string name="action_cancel">ביטול</string>
+    <string name="action_continue">המשך</string>
+    <string name="action_save">שמירה</string>
+    <string name="action_done">סיום</string>
+    <string name="action_show">הצגה</string>
+    <string name="action_hide">הסתרה</string>
+    <string name="action_copy">העתקה</string>
+    <string name="action_share">שיתוף</string>
+    <string name="action_open">פתיחה</string>
+    <string name="action_remove">הסרה</string>
+    <string name="action_rename">שינוי שם</string>
+    <string name="action_unlock">ביטול נעילה</string>
+    <string name="action_add_wallet">הוספת ארנק</string>
+    <string name="action_view">הצגה</string>
+    <string name="action_refresh">רענון</string>
+    <string name="action_reconnect">התחברות מחדש</string>
+    <string name="action_review">בדיקה</string>
+    <string name="action_sign_send">חתימה ושליחה</string>
+    <string name="action_new_address">כתובת חדשה</string>
+    <string name="action_scan_qr">סריקת קוד QR</string>
+    <string name="action_lock">נעילה</string>
+    <string name="action_lock_app">נעילת האפליקציה</string>
+    <string name="action_copy_xpub">העתקת xpub</string>
+    <string name="action_recovery_phrase">ביטוי שחזור</string>
+    <string name="toast_copied">הועתק</string>
+    <string name="cd_dismiss">סגירה</string>
+
+    <string name="onboard_add_title">הוספת ארנק</string>
+    <string name="onboard_tagline">ארנק ללא משמורת ל-Bitcoin XBT ול-Bitcoin BTC</string>
+    <string name="onboard_create">יצירת ארנק חדש</string>
+    <string name="onboard_restore">שחזור מביטוי שחזור</string>
+
+    <string name="gen_title">הוסיפו קצת אקראיות</string>
+    <string name="gen_body">הטלפון שלכם כבר יצר זרע מאובטח. נערו אותו — או שרבטו על המשטח — כדי לערבב אנטרופיה נוספת מחיישני התנועה ומתנודות התזמון. ליתר ביטחון.</string>
+    <string name="gen_words_24">24 מילים</string>
+    <string name="gen_words_12">12 מילים</string>
+    <string name="gen_words_hint">שתי האפשרויות מאובטחות; קל יותר לרשום 12.</string>
+    <string name="gen_pad_hint">נערו, או שרבטו כאן</string>
+    <string name="gen_entropy_full">שפע של אנטרופיה נוספת — הזרע הבסיסי כבר מאובטח</string>
+    <string name="gen_entropy_partial">עורבבו ~%1$d ביטים נוספים</string>
+    <string name="gen_generate">יצירת ארנק</string>
+
+    <string name="create_phrase_title">ביטוי השחזור שלכם</string>
+    <string name="create_phrase_body">כתבו את %1$d המילים האלה על נייר, לא מקוון. כל מי שיש לו אותן שולט בכספים שלכם.</string>
+    <string name="create_passphrase_hint">‏«מילה 25» — סוד נוסף שאינו נשמר. אם תגדירו אחד, לשחזור צריך גם את הביטוי וגם אותו. השאירו ריק אם אינכם בטוחים.</string>
+    <string name="create_ack">רשמתי את הביטוי</string>
+
+    <string name="restore_title">שחזור ארנק</string>
+    <string name="restore_body">הזינו את 12 או 24 המילים שלכם, מופרדות ברווחים.</string>
+    <string name="restore_clone_hint">לאחר ההוספה תוכלו לרשום את הארנק הזה גם ב-%1$s דרך «ניהול ארנקים» — אותו ביטוי, אותן כתובות.</string>
+    <string name="action_restore">שחזור</string>
+
+    <string name="field_wallet_name">שם הארנק</string>
+    <string name="field_passphrase">ביטוי סיסמה BIP-39 (אופציונלי)</string>
+    <string name="field_app_password">סיסמת האפליקציה</string>
+    <string name="field_confirm_password">אישור הסיסמה</string>
+    <string name="field_to_address">כתובת הנמען</string>
+    <string name="field_amount">סכום</string>
+    <string name="field_custom_feerate">‏sat/vB מותאם (אופציונלי)</string>
+
+    <string name="reveal_title">ביטוי שחזור</string>
+    <string name="reveal_warning">כל מי שרואה את המילים האלה — ואת ביטוי הסיסמה, אם הוגדר — יכול להוציא מהארנק הזה. הביטו בהן רק במקום פרטי. לעולם אל תקלידו אותן באתר או באפליקציה. צילומי מסך חסומים כאן.</string>
+    <string name="reveal_failed">לא ניתן היה לפענח את הארנק הזה.</string>
+    <string name="reveal_passphrase_label">ביטוי סיסמה BIP-39</string>
+    <string name="reveal_no_passphrase">אין ביטוי סיסמה BIP-39 בארנק הזה.</string>
+
+    <string name="nav_home">בית</string>
+    <string name="nav_wallet">ארנק</string>
+    <string name="nav_settings">הגדרות</string>
+    <string name="tab_receive">קבלה</string>
+    <string name="tab_send">שליחה</string>
+    <string name="tab_history">היסטוריה</string>
+
+    <string name="home_title">הארנקים שלכם</string>
+    <string name="home_open">פתוח</string>
+    <string name="home_tap_to_open">הקישו כדי לפתוח</string>
+    <string name="wallets_max">הגעתם למקסימום של %1$d ארנקים.</string>
+
+    <string name="lock_password_prompt">הזינו את סיסמת האפליקציה.</string>
+    <string name="biometric_setup_title">הגדרת נעילת אפליקציה</string>
+    <string name="biometric_unlock_title">ביטול נעילה של Fortis Wallet</string>
+    <string name="biometric_subtitle">Fortis Wallet</string>
+    <string name="biometric_invalidated">נעילת המסך של המכשיר שלכם השתנתה, ולכן כבר לא ניתן לבטל כאן את נעילת האפליקציה. התקינו מחדש ושחזרו כל ארנק מביטוי השחזור שלו.</string>
+    <string name="lock_choice_use_biometric">נעילת האפליקציה בטביעת אצבע או קוד אימות</string>
+    <string name="lock_choice_biometric_note">ביטול נעילה אחד פותח את כל הארנקים שלכם. אין סיסמה לזכור — טביעת האצבע/הפנים או קוד נעילת המסך של המכשיר מכניסים אתכם.</string>
+    <string name="lock_choice_password_note">הסיסמה הזו מבטלת את נעילת האפליקציה וכל ארנק בתוכה.</string>
+
+    <string name="settings_title">הגדרות</string>
+    <string name="settings_wallets">ארנקים</string>
+    <string name="settings_security">אבטחה</string>
+    <string name="settings_connection">חיבור</string>
+    <string name="settings_app_lock">נעילת אפליקציה</string>
+    <string name="lock_mode_biometric">טביעת אצבע / קוד המכשיר</string>
+    <string name="lock_mode_password">סיסמה</string>
+    <string name="settings_one_unlock">ביטול נעילה אחד פותח כל ארנק באפליקציה.</string>
+    <string name="settings_language">שפה</string>
+    <string name="language_system_default">ברירת המחדל של המערכת</string>
+    <string name="settings_status">סטטוס</string>
+    <string name="settings_chain_height">גובה השרשרת</string>
+    <string name="settings_degraded_note">שירות fortis אינו נגיש — נעשה שימוש בנתוני בלוקים ציבוריים לעת עתה. הוא יחזור אוטומטית.</string>
+    <string name="settings_version">fortis %1$s</string>
+    <string name="xpub_loading">עדיין נטען — נסו שוב</string>
+    <string name="also_add_on">הוסיפו גם ב-%1$s</string>
+    <string name="dialog_rename_title">שינוי שם הארנק</string>
+    <string name="dialog_reveal_title">להציג את ביטוי השחזור של %1$s?</string>
+    <string name="dialog_reveal_body">ביטוי השחזור (וביטוי הסיסמה, אם הגדרתם אחד) הוא הדבר היחיד שיכול לשחזר את הארנק הזה — וכל מי שיש לו אותו יכול להוציא את הכספים שלכם. חשפו אותו רק במקום פרטי, כשאף אחד לא מסתכל. המסך הבא חוסם צילומי מסך.</string>
+    <string name="dialog_remove_title">להסיר את %1$s?</string>
+    <string name="dialog_remove_body">פעולה זו מסירה את הארנק מהאפליקציה הזו בלבד. שום דבר לא משתנה בבלוקצ׳יין, ותוכלו להוסיף אותו בחזרה בכל עת עם ביטוי השחזור שלו (וביטוי הסיסמה, אם הגדרתם אחד). ודאו שהביטוי רשום.</string>
+
+    <string name="status_offline">לא מקוון</string>
+    <string name="status_rescanning">סורק מחדש %1$d%%</string>
+    <string name="status_limited">שירות מוגבל</string>
+    <string name="status_connected">מחובר</string>
+    <string name="status_syncing">מסנכרן</string>
+
+    <string name="wallet_none_open">אין ארנק פתוח</string>
+    <string name="wallet_choose">בחרו ארנק</string>
+    <string name="wallet_pending">%1$s %2$s ממתין</string>
+    <string name="wallet_block">בלוק %1$s</string>
+    <string name="wallet_rescanning">סורק מחדש %1$d%%</string>
+    <string name="wallet_syncing">מסנכרן</string>
+    <string name="wallet_limited_suffix">%1$s  ·  שירות מוגבל</string>
+    <string name="wallet_connecting">מתחבר…</string>
+    <string name="fiat_approx">≈ %1$s</string>
+
+    <string name="sent_title">התשלום נשלח</string>
+    <string name="sent_txid">%1$s… · הקישו כדי להעתיק</string>
+
+    <string name="cd_address_qr">קוד QR של הכתובת</string>
+    <string name="receive_address_n">כתובת #%1$d · הקישו כדי להעתיק</string>
+    <string name="share_address_chooser">שיתוף הכתובת</string>
+
+    <string name="scan_prompt">סרקו כתובת תשלום</string>
+    <string name="send_sweep">שליחת המקסימום (sweep)</string>
+    <string name="send_alt_coin">= %1$s %2$s</string>
+    <string name="send_alt_sat">= %1$s sat</string>
+    <string name="send_alt_fiat">  ·  %1$s</string>
+    <string name="fee_fast">מהיר</string>
+    <string name="fee_normal">רגיל</string>
+    <string name="fee_slow">איטי</string>
+    <string name="send_replay_protect">הגנת שידור חוזר של XBT (‏OP_RETURN של 100 בתים)</string>
+    <string name="send_replay_note">מוסיף עמלה של ~110 vB. לא תקני על ממסר Bitcoin ברירת המחדל — שדרו דרך צומת/שירות שמקבל OP_RETURN גדולים.</string>
+    <string name="send_service_fee">עמלת שירות: %1$s%% מהסכום שנשלח (מינימום %2$d sat) — תומך בצומת המתארח הזה.</string>
+    <string name="cd_amount_unit">יחידת סכום</string>
+    <string name="unit_sat">sat</string>
+
+    <string name="history_empty">אין עדיין עסקאות</string>
+    <string name="history_send">שליחה</string>
+    <string name="history_receive">קבלה</string>
+    <string name="history_row_subtitle">%1$s · %2$s…</string>
+    <string name="history_pending">ממתין</string>
+    <string name="history_conf_n">%1$d אישורים</string>
+    <string name="history_confirmed">מאושרת</string>
+    <string name="history_hint">הקישו על עסקה כדי לפתוח אותה בסייר · לחיצה ארוכה כדי להעתיק את המזהה</string>
+
+    <string name="confirm_sweep_title">אישור sweep</string>
+    <string name="confirm_payment_title">אישור תשלום</string>
+    <string name="confirm_to">אל</string>
+    <string name="confirm_amount">סכום</string>
+    <string name="confirm_network_fee">עמלת רשת</string>
+    <string name="confirm_network_fee_value">%1$s %2$s · %3$d sat/vB</string>
+    <string name="confirm_service_fee">עמלת שירות</string>
+    <string name="confirm_change">עודף</string>
+    <string name="confirm_replay">הגנת שידור חוזר</string>
+    <string name="confirm_replay_value">פועל · OP_RETURN של 100 בתים</string>
+    <string name="confirm_total">סה״כ</string>
+    <string name="value_with_fiat">%1$s %2$s  ·  %3$s</string>
+
+    <string name="mnemonic_not_in_list">%1$d לא ברשימת המילים</string>
+    <string name="mnemonic_looks_good">נראה תקין</string>
+    <string name="mnemonic_status">%1$s  ·  %2$s</string>
+
+    <string name="error_wallet_max">אפשר להחזיק עד %1$d ארנקים במכשיר אחד.</string>
+    <string name="error_clone_exists">‏«%1$s» כבר קיים ב-%2$s.</string>
+    <string name="error_lock_setup_failed">הגדרת נעילת האפליקציה נכשלה</string>
+    <string name="error_enter_amount">הזינו סכום</string>
+    <string name="error_no_coins">אין מטבעות מאושרים להוצאה</string>
+    <string name="error_open_wallet">לא ניתן היה לפתוח את הארנק</string>
+
+    <plurals name="word_count">
+        <item quantity="one">מילה אחת</item>
+        <item quantity="two">%1$d מילים</item>
+        <item quantity="many">%1$d מילים</item>
+        <item quantity="other">%1$d מילים</item>
+    </plurals>
+</resources>

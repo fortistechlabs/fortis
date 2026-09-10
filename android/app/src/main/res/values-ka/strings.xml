@@ -1,0 +1,189 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">fortis</string>
+
+    <string name="action_back">უკან</string>
+    <string name="action_cancel">გაუქმება</string>
+    <string name="action_continue">გაგრძელება</string>
+    <string name="action_save">შენახვა</string>
+    <string name="action_done">მზადაა</string>
+    <string name="action_show">ჩვენება</string>
+    <string name="action_hide">დამალვა</string>
+    <string name="action_copy">კოპირება</string>
+    <string name="action_share">გაზიარება</string>
+    <string name="action_open">გახსნა</string>
+    <string name="action_remove">წაშლა</string>
+    <string name="action_rename">გადარქმევა</string>
+    <string name="action_unlock">განბლოკვა</string>
+    <string name="action_add_wallet">საფულის დამატება</string>
+    <string name="action_view">ნახვა</string>
+    <string name="action_refresh">განახლება</string>
+    <string name="action_reconnect">ხელახლა დაკავშირება</string>
+    <string name="action_review">გადამოწმება</string>
+    <string name="action_sign_send">ხელმოწერა და გაგზავნა</string>
+    <string name="action_new_address">ახალი მისამართი</string>
+    <string name="action_scan_qr">QR კოდის სკანირება</string>
+    <string name="action_lock">დაბლოკვა</string>
+    <string name="action_lock_app">აპლიკაციის დაბლოკვა</string>
+    <string name="action_copy_xpub">xpub-ის კოპირება</string>
+    <string name="action_recovery_phrase">აღდგენის ფრაზა</string>
+    <string name="toast_copied">დაკოპირდა</string>
+    <string name="cd_dismiss">დახურვა</string>
+
+    <string name="onboard_add_title">საფულის დამატება</string>
+    <string name="onboard_tagline">არასაბრძოლო საფულე Bitcoin XBT-ისა და Bitcoin BTC-ისთვის</string>
+    <string name="onboard_create">ახალი საფულის შექმნა</string>
+    <string name="onboard_restore">აღდგენა აღდგენის ფრაზიდან</string>
+
+    <string name="gen_title">დაამატეთ ცოტა შემთხვევითობა</string>
+    <string name="gen_body">თქვენმა ტელეფონმა უკვე დააგენერირა უსაფრთხო თესლი. შეანჯღრიეთ იგი — ან ჩახაზეთ არეზე — რომ მოძრაობის სენსორებიდან და დროის რხევებიდან დამატებითი ენტროპია შეურიოთ. ყოველი შემთხვევისთვის.</string>
+    <string name="gen_words_24">24 სიტყვა</string>
+    <string name="gen_words_12">12 სიტყვა</string>
+    <string name="gen_words_hint">ორივე უსაფრთხოა; 12 უფრო ადვილი ჩასაწერია.</string>
+    <string name="gen_pad_hint">შეანჯღრიეთ ან ჩახაზეთ აქ</string>
+    <string name="gen_entropy_full">უხვად დამატებითი ენტროპია — საბაზისო თესლი უკვე უსაფრთხოა</string>
+    <string name="gen_entropy_partial">შერეულია ~%1$d დამატებითი ბიტი</string>
+    <string name="gen_generate">საფულის დაგენერირება</string>
+
+    <string name="create_phrase_title">თქვენი აღდგენის ფრაზა</string>
+    <string name="create_phrase_body">ჩაწერეთ ეს %1$d სიტყვა ქაღალდზე, ხაზგარეშე. ვისაც ისინი აქვს, აკონტროლებს თქვენს სახსრებს.</string>
+    <string name="create_passphrase_hint">„25-ე სიტყვა“ — დამატებითი საიდუმლო, რომელიც არ ინახება. თუ დააყენებთ, აღსადგენად გჭირდებათ ფრაზაც და ესეც. ეჭვის შემთხვევაში დატოვეთ ცარიელი.</string>
+    <string name="create_ack">ფრაზა ჩავიწერე</string>
+
+    <string name="restore_title">საფულის აღდგენა</string>
+    <string name="restore_body">შეიყვანეთ თქვენი 12 ან 24 სიტყვა, გამოტოვებებით გამოყოფილი.</string>
+    <string name="restore_clone_hint">დამატების შემდეგ ამ საფულის ჩამოთვლა შეგიძლიათ %1$s-ზეც „საფულეების მართვის“ განყოფილებიდან — იგივე ფრაზა, იგივე მისამართები.</string>
+    <string name="action_restore">აღდგენა</string>
+
+    <string name="field_wallet_name">საფულის სახელი</string>
+    <string name="field_passphrase">BIP-39 საიდუმლო ფრაზა (არასავალდებულო)</string>
+    <string name="field_app_password">აპლიკაციის პაროლი</string>
+    <string name="field_confirm_password">პაროლის დადასტურება</string>
+    <string name="field_to_address">მიმღების მისამართი</string>
+    <string name="field_amount">თანხა</string>
+    <string name="field_custom_feerate">მორგებული sat/vB (არასავალდებულო)</string>
+
+    <string name="reveal_title">აღდგენის ფრაზა</string>
+    <string name="reveal_warning">ვინც ამ სიტყვებს დაინახავს — და საიდუმლო ფრაზასაც, თუ დაყენებულია — შეუძლია ამ საფულის დახარჯვა. შეხედეთ მათ მხოლოდ პირად ადგილას. არასოდეს აკრიფოთ ისინი ვებსაიტზე ან აპლიკაციაში. აქ ეკრანის ანაბეჭდები დაბლოკილია.</string>
+    <string name="reveal_failed">ამ საფულის გაშიფვრა ვერ მოხერხდა.</string>
+    <string name="reveal_passphrase_label">BIP-39 საიდუმლო ფრაზა</string>
+    <string name="reveal_no_passphrase">ამ საფულეს არ აქვს BIP-39 საიდუმლო ფრაზა.</string>
+
+    <string name="nav_home">მთავარი</string>
+    <string name="nav_wallet">საფულე</string>
+    <string name="nav_settings">პარამეტრები</string>
+    <string name="tab_receive">მიღება</string>
+    <string name="tab_send">გაგზავნა</string>
+    <string name="tab_history">ისტორია</string>
+
+    <string name="home_title">თქვენი საფულეები</string>
+    <string name="home_open">ღიაა</string>
+    <string name="home_tap_to_open">შეეხეთ გასახსნელად</string>
+    <string name="wallets_max">მიღწეულია %1$d საფულის მაქსიმუმი.</string>
+
+    <string name="lock_password_prompt">შეიყვანეთ თქვენი აპლიკაციის პაროლი.</string>
+    <string name="biometric_setup_title">აპლიკაციის ბლოკირების დაყენება</string>
+    <string name="biometric_unlock_title">Fortis Wallet-ის განბლოკვა</string>
+    <string name="biometric_subtitle">Fortis Wallet</string>
+    <string name="biometric_invalidated">თქვენი მოწყობილობის ეკრანის ბლოკირება შეიცვალა, ამიტომ აპლიკაციის განბლოკვა აქ აღარ შეიძლება. ხელახლა დააინსტალირეთ და აღადგინეთ თითოეული საფულე მისი აღდგენის ფრაზიდან.</string>
+    <string name="lock_choice_use_biometric">აპლიკაციის დაბლოკვა თითის ანაბეჭდით ან PIN-ით</string>
+    <string name="lock_choice_biometric_note">ერთი განბლოკვა ხსნის თქვენს ყველა საფულეს. დასამახსოვრებელი პაროლი არ არის — შიგნით გიშვებთ მოწყობილობის თითის ანაბეჭდი/სახე ან ეკრანის ბლოკირების PIN.</string>
+    <string name="lock_choice_password_note">ეს პაროლი ხსნის აპლიკაციას და მასში არსებულ თითოეულ საფულეს.</string>
+
+    <string name="settings_title">პარამეტრები</string>
+    <string name="settings_wallets">საფულეები</string>
+    <string name="settings_security">უსაფრთხოება</string>
+    <string name="settings_connection">კავშირი</string>
+    <string name="settings_app_lock">აპლიკაციის ბლოკირება</string>
+    <string name="lock_mode_biometric">თითის ანაბეჭდი / მოწყობილობის PIN</string>
+    <string name="lock_mode_password">პაროლი</string>
+    <string name="settings_one_unlock">ერთი განბლოკვა ხსნის აპლიკაციის თითოეულ საფულეს.</string>
+    <string name="settings_language">ენა</string>
+    <string name="language_system_default">სისტემის ნაგულისხმევი</string>
+    <string name="settings_status">სტატუსი</string>
+    <string name="settings_chain_height">ჯაჭვის სიმაღლე</string>
+    <string name="settings_degraded_note">fortis სერვისი მიუწვდომელია — ჯერჯერობით გამოიყენება საჯარო ბლოკის მონაცემები. ავტომატურად დაბრუნდება.</string>
+    <string name="settings_version">fortis %1$s</string>
+    <string name="xpub_loading">ჯერ კიდევ იტვირთება — სცადეთ ხელახლა</string>
+    <string name="also_add_on">დაამატეთ %1$s-ზეც</string>
+    <string name="dialog_rename_title">საფულის გადარქმევა</string>
+    <string name="dialog_reveal_title">გამოჩნდეს %1$s-ის აღდგენის ფრაზა?</string>
+    <string name="dialog_reveal_body">აღდგენის ფრაზა (და საიდუმლო ფრაზა, თუ დააყენეთ) ერთადერთია, რასაც შეუძლია ამ საფულის აღდგენა — და ვისაც ის აქვს, შეუძლია თქვენი სახსრების დახარჯვა. გამოავლინეთ იგი მხოლოდ პირად ადგილას, როცა არავინ უყურებს. შემდეგი ეკრანი ბლოკავს ეკრანის ანაბეჭდებს.</string>
+    <string name="dialog_remove_title">წაიშალოს %1$s?</string>
+    <string name="dialog_remove_body">ეს საფულეს შლის მხოლოდ ამ აპლიკაციიდან. ბლოკჩეინზე არაფერი იცვლება და მისი დამატება ნებისმიერ დროს შეგიძლიათ მისი აღდგენის ფრაზით (და საიდუმლო ფრაზით, თუ დააყენეთ). დარწმუნდით, რომ ფრაზა ჩაწერილია.</string>
+
+    <string name="status_offline">ხაზგარეშე</string>
+    <string name="status_rescanning">ხელახალი სკანირება %1$d%%</string>
+    <string name="status_limited">შეზღუდული სერვისი</string>
+    <string name="status_connected">დაკავშირებულია</string>
+    <string name="status_syncing">სინქრონიზაცია</string>
+
+    <string name="wallet_none_open">ღია საფულე არ არის</string>
+    <string name="wallet_choose">აირჩიეთ საფულე</string>
+    <string name="wallet_pending">%1$s %2$s მოლოდინში</string>
+    <string name="wallet_block">ბლოკი %1$s</string>
+    <string name="wallet_rescanning">ხელახალი სკანირება %1$d%%</string>
+    <string name="wallet_syncing">სინქრონიზაცია</string>
+    <string name="wallet_limited_suffix">%1$s  ·  შეზღუდული სერვისი</string>
+    <string name="wallet_connecting">კავშირდება…</string>
+    <string name="fiat_approx">≈ %1$s</string>
+
+    <string name="sent_title">გადახდა გაიგზავნა</string>
+    <string name="sent_txid">%1$s… · შეეხეთ დასაკოპირებლად</string>
+
+    <string name="cd_address_qr">მისამართის QR კოდი</string>
+    <string name="receive_address_n">მისამართი #%1$d · შეეხეთ დასაკოპირებლად</string>
+    <string name="share_address_chooser">მისამართის გაზიარება</string>
+
+    <string name="scan_prompt">დაასკანერეთ გადახდის მისამართი</string>
+    <string name="send_sweep">მაქსიმუმის გაგზავნა (sweep)</string>
+    <string name="send_alt_coin">= %1$s %2$s</string>
+    <string name="send_alt_sat">= %1$s sat</string>
+    <string name="send_alt_fiat">  ·  %1$s</string>
+    <string name="fee_fast">სწრაფი</string>
+    <string name="fee_normal">ჩვეულებრივი</string>
+    <string name="fee_slow">ნელი</string>
+    <string name="send_replay_protect">XBT გამეორების დაცვა (100-ბაიტიანი OP_RETURN)</string>
+    <string name="send_replay_note">ამატებს ~110 vB საკომისიოს. არასტანდარტულია Bitcoin-ის ნაგულისხმევ რელეზე — გაავრცელეთ დიდი OP_RETURN-ის მიმღები კვანძის/სერვისის მეშვეობით.</string>
+    <string name="send_service_fee">სერვისის საკომისიო: გაგზავნილი თანხის %1$s%% (მინ. %2$d sat) — მხარს უჭერს ამ ჰოსტინგ კვანძს.</string>
+    <string name="cd_amount_unit">თანხის ერთეული</string>
+    <string name="unit_sat">sat</string>
+
+    <string name="history_empty">ტრანზაქციები ჯერ არ არის</string>
+    <string name="history_send">გაგზავნა</string>
+    <string name="history_receive">მიღება</string>
+    <string name="history_row_subtitle">%1$s · %2$s…</string>
+    <string name="history_pending">მოლოდინში</string>
+    <string name="history_conf_n">%1$d დადასტ.</string>
+    <string name="history_confirmed">დადასტურებული</string>
+    <string name="history_hint">შეეხეთ ტრანზაქციას მისი ბრაუზერში გასახსნელად · ხანგრძლივად დააჭირეთ id-ის დასაკოპირებლად</string>
+
+    <string name="confirm_sweep_title">sweep-ის დადასტურება</string>
+    <string name="confirm_payment_title">გადახდის დადასტურება</string>
+    <string name="confirm_to">ვის</string>
+    <string name="confirm_amount">თანხა</string>
+    <string name="confirm_network_fee">ქსელის საკომისიო</string>
+    <string name="confirm_network_fee_value">%1$s %2$s · %3$d sat/vB</string>
+    <string name="confirm_service_fee">სერვისის საკომისიო</string>
+    <string name="confirm_change">ხურდა</string>
+    <string name="confirm_replay">გამეორების დაცვა</string>
+    <string name="confirm_replay_value">ჩართული · 100-ბაიტიანი OP_RETURN</string>
+    <string name="confirm_total">სულ</string>
+    <string name="value_with_fiat">%1$s %2$s  ·  %3$s</string>
+
+    <string name="mnemonic_not_in_list">%1$d არ არის სიტყვების სიაში</string>
+    <string name="mnemonic_looks_good">კარგად გამოიყურება</string>
+    <string name="mnemonic_status">%1$s  ·  %2$s</string>
+
+    <string name="error_wallet_max">ერთ მოწყობილობაზე შეგიძლიათ შეინახოთ მაქსიმუმ %1$d საფულე.</string>
+    <string name="error_clone_exists">„%1$s“ უკვე არის %2$s-ზე.</string>
+    <string name="error_lock_setup_failed">აპლიკაციის ბლოკირების დაყენება ვერ მოხერხდა</string>
+    <string name="error_enter_amount">შეიყვანეთ თანხა</string>
+    <string name="error_no_coins">დასახარჯად დადასტურებული მონეტები არ არის</string>
+    <string name="error_open_wallet">საფულის გახსნა ვერ მოხერხდა</string>
+
+    <plurals name="word_count">
+        <item quantity="one">%1$d სიტყვა</item>
+        <item quantity="other">%1$d სიტყვა</item>
+    </plurals>
+</resources>

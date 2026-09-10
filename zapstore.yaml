@@ -1,0 +1,54 @@
+# Zapstore publication - https://zapstore.dev/docs/publish
+#
+# zsp has no Windows build; publish from WSL:
+#   wsl -d Ubuntu-24.04
+#   SIGN_WITH=nsec1...  ~/bin/zsp publish /mnt/c/Repos/fortis/zapstore.yaml
+#
+# One-time first: link the APK signing cert to the Nostr identity -
+#   SIGN_WITH=nsec1...  ~/bin/zsp identity --link-key /mnt/c/Repos/fortis/android/fortis-upload.jks --key-alias fortis
+
+repository: https://github.com/fortistechlabs/fortis
+
+# The Nostr identity that signs the publication. Must match SIGN_WITH - the
+# relay reads this committed file to whitelist the pubkey.
+pubkey: npub1qsasj2ljwllm9a3nget7jmdl7ggswf4jtpqjlryyz7l4mxc7lu0qdwthtf
+
+name: Fortis Wallet
+summary: Non-custodial wallet for Bitcoin XBT and Bitcoin BTC
+description: |
+  A non-custodial mobile wallet for Bitcoin XBT and Bitcoin BTC. Your recovery phrase is generated on your device, encrypted under a password you choose, and never leaves it.
+
+  - 12- or 24-word BIP-39 phrase, BIP-84 native SegWit, optional passphrase.
+  - Up to 10 named wallets, any mix of XBT and BTC, from the one phrase.
+  - Send and receive with QR codes, a built-in camera scanner, or paste.
+  - Fee presets or a custom sat/vB rate; "take the fees out of this amount"; sweep a whole balance.
+  - History with a tap-through to a block explorer; approximate USD value.
+  - One unlock (fingerprint, face, or device PIN) opens every wallet.
+  - Cross-chain replay protection: SIGHASH_UNIFIED on every XBT send (automatic), plus an optional oversized OP_RETURN on BTC sends.
+  - Extra entropy from your hands: shake the phone, scribble on screen, or CPU-timing jitter, folded into the seed.
+  - The app-unlock key lives in StrongBox or the TEE when the device has one.
+  - Recovery-phrase and password screens blocked from screenshots, screen recording, and the app switcher.
+  - No analytics, no ads, no third-party SDKs; the backend only ever sees public addresses and finished signed transactions - no account, no sign-up.
+
+  Standard, portable keys - restore the same phrase in any BIP-84 wallet. Open source (MIT). No Google Play Services.
+
+tags:
+  - bitcoin
+  - wallet
+  - finance
+  - cryptocurrency
+  - nostr
+  - xbt
+
+license: MIT
+website: https://fortistechlabs.com
+release_notes: ./CHANGELOG.md
+
+# zsp mis-extracts the adaptive launcher icon from the APK; pin the real one.
+icon: https://fortistechlabs.com/icon.png
+
+images:
+  - https://raw.githubusercontent.com/fortistechlabs/fortis/main/store/screenshots/01-onboard.png
+  - https://raw.githubusercontent.com/fortistechlabs/fortis/main/store/screenshots/02-receive.png
+  - https://raw.githubusercontent.com/fortistechlabs/fortis/main/store/screenshots/03-send.png
+  - https://raw.githubusercontent.com/fortistechlabs/fortis/main/store/screenshots/04-settings.png

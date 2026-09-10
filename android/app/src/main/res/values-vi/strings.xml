@@ -1,0 +1,188 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">fortis</string>
+
+    <string name="action_back">Quay lại</string>
+    <string name="action_cancel">Hủy</string>
+    <string name="action_continue">Tiếp tục</string>
+    <string name="action_save">Lưu</string>
+    <string name="action_done">Xong</string>
+    <string name="action_show">Hiện</string>
+    <string name="action_hide">Ẩn</string>
+    <string name="action_copy">Sao chép</string>
+    <string name="action_share">Chia sẻ</string>
+    <string name="action_open">Mở</string>
+    <string name="action_remove">Xóa</string>
+    <string name="action_rename">Đổi tên</string>
+    <string name="action_unlock">Mở khóa</string>
+    <string name="action_add_wallet">Thêm ví</string>
+    <string name="action_view">Xem</string>
+    <string name="action_refresh">Làm mới</string>
+    <string name="action_reconnect">Kết nối lại</string>
+    <string name="action_review">Xem lại</string>
+    <string name="action_sign_send">Ký và gửi</string>
+    <string name="action_new_address">Địa chỉ mới</string>
+    <string name="action_scan_qr">Quét mã QR</string>
+    <string name="action_lock">Khóa</string>
+    <string name="action_lock_app">Khóa ứng dụng</string>
+    <string name="action_copy_xpub">Sao chép xpub</string>
+    <string name="action_recovery_phrase">Cụm từ khôi phục</string>
+    <string name="toast_copied">Đã sao chép</string>
+    <string name="cd_dismiss">Bỏ qua</string>
+
+    <string name="onboard_add_title">Thêm một ví</string>
+    <string name="onboard_tagline">ví không lưu ký cho Bitcoin XBT và Bitcoin BTC</string>
+    <string name="onboard_create">Tạo ví mới</string>
+    <string name="onboard_restore">Khôi phục từ cụm từ khôi phục</string>
+
+    <string name="gen_title">Thêm chút ngẫu nhiên</string>
+    <string name="gen_body">Điện thoại của bạn đã tạo một seed an toàn. Hãy lắc máy — hoặc vẽ nguệch ngoạc lên ô — để trộn thêm entropy từ cảm biến chuyển động và độ trễ thời gian. Cho chắc.</string>
+    <string name="gen_words_24">24 từ</string>
+    <string name="gen_words_12">12 từ</string>
+    <string name="gen_words_hint">Cả hai đều an toàn; 12 từ dễ ghi lại hơn.</string>
+    <string name="gen_pad_hint">lắc, hoặc vẽ nguệch ngoạc ở đây</string>
+    <string name="gen_entropy_full">có nhiều entropy bổ sung — seed cơ bản đã an toàn</string>
+    <string name="gen_entropy_partial">đã trộn thêm ~%1$d bit</string>
+    <string name="gen_generate">Tạo ví</string>
+
+    <string name="create_phrase_title">Cụm từ khôi phục của bạn</string>
+    <string name="create_phrase_body">Ghi %1$d từ này ra giấy, ngoại tuyến. Bất kỳ ai có chúng đều kiểm soát tiền của bạn.</string>
+    <string name="create_passphrase_hint">Một \"từ thứ 25\" — bí mật bổ sung, không được lưu. Nếu đặt, bạn cần cả cụm từ và cái này để khôi phục. Để trống nếu không chắc.</string>
+    <string name="create_ack">Tôi đã ghi lại cụm từ</string>
+
+    <string name="restore_title">Khôi phục ví</string>
+    <string name="restore_body">Nhập 12 hoặc 24 từ của bạn, cách nhau bằng dấu cách.</string>
+    <string name="restore_clone_hint">Sau khi thêm, bạn cũng có thể liệt kê ví này trên %1$s từ Quản lý ví — cùng cụm từ, cùng địa chỉ.</string>
+    <string name="action_restore">Khôi phục</string>
+
+    <string name="field_wallet_name">Tên ví</string>
+    <string name="field_passphrase">Cụm mật khẩu BIP-39 (tùy chọn)</string>
+    <string name="field_app_password">Mật khẩu ứng dụng</string>
+    <string name="field_confirm_password">Xác nhận mật khẩu</string>
+    <string name="field_to_address">Địa chỉ nhận</string>
+    <string name="field_amount">Số tiền</string>
+    <string name="field_custom_feerate">sat/vB tùy chỉnh (tùy chọn)</string>
+
+    <string name="reveal_title">Cụm từ khôi phục</string>
+    <string name="reveal_warning">Bất kỳ ai thấy những từ này — cùng cụm mật khẩu, nếu đã đặt — đều có thể tiêu tiền trong ví này. Chỉ xem chúng ở nơi riêng tư. Không bao giờ nhập vào trang web hoặc ứng dụng. Ảnh chụp màn hình bị chặn ở đây.</string>
+    <string name="reveal_failed">Không thể giải mã ví này.</string>
+    <string name="reveal_passphrase_label">Cụm mật khẩu BIP-39</string>
+    <string name="reveal_no_passphrase">Ví này không có cụm mật khẩu BIP-39.</string>
+
+    <string name="nav_home">Trang chủ</string>
+    <string name="nav_wallet">Ví</string>
+    <string name="nav_settings">Cài đặt</string>
+    <string name="tab_receive">Nhận</string>
+    <string name="tab_send">Gửi</string>
+    <string name="tab_history">Lịch sử</string>
+
+    <string name="home_title">Ví của bạn</string>
+    <string name="home_open">đang mở</string>
+    <string name="home_tap_to_open">nhấn để mở</string>
+    <string name="wallets_max">Đã đạt tối đa %1$d ví.</string>
+
+    <string name="lock_password_prompt">Nhập mật khẩu ứng dụng của bạn.</string>
+    <string name="biometric_setup_title">Thiết lập khóa ứng dụng</string>
+    <string name="biometric_unlock_title">Mở khóa Fortis Wallet</string>
+    <string name="biometric_subtitle">Fortis Wallet</string>
+    <string name="biometric_invalidated">Khóa màn hình của thiết bị đã thay đổi, nên không thể mở khóa ứng dụng ở đây nữa. Cài đặt lại và khôi phục từng ví từ cụm từ khôi phục của nó.</string>
+    <string name="lock_choice_use_biometric">Khóa ứng dụng bằng vân tay hoặc mã PIN</string>
+    <string name="lock_choice_biometric_note">Một lần mở khóa mở tất cả ví của bạn. Không cần nhớ mật khẩu — vân tay/khuôn mặt hoặc mã PIN khóa màn hình của thiết bị sẽ cho bạn vào.</string>
+    <string name="lock_choice_password_note">Mật khẩu này mở khóa ứng dụng và mọi ví trong đó.</string>
+
+    <string name="settings_title">Cài đặt</string>
+    <string name="settings_wallets">Ví</string>
+    <string name="settings_security">Bảo mật</string>
+    <string name="settings_connection">Kết nối</string>
+    <string name="settings_app_lock">Khóa ứng dụng</string>
+    <string name="lock_mode_biometric">Vân tay / mã PIN thiết bị</string>
+    <string name="lock_mode_password">Mật khẩu</string>
+    <string name="settings_one_unlock">Một lần mở khóa mở mọi ví trong ứng dụng.</string>
+    <string name="settings_language">Ngôn ngữ</string>
+    <string name="language_system_default">Mặc định của hệ thống</string>
+    <string name="settings_status">Trạng thái</string>
+    <string name="settings_chain_height">Độ cao chuỗi</string>
+    <string name="settings_degraded_note">Không thể kết nối dịch vụ fortis — tạm dùng dữ liệu khối công khai. Sẽ tự động chuyển lại.</string>
+    <string name="settings_version">fortis %1$s</string>
+    <string name="xpub_loading">vẫn đang tải — thử lại</string>
+    <string name="also_add_on">Cũng thêm trên %1$s</string>
+    <string name="dialog_rename_title">Đổi tên ví</string>
+    <string name="dialog_reveal_title">Hiển thị cụm từ khôi phục cho %1$s?</string>
+    <string name="dialog_reveal_body">Cụm từ khôi phục (và cụm mật khẩu, nếu bạn đã đặt) là thứ duy nhất có thể khôi phục ví này — và bất kỳ ai có nó đều có thể tiêu tiền của bạn. Chỉ tiết lộ ở nơi riêng tư, không có ai nhìn. Màn hình tiếp theo chặn ảnh chụp màn hình.</string>
+    <string name="dialog_remove_title">Xóa %1$s?</string>
+    <string name="dialog_remove_body">Thao tác này chỉ xóa ví khỏi ứng dụng này. Không có gì thay đổi trên blockchain và bạn có thể thêm lại bất cứ lúc nào bằng cụm từ khôi phục (và cụm mật khẩu, nếu bạn đã đặt). Đảm bảo cụm từ đã được ghi lại.</string>
+
+    <string name="status_offline">ngoại tuyến</string>
+    <string name="status_rescanning">đang quét lại %1$d%%</string>
+    <string name="status_limited">dịch vụ hạn chế</string>
+    <string name="status_connected">đã kết nối</string>
+    <string name="status_syncing">đang đồng bộ</string>
+
+    <string name="wallet_none_open">Không có ví nào đang mở</string>
+    <string name="wallet_choose">Chọn một ví</string>
+    <string name="wallet_pending">%1$s %2$s đang chờ</string>
+    <string name="wallet_block">khối %1$s</string>
+    <string name="wallet_rescanning">đang quét lại %1$d%%</string>
+    <string name="wallet_syncing">đang đồng bộ</string>
+    <string name="wallet_limited_suffix">%1$s  ·  dịch vụ hạn chế</string>
+    <string name="wallet_connecting">đang kết nối…</string>
+    <string name="fiat_approx">≈ %1$s</string>
+
+    <string name="sent_title">Đã gửi thanh toán</string>
+    <string name="sent_txid">%1$s… · nhấn để sao chép</string>
+
+    <string name="cd_address_qr">mã QR của địa chỉ</string>
+    <string name="receive_address_n">địa chỉ #%1$d · nhấn để sao chép</string>
+    <string name="share_address_chooser">Chia sẻ địa chỉ</string>
+
+    <string name="scan_prompt">Quét địa chỉ thanh toán</string>
+    <string name="send_sweep">Gửi tối đa (sweep)</string>
+    <string name="send_alt_coin">= %1$s %2$s</string>
+    <string name="send_alt_sat">= %1$s sat</string>
+    <string name="send_alt_fiat">  ·  %1$s</string>
+    <string name="fee_fast">Nhanh</string>
+    <string name="fee_normal">Bình thường</string>
+    <string name="fee_slow">Chậm</string>
+    <string name="send_replay_protect">Bảo vệ chống phát lại XBT (OP_RETURN 100 byte)</string>
+    <string name="send_replay_note">Thêm ~110 vB phí. Không tiêu chuẩn trên relay Bitcoin mặc định — phát qua nút/dịch vụ chấp nhận OP_RETURN lớn.</string>
+    <string name="send_service_fee">Phí dịch vụ: %1$s%% số tiền gửi (tối thiểu %2$d sat) — hỗ trợ nút được lưu trữ này.</string>
+    <string name="cd_amount_unit">đơn vị số tiền</string>
+    <string name="unit_sat">sat</string>
+
+    <string name="history_empty">chưa có giao dịch</string>
+    <string name="history_send">gửi</string>
+    <string name="history_receive">nhận</string>
+    <string name="history_row_subtitle">%1$s · %2$s…</string>
+    <string name="history_pending">đang chờ</string>
+    <string name="history_conf_n">%1$d xác nhận</string>
+    <string name="history_confirmed">đã xác nhận</string>
+    <string name="history_hint">nhấn một giao dịch để mở trong trình khám phá · nhấn giữ để sao chép id</string>
+
+    <string name="confirm_sweep_title">Xác nhận sweep</string>
+    <string name="confirm_payment_title">Xác nhận thanh toán</string>
+    <string name="confirm_to">Đến</string>
+    <string name="confirm_amount">Số tiền</string>
+    <string name="confirm_network_fee">Phí mạng</string>
+    <string name="confirm_network_fee_value">%1$s %2$s · %3$d sat/vB</string>
+    <string name="confirm_service_fee">Phí dịch vụ</string>
+    <string name="confirm_change">Tiền thối</string>
+    <string name="confirm_replay">Bảo vệ chống phát lại</string>
+    <string name="confirm_replay_value">bật · OP_RETURN 100 byte</string>
+    <string name="confirm_total">Tổng</string>
+    <string name="value_with_fiat">%1$s %2$s  ·  %3$s</string>
+
+    <string name="mnemonic_not_in_list">%1$d không có trong danh sách từ</string>
+    <string name="mnemonic_looks_good">có vẻ ổn</string>
+    <string name="mnemonic_status">%1$s  ·  %2$s</string>
+
+    <string name="error_wallet_max">Bạn có thể giữ tối đa %1$d ví trên một thiết bị.</string>
+    <string name="error_clone_exists">\"%1$s\" đã có trên %2$s.</string>
+    <string name="error_lock_setup_failed">thiết lập khóa ứng dụng thất bại</string>
+    <string name="error_enter_amount">nhập số tiền</string>
+    <string name="error_no_coins">không có coin đã xác nhận để chi tiêu</string>
+    <string name="error_open_wallet">không thể mở ví</string>
+
+    <plurals name="word_count">
+        <item quantity="other">%1$d từ</item>
+    </plurals>
+</resources>

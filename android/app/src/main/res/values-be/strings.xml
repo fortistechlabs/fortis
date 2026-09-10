@@ -1,0 +1,191 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">fortis</string>
+
+    <string name="action_back">Назад</string>
+    <string name="action_cancel">Скасаваць</string>
+    <string name="action_continue">Працягнуць</string>
+    <string name="action_save">Захаваць</string>
+    <string name="action_done">Гатова</string>
+    <string name="action_show">Паказаць</string>
+    <string name="action_hide">Схаваць</string>
+    <string name="action_copy">Скапіраваць</string>
+    <string name="action_share">Абагуліць</string>
+    <string name="action_open">Адкрыць</string>
+    <string name="action_remove">Выдаліць</string>
+    <string name="action_rename">Перайменаваць</string>
+    <string name="action_unlock">Разблакіраваць</string>
+    <string name="action_add_wallet">Дадаць кашалёк</string>
+    <string name="action_view">Прагледзець</string>
+    <string name="action_refresh">Абнавіць</string>
+    <string name="action_reconnect">Перападключыцца</string>
+    <string name="action_review">Праверыць</string>
+    <string name="action_sign_send">Падпісаць і адправіць</string>
+    <string name="action_new_address">Новы адрас</string>
+    <string name="action_scan_qr">Сканіраваць QR-код</string>
+    <string name="action_lock">Заблакіраваць</string>
+    <string name="action_lock_app">Заблакіраваць праграму</string>
+    <string name="action_copy_xpub">Скапіраваць xpub</string>
+    <string name="action_recovery_phrase">Фраза аднаўлення</string>
+    <string name="toast_copied">Скапіравана</string>
+    <string name="cd_dismiss">Адхіліць</string>
+
+    <string name="onboard_add_title">Дадаць кашалёк</string>
+    <string name="onboard_tagline">некастадыяльны кашалёк для Bitcoin XBT і Bitcoin BTC</string>
+    <string name="onboard_create">Стварыць новы кашалёк</string>
+    <string name="onboard_restore">Аднавіць з фразы аднаўлення</string>
+
+    <string name="gen_title">Дадайце крыху выпадковасці</string>
+    <string name="gen_body">Ваш тэлефон ужо стварыў бяспечны seed. Патрасіце яго — або малюйце на полі — каб дамяшаць дадатковую энтрапію з датчыкаў руху і ваганняў часу. На ўсялякі выпадак.</string>
+    <string name="gen_words_24">24 словы</string>
+    <string name="gen_words_12">12 слоў</string>
+    <string name="gen_words_hint">Абодва бяспечныя; 12 прасцей запісаць.</string>
+    <string name="gen_pad_hint">патрасіце або малюйце тут</string>
+    <string name="gen_entropy_full">шмат дадатковай энтрапіі — базавы seed ужо бяспечны</string>
+    <string name="gen_entropy_partial">дамяшана ~%1$d дадатковых біт</string>
+    <string name="gen_generate">Стварыць кашалёк</string>
+
+    <string name="create_phrase_title">Ваша фраза аднаўлення</string>
+    <string name="create_phrase_body">Запішыце гэтыя %1$d слоў на паперы, па-за сеткай. Той, у каго яны ёсць, кіруе вашымі сродкамі.</string>
+    <string name="create_passphrase_hint">«25-е слова» — дадатковы сакрэт, які не захоўваецца. Калі яго задаць, для аднаўлення патрэбны і фраза, і яно. Пакіньце пустым, калі не ўпэўнены.</string>
+    <string name="create_ack">Я запісаў(-ла) фразу</string>
+
+    <string name="restore_title">Аднавіць кашалёк</string>
+    <string name="restore_body">Увядзіце свае 12 або 24 словы, падзеленыя прабеламі.</string>
+    <string name="restore_clone_hint">Пасля дадання гэты кашалёк можна таксама дадаць у %1$s праз «Кіраванне кашалькамі» — тая ж фраза, тыя ж адрасы.</string>
+    <string name="action_restore">Аднавіць</string>
+
+    <string name="field_wallet_name">Назва кашалька</string>
+    <string name="field_passphrase">Парольная фраза BIP-39 (неабавязкова)</string>
+    <string name="field_app_password">Пароль праграмы</string>
+    <string name="field_confirm_password">Пацвердзіце пароль</string>
+    <string name="field_to_address">Адрас атрымальніка</string>
+    <string name="field_amount">Сума</string>
+    <string name="field_custom_feerate">уласны sat/vB (неабавязкова)</string>
+
+    <string name="reveal_title">Фраза аднаўлення</string>
+    <string name="reveal_warning">Кожны, хто ўбачыць гэтыя словы — і парольную фразу, калі яна зададзена — можа выдаткаваць гэты кашалёк. Глядзіце на іх толькі ў прыватным месцы. Ніколі не ўводзьце іх на сайце або ў праграме. Здымкі экрана тут заблакіраваны.</string>
+    <string name="reveal_failed">Не ўдалося расшыфраваць гэты кашалёк.</string>
+    <string name="reveal_passphrase_label">Парольная фраза BIP-39</string>
+    <string name="reveal_no_passphrase">У гэтага кашалька няма парольнай фразы BIP-39.</string>
+
+    <string name="nav_home">Галоўная</string>
+    <string name="nav_wallet">Кашалёк</string>
+    <string name="nav_settings">Налады</string>
+    <string name="tab_receive">Атрымаць</string>
+    <string name="tab_send">Адправіць</string>
+    <string name="tab_history">Гісторыя</string>
+
+    <string name="home_title">Вашы кашалькі</string>
+    <string name="home_open">адкрыты</string>
+    <string name="home_tap_to_open">дакраніцеся, каб адкрыць</string>
+    <string name="wallets_max">Дасягнуты максімум у %1$d кашалькоў.</string>
+
+    <string name="lock_password_prompt">Увядзіце пароль праграмы.</string>
+    <string name="biometric_setup_title">Наладзіць блакіроўку праграмы</string>
+    <string name="biometric_unlock_title">Разблакіраваць Fortis Wallet</string>
+    <string name="biometric_subtitle">Fortis Wallet</string>
+    <string name="biometric_invalidated">Блакіроўка экрана вашай прылады змянілася, таму праграму больш нельга разблакіраваць тут. Перавстанавіце яе і аднавіце кожны кашалёк з яго фразы аднаўлення.</string>
+    <string name="lock_choice_use_biometric">Блакіраваць праграму адбіткам пальца або PIN-кодам</string>
+    <string name="lock_choice_biometric_note">Адно разблакіраванне адкрывае ўсе вашы кашалькі. Няма пароля, які трэба памятаць — унутр пускае адбітак пальца/твар або PIN-код блакіроўкі экрана вашай прылады.</string>
+    <string name="lock_choice_password_note">Гэты пароль разблакіроўвае праграму і кожны кашалёк у ёй.</string>
+
+    <string name="settings_title">Налады</string>
+    <string name="settings_wallets">Кашалькі</string>
+    <string name="settings_security">Бяспека</string>
+    <string name="settings_connection">Падключэнне</string>
+    <string name="settings_app_lock">Блакіроўка праграмы</string>
+    <string name="lock_mode_biometric">Адбітак пальца / PIN прылады</string>
+    <string name="lock_mode_password">Пароль</string>
+    <string name="settings_one_unlock">Адно разблакіраванне адкрывае кожны кашалёк у праграме.</string>
+    <string name="settings_language">Мова</string>
+    <string name="language_system_default">Прадвызначана сістэмай</string>
+    <string name="settings_status">Стан</string>
+    <string name="settings_chain_height">Вышыня ланцуга</string>
+    <string name="settings_degraded_note">Сэрвіс fortis недаступны — пакуль выкарыстоўваюцца публічныя даныя блокаў. Пераключэнне назад адбудзецца аўтаматычна.</string>
+    <string name="settings_version">fortis %1$s</string>
+    <string name="xpub_loading">яшчэ загружаецца — паспрабуйце зноў</string>
+    <string name="also_add_on">Дадаць таксама ў %1$s</string>
+    <string name="dialog_rename_title">Перайменаваць кашалёк</string>
+    <string name="dialog_reveal_title">Паказаць фразу аднаўлення для %1$s?</string>
+    <string name="dialog_reveal_body">Фраза аднаўлення (і парольная фраза, калі вы яе задалі) — адзінае, што можа аднавіць гэты кашалёк, і кожны, у каго яна ёсць, можа выдаткаваць вашы сродкі. Раскрывайце яе толькі ў прыватным месцы, калі ніхто не глядзіць. Наступны экран блакіруе здымкі экрана.</string>
+    <string name="dialog_remove_title">Выдаліць %1$s?</string>
+    <string name="dialog_remove_body">Гэта выдаляе кашалёк толькі з гэтай праграмы. У блокчэйне нічога не мяняецца, і вы можаце дадаць яго зноў у любы час з дапамогай яго фразы аднаўлення (і парольнай фразы, калі вы яе задалі). Пераканайцеся, што фраза запісана.</string>
+
+    <string name="status_offline">па-за сеткай</string>
+    <string name="status_rescanning">паўторнае сканіраванне %1$d%%</string>
+    <string name="status_limited">абмежаваны сэрвіс</string>
+    <string name="status_connected">падключана</string>
+    <string name="status_syncing">сінхранізацыя</string>
+
+    <string name="wallet_none_open">Ні адзін кашалёк не адкрыты</string>
+    <string name="wallet_choose">Выберыце кашалёк</string>
+    <string name="wallet_pending">%1$s %2$s у чаканні</string>
+    <string name="wallet_block">блок %1$s</string>
+    <string name="wallet_rescanning">паўторнае сканіраванне %1$d%%</string>
+    <string name="wallet_syncing">сінхранізацыя</string>
+    <string name="wallet_limited_suffix">%1$s  ·  абмежаваны сэрвіс</string>
+    <string name="wallet_connecting">падключэнне…</string>
+    <string name="fiat_approx">≈ %1$s</string>
+
+    <string name="sent_title">Плацёж адпраўлены</string>
+    <string name="sent_txid">%1$s… · дакраніцеся, каб скапіраваць</string>
+
+    <string name="cd_address_qr">QR-код адраса</string>
+    <string name="receive_address_n">адрас №%1$d · дакраніцеся, каб скапіраваць</string>
+    <string name="share_address_chooser">Абагуліць адрас</string>
+
+    <string name="scan_prompt">Сканіруйце адрас плацяжу</string>
+    <string name="send_sweep">Адправіць максімум (sweep)</string>
+    <string name="send_alt_coin">= %1$s %2$s</string>
+    <string name="send_alt_sat">= %1$s sat</string>
+    <string name="send_alt_fiat">  ·  %1$s</string>
+    <string name="fee_fast">Хутка</string>
+    <string name="fee_normal">Звычайна</string>
+    <string name="fee_slow">Павольна</string>
+    <string name="send_replay_protect">Абарона ад паўтору XBT (100-байтавы OP_RETURN)</string>
+    <string name="send_replay_note">Дадае ~110 vB камісіі. Нестандартна для прадвызначанага рэлея Bitcoin — трансліруйце праз вузел/сэрвіс, які прымае вялікія OP_RETURN.</string>
+    <string name="send_service_fee">Камісія за сэрвіс: %1$s%% ад адпраўленай сумы (мін. %2$d sat) — падтрымлівае гэты хостынгавы вузел.</string>
+    <string name="cd_amount_unit">адзінка сумы</string>
+    <string name="unit_sat">sat</string>
+
+    <string name="history_empty">пакуль няма транзакцый</string>
+    <string name="history_send">адпраўка</string>
+    <string name="history_receive">атрыманне</string>
+    <string name="history_row_subtitle">%1$s · %2$s…</string>
+    <string name="history_pending">у чаканні</string>
+    <string name="history_conf_n">%1$d пацв.</string>
+    <string name="history_confirmed">пацверджана</string>
+    <string name="history_hint">дакраніцеся да транзакцыі, каб адкрыць яе ў аглядальніку · утрымлівайце, каб скапіраваць id</string>
+
+    <string name="confirm_sweep_title">Пацвердзіце sweep</string>
+    <string name="confirm_payment_title">Пацвердзіце плацёж</string>
+    <string name="confirm_to">Каму</string>
+    <string name="confirm_amount">Сума</string>
+    <string name="confirm_network_fee">Сеткавая камісія</string>
+    <string name="confirm_network_fee_value">%1$s %2$s · %3$d sat/vB</string>
+    <string name="confirm_service_fee">Камісія за сэрвіс</string>
+    <string name="confirm_change">Рэшта</string>
+    <string name="confirm_replay">Абарона ад паўтору</string>
+    <string name="confirm_replay_value">укл. · 100-байтавы OP_RETURN</string>
+    <string name="confirm_total">Разам</string>
+    <string name="value_with_fiat">%1$s %2$s  ·  %3$s</string>
+
+    <string name="mnemonic_not_in_list">%1$d не ў спісе слоў</string>
+    <string name="mnemonic_looks_good">выглядае добра</string>
+    <string name="mnemonic_status">%1$s  ·  %2$s</string>
+
+    <string name="error_wallet_max">На адной прыладзе можна трымаць да %1$d кашалькоў.</string>
+    <string name="error_clone_exists">«%1$s» ужо ёсць у %2$s.</string>
+    <string name="error_lock_setup_failed">не ўдалося наладзіць блакіроўку праграмы</string>
+    <string name="error_enter_amount">увядзіце суму</string>
+    <string name="error_no_coins">няма пацверджаных манет для выдаткавання</string>
+    <string name="error_open_wallet">не ўдалося адкрыць кашалёк</string>
+
+    <plurals name="word_count">
+        <item quantity="one">%1$d слова</item>
+        <item quantity="few">%1$d словы</item>
+        <item quantity="many">%1$d слоў</item>
+        <item quantity="other">%1$d слова</item>
+    </plurals>
+</resources>

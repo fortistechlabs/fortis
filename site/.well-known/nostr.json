@@ -1,0 +1,13 @@
+{
+  "names": {
+    "info": "043b092bf277ffb2f6334657e96dbff2110726b258412f8c8417bf5d9b1eff1e",
+    "_": "043b092bf277ffb2f6334657e96dbff2110726b258412f8c8417bf5d9b1eff1e"
+  },
+  "relays": {
+    "043b092bf277ffb2f6334657e96dbff2110726b258412f8c8417bf5d9b1eff1e": [
+      "wss://relay.zapstore.dev",
+      "wss://relay.primal.net",
+      "wss://relay.damus.io"
+    ]
+  }
+}

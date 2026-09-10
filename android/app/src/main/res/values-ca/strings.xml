@@ -1,0 +1,189 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">fortis</string>
+
+    <string name="action_back">Enrere</string>
+    <string name="action_cancel">Cancel·la</string>
+    <string name="action_continue">Continua</string>
+    <string name="action_save">Desa</string>
+    <string name="action_done">Fet</string>
+    <string name="action_show">Mostra</string>
+    <string name="action_hide">Amaga</string>
+    <string name="action_copy">Copia</string>
+    <string name="action_share">Comparteix</string>
+    <string name="action_open">Obre</string>
+    <string name="action_remove">Elimina</string>
+    <string name="action_rename">Canvia el nom</string>
+    <string name="action_unlock">Desbloqueja</string>
+    <string name="action_add_wallet">Afegeix una cartera</string>
+    <string name="action_view">Mostra</string>
+    <string name="action_refresh">Actualitza</string>
+    <string name="action_reconnect">Torna a connectar</string>
+    <string name="action_review">Revisa</string>
+    <string name="action_sign_send">Signa i envia</string>
+    <string name="action_new_address">Adreça nova</string>
+    <string name="action_scan_qr">Escaneja el codi QR</string>
+    <string name="action_lock">Bloqueja</string>
+    <string name="action_lock_app">Bloqueja l\'app</string>
+    <string name="action_copy_xpub">Copia l\'xpub</string>
+    <string name="action_recovery_phrase">Frase de recuperació</string>
+    <string name="toast_copied">Copiat</string>
+    <string name="cd_dismiss">Descarta</string>
+
+    <string name="onboard_add_title">Afegeix una cartera</string>
+    <string name="onboard_tagline">una cartera no custodial per a Bitcoin XBT i Bitcoin BTC</string>
+    <string name="onboard_create">Crea una cartera nova</string>
+    <string name="onboard_restore">Restaura des d\'una frase de recuperació</string>
+
+    <string name="gen_title">Afegeix una mica d\'aleatorietat</string>
+    <string name="gen_body">El teu telèfon ja ha generat una llavor segura. Sacseja\'l — o gargoteja al plafó — per barrejar-hi entropia extra dels sensors de moviment i les variacions de temps. Per si de cas.</string>
+    <string name="gen_words_24">24 paraules</string>
+    <string name="gen_words_12">12 paraules</string>
+    <string name="gen_words_hint">Totes dues són segures; 12 és més fàcil d\'anotar.</string>
+    <string name="gen_pad_hint">sacseja o gargoteja aquí</string>
+    <string name="gen_entropy_full">molta entropia extra — la llavor base ja és segura</string>
+    <string name="gen_entropy_partial">~%1$d bits extra barrejats</string>
+    <string name="gen_generate">Genera la cartera</string>
+
+    <string name="create_phrase_title">La teva frase de recuperació</string>
+    <string name="create_phrase_body">Escriu aquestes %1$d paraules en paper, sense connexió. Qui les tingui controla els teus fons.</string>
+    <string name="create_passphrase_hint">Una \"25a paraula\" — un secret addicional, que no es desa. Si en poses una, necessites tant la frase com això per restaurar. Deixa-ho en blanc si no n\'estàs segur.</string>
+    <string name="create_ack">He anotat la frase</string>
+
+    <string name="restore_title">Restaura la cartera</string>
+    <string name="restore_body">Introdueix les teves 12 o 24 paraules, separades per espais.</string>
+    <string name="restore_clone_hint">Un cop afegida, també pots llistar aquesta cartera a %1$s des de Gestiona carteres — la mateixa frase, les mateixes adreces.</string>
+    <string name="action_restore">Restaura</string>
+
+    <string name="field_wallet_name">Nom de la cartera</string>
+    <string name="field_passphrase">Frase de contrasenya BIP-39 (opcional)</string>
+    <string name="field_app_password">Contrasenya de l\'app</string>
+    <string name="field_confirm_password">Confirma la contrasenya</string>
+    <string name="field_to_address">Adreça de destinació</string>
+    <string name="field_amount">Import</string>
+    <string name="field_custom_feerate">sat/vB personalitzat (opcional)</string>
+
+    <string name="reveal_title">Frase de recuperació</string>
+    <string name="reveal_warning">Qualsevol que vegi aquestes paraules — i la frase de contrasenya, si n\'hi ha — pot gastar aquesta cartera. Mira-les només en un lloc privat. No les escriguis mai en un lloc web ni en una app. Aquí les captures de pantalla estan bloquejades.</string>
+    <string name="reveal_failed">No s\'ha pogut desxifrar aquesta cartera.</string>
+    <string name="reveal_passphrase_label">Frase de contrasenya BIP-39</string>
+    <string name="reveal_no_passphrase">Aquesta cartera no té frase de contrasenya BIP-39.</string>
+
+    <string name="nav_home">Inici</string>
+    <string name="nav_wallet">Cartera</string>
+    <string name="nav_settings">Configuració</string>
+    <string name="tab_receive">Rep</string>
+    <string name="tab_send">Envia</string>
+    <string name="tab_history">Historial</string>
+
+    <string name="home_title">Les teves carteres</string>
+    <string name="home_open">oberta</string>
+    <string name="home_tap_to_open">toca per obrir</string>
+    <string name="wallets_max">S\'ha assolit el màxim de %1$d carteres.</string>
+
+    <string name="lock_password_prompt">Introdueix la contrasenya de l\'app.</string>
+    <string name="biometric_setup_title">Configura el bloqueig de l\'app</string>
+    <string name="biometric_unlock_title">Desbloqueja Fortis Wallet</string>
+    <string name="biometric_subtitle">Fortis Wallet</string>
+    <string name="biometric_invalidated">El bloqueig de pantalla del teu dispositiu ha canviat, així que l\'app ja no es pot desbloquejar aquí. Torna a instal·lar-la i restaura cada cartera des de la seva frase de recuperació.</string>
+    <string name="lock_choice_use_biometric">Bloqueja l\'app amb empremta o PIN</string>
+    <string name="lock_choice_biometric_note">Un sol desbloqueig obre totes les teves carteres. Cap contrasenya per recordar — l\'empremta/cara o el PIN de bloqueig de pantalla del dispositiu t\'hi deixen entrar.</string>
+    <string name="lock_choice_password_note">Aquesta contrasenya desbloqueja l\'app i totes les carteres que conté.</string>
+
+    <string name="settings_title">Configuració</string>
+    <string name="settings_wallets">Carteres</string>
+    <string name="settings_security">Seguretat</string>
+    <string name="settings_connection">Connexió</string>
+    <string name="settings_app_lock">Bloqueig de l\'app</string>
+    <string name="lock_mode_biometric">Empremta / PIN del dispositiu</string>
+    <string name="lock_mode_password">Contrasenya</string>
+    <string name="settings_one_unlock">Un sol desbloqueig obre totes les carteres de l\'app.</string>
+    <string name="settings_language">Idioma</string>
+    <string name="language_system_default">Predeterminat del sistema</string>
+    <string name="settings_status">Estat</string>
+    <string name="settings_chain_height">Alçada de la cadena</string>
+    <string name="settings_degraded_note">El servei fortis no és accessible — de moment s\'utilitzen dades públiques de blocs. Tornarà automàticament.</string>
+    <string name="settings_version">fortis %1$s</string>
+    <string name="xpub_loading">encara s\'està carregant — torna-ho a provar</string>
+    <string name="also_add_on">Afegeix també a %1$s</string>
+    <string name="dialog_rename_title">Canvia el nom de la cartera</string>
+    <string name="dialog_reveal_title">Vols mostrar la frase de recuperació de %1$s?</string>
+    <string name="dialog_reveal_body">La frase de recuperació (i la frase de contrasenya, si n\'has posat una) és l\'única cosa que pot restaurar aquesta cartera — i qualsevol que la tingui pot gastar els teus fons. Revela-la només en un lloc privat, sense ningú mirant. La pantalla següent bloqueja les captures.</string>
+    <string name="dialog_remove_title">Vols eliminar %1$s?</string>
+    <string name="dialog_remove_body">Això només elimina la cartera d\'aquesta app. Res no canvia a la blockchain i la pots tornar a afegir en qualsevol moment amb la seva frase de recuperació (i frase de contrasenya, si n\'has posat una). Assegura\'t que la frase està anotada.</string>
+
+    <string name="status_offline">sense connexió</string>
+    <string name="status_rescanning">reescanejant %1$d%%</string>
+    <string name="status_limited">servei limitat</string>
+    <string name="status_connected">connectat</string>
+    <string name="status_syncing">sincronitzant</string>
+
+    <string name="wallet_none_open">Cap cartera oberta</string>
+    <string name="wallet_choose">Tria una cartera</string>
+    <string name="wallet_pending">%1$s %2$s pendent</string>
+    <string name="wallet_block">bloc %1$s</string>
+    <string name="wallet_rescanning">reescanejant %1$d%%</string>
+    <string name="wallet_syncing">sincronitzant</string>
+    <string name="wallet_limited_suffix">%1$s  ·  servei limitat</string>
+    <string name="wallet_connecting">connectant…</string>
+    <string name="fiat_approx">≈ %1$s</string>
+
+    <string name="sent_title">Pagament enviat</string>
+    <string name="sent_txid">%1$s… · toca per copiar</string>
+
+    <string name="cd_address_qr">codi QR de l\'adreça</string>
+    <string name="receive_address_n">adreça núm. %1$d · toca per copiar</string>
+    <string name="share_address_chooser">Comparteix l\'adreça</string>
+
+    <string name="scan_prompt">Escaneja una adreça de pagament</string>
+    <string name="send_sweep">Envia el màxim (sweep)</string>
+    <string name="send_alt_coin">= %1$s %2$s</string>
+    <string name="send_alt_sat">= %1$s sat</string>
+    <string name="send_alt_fiat">  ·  %1$s</string>
+    <string name="fee_fast">Ràpid</string>
+    <string name="fee_normal">Normal</string>
+    <string name="fee_slow">Lent</string>
+    <string name="send_replay_protect">Protecció de repetició XBT (OP_RETURN de 100 bytes)</string>
+    <string name="send_replay_note">Afegeix ~110 vB de comissió. No estàndard al relay per defecte de Bitcoin — difon-ho mitjançant un node/servei que accepti OP_RETURN grans.</string>
+    <string name="send_service_fee">Comissió de servei: %1$s%% de l\'import enviat (mín. %2$d sat) — dona suport a aquest node allotjat.</string>
+    <string name="cd_amount_unit">unitat de l\'import</string>
+    <string name="unit_sat">sat</string>
+
+    <string name="history_empty">encara no hi ha transaccions</string>
+    <string name="history_send">enviament</string>
+    <string name="history_receive">recepció</string>
+    <string name="history_row_subtitle">%1$s · %2$s…</string>
+    <string name="history_pending">pendent</string>
+    <string name="history_conf_n">%1$d conf.</string>
+    <string name="history_confirmed">confirmada</string>
+    <string name="history_hint">toca una transacció per obrir-la a l\'explorador · mantén premut per copiar l\'id</string>
+
+    <string name="confirm_sweep_title">Confirma el sweep</string>
+    <string name="confirm_payment_title">Confirma el pagament</string>
+    <string name="confirm_to">A</string>
+    <string name="confirm_amount">Import</string>
+    <string name="confirm_network_fee">Comissió de xarxa</string>
+    <string name="confirm_network_fee_value">%1$s %2$s · %3$d sat/vB</string>
+    <string name="confirm_service_fee">Comissió de servei</string>
+    <string name="confirm_change">Canvi</string>
+    <string name="confirm_replay">Protecció de repetició</string>
+    <string name="confirm_replay_value">activada · OP_RETURN de 100 bytes</string>
+    <string name="confirm_total">Total</string>
+    <string name="value_with_fiat">%1$s %2$s  ·  %3$s</string>
+
+    <string name="mnemonic_not_in_list">%1$d fora de la llista de paraules</string>
+    <string name="mnemonic_looks_good">té bon aspecte</string>
+    <string name="mnemonic_status">%1$s  ·  %2$s</string>
+
+    <string name="error_wallet_max">Pots tenir fins a %1$d carteres en un dispositiu.</string>
+    <string name="error_clone_exists">«%1$s» ja és a %2$s.</string>
+    <string name="error_lock_setup_failed">ha fallat la configuració del bloqueig de l\'app</string>
+    <string name="error_enter_amount">introdueix un import</string>
+    <string name="error_no_coins">no hi ha monedes confirmades per gastar</string>
+    <string name="error_open_wallet">no s\'ha pogut obrir la cartera</string>
+
+    <plurals name="word_count">
+        <item quantity="one">%1$d paraula</item>
+        <item quantity="other">%1$d paraules</item>
+    </plurals>
+</resources>

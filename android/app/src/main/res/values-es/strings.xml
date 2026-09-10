@@ -1,0 +1,189 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">fortis</string>
+
+    <string name="action_back">Atrás</string>
+    <string name="action_cancel">Cancelar</string>
+    <string name="action_continue">Continuar</string>
+    <string name="action_save">Guardar</string>
+    <string name="action_done">Listo</string>
+    <string name="action_show">Mostrar</string>
+    <string name="action_hide">Ocultar</string>
+    <string name="action_copy">Copiar</string>
+    <string name="action_share">Compartir</string>
+    <string name="action_open">Abrir</string>
+    <string name="action_remove">Eliminar</string>
+    <string name="action_rename">Cambiar nombre</string>
+    <string name="action_unlock">Desbloquear</string>
+    <string name="action_add_wallet">Añadir monedero</string>
+    <string name="action_view">Ver</string>
+    <string name="action_refresh">Actualizar</string>
+    <string name="action_reconnect">Reconectar</string>
+    <string name="action_review">Revisar</string>
+    <string name="action_sign_send">Firmar y enviar</string>
+    <string name="action_new_address">Nueva dirección</string>
+    <string name="action_scan_qr">Escanear código QR</string>
+    <string name="action_lock">Bloquear</string>
+    <string name="action_lock_app">Bloquear la app</string>
+    <string name="action_copy_xpub">Copiar xpub</string>
+    <string name="action_recovery_phrase">Frase de recuperación</string>
+    <string name="toast_copied">Copiado</string>
+    <string name="cd_dismiss">Descartar</string>
+
+    <string name="onboard_add_title">Añadir un monedero</string>
+    <string name="onboard_tagline">un monedero no custodial para Bitcoin XBT y Bitcoin BTC</string>
+    <string name="onboard_create">Crear un monedero nuevo</string>
+    <string name="onboard_restore">Restaurar desde una frase de recuperación</string>
+
+    <string name="gen_title">Añade algo de aleatoriedad</string>
+    <string name="gen_body">Tu teléfono ya generó una semilla segura. Agítalo —o garabatea en el panel— para añadir entropía extra de los sensores de movimiento y de la variación temporal. Por si acaso.</string>
+    <string name="gen_words_24">24 palabras</string>
+    <string name="gen_words_12">12 palabras</string>
+    <string name="gen_words_hint">Ambas son seguras; 12 es más fácil de anotar.</string>
+    <string name="gen_pad_hint">agita o garabatea aquí</string>
+    <string name="gen_entropy_full">entropía extra de sobra: la semilla base ya es segura</string>
+    <string name="gen_entropy_partial">~%1$d bits extra añadidos</string>
+    <string name="gen_generate">Generar monedero</string>
+
+    <string name="create_phrase_title">Tu frase de recuperación</string>
+    <string name="create_phrase_body">Escribe estas %1$d palabras en papel, sin conexión. Quien las tenga controla tus fondos.</string>
+    <string name="create_passphrase_hint">Una \"palabra 25\": un secreto adicional que no se guarda. Si defines una, necesitarás tanto la frase como esto para restaurar. Déjalo en blanco si no estás seguro.</string>
+    <string name="create_ack">He anotado la frase</string>
+
+    <string name="restore_title">Restaurar monedero</string>
+    <string name="restore_body">Introduce tus 12 o 24 palabras separadas por espacios.</string>
+    <string name="restore_clone_hint">Una vez añadido, también puedes incluir este monedero en %1$s desde Gestionar monederos: misma frase, mismas direcciones.</string>
+    <string name="action_restore">Restaurar</string>
+
+    <string name="field_wallet_name">Nombre del monedero</string>
+    <string name="field_passphrase">Frase de contraseña BIP-39 (opcional)</string>
+    <string name="field_app_password">Contraseña de la app</string>
+    <string name="field_confirm_password">Confirmar contraseña</string>
+    <string name="field_to_address">Dirección de destino</string>
+    <string name="field_amount">Cantidad</string>
+    <string name="field_custom_feerate">sat/vB personalizado (opcional)</string>
+
+    <string name="reveal_title">Frase de recuperación</string>
+    <string name="reveal_warning">Cualquiera que vea estas palabras —y la frase de contraseña, si la definiste— puede gastar este monedero. Míralas solo en un lugar privado. Nunca las escribas en un sitio web o una app. Aquí están bloqueadas las capturas de pantalla.</string>
+    <string name="reveal_failed">No se pudo descifrar este monedero.</string>
+    <string name="reveal_passphrase_label">Frase de contraseña BIP-39</string>
+    <string name="reveal_no_passphrase">Este monedero no tiene frase de contraseña BIP-39.</string>
+
+    <string name="nav_home">Inicio</string>
+    <string name="nav_wallet">Monedero</string>
+    <string name="nav_settings">Ajustes</string>
+    <string name="tab_receive">Recibir</string>
+    <string name="tab_send">Enviar</string>
+    <string name="tab_history">Historial</string>
+
+    <string name="home_title">Tus monederos</string>
+    <string name="home_open">abierto</string>
+    <string name="home_tap_to_open">toca para abrir</string>
+    <string name="wallets_max">Se alcanzó el máximo de %1$d monederos.</string>
+
+    <string name="lock_password_prompt">Introduce la contraseña de la app.</string>
+    <string name="biometric_setup_title">Configurar el bloqueo de la app</string>
+    <string name="biometric_unlock_title">Desbloquear Fortis Wallet</string>
+    <string name="biometric_subtitle">Fortis Wallet</string>
+    <string name="biometric_invalidated">El bloqueo de pantalla de tu dispositivo cambió, así que la app ya no se puede desbloquear aquí. Reinstala y restaura cada monedero desde su frase de recuperación.</string>
+    <string name="lock_choice_use_biometric">Bloquear la app con huella o PIN</string>
+    <string name="lock_choice_biometric_note">Un desbloqueo abre todos tus monederos. Sin contraseña que recordar: la huella/cara o el PIN de bloqueo de tu dispositivo te da acceso.</string>
+    <string name="lock_choice_password_note">Esta contraseña desbloquea la app y todos sus monederos.</string>
+
+    <string name="settings_title">Ajustes</string>
+    <string name="settings_wallets">Monederos</string>
+    <string name="settings_security">Seguridad</string>
+    <string name="settings_connection">Conexión</string>
+    <string name="settings_app_lock">Bloqueo de la app</string>
+    <string name="lock_mode_biometric">Huella / PIN del dispositivo</string>
+    <string name="lock_mode_password">Contraseña</string>
+    <string name="settings_one_unlock">Un desbloqueo abre todos los monederos de la app.</string>
+    <string name="settings_language">Idioma</string>
+    <string name="language_system_default">Predeterminado del sistema</string>
+    <string name="settings_status">Estado</string>
+    <string name="settings_chain_height">Altura de la cadena</string>
+    <string name="settings_degraded_note">El servicio de fortis no está disponible; por ahora se usan datos públicos de bloques. Volverá a cambiar automáticamente.</string>
+    <string name="settings_version">fortis %1$s</string>
+    <string name="xpub_loading">aún cargando: inténtalo de nuevo</string>
+    <string name="also_add_on">Añadir también en %1$s</string>
+    <string name="dialog_rename_title">Cambiar el nombre del monedero</string>
+    <string name="dialog_reveal_title">¿Mostrar la frase de recuperación de %1$s?</string>
+    <string name="dialog_reveal_body">La frase de recuperación (y la frase de contraseña, si definiste una) es lo único que puede restaurar este monedero, y quien la tenga puede gastar tus fondos. Muéstrala solo en un lugar privado, sin que nadie mire. La pantalla siguiente bloquea las capturas.</string>
+    <string name="dialog_remove_title">¿Eliminar %1$s?</string>
+    <string name="dialog_remove_body">Esto solo elimina el monedero de esta app. Nada cambia en la cadena de bloques y puedes volver a añadirlo cuando quieras con su frase de recuperación (y la frase de contraseña, si la definiste). Asegúrate de tener la frase anotada.</string>
+
+    <string name="status_offline">sin conexión</string>
+    <string name="status_rescanning">reescaneando %1$d%%</string>
+    <string name="status_limited">servicio limitado</string>
+    <string name="status_connected">conectado</string>
+    <string name="status_syncing">sincronizando</string>
+
+    <string name="wallet_none_open">Ningún monedero abierto</string>
+    <string name="wallet_choose">Elegir un monedero</string>
+    <string name="wallet_pending">%1$s %2$s pendiente</string>
+    <string name="wallet_block">bloque %1$s</string>
+    <string name="wallet_rescanning">reescaneando %1$d%%</string>
+    <string name="wallet_syncing">sincronizando</string>
+    <string name="wallet_limited_suffix">%1$s  ·  servicio limitado</string>
+    <string name="wallet_connecting">conectando…</string>
+    <string name="fiat_approx">≈ %1$s</string>
+
+    <string name="sent_title">Pago enviado</string>
+    <string name="sent_txid">%1$s… · toca para copiar</string>
+
+    <string name="cd_address_qr">código QR de la dirección</string>
+    <string name="receive_address_n">dirección n.º %1$d · toca para copiar</string>
+    <string name="share_address_chooser">Compartir dirección</string>
+
+    <string name="scan_prompt">Escanea una dirección de pago</string>
+    <string name="send_sweep">Enviar el máximo (barrido)</string>
+    <string name="send_alt_coin">= %1$s %2$s</string>
+    <string name="send_alt_sat">= %1$s sat</string>
+    <string name="send_alt_fiat">  ·  %1$s</string>
+    <string name="fee_fast">Rápida</string>
+    <string name="fee_normal">Normal</string>
+    <string name="fee_slow">Lenta</string>
+    <string name="send_replay_protect">Protección contra repetición de XBT (OP_RETURN de 100 bytes)</string>
+    <string name="send_replay_note">Añade ~110 vB de comisión. No estándar en el relé de Bitcoin por defecto: transmite mediante un nodo/servicio que acepte OP_RETURN grandes.</string>
+    <string name="send_service_fee">Comisión de servicio: %1$s%% de la cantidad enviada (mín. %2$d sat): sostiene este nodo alojado.</string>
+    <string name="cd_amount_unit">unidad de la cantidad</string>
+    <string name="unit_sat">sat</string>
+
+    <string name="history_empty">aún no hay transacciones</string>
+    <string name="history_send">envío</string>
+    <string name="history_receive">recepción</string>
+    <string name="history_row_subtitle">%1$s · %2$s…</string>
+    <string name="history_pending">pendiente</string>
+    <string name="history_conf_n">%1$d conf.</string>
+    <string name="history_confirmed">confirmada</string>
+    <string name="history_hint">toca una transacción para abrirla en el explorador · mantén pulsado para copiar el id</string>
+
+    <string name="confirm_sweep_title">Confirmar barrido</string>
+    <string name="confirm_payment_title">Confirmar pago</string>
+    <string name="confirm_to">Para</string>
+    <string name="confirm_amount">Cantidad</string>
+    <string name="confirm_network_fee">Comisión de red</string>
+    <string name="confirm_network_fee_value">%1$s %2$s · %3$d sat/vB</string>
+    <string name="confirm_service_fee">Comisión de servicio</string>
+    <string name="confirm_change">Cambio</string>
+    <string name="confirm_replay">Protección contra repetición</string>
+    <string name="confirm_replay_value">activada · OP_RETURN de 100 bytes</string>
+    <string name="confirm_total">Total</string>
+    <string name="value_with_fiat">%1$s %2$s  ·  %3$s</string>
+
+    <string name="mnemonic_not_in_list">%1$d no está en la lista de palabras</string>
+    <string name="mnemonic_looks_good">todo correcto</string>
+    <string name="mnemonic_status">%1$s  ·  %2$s</string>
+
+    <string name="error_wallet_max">Puedes tener hasta %1$d monederos en un dispositivo.</string>
+    <string name="error_clone_exists">«%1$s» ya está en %2$s.</string>
+    <string name="error_lock_setup_failed">error al configurar el bloqueo de la app</string>
+    <string name="error_enter_amount">introduce una cantidad</string>
+    <string name="error_no_coins">no hay monedas confirmadas para gastar</string>
+    <string name="error_open_wallet">no se pudo abrir el monedero</string>
+
+    <plurals name="word_count">
+        <item quantity="one">%1$d palabra</item>
+        <item quantity="other">%1$d palabras</item>
+    </plurals>
+</resources>

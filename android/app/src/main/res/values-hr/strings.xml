@@ -1,0 +1,190 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">fortis</string>
+
+    <string name="action_back">Natrag</string>
+    <string name="action_cancel">Odustani</string>
+    <string name="action_continue">Nastavi</string>
+    <string name="action_save">Spremi</string>
+    <string name="action_done">Gotovo</string>
+    <string name="action_show">Prikaži</string>
+    <string name="action_hide">Sakrij</string>
+    <string name="action_copy">Kopiraj</string>
+    <string name="action_share">Podijeli</string>
+    <string name="action_open">Otvori</string>
+    <string name="action_remove">Ukloni</string>
+    <string name="action_rename">Preimenuj</string>
+    <string name="action_unlock">Otključaj</string>
+    <string name="action_add_wallet">Dodaj novčanik</string>
+    <string name="action_view">Prikaži</string>
+    <string name="action_refresh">Osvježi</string>
+    <string name="action_reconnect">Ponovno poveži</string>
+    <string name="action_review">Pregledaj</string>
+    <string name="action_sign_send">Potpiši i pošalji</string>
+    <string name="action_new_address">Nova adresa</string>
+    <string name="action_scan_qr">Skeniraj QR kôd</string>
+    <string name="action_lock">Zaključaj</string>
+    <string name="action_lock_app">Zaključaj aplikaciju</string>
+    <string name="action_copy_xpub">Kopiraj xpub</string>
+    <string name="action_recovery_phrase">Fraza za oporavak</string>
+    <string name="toast_copied">Kopirano</string>
+    <string name="cd_dismiss">Odbaci</string>
+
+    <string name="onboard_add_title">Dodaj novčanik</string>
+    <string name="onboard_tagline">neskrbnički novčanik za Bitcoin XBT i Bitcoin BTC</string>
+    <string name="onboard_create">Stvori novi novčanik</string>
+    <string name="onboard_restore">Oporavi iz fraze za oporavak</string>
+
+    <string name="gen_title">Dodajte malo nasumičnosti</string>
+    <string name="gen_body">Vaš je telefon već generirao sigurno sjeme. Protresite ga — ili črčkajte po polju — kako biste umiješali dodatnu entropiju iz senzora pokreta i vremenskih odstupanja. Za svaki slučaj.</string>
+    <string name="gen_words_24">24 riječi</string>
+    <string name="gen_words_12">12 riječi</string>
+    <string name="gen_words_hint">Obje su sigurne; 12 je lakše zapisati.</string>
+    <string name="gen_pad_hint">protresite ili črčkajte ovdje</string>
+    <string name="gen_entropy_full">obilje dodatne entropije — osnovno sjeme već je sigurno</string>
+    <string name="gen_entropy_partial">umiješano ~%1$d dodatnih bitova</string>
+    <string name="gen_generate">Generiraj novčanik</string>
+
+    <string name="create_phrase_title">Vaša fraza za oporavak</string>
+    <string name="create_phrase_body">Zapišite ovih %1$d riječi na papir, izvan mreže. Tko god ih ima, kontrolira vaša sredstva.</string>
+    <string name="create_passphrase_hint">„25. riječ” — dodatna tajna koja se ne pohranjuje. Ako je postavite, za oporavak trebate i frazu i nju. Ako niste sigurni, ostavite prazno.</string>
+    <string name="create_ack">Zapisao/la sam frazu</string>
+
+    <string name="restore_title">Oporavi novčanik</string>
+    <string name="restore_body">Unesite svojih 12 ili 24 riječi odvojenih razmacima.</string>
+    <string name="restore_clone_hint">Nakon dodavanja ovaj novčanik možete navesti i na %1$s putem Upravljanja novčanicima — ista fraza, iste adrese.</string>
+    <string name="action_restore">Oporavi</string>
+
+    <string name="field_wallet_name">Naziv novčanika</string>
+    <string name="field_passphrase">BIP-39 lozinka-fraza (neobavezno)</string>
+    <string name="field_app_password">Lozinka aplikacije</string>
+    <string name="field_confirm_password">Potvrdi lozinku</string>
+    <string name="field_to_address">Adresa primatelja</string>
+    <string name="field_amount">Iznos</string>
+    <string name="field_custom_feerate">prilagođeni sat/vB (neobavezno)</string>
+
+    <string name="reveal_title">Fraza za oporavak</string>
+    <string name="reveal_warning">Svatko tko vidi ove riječi — i lozinku-frazu, ako je postavljena — može potrošiti ovaj novčanik. Gledajte ih samo na privatnom mjestu. Nikad ih ne upisujte na web-stranicu ili u aplikaciju. Snimke zaslona ovdje su blokirane.</string>
+    <string name="reveal_failed">Ovaj novčanik nije bilo moguće dešifrirati.</string>
+    <string name="reveal_passphrase_label">BIP-39 lozinka-fraza</string>
+    <string name="reveal_no_passphrase">Ovaj novčanik nema BIP-39 lozinku-frazu.</string>
+
+    <string name="nav_home">Početak</string>
+    <string name="nav_wallet">Novčanik</string>
+    <string name="nav_settings">Postavke</string>
+    <string name="tab_receive">Primi</string>
+    <string name="tab_send">Pošalji</string>
+    <string name="tab_history">Povijest</string>
+
+    <string name="home_title">Vaši novčanici</string>
+    <string name="home_open">otvoren</string>
+    <string name="home_tap_to_open">dodirnite za otvaranje</string>
+    <string name="wallets_max">Dosegnut je najveći broj od %1$d novčanika.</string>
+
+    <string name="lock_password_prompt">Unesite lozinku aplikacije.</string>
+    <string name="biometric_setup_title">Postavi zaključavanje aplikacije</string>
+    <string name="biometric_unlock_title">Otključaj Fortis Wallet</string>
+    <string name="biometric_subtitle">Fortis Wallet</string>
+    <string name="biometric_invalidated">Zaključavanje zaslona vašeg uređaja se promijenilo pa se aplikacija ovdje više ne može otključati. Ponovno je instalirajte i oporavite svaki novčanik iz njegove fraze za oporavak.</string>
+    <string name="lock_choice_use_biometric">Zaključaj aplikaciju otiskom prsta ili PIN-om</string>
+    <string name="lock_choice_biometric_note">Jedno otključavanje otvara sve vaše novčanike. Nema lozinke za pamćenje — otisak prsta/lice ili PIN zaključavanja zaslona vašeg uređaja vas propušta.</string>
+    <string name="lock_choice_password_note">Ova lozinka otključava aplikaciju i svaki novčanik u njoj.</string>
+
+    <string name="settings_title">Postavke</string>
+    <string name="settings_wallets">Novčanici</string>
+    <string name="settings_security">Sigurnost</string>
+    <string name="settings_connection">Veza</string>
+    <string name="settings_app_lock">Zaključavanje aplikacije</string>
+    <string name="lock_mode_biometric">Otisak prsta / PIN uređaja</string>
+    <string name="lock_mode_password">Lozinka</string>
+    <string name="settings_one_unlock">Jedno otključavanje otvara svaki novčanik u aplikaciji.</string>
+    <string name="settings_language">Jezik</string>
+    <string name="language_system_default">Zadano na sustavu</string>
+    <string name="settings_status">Status</string>
+    <string name="settings_chain_height">Visina lanca</string>
+    <string name="settings_degraded_note">Usluga fortis nije dostupna — zasad se koriste javni podaci o blokovima. Automatski će se vratiti.</string>
+    <string name="settings_version">fortis %1$s</string>
+    <string name="xpub_loading">još se učitava — pokušajte ponovno</string>
+    <string name="also_add_on">Dodaj i na %1$s</string>
+    <string name="dialog_rename_title">Preimenuj novčanik</string>
+    <string name="dialog_reveal_title">Prikazati frazu za oporavak za %1$s?</string>
+    <string name="dialog_reveal_body">Fraza za oporavak (i lozinka-fraza, ako ste je postavili) jedino je što može oporaviti ovaj novčanik — a svatko tko je ima može potrošiti vaša sredstva. Otkrijte je samo na privatnom mjestu, dok nitko ne gleda. Sljedeći zaslon blokira snimke zaslona.</string>
+    <string name="dialog_remove_title">Ukloniti %1$s?</string>
+    <string name="dialog_remove_body">Ovo uklanja novčanik samo iz ove aplikacije. Na lancu blokova ništa se ne mijenja i možete ga ponovno dodati bilo kada pomoću njegove fraze za oporavak (i lozinke-fraze, ako ste je postavili). Provjerite je li fraza zapisana.</string>
+
+    <string name="status_offline">izvan mreže</string>
+    <string name="status_rescanning">ponovno skeniranje %1$d%%</string>
+    <string name="status_limited">ograničena usluga</string>
+    <string name="status_connected">povezano</string>
+    <string name="status_syncing">sinkronizacija</string>
+
+    <string name="wallet_none_open">Nijedan novčanik nije otvoren</string>
+    <string name="wallet_choose">Odaberite novčanik</string>
+    <string name="wallet_pending">%1$s %2$s na čekanju</string>
+    <string name="wallet_block">blok %1$s</string>
+    <string name="wallet_rescanning">ponovno skeniranje %1$d%%</string>
+    <string name="wallet_syncing">sinkronizacija</string>
+    <string name="wallet_limited_suffix">%1$s  ·  ograničena usluga</string>
+    <string name="wallet_connecting">povezivanje…</string>
+    <string name="fiat_approx">≈ %1$s</string>
+
+    <string name="sent_title">Plaćanje poslano</string>
+    <string name="sent_txid">%1$s… · dodirnite za kopiranje</string>
+
+    <string name="cd_address_qr">QR kôd adrese</string>
+    <string name="receive_address_n">adresa br. %1$d · dodirnite za kopiranje</string>
+    <string name="share_address_chooser">Podijeli adresu</string>
+
+    <string name="scan_prompt">Skenirajte adresu za plaćanje</string>
+    <string name="send_sweep">Pošalji maksimum (sweep)</string>
+    <string name="send_alt_coin">= %1$s %2$s</string>
+    <string name="send_alt_sat">= %1$s sat</string>
+    <string name="send_alt_fiat">  ·  %1$s</string>
+    <string name="fee_fast">Brzo</string>
+    <string name="fee_normal">Normalno</string>
+    <string name="fee_slow">Sporo</string>
+    <string name="send_replay_protect">XBT zaštita od ponavljanja (100-bajtni OP_RETURN)</string>
+    <string name="send_replay_note">Dodaje ~110 vB naknade. Nestandardno na zadanom Bitcoin releju — emitirajte putem čvora/usluge koja prihvaća velike OP_RETURN.</string>
+    <string name="send_service_fee">Naknada za uslugu: %1$s%% poslanog iznosa (min. %2$d sat) — podupire ovaj hostirani čvor.</string>
+    <string name="cd_amount_unit">jedinica iznosa</string>
+    <string name="unit_sat">sat</string>
+
+    <string name="history_empty">još nema transakcija</string>
+    <string name="history_send">slanje</string>
+    <string name="history_receive">primanje</string>
+    <string name="history_row_subtitle">%1$s · %2$s…</string>
+    <string name="history_pending">na čekanju</string>
+    <string name="history_conf_n">%1$d potv.</string>
+    <string name="history_confirmed">potvrđena</string>
+    <string name="history_hint">dodirnite transakciju da je otvorite u pregledniku · dugo pritisnite za kopiranje id-a</string>
+
+    <string name="confirm_sweep_title">Potvrdi sweep</string>
+    <string name="confirm_payment_title">Potvrdi plaćanje</string>
+    <string name="confirm_to">Za</string>
+    <string name="confirm_amount">Iznos</string>
+    <string name="confirm_network_fee">Mrežna naknada</string>
+    <string name="confirm_network_fee_value">%1$s %2$s · %3$d sat/vB</string>
+    <string name="confirm_service_fee">Naknada za uslugu</string>
+    <string name="confirm_change">Ostatak</string>
+    <string name="confirm_replay">Zaštita od ponavljanja</string>
+    <string name="confirm_replay_value">uključeno · 100-bajtni OP_RETURN</string>
+    <string name="confirm_total">Ukupno</string>
+    <string name="value_with_fiat">%1$s %2$s  ·  %3$s</string>
+
+    <string name="mnemonic_not_in_list">%1$d nije na popisu riječi</string>
+    <string name="mnemonic_looks_good">izgleda dobro</string>
+    <string name="mnemonic_status">%1$s  ·  %2$s</string>
+
+    <string name="error_wallet_max">Na jednom uređaju možete držati do %1$d novčanika.</string>
+    <string name="error_clone_exists">„%1$s” već je na %2$s.</string>
+    <string name="error_lock_setup_failed">postavljanje zaključavanja aplikacije nije uspjelo</string>
+    <string name="error_enter_amount">unesite iznos</string>
+    <string name="error_no_coins">nema potvrđenih novčića za potrošnju</string>
+    <string name="error_open_wallet">nije moguće otvoriti novčanik</string>
+
+    <plurals name="word_count">
+        <item quantity="one">%1$d riječ</item>
+        <item quantity="few">%1$d riječi</item>
+        <item quantity="other">%1$d riječi</item>
+    </plurals>
+</resources>

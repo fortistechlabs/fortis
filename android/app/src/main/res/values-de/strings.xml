@@ -1,0 +1,189 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">fortis</string>
+
+    <string name="action_back">Zurück</string>
+    <string name="action_cancel">Abbrechen</string>
+    <string name="action_continue">Weiter</string>
+    <string name="action_save">Speichern</string>
+    <string name="action_done">Fertig</string>
+    <string name="action_show">Anzeigen</string>
+    <string name="action_hide">Verbergen</string>
+    <string name="action_copy">Kopieren</string>
+    <string name="action_share">Teilen</string>
+    <string name="action_open">Öffnen</string>
+    <string name="action_remove">Entfernen</string>
+    <string name="action_rename">Umbenennen</string>
+    <string name="action_unlock">Entsperren</string>
+    <string name="action_add_wallet">Wallet hinzufügen</string>
+    <string name="action_view">Ansehen</string>
+    <string name="action_refresh">Aktualisieren</string>
+    <string name="action_reconnect">Neu verbinden</string>
+    <string name="action_review">Prüfen</string>
+    <string name="action_sign_send">Signieren &amp; senden</string>
+    <string name="action_new_address">Neue Adresse</string>
+    <string name="action_scan_qr">QR-Code scannen</string>
+    <string name="action_lock">Sperren</string>
+    <string name="action_lock_app">App sperren</string>
+    <string name="action_copy_xpub">xpub kopieren</string>
+    <string name="action_recovery_phrase">Wiederherstellungsphrase</string>
+    <string name="toast_copied">Kopiert</string>
+    <string name="cd_dismiss">Schließen</string>
+
+    <string name="onboard_add_title">Wallet hinzufügen</string>
+    <string name="onboard_tagline">eine nicht-verwahrende Wallet für Bitcoin XBT und Bitcoin BTC</string>
+    <string name="onboard_create">Neue Wallet erstellen</string>
+    <string name="onboard_restore">Aus einer Wiederherstellungsphrase wiederherstellen</string>
+
+    <string name="gen_title">Zusätzlichen Zufall hinzufügen</string>
+    <string name="gen_body">Dein Telefon hat bereits einen sicheren Seed erzeugt. Schüttle es – oder kritzle auf dem Feld – um zusätzliche Entropie aus den Bewegungssensoren und dem Timing-Jitter einzubringen. Doppelt hält besser.</string>
+    <string name="gen_words_24">24 Wörter</string>
+    <string name="gen_words_12">12 Wörter</string>
+    <string name="gen_words_hint">Beide sind sicher; 12 lassen sich leichter aufschreiben.</string>
+    <string name="gen_pad_hint">schütteln oder hier kritzeln</string>
+    <string name="gen_entropy_full">reichlich zusätzliche Entropie – der Basis-Seed ist bereits sicher</string>
+    <string name="gen_entropy_partial">~%1$d zusätzliche Bits eingebracht</string>
+    <string name="gen_generate">Wallet erzeugen</string>
+
+    <string name="create_phrase_title">Deine Wiederherstellungsphrase</string>
+    <string name="create_phrase_body">Schreibe diese %1$d Wörter offline auf Papier. Wer sie hat, kontrolliert dein Guthaben.</string>
+    <string name="create_passphrase_hint">Ein \"25. Wort\" – ein zusätzliches Geheimnis, das nicht gespeichert wird. Wenn du eines festlegst, brauchst du zum Wiederherstellen sowohl die Phrase als auch dieses. Im Zweifel leer lassen.</string>
+    <string name="create_ack">Ich habe die Phrase aufgeschrieben</string>
+
+    <string name="restore_title">Wallet wiederherstellen</string>
+    <string name="restore_body">Gib deine 12 oder 24 Wörter durch Leerzeichen getrennt ein.</string>
+    <string name="restore_clone_hint">Nach dem Hinzufügen kannst du diese Wallet unter „Wallets verwalten“ auch auf %1$s führen – gleiche Phrase, gleiche Adressen.</string>
+    <string name="action_restore">Wiederherstellen</string>
+
+    <string name="field_wallet_name">Wallet-Name</string>
+    <string name="field_passphrase">BIP-39-Passphrase (optional)</string>
+    <string name="field_app_password">App-Passwort</string>
+    <string name="field_confirm_password">Passwort bestätigen</string>
+    <string name="field_to_address">Empfängeradresse</string>
+    <string name="field_amount">Betrag</string>
+    <string name="field_custom_feerate">eigene sat/vB (optional)</string>
+
+    <string name="reveal_title">Wiederherstellungsphrase</string>
+    <string name="reveal_warning">Wer diese Wörter sieht – sowie die Passphrase, falls gesetzt – kann diese Wallet ausgeben. Sieh sie dir nur an einem privaten Ort an. Gib sie niemals auf einer Website oder in einer App ein. Screenshots sind hier blockiert.</string>
+    <string name="reveal_failed">Diese Wallet konnte nicht entschlüsselt werden.</string>
+    <string name="reveal_passphrase_label">BIP-39-Passphrase</string>
+    <string name="reveal_no_passphrase">Für diese Wallet ist keine BIP-39-Passphrase gesetzt.</string>
+
+    <string name="nav_home">Start</string>
+    <string name="nav_wallet">Wallet</string>
+    <string name="nav_settings">Einstellungen</string>
+    <string name="tab_receive">Empfangen</string>
+    <string name="tab_send">Senden</string>
+    <string name="tab_history">Verlauf</string>
+
+    <string name="home_title">Deine Wallets</string>
+    <string name="home_open">geöffnet</string>
+    <string name="home_tap_to_open">zum Öffnen tippen</string>
+    <string name="wallets_max">Maximal %1$d Wallets erreicht.</string>
+
+    <string name="lock_password_prompt">Gib dein App-Passwort ein.</string>
+    <string name="biometric_setup_title">App-Sperre einrichten</string>
+    <string name="biometric_unlock_title">Fortis Wallet entsperren</string>
+    <string name="biometric_subtitle">Fortis Wallet</string>
+    <string name="biometric_invalidated">Die Bildschirmsperre deines Geräts hat sich geändert, daher kann die App hier nicht mehr entsperrt werden. Installiere neu und stelle jede Wallet aus ihrer Wiederherstellungsphrase wieder her.</string>
+    <string name="lock_choice_use_biometric">App mit Fingerabdruck oder PIN sperren</string>
+    <string name="lock_choice_biometric_note">Ein Entsperren öffnet all deine Wallets. Kein Passwort zu merken – der Fingerabdruck/das Gesicht oder die Bildschirmsperre-PIN deines Geräts genügt.</string>
+    <string name="lock_choice_password_note">Dieses Passwort entsperrt die App und jede Wallet darin.</string>
+
+    <string name="settings_title">Einstellungen</string>
+    <string name="settings_wallets">Wallets</string>
+    <string name="settings_security">Sicherheit</string>
+    <string name="settings_connection">Verbindung</string>
+    <string name="settings_app_lock">App-Sperre</string>
+    <string name="lock_mode_biometric">Fingerabdruck / Geräte-PIN</string>
+    <string name="lock_mode_password">Passwort</string>
+    <string name="settings_one_unlock">Ein Entsperren öffnet jede Wallet in der App.</string>
+    <string name="settings_language">Sprache</string>
+    <string name="language_system_default">Systemstandard</string>
+    <string name="settings_status">Status</string>
+    <string name="settings_chain_height">Chain-Höhe</string>
+    <string name="settings_degraded_note">Der Fortis-Dienst ist nicht erreichbar – vorerst werden öffentliche Blockdaten verwendet. Es wird automatisch zurückgewechselt.</string>
+    <string name="settings_version">fortis %1$s</string>
+    <string name="xpub_loading">wird noch geladen – bitte erneut versuchen</string>
+    <string name="also_add_on">Auch auf %1$s hinzufügen</string>
+    <string name="dialog_rename_title">Wallet umbenennen</string>
+    <string name="dialog_reveal_title">Wiederherstellungsphrase für %1$s anzeigen?</string>
+    <string name="dialog_reveal_body">Die Wiederherstellungsphrase (und die Passphrase, falls gesetzt) ist das Einzige, womit sich diese Wallet wiederherstellen lässt – und wer sie hat, kann dein Guthaben ausgeben. Zeige sie nur an einem privaten Ort, ohne dass jemand zusieht. Der nächste Bildschirm blockiert Screenshots.</string>
+    <string name="dialog_remove_title">%1$s entfernen?</string>
+    <string name="dialog_remove_body">Dies entfernt die Wallet nur aus dieser App. An der Blockchain ändert sich nichts, und du kannst sie jederzeit mit ihrer Wiederherstellungsphrase (und der Passphrase, falls gesetzt) wieder hinzufügen. Stelle sicher, dass die Phrase aufgeschrieben ist.</string>
+
+    <string name="status_offline">offline</string>
+    <string name="status_rescanning">wird neu gescannt %1$d%%</string>
+    <string name="status_limited">eingeschränkter Dienst</string>
+    <string name="status_connected">verbunden</string>
+    <string name="status_syncing">synchronisiert</string>
+
+    <string name="wallet_none_open">Keine Wallet geöffnet</string>
+    <string name="wallet_choose">Wallet auswählen</string>
+    <string name="wallet_pending">%1$s %2$s ausstehend</string>
+    <string name="wallet_block">Block %1$s</string>
+    <string name="wallet_rescanning">wird neu gescannt %1$d%%</string>
+    <string name="wallet_syncing">synchronisiert</string>
+    <string name="wallet_limited_suffix">%1$s  ·  eingeschränkter Dienst</string>
+    <string name="wallet_connecting">verbinde…</string>
+    <string name="fiat_approx">≈ %1$s</string>
+
+    <string name="sent_title">Zahlung gesendet</string>
+    <string name="sent_txid">%1$s… · zum Kopieren tippen</string>
+
+    <string name="cd_address_qr">QR-Code der Adresse</string>
+    <string name="receive_address_n">Adresse #%1$d · zum Kopieren tippen</string>
+    <string name="share_address_chooser">Adresse teilen</string>
+
+    <string name="scan_prompt">Eine Zahlungsadresse scannen</string>
+    <string name="send_sweep">Maximum senden (Sweep)</string>
+    <string name="send_alt_coin">= %1$s %2$s</string>
+    <string name="send_alt_sat">= %1$s sat</string>
+    <string name="send_alt_fiat">  ·  %1$s</string>
+    <string name="fee_fast">Schnell</string>
+    <string name="fee_normal">Normal</string>
+    <string name="fee_slow">Langsam</string>
+    <string name="send_replay_protect">XBT-Replay-Schutz (100-Byte-OP_RETURN)</string>
+    <string name="send_replay_note">Fügt ~110 vB Gebühr hinzu. Nicht standardkonform im Standard-Bitcoin-Relay – über einen Node/Dienst senden, der große OP_RETURN akzeptiert.</string>
+    <string name="send_service_fee">Servicegebühr: %1$s%% des gesendeten Betrags (mind. %2$d sat) – unterstützt diesen gehosteten Node.</string>
+    <string name="cd_amount_unit">Betragseinheit</string>
+    <string name="unit_sat">sat</string>
+
+    <string name="history_empty">noch keine Transaktionen</string>
+    <string name="history_send">gesendet</string>
+    <string name="history_receive">empfangen</string>
+    <string name="history_row_subtitle">%1$s · %2$s…</string>
+    <string name="history_pending">ausstehend</string>
+    <string name="history_conf_n">%1$d Best.</string>
+    <string name="history_confirmed">bestätigt</string>
+    <string name="history_hint">auf eine Transaktion tippen, um sie im Explorer zu öffnen · lange drücken, um die ID zu kopieren</string>
+
+    <string name="confirm_sweep_title">Sweep bestätigen</string>
+    <string name="confirm_payment_title">Zahlung bestätigen</string>
+    <string name="confirm_to">An</string>
+    <string name="confirm_amount">Betrag</string>
+    <string name="confirm_network_fee">Netzwerkgebühr</string>
+    <string name="confirm_network_fee_value">%1$s %2$s · %3$d sat/vB</string>
+    <string name="confirm_service_fee">Servicegebühr</string>
+    <string name="confirm_change">Wechselgeld</string>
+    <string name="confirm_replay">Replay-Schutz</string>
+    <string name="confirm_replay_value">an · 100-Byte-OP_RETURN</string>
+    <string name="confirm_total">Gesamt</string>
+    <string name="value_with_fiat">%1$s %2$s  ·  %3$s</string>
+
+    <string name="mnemonic_not_in_list">%1$d nicht in der Wortliste</string>
+    <string name="mnemonic_looks_good">sieht gut aus</string>
+    <string name="mnemonic_status">%1$s  ·  %2$s</string>
+
+    <string name="error_wallet_max">Du kannst bis zu %1$d Wallets auf einem Gerät behalten.</string>
+    <string name="error_clone_exists">„%1$s“ ist bereits auf %2$s.</string>
+    <string name="error_lock_setup_failed">Einrichtung der App-Sperre fehlgeschlagen</string>
+    <string name="error_enter_amount">gib einen Betrag ein</string>
+    <string name="error_no_coins">keine bestätigten Coins zum Ausgeben</string>
+    <string name="error_open_wallet">Wallet konnte nicht geöffnet werden</string>
+
+    <plurals name="word_count">
+        <item quantity="one">%1$d Wort</item>
+        <item quantity="other">%1$d Wörter</item>
+    </plurals>
+</resources>

@@ -1,0 +1,191 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">fortis</string>
+
+    <string name="action_back">Wstecz</string>
+    <string name="action_cancel">Anuluj</string>
+    <string name="action_continue">Dalej</string>
+    <string name="action_save">Zapisz</string>
+    <string name="action_done">Gotowe</string>
+    <string name="action_show">Pokaż</string>
+    <string name="action_hide">Ukryj</string>
+    <string name="action_copy">Kopiuj</string>
+    <string name="action_share">Udostępnij</string>
+    <string name="action_open">Otwórz</string>
+    <string name="action_remove">Usuń</string>
+    <string name="action_rename">Zmień nazwę</string>
+    <string name="action_unlock">Odblokuj</string>
+    <string name="action_add_wallet">Dodaj portfel</string>
+    <string name="action_view">Zobacz</string>
+    <string name="action_refresh">Odśwież</string>
+    <string name="action_reconnect">Połącz ponownie</string>
+    <string name="action_review">Sprawdź</string>
+    <string name="action_sign_send">Podpisz i wyślij</string>
+    <string name="action_new_address">Nowy adres</string>
+    <string name="action_scan_qr">Skanuj kod QR</string>
+    <string name="action_lock">Zablokuj</string>
+    <string name="action_lock_app">Zablokuj aplikację</string>
+    <string name="action_copy_xpub">Kopiuj xpub</string>
+    <string name="action_recovery_phrase">Fraza odzyskiwania</string>
+    <string name="toast_copied">Skopiowano</string>
+    <string name="cd_dismiss">Zamknij</string>
+
+    <string name="onboard_add_title">Dodaj portfel</string>
+    <string name="onboard_tagline">niepowierniczy portfel dla Bitcoin XBT i Bitcoin BTC</string>
+    <string name="onboard_create">Utwórz nowy portfel</string>
+    <string name="onboard_restore">Przywróć z frazy odzyskiwania</string>
+
+    <string name="gen_title">Dodaj trochę losowości</string>
+    <string name="gen_body">Twój telefon już wygenerował bezpieczny seed. Potrząśnij nim — albo bazgraj po polu — aby domieszać dodatkową entropię z czujników ruchu i wahań czasu. Na wszelki wypadek.</string>
+    <string name="gen_words_24">24 słowa</string>
+    <string name="gen_words_12">12 słów</string>
+    <string name="gen_words_hint">Oba są bezpieczne; 12 łatwiej zapisać.</string>
+    <string name="gen_pad_hint">potrząśnij lub bazgraj tutaj</string>
+    <string name="gen_entropy_full">mnóstwo dodatkowej entropii — bazowy seed jest już bezpieczny</string>
+    <string name="gen_entropy_partial">domieszano ~%1$d dodatkowych bitów</string>
+    <string name="gen_generate">Wygeneruj portfel</string>
+
+    <string name="create_phrase_title">Twoja fraza odzyskiwania</string>
+    <string name="create_phrase_body">Zapisz te %1$d słów na papierze, offline. Każdy, kto je ma, kontroluje Twoje środki.</string>
+    <string name="create_passphrase_hint">„25. słowo” — dodatkowy sekret, który nie jest przechowywany. Jeśli je ustawisz, do przywrócenia potrzebujesz zarówno frazy, jak i tego. Zostaw puste w razie wątpliwości.</string>
+    <string name="create_ack">Zapisałem/-am frazę</string>
+
+    <string name="restore_title">Przywróć portfel</string>
+    <string name="restore_body">Wpisz 12 lub 24 słów oddzielonych spacjami.</string>
+    <string name="restore_clone_hint">Po dodaniu możesz też umieścić ten portfel na %1$s w sekcji Zarządzaj portfelami — ta sama fraza, te same adresy.</string>
+    <string name="action_restore">Przywróć</string>
+
+    <string name="field_wallet_name">Nazwa portfela</string>
+    <string name="field_passphrase">Hasło-fraza BIP-39 (opcjonalnie)</string>
+    <string name="field_app_password">Hasło aplikacji</string>
+    <string name="field_confirm_password">Potwierdź hasło</string>
+    <string name="field_to_address">Adres odbiorcy</string>
+    <string name="field_amount">Kwota</string>
+    <string name="field_custom_feerate">własne sat/vB (opcjonalnie)</string>
+
+    <string name="reveal_title">Fraza odzyskiwania</string>
+    <string name="reveal_warning">Każdy, kto zobaczy te słowa — oraz hasło-frazę, jeśli je ustawiono — może wydać środki z tego portfela. Oglądaj je tylko w prywatnym miejscu. Nigdy nie wpisuj ich na stronie ani w aplikacji. Zrzuty ekranu są tu zablokowane.</string>
+    <string name="reveal_failed">Nie udało się odszyfrować tego portfela.</string>
+    <string name="reveal_passphrase_label">Hasło-fraza BIP-39</string>
+    <string name="reveal_no_passphrase">Ten portfel nie ma hasła-frazy BIP-39.</string>
+
+    <string name="nav_home">Start</string>
+    <string name="nav_wallet">Portfel</string>
+    <string name="nav_settings">Ustawienia</string>
+    <string name="tab_receive">Odbierz</string>
+    <string name="tab_send">Wyślij</string>
+    <string name="tab_history">Historia</string>
+
+    <string name="home_title">Twoje portfele</string>
+    <string name="home_open">otwarty</string>
+    <string name="home_tap_to_open">dotknij, aby otworzyć</string>
+    <string name="wallets_max">Osiągnięto maksimum %1$d portfeli.</string>
+
+    <string name="lock_password_prompt">Wpisz hasło aplikacji.</string>
+    <string name="biometric_setup_title">Skonfiguruj blokadę aplikacji</string>
+    <string name="biometric_unlock_title">Odblokuj Fortis Wallet</string>
+    <string name="biometric_subtitle">Fortis Wallet</string>
+    <string name="biometric_invalidated">Blokada ekranu Twojego urządzenia się zmieniła, więc aplikacji nie można już tu odblokować. Zainstaluj ponownie i przywróć każdy portfel z jego frazy odzyskiwania.</string>
+    <string name="lock_choice_use_biometric">Blokuj aplikację odciskiem palca lub PIN-em</string>
+    <string name="lock_choice_biometric_note">Jedno odblokowanie otwiera wszystkie Twoje portfele. Żadnego hasła do zapamiętania — wystarczy odcisk palca/twarz lub PIN blokady ekranu urządzenia.</string>
+    <string name="lock_choice_password_note">To hasło odblokowuje aplikację i każdy portfel w niej.</string>
+
+    <string name="settings_title">Ustawienia</string>
+    <string name="settings_wallets">Portfele</string>
+    <string name="settings_security">Bezpieczeństwo</string>
+    <string name="settings_connection">Połączenie</string>
+    <string name="settings_app_lock">Blokada aplikacji</string>
+    <string name="lock_mode_biometric">Odcisk palca / PIN urządzenia</string>
+    <string name="lock_mode_password">Hasło</string>
+    <string name="settings_one_unlock">Jedno odblokowanie otwiera każdy portfel w aplikacji.</string>
+    <string name="settings_language">Język</string>
+    <string name="language_system_default">Domyślny systemowy</string>
+    <string name="settings_status">Status</string>
+    <string name="settings_chain_height">Wysokość łańcucha</string>
+    <string name="settings_degraded_note">Usługa fortis jest nieosiągalna — na razie używane są publiczne dane bloków. Nastąpi automatyczny powrót.</string>
+    <string name="settings_version">fortis %1$s</string>
+    <string name="xpub_loading">jeszcze ładuję — spróbuj ponownie</string>
+    <string name="also_add_on">Dodaj także na %1$s</string>
+    <string name="dialog_rename_title">Zmień nazwę portfela</string>
+    <string name="dialog_reveal_title">Pokazać frazę odzyskiwania dla %1$s?</string>
+    <string name="dialog_reveal_body">Fraza odzyskiwania (i hasło-fraza, jeśli ją ustawiono) to jedyna rzecz, która może przywrócić ten portfel — a każdy, kto ją ma, może wydać Twoje środki. Ujawniaj ją tylko w prywatnym miejscu, gdy nikt nie patrzy. Następny ekran blokuje zrzuty ekranu.</string>
+    <string name="dialog_remove_title">Usunąć %1$s?</string>
+    <string name="dialog_remove_body">To usuwa portfel tylko z tej aplikacji. Nic nie zmienia się w blockchainie i możesz go dodać z powrotem w każdej chwili za pomocą frazy odzyskiwania (i hasła-frazy, jeśli ją ustawiono). Upewnij się, że fraza jest zapisana.</string>
+
+    <string name="status_offline">offline</string>
+    <string name="status_rescanning">ponowne skanowanie %1$d%%</string>
+    <string name="status_limited">ograniczona usługa</string>
+    <string name="status_connected">połączono</string>
+    <string name="status_syncing">synchronizacja</string>
+
+    <string name="wallet_none_open">Nie otwarto żadnego portfela</string>
+    <string name="wallet_choose">Wybierz portfel</string>
+    <string name="wallet_pending">%1$s %2$s w toku</string>
+    <string name="wallet_block">blok %1$s</string>
+    <string name="wallet_rescanning">ponowne skanowanie %1$d%%</string>
+    <string name="wallet_syncing">synchronizacja</string>
+    <string name="wallet_limited_suffix">%1$s  ·  ograniczona usługa</string>
+    <string name="wallet_connecting">łączenie…</string>
+    <string name="fiat_approx">≈ %1$s</string>
+
+    <string name="sent_title">Płatność wysłana</string>
+    <string name="sent_txid">%1$s… · dotknij, aby skopiować</string>
+
+    <string name="cd_address_qr">kod QR adresu</string>
+    <string name="receive_address_n">adres nr %1$d · dotknij, aby skopiować</string>
+    <string name="share_address_chooser">Udostępnij adres</string>
+
+    <string name="scan_prompt">Zeskanuj adres płatności</string>
+    <string name="send_sweep">Wyślij maksimum (sweep)</string>
+    <string name="send_alt_coin">= %1$s %2$s</string>
+    <string name="send_alt_sat">= %1$s sat</string>
+    <string name="send_alt_fiat">  ·  %1$s</string>
+    <string name="fee_fast">Szybko</string>
+    <string name="fee_normal">Normalnie</string>
+    <string name="fee_slow">Wolno</string>
+    <string name="send_replay_protect">Ochrona przed powtórzeniem XBT (OP_RETURN 100 bajtów)</string>
+    <string name="send_replay_note">Dodaje ~110 vB opłaty. Niestandardowe w domyślnym relayu Bitcoina — rozgłoś przez węzeł/usługę akceptującą duże OP_RETURN.</string>
+    <string name="send_service_fee">Opłata za usługę: %1$s%% wysyłanej kwoty (min. %2$d sat) — wspiera ten hostowany węzeł.</string>
+    <string name="cd_amount_unit">jednostka kwoty</string>
+    <string name="unit_sat">sat</string>
+
+    <string name="history_empty">brak transakcji</string>
+    <string name="history_send">wysłano</string>
+    <string name="history_receive">odebrano</string>
+    <string name="history_row_subtitle">%1$s · %2$s…</string>
+    <string name="history_pending">w toku</string>
+    <string name="history_conf_n">%1$d potw.</string>
+    <string name="history_confirmed">potwierdzona</string>
+    <string name="history_hint">dotknij transakcji, aby otworzyć ją w eksploratorze · przytrzymaj, aby skopiować id</string>
+
+    <string name="confirm_sweep_title">Potwierdź sweep</string>
+    <string name="confirm_payment_title">Potwierdź płatność</string>
+    <string name="confirm_to">Do</string>
+    <string name="confirm_amount">Kwota</string>
+    <string name="confirm_network_fee">Opłata sieciowa</string>
+    <string name="confirm_network_fee_value">%1$s %2$s · %3$d sat/vB</string>
+    <string name="confirm_service_fee">Opłata za usługę</string>
+    <string name="confirm_change">Reszta</string>
+    <string name="confirm_replay">Ochrona przed powtórzeniem</string>
+    <string name="confirm_replay_value">wł. · OP_RETURN 100 bajtów</string>
+    <string name="confirm_total">Razem</string>
+    <string name="value_with_fiat">%1$s %2$s  ·  %3$s</string>
+
+    <string name="mnemonic_not_in_list">%1$d spoza listy słów</string>
+    <string name="mnemonic_looks_good">wygląda dobrze</string>
+    <string name="mnemonic_status">%1$s  ·  %2$s</string>
+
+    <string name="error_wallet_max">Na jednym urządzeniu możesz mieć do %1$d portfeli.</string>
+    <string name="error_clone_exists">„%1$s” jest już na %2$s.</string>
+    <string name="error_lock_setup_failed">nie udało się skonfigurować blokady aplikacji</string>
+    <string name="error_enter_amount">wpisz kwotę</string>
+    <string name="error_no_coins">brak potwierdzonych monet do wydania</string>
+    <string name="error_open_wallet">nie udało się otworzyć portfela</string>
+
+    <plurals name="word_count">
+        <item quantity="one">%1$d słowo</item>
+        <item quantity="few">%1$d słowa</item>
+        <item quantity="many">%1$d słów</item>
+        <item quantity="other">%1$d słowa</item>
+    </plurals>
+</resources>

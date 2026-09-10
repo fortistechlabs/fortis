@@ -1,0 +1,25 @@
+[package]
+name = "fortisd"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "fortis chain-gateway daemon: a small token-guarded local HTTP API over a Bitcoin Knots / BLAKE2b node for the fortis web wallet. Holds no keys."
+
+[[bin]]
+name = "fortisd"
+path = "src/main.rs"
+
+[dependencies]
+fortis-node = { path = "../fortis-node" }
+wallet-core = { path = "../wallet-core" }
+anyhow = "1"
+serde = { workspace = true }
+serde_json = { workspace = true }
+hex = { workspace = true }
+clap = { version = "4", features = ["derive"] }
+tiny_http = "0.12"
+getrandom = "0.2"
+ureq = { version = "2", default-features = false, features = ["json", "native-tls"] }
+native-tls = "0.2"

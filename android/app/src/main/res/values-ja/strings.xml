@@ -1,0 +1,188 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">fortis</string>
+
+    <string name="action_back">戻る</string>
+    <string name="action_cancel">キャンセル</string>
+    <string name="action_continue">続行</string>
+    <string name="action_save">保存</string>
+    <string name="action_done">完了</string>
+    <string name="action_show">表示</string>
+    <string name="action_hide">非表示</string>
+    <string name="action_copy">コピー</string>
+    <string name="action_share">共有</string>
+    <string name="action_open">開く</string>
+    <string name="action_remove">削除</string>
+    <string name="action_rename">名前を変更</string>
+    <string name="action_unlock">ロック解除</string>
+    <string name="action_add_wallet">ウォレットを追加</string>
+    <string name="action_view">表示</string>
+    <string name="action_refresh">更新</string>
+    <string name="action_reconnect">再接続</string>
+    <string name="action_review">確認</string>
+    <string name="action_sign_send">署名して送信</string>
+    <string name="action_new_address">新しいアドレス</string>
+    <string name="action_scan_qr">QRコードをスキャン</string>
+    <string name="action_lock">ロック</string>
+    <string name="action_lock_app">アプリをロック</string>
+    <string name="action_copy_xpub">xpubをコピー</string>
+    <string name="action_recovery_phrase">リカバリーフレーズ</string>
+    <string name="toast_copied">コピーしました</string>
+    <string name="cd_dismiss">閉じる</string>
+
+    <string name="onboard_add_title">ウォレットを追加</string>
+    <string name="onboard_tagline">Bitcoin XBT と Bitcoin BTC のための非カストディアルウォレット</string>
+    <string name="onboard_create">新しいウォレットを作成</string>
+    <string name="onboard_restore">リカバリーフレーズから復元</string>
+
+    <string name="gen_title">ランダム性を追加</string>
+    <string name="gen_body">お使いのスマートフォンは既に安全なシードを生成しています。振る、またはパッドに落書きすると、モーションセンサーとタイミングのゆらぎから追加のエントロピーが混ぜ込まれます。念のためです。</string>
+    <string name="gen_words_24">24語</string>
+    <string name="gen_words_12">12語</string>
+    <string name="gen_words_hint">どちらも安全です。12語のほうが書き留めやすいです。</string>
+    <string name="gen_pad_hint">振るか、ここに落書きしてください</string>
+    <string name="gen_entropy_full">追加のエントロピーは十分です — 基本シードは既に安全です</string>
+    <string name="gen_entropy_partial">約 %1$d ビットの追加分を混ぜ込みました</string>
+    <string name="gen_generate">ウォレットを生成</string>
+
+    <string name="create_phrase_title">あなたのリカバリーフレーズ</string>
+    <string name="create_phrase_body">これらの %1$d 語を紙に、オフラインで書き留めてください。これを持つ人は誰でもあなたの資金を管理できます。</string>
+    <string name="create_passphrase_hint">「25番目の単語」— 保存されない追加の秘密です。設定すると、復元にはフレーズとこれの両方が必要です。不明な場合は空欄のままにしてください。</string>
+    <string name="create_ack">フレーズを書き留めました</string>
+
+    <string name="restore_title">ウォレットを復元</string>
+    <string name="restore_body">12語または24語をスペースで区切って入力してください。</string>
+    <string name="restore_clone_hint">追加後、「ウォレットの管理」から %1$s にもこのウォレットを登録できます — 同じフレーズ、同じアドレスです。</string>
+    <string name="action_restore">復元</string>
+
+    <string name="field_wallet_name">ウォレット名</string>
+    <string name="field_passphrase">BIP-39 パスフレーズ（任意）</string>
+    <string name="field_app_password">アプリのパスワード</string>
+    <string name="field_confirm_password">パスワードを確認</string>
+    <string name="field_to_address">送信先アドレス</string>
+    <string name="field_amount">金額</string>
+    <string name="field_custom_feerate">カスタム sat/vB（任意）</string>
+
+    <string name="reveal_title">リカバリーフレーズ</string>
+    <string name="reveal_warning">これらの単語（設定されている場合はパスフレーズも）を見た人は誰でもこのウォレットを使えます。プライベートな場所でのみ確認してください。ウェブサイトやアプリには絶対に入力しないでください。ここではスクリーンショットがブロックされています。</string>
+    <string name="reveal_failed">このウォレットを復号できませんでした。</string>
+    <string name="reveal_passphrase_label">BIP-39 パスフレーズ</string>
+    <string name="reveal_no_passphrase">このウォレットには BIP-39 パスフレーズがありません。</string>
+
+    <string name="nav_home">ホーム</string>
+    <string name="nav_wallet">ウォレット</string>
+    <string name="nav_settings">設定</string>
+    <string name="tab_receive">受取</string>
+    <string name="tab_send">送金</string>
+    <string name="tab_history">履歴</string>
+
+    <string name="home_title">あなたのウォレット</string>
+    <string name="home_open">開いています</string>
+    <string name="home_tap_to_open">タップして開く</string>
+    <string name="wallets_max">ウォレットの上限 %1$d 個に達しました。</string>
+
+    <string name="lock_password_prompt">アプリのパスワードを入力してください。</string>
+    <string name="biometric_setup_title">アプリロックを設定</string>
+    <string name="biometric_unlock_title">Fortis Wallet のロックを解除</string>
+    <string name="biometric_subtitle">Fortis Wallet</string>
+    <string name="biometric_invalidated">デバイスの画面ロックが変更されたため、ここではアプリのロックを解除できなくなりました。再インストールして、各ウォレットをリカバリーフレーズから復元してください。</string>
+    <string name="lock_choice_use_biometric">指紋または PIN でアプリをロック</string>
+    <string name="lock_choice_biometric_note">1回のロック解除ですべてのウォレットが開きます。覚えるパスワードは不要 — デバイスの指紋/顔認証または画面ロックの PIN で入れます。</string>
+    <string name="lock_choice_password_note">このパスワードでアプリとその中のすべてのウォレットのロックを解除します。</string>
+
+    <string name="settings_title">設定</string>
+    <string name="settings_wallets">ウォレット</string>
+    <string name="settings_security">セキュリティ</string>
+    <string name="settings_connection">接続</string>
+    <string name="settings_app_lock">アプリロック</string>
+    <string name="lock_mode_biometric">指紋 / デバイスの PIN</string>
+    <string name="lock_mode_password">パスワード</string>
+    <string name="settings_one_unlock">1回のロック解除でアプリ内のすべてのウォレットが開きます。</string>
+    <string name="settings_language">言語</string>
+    <string name="language_system_default">システムのデフォルト</string>
+    <string name="settings_status">ステータス</string>
+    <string name="settings_chain_height">チェーンの高さ</string>
+    <string name="settings_degraded_note">fortis サービスに接続できません — 現在は公開ブロックデータを使用しています。自動的に切り替わります。</string>
+    <string name="settings_version">fortis %1$s</string>
+    <string name="xpub_loading">読み込み中です — もう一度お試しください</string>
+    <string name="also_add_on">%1$s にも追加</string>
+    <string name="dialog_rename_title">ウォレット名を変更</string>
+    <string name="dialog_reveal_title">%1$s のリカバリーフレーズを表示しますか?</string>
+    <string name="dialog_reveal_body">リカバリーフレーズ（設定した場合はパスフレーズ）は、このウォレットを復元できる唯一のものであり、それを持つ人は誰でもあなたの資金を使えます。誰も見ていないプライベートな場所でのみ表示してください。次の画面ではスクリーンショットがブロックされます。</string>
+    <string name="dialog_remove_title">%1$s を削除しますか?</string>
+    <string name="dialog_remove_body">これはこのアプリからウォレットを削除するだけです。ブロックチェーン上では何も変わらず、リカバリーフレーズ（設定した場合はパスフレーズ）でいつでも追加し直せます。フレーズが書き留められていることを確認してください。</string>
+
+    <string name="status_offline">オフライン</string>
+    <string name="status_rescanning">再スキャン中 %1$d%%</string>
+    <string name="status_limited">サービス制限中</string>
+    <string name="status_connected">接続済み</string>
+    <string name="status_syncing">同期中</string>
+
+    <string name="wallet_none_open">開いているウォレットがありません</string>
+    <string name="wallet_choose">ウォレットを選択</string>
+    <string name="wallet_pending">%1$s %2$s 保留中</string>
+    <string name="wallet_block">ブロック %1$s</string>
+    <string name="wallet_rescanning">再スキャン中 %1$d%%</string>
+    <string name="wallet_syncing">同期中</string>
+    <string name="wallet_limited_suffix">%1$s  ·  サービス制限中</string>
+    <string name="wallet_connecting">接続中…</string>
+    <string name="fiat_approx">≈ %1$s</string>
+
+    <string name="sent_title">支払いを送信しました</string>
+    <string name="sent_txid">%1$s… · タップしてコピー</string>
+
+    <string name="cd_address_qr">アドレスの QR コード</string>
+    <string name="receive_address_n">アドレス #%1$d · タップしてコピー</string>
+    <string name="share_address_chooser">アドレスを共有</string>
+
+    <string name="scan_prompt">支払いアドレスをスキャン</string>
+    <string name="send_sweep">最大額を送金（sweep）</string>
+    <string name="send_alt_coin">= %1$s %2$s</string>
+    <string name="send_alt_sat">= %1$s sat</string>
+    <string name="send_alt_fiat">  ·  %1$s</string>
+    <string name="fee_fast">速い</string>
+    <string name="fee_normal">標準</string>
+    <string name="fee_slow">遅い</string>
+    <string name="send_replay_protect">XBT リプレイ保護（100バイトの OP_RETURN）</string>
+    <string name="send_replay_note">手数料に約 110 vB 追加されます。デフォルトの Bitcoin リレーでは非標準です — 大きな OP_RETURN を受け入れるノード/サービス経由でブロードキャストしてください。</string>
+    <string name="send_service_fee">サービス手数料: 送金額の %1$s%%（最低 %2$d sat）— このホスト型ノードを支えます。</string>
+    <string name="cd_amount_unit">金額の単位</string>
+    <string name="unit_sat">sat</string>
+
+    <string name="history_empty">取引はまだありません</string>
+    <string name="history_send">送金</string>
+    <string name="history_receive">受取</string>
+    <string name="history_row_subtitle">%1$s · %2$s…</string>
+    <string name="history_pending">保留中</string>
+    <string name="history_conf_n">%1$d 承認</string>
+    <string name="history_confirmed">承認済み</string>
+    <string name="history_hint">取引をタップするとエクスプローラーで開きます · 長押しで ID をコピー</string>
+
+    <string name="confirm_sweep_title">sweep を確認</string>
+    <string name="confirm_payment_title">支払いを確認</string>
+    <string name="confirm_to">宛先</string>
+    <string name="confirm_amount">金額</string>
+    <string name="confirm_network_fee">ネットワーク手数料</string>
+    <string name="confirm_network_fee_value">%1$s %2$s · %3$d sat/vB</string>
+    <string name="confirm_service_fee">サービス手数料</string>
+    <string name="confirm_change">お釣り</string>
+    <string name="confirm_replay">リプレイ保護</string>
+    <string name="confirm_replay_value">オン · 100バイトの OP_RETURN</string>
+    <string name="confirm_total">合計</string>
+    <string name="value_with_fiat">%1$s %2$s  ·  %3$s</string>
+
+    <string name="mnemonic_not_in_list">%1$d 語が単語リストにありません</string>
+    <string name="mnemonic_looks_good">問題なさそうです</string>
+    <string name="mnemonic_status">%1$s  ·  %2$s</string>
+
+    <string name="error_wallet_max">1台のデバイスで最大 %1$d 個のウォレットを保持できます。</string>
+    <string name="error_clone_exists">「%1$s」は既に %2$s にあります。</string>
+    <string name="error_lock_setup_failed">アプリロックの設定に失敗しました</string>
+    <string name="error_enter_amount">金額を入力してください</string>
+    <string name="error_no_coins">使用できる承認済みコインがありません</string>
+    <string name="error_open_wallet">ウォレットを開けませんでした</string>
+
+    <plurals name="word_count">
+        <item quantity="other">%1$d 語</item>
+    </plurals>
+</resources>

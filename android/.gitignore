@@ -1,0 +1,16 @@
+*.iml
+.gradle/
+.kotlin/
+/local.properties
+/.idea/
+/build
+/app/build
+/captures
+.externalNativeBuild
+.cxx
+/app/src/main/kotlin/uniffi/
+
+# release signing — never commit
+/keystore.properties
+*.jks
+*.keystore

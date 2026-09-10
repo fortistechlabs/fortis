@@ -1,0 +1,191 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">fortis</string>
+
+    <string name="action_back">Nazaj</string>
+    <string name="action_cancel">Prekliči</string>
+    <string name="action_continue">Naprej</string>
+    <string name="action_save">Shrani</string>
+    <string name="action_done">Končano</string>
+    <string name="action_show">Pokaži</string>
+    <string name="action_hide">Skrij</string>
+    <string name="action_copy">Kopiraj</string>
+    <string name="action_share">Deli</string>
+    <string name="action_open">Odpri</string>
+    <string name="action_remove">Odstrani</string>
+    <string name="action_rename">Preimenuj</string>
+    <string name="action_unlock">Odkleni</string>
+    <string name="action_add_wallet">Dodaj denarnico</string>
+    <string name="action_view">Ogled</string>
+    <string name="action_refresh">Osveži</string>
+    <string name="action_reconnect">Znova poveži</string>
+    <string name="action_review">Preglej</string>
+    <string name="action_sign_send">Podpiši in pošlji</string>
+    <string name="action_new_address">Nov naslov</string>
+    <string name="action_scan_qr">Skeniraj kodo QR</string>
+    <string name="action_lock">Zakleni</string>
+    <string name="action_lock_app">Zakleni aplikacijo</string>
+    <string name="action_copy_xpub">Kopiraj xpub</string>
+    <string name="action_recovery_phrase">Obnovitvena fraza</string>
+    <string name="toast_copied">Kopirano</string>
+    <string name="cd_dismiss">Opusti</string>
+
+    <string name="onboard_add_title">Dodaj denarnico</string>
+    <string name="onboard_tagline">neskrbniška denarnica za Bitcoin XBT in Bitcoin BTC</string>
+    <string name="onboard_create">Ustvari novo denarnico</string>
+    <string name="onboard_restore">Obnovi iz obnovitvene fraze</string>
+
+    <string name="gen_title">Dodajte nekaj naključja</string>
+    <string name="gen_body">Vaš telefon je že ustvaril varno seme. Stresite ga — ali čečkajte po polju — da primešate dodatno entropijo iz senzorjev gibanja in časovnih nihanj. Za vsak primer.</string>
+    <string name="gen_words_24">24 besed</string>
+    <string name="gen_words_12">12 besed</string>
+    <string name="gen_words_hint">Obe sta varni; 12 je lažje zapisati.</string>
+    <string name="gen_pad_hint">stresite ali čečkajte tukaj</string>
+    <string name="gen_entropy_full">obilo dodatne entropije — osnovno seme je že varno</string>
+    <string name="gen_entropy_partial">primešanih ~%1$d dodatnih bitov</string>
+    <string name="gen_generate">Ustvari denarnico</string>
+
+    <string name="create_phrase_title">Vaša obnovitvena fraza</string>
+    <string name="create_phrase_body">Teh %1$d besed zapišite na papir, brez povezave. Kdor koli, ki jih ima, nadzoruje vaša sredstva.</string>
+    <string name="create_passphrase_hint">»25. beseda« — dodatna skrivnost, ki se ne shrani. Če jo nastavite, za obnovitev potrebujete tako frazo kot to. Če niste prepričani, pustite prazno.</string>
+    <string name="create_ack">Frazo sem zapisal(-a)</string>
+
+    <string name="restore_title">Obnovi denarnico</string>
+    <string name="restore_body">Vnesite svojih 12 ali 24 besed, ločenih s presledki.</string>
+    <string name="restore_clone_hint">Ko je dodana, lahko to denarnico navedete tudi na %1$s v razdelku Upravljanje denarnic — ista fraza, isti naslovi.</string>
+    <string name="action_restore">Obnovi</string>
+
+    <string name="field_wallet_name">Ime denarnice</string>
+    <string name="field_passphrase">Geselna fraza BIP-39 (izbirno)</string>
+    <string name="field_app_password">Geslo aplikacije</string>
+    <string name="field_confirm_password">Potrdi geslo</string>
+    <string name="field_to_address">Naslov prejemnika</string>
+    <string name="field_amount">Znesek</string>
+    <string name="field_custom_feerate">poljuben sat/vB (izbirno)</string>
+
+    <string name="reveal_title">Obnovitvena fraza</string>
+    <string name="reveal_warning">Kdor koli, ki vidi te besede — in geselno frazo, če je nastavljena — lahko porabi to denarnico. Glejte jih le na zasebnem mestu. Nikoli jih ne vnašajte na spletno mesto ali v aplikacijo. Posnetki zaslona so tukaj blokirani.</string>
+    <string name="reveal_failed">Te denarnice ni bilo mogoče dešifrirati.</string>
+    <string name="reveal_passphrase_label">Geselna fraza BIP-39</string>
+    <string name="reveal_no_passphrase">Ta denarnica nima geselne fraze BIP-39.</string>
+
+    <string name="nav_home">Domov</string>
+    <string name="nav_wallet">Denarnica</string>
+    <string name="nav_settings">Nastavitve</string>
+    <string name="tab_receive">Prejmi</string>
+    <string name="tab_send">Pošlji</string>
+    <string name="tab_history">Zgodovina</string>
+
+    <string name="home_title">Vaše denarnice</string>
+    <string name="home_open">odprta</string>
+    <string name="home_tap_to_open">tapnite za odpiranje</string>
+    <string name="wallets_max">Dosežena je največja dovoljena količina %1$d denarnic.</string>
+
+    <string name="lock_password_prompt">Vnesite geslo aplikacije.</string>
+    <string name="biometric_setup_title">Nastavi zaklep aplikacije</string>
+    <string name="biometric_unlock_title">Odkleni Fortis Wallet</string>
+    <string name="biometric_subtitle">Fortis Wallet</string>
+    <string name="biometric_invalidated">Zaklep zaslona vaše naprave se je spremenil, zato aplikacije tukaj ni več mogoče odkleniti. Znova jo namestite in vsako denarnico obnovite iz njene obnovitvene fraze.</string>
+    <string name="lock_choice_use_biometric">Zakleni aplikacijo s prstnim odtisom ali kodo PIN</string>
+    <string name="lock_choice_biometric_note">En odklep odpre vse vaše denarnice. Nobenega gesla za pomnjenje — prstni odtis/obraz naprave ali koda PIN za zaklep zaslona vas spusti noter.</string>
+    <string name="lock_choice_password_note">To geslo odklene aplikacijo in vsako denarnico v njej.</string>
+
+    <string name="settings_title">Nastavitve</string>
+    <string name="settings_wallets">Denarnice</string>
+    <string name="settings_security">Varnost</string>
+    <string name="settings_connection">Povezava</string>
+    <string name="settings_app_lock">Zaklep aplikacije</string>
+    <string name="lock_mode_biometric">Prstni odtis / koda PIN naprave</string>
+    <string name="lock_mode_password">Geslo</string>
+    <string name="settings_one_unlock">En odklep odpre vsako denarnico v aplikaciji.</string>
+    <string name="settings_language">Jezik</string>
+    <string name="language_system_default">Privzeto v sistemu</string>
+    <string name="settings_status">Stanje</string>
+    <string name="settings_chain_height">Višina verige</string>
+    <string name="settings_degraded_note">Storitev fortis ni dosegljiva — zaenkrat se uporabljajo javni podatki o blokih. Samodejno se bo preklopila nazaj.</string>
+    <string name="settings_version">fortis %1$s</string>
+    <string name="xpub_loading">še se nalaga — poskusite znova</string>
+    <string name="also_add_on">Dodaj tudi na %1$s</string>
+    <string name="dialog_rename_title">Preimenuj denarnico</string>
+    <string name="dialog_reveal_title">Prikaz obnovitvene fraze za %1$s?</string>
+    <string name="dialog_reveal_body">Obnovitvena fraza (in geselna fraza, če ste jo nastavili) je edino, kar lahko obnovi to denarnico — in kdor koli, ki jo ima, lahko porabi vaša sredstva. Razkrijte jo le na zasebnem mestu, ko nihče ne gleda. Naslednji zaslon blokira posnetke zaslona.</string>
+    <string name="dialog_remove_title">Odstrani %1$s?</string>
+    <string name="dialog_remove_body">S tem se denarnica odstrani le iz te aplikacije. Na verigi blokov se nič ne spremeni in lahko jo kadar koli znova dodate z njeno obnovitveno frazo (in geselno frazo, če ste jo nastavili). Poskrbite, da je fraza zapisana.</string>
+
+    <string name="status_offline">brez povezave</string>
+    <string name="status_rescanning">ponovno skeniranje %1$d%%</string>
+    <string name="status_limited">omejena storitev</string>
+    <string name="status_connected">povezano</string>
+    <string name="status_syncing">sinhronizacija</string>
+
+    <string name="wallet_none_open">Nobena denarnica ni odprta</string>
+    <string name="wallet_choose">Izberite denarnico</string>
+    <string name="wallet_pending">%1$s %2$s v čakanju</string>
+    <string name="wallet_block">blok %1$s</string>
+    <string name="wallet_rescanning">ponovno skeniranje %1$d%%</string>
+    <string name="wallet_syncing">sinhronizacija</string>
+    <string name="wallet_limited_suffix">%1$s  ·  omejena storitev</string>
+    <string name="wallet_connecting">povezovanje …</string>
+    <string name="fiat_approx">≈ %1$s</string>
+
+    <string name="sent_title">Plačilo poslano</string>
+    <string name="sent_txid">%1$s… · tapnite za kopiranje</string>
+
+    <string name="cd_address_qr">koda QR naslova</string>
+    <string name="receive_address_n">naslov št. %1$d · tapnite za kopiranje</string>
+    <string name="share_address_chooser">Deli naslov</string>
+
+    <string name="scan_prompt">Skenirajte plačilni naslov</string>
+    <string name="send_sweep">Pošlji največ (sweep)</string>
+    <string name="send_alt_coin">= %1$s %2$s</string>
+    <string name="send_alt_sat">= %1$s sat</string>
+    <string name="send_alt_fiat">  ·  %1$s</string>
+    <string name="fee_fast">Hitro</string>
+    <string name="fee_normal">Običajno</string>
+    <string name="fee_slow">Počasi</string>
+    <string name="send_replay_protect">Zaščita pred ponovitvijo XBT (100-bajtni OP_RETURN)</string>
+    <string name="send_replay_note">Doda ~110 vB provizije. Nestandardno na privzetem releju Bitcoina — oddajte prek vozlišča/storitve, ki sprejema velike OP_RETURN.</string>
+    <string name="send_service_fee">Provizija za storitev: %1$s%% poslanega zneska (najm. %2$d sat) — podpira to gostovano vozlišče.</string>
+    <string name="cd_amount_unit">enota zneska</string>
+    <string name="unit_sat">sat</string>
+
+    <string name="history_empty">še ni transakcij</string>
+    <string name="history_send">pošlji</string>
+    <string name="history_receive">prejmi</string>
+    <string name="history_row_subtitle">%1$s · %2$s…</string>
+    <string name="history_pending">v čakanju</string>
+    <string name="history_conf_n">%1$d potr.</string>
+    <string name="history_confirmed">potrjena</string>
+    <string name="history_hint">tapnite transakcijo, da jo odprete v raziskovalcu · pridržite za kopiranje id-ja</string>
+
+    <string name="confirm_sweep_title">Potrdi sweep</string>
+    <string name="confirm_payment_title">Potrdi plačilo</string>
+    <string name="confirm_to">Za</string>
+    <string name="confirm_amount">Znesek</string>
+    <string name="confirm_network_fee">Omrežna provizija</string>
+    <string name="confirm_network_fee_value">%1$s %2$s · %3$d sat/vB</string>
+    <string name="confirm_service_fee">Provizija za storitev</string>
+    <string name="confirm_change">Vračilo</string>
+    <string name="confirm_replay">Zaščita pred ponovitvijo</string>
+    <string name="confirm_replay_value">vklopljeno · 100-bajtni OP_RETURN</string>
+    <string name="confirm_total">Skupaj</string>
+    <string name="value_with_fiat">%1$s %2$s  ·  %3$s</string>
+
+    <string name="mnemonic_not_in_list">%1$d ni na seznamu besed</string>
+    <string name="mnemonic_looks_good">videti je v redu</string>
+    <string name="mnemonic_status">%1$s  ·  %2$s</string>
+
+    <string name="error_wallet_max">Na eni napravi imate lahko največ %1$d denarnic.</string>
+    <string name="error_clone_exists">»%1$s« je že na %2$s.</string>
+    <string name="error_lock_setup_failed">nastavitev zaklepa aplikacije ni uspela</string>
+    <string name="error_enter_amount">vnesite znesek</string>
+    <string name="error_no_coins">ni potrjenih kovancev za porabo</string>
+    <string name="error_open_wallet">denarnice ni bilo mogoče odpreti</string>
+
+    <plurals name="word_count">
+        <item quantity="one">%1$d beseda</item>
+        <item quantity="two">%1$d besedi</item>
+        <item quantity="few">%1$d besede</item>
+        <item quantity="other">%1$d besed</item>
+    </plurals>
+</resources>

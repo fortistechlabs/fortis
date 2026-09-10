@@ -1,0 +1,17 @@
+[package]
+name = "fortis-node"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Watch-only chain-gateway logic for fortis: a Bitcoin Core / Knots JSON-RPC client plus wallet ops — descriptors, UTXOs, fee estimation, broadcast. Holds no keys."
+
+[dependencies]
+wallet-core = { path = "../wallet-core" }
+anyhow = "1"
+serde = { workspace = true }
+serde_json = { workspace = true }
+hex = { workspace = true }
+ureq = { version = "2", default-features = false, features = ["json"] }
+base64 = "0.22"

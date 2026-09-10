@@ -1,0 +1,189 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">fortis</string>
+
+    <string name="action_back">Atzera</string>
+    <string name="action_cancel">Utzi</string>
+    <string name="action_continue">Jarraitu</string>
+    <string name="action_save">Gorde</string>
+    <string name="action_done">Eginda</string>
+    <string name="action_show">Erakutsi</string>
+    <string name="action_hide">Ezkutatu</string>
+    <string name="action_copy">Kopiatu</string>
+    <string name="action_share">Partekatu</string>
+    <string name="action_open">Ireki</string>
+    <string name="action_remove">Kendu</string>
+    <string name="action_rename">Berrizendatu</string>
+    <string name="action_unlock">Desblokeatu</string>
+    <string name="action_add_wallet">Gehitu diru-zorroa</string>
+    <string name="action_view">Ikusi</string>
+    <string name="action_refresh">Freskatu</string>
+    <string name="action_reconnect">Berriz konektatu</string>
+    <string name="action_review">Berrikusi</string>
+    <string name="action_sign_send">Sinatu eta bidali</string>
+    <string name="action_new_address">Helbide berria</string>
+    <string name="action_scan_qr">Eskaneatu QR kodea</string>
+    <string name="action_lock">Blokeatu</string>
+    <string name="action_lock_app">Blokeatu aplikazioa</string>
+    <string name="action_copy_xpub">Kopiatu xpub</string>
+    <string name="action_recovery_phrase">Berreskuratze-esaldia</string>
+    <string name="toast_copied">Kopiatuta</string>
+    <string name="cd_dismiss">Baztertu</string>
+
+    <string name="onboard_add_title">Gehitu diru-zorro bat</string>
+    <string name="onboard_tagline">zaintzarik gabeko diru-zorroa Bitcoin XBT eta Bitcoin BTC-rako</string>
+    <string name="onboard_create">Sortu diru-zorro berri bat</string>
+    <string name="onboard_restore">Berreskuratu berreskuratze-esaldi batetik</string>
+
+    <string name="gen_title">Gehitu ausazkotasun pixka bat</string>
+    <string name="gen_body">Zure telefonoak jada sortu du hazi seguru bat. Astindu ezazu — edo marraztu eremuan — mugimendu-sentsoreetatik eta denbora-aldaketetatik entropia gehigarria nahasteko. Segurtasunerako.</string>
+    <string name="gen_words_24">24 hitz</string>
+    <string name="gen_words_12">12 hitz</string>
+    <string name="gen_words_hint">Biak seguruak dira; 12 errazago idazten dira.</string>
+    <string name="gen_pad_hint">astindu edo marraztu hemen</string>
+    <string name="gen_entropy_full">entropia gehigarri ugari — oinarrizko hazia jada segurua da</string>
+    <string name="gen_entropy_partial">~%1$d bit gehigarri nahastuta</string>
+    <string name="gen_generate">Sortu diru-zorroa</string>
+
+    <string name="create_phrase_title">Zure berreskuratze-esaldia</string>
+    <string name="create_phrase_body">Idatzi %1$d hitz hauek paperean, lineaz kanpo. Dituenak zure funtsak kontrolatzen ditu.</string>
+    <string name="create_passphrase_hint">"25. hitz" bat — gordetzen ez den sekretu gehigarri bat. Bat ezartzen baduzu, berreskuratzeko esaldia eta hau behar dituzu. Utzi hutsik ziur ez bazaude.</string>
+    <string name="create_ack">Esaldia idatzi dut</string>
+
+    <string name="restore_title">Berreskuratu diru-zorroa</string>
+    <string name="restore_body">Sartu zure 12 edo 24 hitzak, zuriunez bereizita.</string>
+    <string name="restore_clone_hint">Gehitu ondoren, diru-zorro hau %1$s zerbitzuan ere zerrenda dezakezu Kudeatu diru-zorroak atalean — esaldi bera, helbide berak.</string>
+    <string name="action_restore">Berreskuratu</string>
+
+    <string name="field_wallet_name">Diru-zorroaren izena</string>
+    <string name="field_passphrase">BIP-39 pasaesaldia (aukerakoa)</string>
+    <string name="field_app_password">Aplikazioaren pasahitza</string>
+    <string name="field_confirm_password">Berretsi pasahitza</string>
+    <string name="field_to_address">Hartzailearen helbidea</string>
+    <string name="field_amount">Zenbatekoa</string>
+    <string name="field_custom_feerate">sat/vB pertsonalizatua (aukerakoa)</string>
+
+    <string name="reveal_title">Berreskuratze-esaldia</string>
+    <string name="reveal_warning">Hitz hauek ikusten dituen edonork — eta pasaesaldia, ezarrita badago — diru-zorro hau gasta dezake. Begiratu leku pribatu batean soilik. Ez idatzi inoiz webgune batean edo aplikazio batean. Pantaila-argazkiak blokeatuta daude hemen.</string>
+    <string name="reveal_failed">Ezin izan da diru-zorro hau deszifratu.</string>
+    <string name="reveal_passphrase_label">BIP-39 pasaesaldia</string>
+    <string name="reveal_no_passphrase">Diru-zorro honek ez du BIP-39 pasaesaldirik.</string>
+
+    <string name="nav_home">Hasiera</string>
+    <string name="nav_wallet">Diru-zorroa</string>
+    <string name="nav_settings">Ezarpenak</string>
+    <string name="tab_receive">Jaso</string>
+    <string name="tab_send">Bidali</string>
+    <string name="tab_history">Historia</string>
+
+    <string name="home_title">Zure diru-zorroak</string>
+    <string name="home_open">irekita</string>
+    <string name="home_tap_to_open">sakatu irekitzeko</string>
+    <string name="wallets_max">%1$d diru-zorroko gehienekora iritsi zara.</string>
+
+    <string name="lock_password_prompt">Sartu aplikazioaren pasahitza.</string>
+    <string name="biometric_setup_title">Konfiguratu aplikazioaren blokeoa</string>
+    <string name="biometric_unlock_title">Desblokeatu Fortis Wallet</string>
+    <string name="biometric_subtitle">Fortis Wallet</string>
+    <string name="biometric_invalidated">Zure gailuaren pantaila-blokeoa aldatu da, beraz, aplikazioa ezin da hemen desblokeatu jada. Berrinstalatu eta berreskuratu diru-zorro bakoitza bere berreskuratze-esalditik.</string>
+    <string name="lock_choice_use_biometric">Blokeatu aplikazioa hatz-marka edo PIN bidez</string>
+    <string name="lock_choice_biometric_note">Desblokeo bakar batek zure diru-zorro guztiak irekitzen ditu. Ez dago pasahitzik gogoratzeko — zure gailuaren hatz-marka/aurpegia edo pantaila-blokeoaren PINa nahikoa da sartzeko.</string>
+    <string name="lock_choice_password_note">Pasahitz honek aplikazioa eta bertako diru-zorro bakoitza desblokeatzen ditu.</string>
+
+    <string name="settings_title">Ezarpenak</string>
+    <string name="settings_wallets">Diru-zorroak</string>
+    <string name="settings_security">Segurtasuna</string>
+    <string name="settings_connection">Konexioa</string>
+    <string name="settings_app_lock">Aplikazioaren blokeoa</string>
+    <string name="lock_mode_biometric">Hatz-marka / gailuaren PINa</string>
+    <string name="lock_mode_password">Pasahitza</string>
+    <string name="settings_one_unlock">Desblokeo bakar batek aplikazioko diru-zorro bakoitza irekitzen du.</string>
+    <string name="settings_language">Hizkuntza</string>
+    <string name="language_system_default">Sistemaren lehenetsia</string>
+    <string name="settings_status">Egoera</string>
+    <string name="settings_chain_height">Katearen altuera</string>
+    <string name="settings_degraded_note">fortis zerbitzua ez dago eskuragarri — oraingoz blokeen datu publikoak erabiltzen ari da. Automatikoki itzuliko da.</string>
+    <string name="settings_version">fortis %1$s</string>
+    <string name="xpub_loading">oraindik kargatzen — saiatu berriro</string>
+    <string name="also_add_on">Gehitu %1$s zerbitzuan ere</string>
+    <string name="dialog_rename_title">Berrizendatu diru-zorroa</string>
+    <string name="dialog_reveal_title">%1$s(r)en berreskuratze-esaldia erakutsi?</string>
+    <string name="dialog_reveal_body">Berreskuratze-esaldia (eta pasaesaldia, bat ezarri baduzu) da diru-zorro hau berreskura dezakeen gauza bakarra — eta duen edonork zure funtsak gasta ditzake. Erakutsi leku pribatu batean soilik, inor begira ez dagoenean. Hurrengo pantailak pantaila-argazkiak blokeatzen ditu.</string>
+    <string name="dialog_remove_title">%1$s kendu?</string>
+    <string name="dialog_remove_body">Honek diru-zorroa aplikazio honetatik soilik kentzen du. Blockchainean ez da ezer aldatzen eta noiznahi gehi dezakezu berriro bere berreskuratze-esaldiarekin (eta pasaesaldiarekin, bat ezarri baduzu). Ziurtatu esaldia idatzita dagoela.</string>
+
+    <string name="status_offline">lineaz kanpo</string>
+    <string name="status_rescanning">berreskaneatzen %1$d%%</string>
+    <string name="status_limited">zerbitzu mugatua</string>
+    <string name="status_connected">konektatuta</string>
+    <string name="status_syncing">sinkronizatzen</string>
+
+    <string name="wallet_none_open">Ez dago diru-zorrorik irekita</string>
+    <string name="wallet_choose">Aukeratu diru-zorro bat</string>
+    <string name="wallet_pending">%1$s %2$s zain</string>
+    <string name="wallet_block">%1$s blokea</string>
+    <string name="wallet_rescanning">berreskaneatzen %1$d%%</string>
+    <string name="wallet_syncing">sinkronizatzen</string>
+    <string name="wallet_limited_suffix">%1$s  ·  zerbitzu mugatua</string>
+    <string name="wallet_connecting">konektatzen…</string>
+    <string name="fiat_approx">≈ %1$s</string>
+
+    <string name="sent_title">Ordainketa bidali da</string>
+    <string name="sent_txid">%1$s… · sakatu kopiatzeko</string>
+
+    <string name="cd_address_qr">helbidearen QR kodea</string>
+    <string name="receive_address_n">%1$d. helbidea · sakatu kopiatzeko</string>
+    <string name="share_address_chooser">Partekatu helbidea</string>
+
+    <string name="scan_prompt">Eskaneatu ordainketa-helbide bat</string>
+    <string name="send_sweep">Bidali gehienekoa (sweep)</string>
+    <string name="send_alt_coin">= %1$s %2$s</string>
+    <string name="send_alt_sat">= %1$s sat</string>
+    <string name="send_alt_fiat">  ·  %1$s</string>
+    <string name="fee_fast">Azkarra</string>
+    <string name="fee_normal">Normala</string>
+    <string name="fee_slow">Motela</string>
+    <string name="send_replay_protect">XBT errepikatze-babesa (100 byteko OP_RETURN)</string>
+    <string name="send_replay_note">~110 vB komisio gehitzen du. Ez-estandarra Bitcoinen erreleu lehenetsian — igorri OP_RETURN handiak onartzen dituen nodo/zerbitzu baten bidez.</string>
+    <string name="send_service_fee">Zerbitzu-komisioa: bidalitako zenbatekoaren %1$s%% (gutx. %2$d sat) — nodo ostatatu hau babesten du.</string>
+    <string name="cd_amount_unit">zenbatekoaren unitatea</string>
+    <string name="unit_sat">sat</string>
+
+    <string name="history_empty">oraindik ez dago transakziorik</string>
+    <string name="history_send">bidalketa</string>
+    <string name="history_receive">jasotzea</string>
+    <string name="history_row_subtitle">%1$s · %2$s…</string>
+    <string name="history_pending">zain</string>
+    <string name="history_conf_n">%1$d berr.</string>
+    <string name="history_confirmed">berretsita</string>
+    <string name="history_hint">sakatu transakzio bat esploratzailean irekitzeko · eduki sakatuta id-a kopiatzeko</string>
+
+    <string name="confirm_sweep_title">Berretsi sweep</string>
+    <string name="confirm_payment_title">Berretsi ordainketa</string>
+    <string name="confirm_to">Nori</string>
+    <string name="confirm_amount">Zenbatekoa</string>
+    <string name="confirm_network_fee">Sareko komisioa</string>
+    <string name="confirm_network_fee_value">%1$s %2$s · %3$d sat/vB</string>
+    <string name="confirm_service_fee">Zerbitzu-komisioa</string>
+    <string name="confirm_change">Bueltakoa</string>
+    <string name="confirm_replay">Errepikatze-babesa</string>
+    <string name="confirm_replay_value">aktibatuta · 100 byteko OP_RETURN</string>
+    <string name="confirm_total">Guztira</string>
+    <string name="value_with_fiat">%1$s %2$s  ·  %3$s</string>
+
+    <string name="mnemonic_not_in_list">%1$d ez daude hitz-zerrendan</string>
+    <string name="mnemonic_looks_good">itxura ona du</string>
+    <string name="mnemonic_status">%1$s  ·  %2$s</string>
+
+    <string name="error_wallet_max">Gailu batean %1$d diru-zorro arte eduki ditzakezu.</string>
+    <string name="error_clone_exists">„%1$s” jada %2$s zerbitzuan dago.</string>
+    <string name="error_lock_setup_failed">aplikazioaren blokeoa konfiguratzeak huts egin du</string>
+    <string name="error_enter_amount">sartu zenbateko bat</string>
+    <string name="error_no_coins">ez dago txanpon berretsirik gastatzeko</string>
+    <string name="error_open_wallet">ezin izan da diru-zorroa ireki</string>
+
+    <plurals name="word_count">
+        <item quantity="one">%1$d hitz</item>
+        <item quantity="other">%1$d hitz</item>
+    </plurals>
+</resources>

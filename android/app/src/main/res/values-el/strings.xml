@@ -1,0 +1,189 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">fortis</string>
+
+    <string name="action_back">Πίσω</string>
+    <string name="action_cancel">Άκυρο</string>
+    <string name="action_continue">Συνέχεια</string>
+    <string name="action_save">Αποθήκευση</string>
+    <string name="action_done">Τέλος</string>
+    <string name="action_show">Εμφάνιση</string>
+    <string name="action_hide">Απόκρυψη</string>
+    <string name="action_copy">Αντιγραφή</string>
+    <string name="action_share">Κοινοποίηση</string>
+    <string name="action_open">Άνοιγμα</string>
+    <string name="action_remove">Κατάργηση</string>
+    <string name="action_rename">Μετονομασία</string>
+    <string name="action_unlock">Ξεκλείδωμα</string>
+    <string name="action_add_wallet">Προσθήκη πορτοφολιού</string>
+    <string name="action_view">Προβολή</string>
+    <string name="action_refresh">Ανανέωση</string>
+    <string name="action_reconnect">Επανασύνδεση</string>
+    <string name="action_review">Έλεγχος</string>
+    <string name="action_sign_send">Υπογραφή και αποστολή</string>
+    <string name="action_new_address">Νέα διεύθυνση</string>
+    <string name="action_scan_qr">Σάρωση κωδικού QR</string>
+    <string name="action_lock">Κλείδωμα</string>
+    <string name="action_lock_app">Κλείδωμα εφαρμογής</string>
+    <string name="action_copy_xpub">Αντιγραφή xpub</string>
+    <string name="action_recovery_phrase">Φράση ανάκτησης</string>
+    <string name="toast_copied">Αντιγράφηκε</string>
+    <string name="cd_dismiss">Παράβλεψη</string>
+
+    <string name="onboard_add_title">Προσθήκη πορτοφολιού</string>
+    <string name="onboard_tagline">ένα μη θεματοφυλακτικό πορτοφόλι για το Bitcoin XBT και το Bitcoin BTC</string>
+    <string name="onboard_create">Δημιουργία νέου πορτοφολιού</string>
+    <string name="onboard_restore">Επαναφορά από φράση ανάκτησης</string>
+
+    <string name="gen_title">Προσθέστε λίγη τυχαιότητα</string>
+    <string name="gen_body">Το τηλέφωνό σας δημιούργησε ήδη έναν ασφαλή σπόρο. Κουνήστε το — ή σκαρίφημα στην περιοχή — για να αναμείξετε επιπλέον εντροπία από τους αισθητήρες κίνησης και τις χρονικές διακυμάνσεις. Για κάθε ενδεχόμενο.</string>
+    <string name="gen_words_24">24 λέξεις</string>
+    <string name="gen_words_12">12 λέξεις</string>
+    <string name="gen_words_hint">Και οι δύο είναι ασφαλείς· οι 12 σημειώνονται πιο εύκολα.</string>
+    <string name="gen_pad_hint">κουνήστε ή σκαριφήστε εδώ</string>
+    <string name="gen_entropy_full">άφθονη επιπλέον εντροπία — ο βασικός σπόρος είναι ήδη ασφαλής</string>
+    <string name="gen_entropy_partial">αναμείχθηκαν ~%1$d επιπλέον bit</string>
+    <string name="gen_generate">Δημιουργία πορτοφολιού</string>
+
+    <string name="create_phrase_title">Η φράση ανάκτησής σας</string>
+    <string name="create_phrase_body">Γράψτε αυτές τις %1$d λέξεις σε χαρτί, εκτός σύνδεσης. Όποιος τις έχει ελέγχει τα χρήματά σας.</string>
+    <string name="create_passphrase_hint">Μια «25η λέξη» — ένα επιπλέον μυστικό, που δεν αποθηκεύεται. Αν ορίσετε μία, χρειάζεστε και τη φράση και αυτήν για επαναφορά. Αφήστε το κενό αν δεν είστε σίγουροι.</string>
+    <string name="create_ack">Έγραψα τη φράση</string>
+
+    <string name="restore_title">Επαναφορά πορτοφολιού</string>
+    <string name="restore_body">Εισαγάγετε τις 12 ή 24 λέξεις σας, χωρισμένες με κενά.</string>
+    <string name="restore_clone_hint">Αφού προστεθεί, μπορείτε επίσης να καταχωρίσετε αυτό το πορτοφόλι στο %1$s από τη Διαχείριση πορτοφολιών — ίδια φράση, ίδιες διευθύνσεις.</string>
+    <string name="action_restore">Επαναφορά</string>
+
+    <string name="field_wallet_name">Όνομα πορτοφολιού</string>
+    <string name="field_passphrase">Φράση πρόσβασης BIP-39 (προαιρετικό)</string>
+    <string name="field_app_password">Κωδικός εφαρμογής</string>
+    <string name="field_confirm_password">Επιβεβαίωση κωδικού</string>
+    <string name="field_to_address">Διεύθυνση παραλήπτη</string>
+    <string name="field_amount">Ποσό</string>
+    <string name="field_custom_feerate">προσαρμοσμένο sat/vB (προαιρετικό)</string>
+
+    <string name="reveal_title">Φράση ανάκτησης</string>
+    <string name="reveal_warning">Όποιος δει αυτές τις λέξεις — και τη φράση πρόσβασης, αν έχει οριστεί — μπορεί να ξοδέψει αυτό το πορτοφόλι. Δείτε τις μόνο σε ιδιωτικό χώρο. Μην τις πληκτρολογείτε ποτέ σε ιστότοπο ή εφαρμογή. Τα στιγμιότυπα οθόνης είναι αποκλεισμένα εδώ.</string>
+    <string name="reveal_failed">Δεν ήταν δυνατή η αποκρυπτογράφηση αυτού του πορτοφολιού.</string>
+    <string name="reveal_passphrase_label">Φράση πρόσβασης BIP-39</string>
+    <string name="reveal_no_passphrase">Δεν υπάρχει φράση πρόσβασης BIP-39 σε αυτό το πορτοφόλι.</string>
+
+    <string name="nav_home">Αρχική</string>
+    <string name="nav_wallet">Πορτοφόλι</string>
+    <string name="nav_settings">Ρυθμίσεις</string>
+    <string name="tab_receive">Λήψη</string>
+    <string name="tab_send">Αποστολή</string>
+    <string name="tab_history">Ιστορικό</string>
+
+    <string name="home_title">Τα πορτοφόλια σας</string>
+    <string name="home_open">ανοιχτό</string>
+    <string name="home_tap_to_open">πατήστε για άνοιγμα</string>
+    <string name="wallets_max">Συμπληρώθηκε το μέγιστο των %1$d πορτοφολιών.</string>
+
+    <string name="lock_password_prompt">Εισαγάγετε τον κωδικό της εφαρμογής.</string>
+    <string name="biometric_setup_title">Ρύθμιση κλειδώματος εφαρμογής</string>
+    <string name="biometric_unlock_title">Ξεκλείδωμα Fortis Wallet</string>
+    <string name="biometric_subtitle">Fortis Wallet</string>
+    <string name="biometric_invalidated">Το κλείδωμα οθόνης της συσκευής σας άλλαξε, οπότε η εφαρμογή δεν μπορεί πλέον να ξεκλειδωθεί εδώ. Επανεγκαταστήστε την και επαναφέρετε κάθε πορτοφόλι από τη φράση ανάκτησής του.</string>
+    <string name="lock_choice_use_biometric">Κλείδωμα εφαρμογής με δακτυλικό αποτύπωμα ή PIN</string>
+    <string name="lock_choice_biometric_note">Ένα ξεκλείδωμα ανοίγει όλα τα πορτοφόλια σας. Κανένας κωδικός για απομνημόνευση — σας βάζει μέσα το δακτυλικό αποτύπωμα/πρόσωπο ή το PIN κλειδώματος οθόνης της συσκευής σας.</string>
+    <string name="lock_choice_password_note">Αυτός ο κωδικός ξεκλειδώνει την εφαρμογή και κάθε πορτοφόλι σε αυτήν.</string>
+
+    <string name="settings_title">Ρυθμίσεις</string>
+    <string name="settings_wallets">Πορτοφόλια</string>
+    <string name="settings_security">Ασφάλεια</string>
+    <string name="settings_connection">Σύνδεση</string>
+    <string name="settings_app_lock">Κλείδωμα εφαρμογής</string>
+    <string name="lock_mode_biometric">Δακτυλικό αποτύπωμα / PIN συσκευής</string>
+    <string name="lock_mode_password">Κωδικός</string>
+    <string name="settings_one_unlock">Ένα ξεκλείδωμα ανοίγει κάθε πορτοφόλι στην εφαρμογή.</string>
+    <string name="settings_language">Γλώσσα</string>
+    <string name="language_system_default">Προεπιλογή συστήματος</string>
+    <string name="settings_status">Κατάσταση</string>
+    <string name="settings_chain_height">Ύψος αλυσίδας</string>
+    <string name="settings_degraded_note">Η υπηρεσία fortis δεν είναι προσβάσιμη — χρήση δημόσιων δεδομένων μπλοκ προς το παρόν. Θα επανέλθει αυτόματα.</string>
+    <string name="settings_version">fortis %1$s</string>
+    <string name="xpub_loading">φορτώνει ακόμη — δοκιμάστε ξανά</string>
+    <string name="also_add_on">Προσθήκη και στο %1$s</string>
+    <string name="dialog_rename_title">Μετονομασία πορτοφολιού</string>
+    <string name="dialog_reveal_title">Εμφάνιση της φράσης ανάκτησης για το %1$s;</string>
+    <string name="dialog_reveal_body">Η φράση ανάκτησης (και η φράση πρόσβασης, αν ορίσατε μία) είναι το μόνο που μπορεί να επαναφέρει αυτό το πορτοφόλι — και όποιος την έχει μπορεί να ξοδέψει τα χρήματά σας. Αποκαλύψτε την μόνο σε ιδιωτικό χώρο, χωρίς κανείς να βλέπει. Η επόμενη οθόνη αποκλείει τα στιγμιότυπα οθόνης.</string>
+    <string name="dialog_remove_title">Κατάργηση %1$s;</string>
+    <string name="dialog_remove_body">Αυτό καταργεί το πορτοφόλι μόνο από αυτήν την εφαρμογή. Τίποτα δεν αλλάζει στο blockchain και μπορείτε να το προσθέσετε ξανά ανά πάσα στιγμή με τη φράση ανάκτησής του (και τη φράση πρόσβασης, αν ορίσατε μία). Βεβαιωθείτε ότι η φράση είναι γραμμένη.</string>
+
+    <string name="status_offline">εκτός σύνδεσης</string>
+    <string name="status_rescanning">επανασάρωση %1$d%%</string>
+    <string name="status_limited">περιορισμένη υπηρεσία</string>
+    <string name="status_connected">συνδέθηκε</string>
+    <string name="status_syncing">συγχρονισμός</string>
+
+    <string name="wallet_none_open">Κανένα πορτοφόλι ανοιχτό</string>
+    <string name="wallet_choose">Επιλέξτε πορτοφόλι</string>
+    <string name="wallet_pending">%1$s %2$s σε εκκρεμότητα</string>
+    <string name="wallet_block">μπλοκ %1$s</string>
+    <string name="wallet_rescanning">επανασάρωση %1$d%%</string>
+    <string name="wallet_syncing">συγχρονισμός</string>
+    <string name="wallet_limited_suffix">%1$s  ·  περιορισμένη υπηρεσία</string>
+    <string name="wallet_connecting">σύνδεση…</string>
+    <string name="fiat_approx">≈ %1$s</string>
+
+    <string name="sent_title">Η πληρωμή στάλθηκε</string>
+    <string name="sent_txid">%1$s… · πατήστε για αντιγραφή</string>
+
+    <string name="cd_address_qr">κωδικός QR διεύθυνσης</string>
+    <string name="receive_address_n">διεύθυνση #%1$d · πατήστε για αντιγραφή</string>
+    <string name="share_address_chooser">Κοινοποίηση διεύθυνσης</string>
+
+    <string name="scan_prompt">Σαρώστε μια διεύθυνση πληρωμής</string>
+    <string name="send_sweep">Αποστολή μέγιστου (sweep)</string>
+    <string name="send_alt_coin">= %1$s %2$s</string>
+    <string name="send_alt_sat">= %1$s sat</string>
+    <string name="send_alt_fiat">  ·  %1$s</string>
+    <string name="fee_fast">Γρήγορα</string>
+    <string name="fee_normal">Κανονικά</string>
+    <string name="fee_slow">Αργά</string>
+    <string name="send_replay_protect">Προστασία επανάληψης XBT (OP_RETURN 100 byte)</string>
+    <string name="send_replay_note">Προσθέτει ~110 vB τέλους. Μη τυπικό στο προεπιλεγμένο relay του Bitcoin — μεταδώστε μέσω κόμβου/υπηρεσίας που δέχεται μεγάλα OP_RETURN.</string>
+    <string name="send_service_fee">Τέλος υπηρεσίας: %1$s%% του ποσού που στέλνεται (ελάχ. %2$d sat) — στηρίζει αυτόν τον φιλοξενούμενο κόμβο.</string>
+    <string name="cd_amount_unit">μονάδα ποσού</string>
+    <string name="unit_sat">sat</string>
+
+    <string name="history_empty">δεν υπάρχουν ακόμη συναλλαγές</string>
+    <string name="history_send">αποστολή</string>
+    <string name="history_receive">λήψη</string>
+    <string name="history_row_subtitle">%1$s · %2$s…</string>
+    <string name="history_pending">σε εκκρεμότητα</string>
+    <string name="history_conf_n">%1$d επιβ.</string>
+    <string name="history_confirmed">επιβεβαιωμένη</string>
+    <string name="history_hint">πατήστε μια συναλλαγή για να την ανοίξετε στον explorer · παρατεταμένο πάτημα για αντιγραφή του id</string>
+
+    <string name="confirm_sweep_title">Επιβεβαίωση sweep</string>
+    <string name="confirm_payment_title">Επιβεβαίωση πληρωμής</string>
+    <string name="confirm_to">Προς</string>
+    <string name="confirm_amount">Ποσό</string>
+    <string name="confirm_network_fee">Τέλος δικτύου</string>
+    <string name="confirm_network_fee_value">%1$s %2$s · %3$d sat/vB</string>
+    <string name="confirm_service_fee">Τέλος υπηρεσίας</string>
+    <string name="confirm_change">Ρέστα</string>
+    <string name="confirm_replay">Προστασία επανάληψης</string>
+    <string name="confirm_replay_value">ενεργή · OP_RETURN 100 byte</string>
+    <string name="confirm_total">Σύνολο</string>
+    <string name="value_with_fiat">%1$s %2$s  ·  %3$s</string>
+
+    <string name="mnemonic_not_in_list">%1$d εκτός της λίστας λέξεων</string>
+    <string name="mnemonic_looks_good">φαίνεται εντάξει</string>
+    <string name="mnemonic_status">%1$s  ·  %2$s</string>
+
+    <string name="error_wallet_max">Μπορείτε να έχετε έως %1$d πορτοφόλια σε μία συσκευή.</string>
+    <string name="error_clone_exists">Το «%1$s» υπάρχει ήδη στο %2$s.</string>
+    <string name="error_lock_setup_failed">η ρύθμιση κλειδώματος εφαρμογής απέτυχε</string>
+    <string name="error_enter_amount">εισαγάγετε ποσό</string>
+    <string name="error_no_coins">δεν υπάρχουν επιβεβαιωμένα νομίσματα για ξόδεμα</string>
+    <string name="error_open_wallet">δεν ήταν δυνατό το άνοιγμα του πορτοφολιού</string>
+
+    <plurals name="word_count">
+        <item quantity="one">%1$d λέξη</item>
+        <item quantity="other">%1$d λέξεις</item>
+    </plurals>
+</resources>

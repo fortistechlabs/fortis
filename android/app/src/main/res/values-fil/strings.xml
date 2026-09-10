@@ -1,0 +1,189 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">fortis</string>
+
+    <string name="action_back">Bumalik</string>
+    <string name="action_cancel">Kanselahin</string>
+    <string name="action_continue">Magpatuloy</string>
+    <string name="action_save">I-save</string>
+    <string name="action_done">Tapos na</string>
+    <string name="action_show">Ipakita</string>
+    <string name="action_hide">Itago</string>
+    <string name="action_copy">Kopyahin</string>
+    <string name="action_share">Ibahagi</string>
+    <string name="action_open">Buksan</string>
+    <string name="action_remove">Alisin</string>
+    <string name="action_rename">Palitan ang pangalan</string>
+    <string name="action_unlock">I-unlock</string>
+    <string name="action_add_wallet">Magdagdag ng wallet</string>
+    <string name="action_view">Tingnan</string>
+    <string name="action_refresh">I-refresh</string>
+    <string name="action_reconnect">Muling kumonekta</string>
+    <string name="action_review">Suriin</string>
+    <string name="action_sign_send">Lagdaan at ipadala</string>
+    <string name="action_new_address">Bagong address</string>
+    <string name="action_scan_qr">I-scan ang QR code</string>
+    <string name="action_lock">I-lock</string>
+    <string name="action_lock_app">I-lock ang app</string>
+    <string name="action_copy_xpub">Kopyahin ang xpub</string>
+    <string name="action_recovery_phrase">Recovery phrase</string>
+    <string name="toast_copied">Nakopya</string>
+    <string name="cd_dismiss">I-dismiss</string>
+
+    <string name="onboard_add_title">Magdagdag ng wallet</string>
+    <string name="onboard_tagline">isang non-custodial na wallet para sa Bitcoin XBT at Bitcoin BTC</string>
+    <string name="onboard_create">Gumawa ng bagong wallet</string>
+    <string name="onboard_restore">I-restore mula sa recovery phrase</string>
+
+    <string name="gen_title">Magdagdag ng randomness</string>
+    <string name="gen_body">Gumawa na ang iyong telepono ng secure na seed. Iyugyog ito — o mag-scribble sa pad — para makapaghalo ng dagdag na entropy mula sa mga motion sensor at timing jitter. Para sigurado.</string>
+    <string name="gen_words_24">24 na salita</string>
+    <string name="gen_words_12">12 salita</string>
+    <string name="gen_words_hint">Parehong secure; mas madaling isulat ang 12.</string>
+    <string name="gen_pad_hint">iyugyog, o mag-scribble dito</string>
+    <string name="gen_entropy_full">sagana sa dagdag na entropy — secure na ang base seed</string>
+    <string name="gen_entropy_partial">~%1$d dagdag na bit ang naihalo</string>
+    <string name="gen_generate">Gumawa ng wallet</string>
+
+    <string name="create_phrase_title">Ang iyong recovery phrase</string>
+    <string name="create_phrase_body">Isulat ang %1$d salitang ito sa papel, offline. Kontrolado ng sinumang may hawak nito ang iyong pondo.</string>
+    <string name="create_passphrase_hint">Isang \"ika-25 salita\" — dagdag na sekreto na hindi iniimbak. Kung magtatakda ka, kailangan mo ang phrase at ito para makapag-restore. Iwang blangko kung hindi sigurado.</string>
+    <string name="create_ack">Naisulat ko na ang phrase</string>
+
+    <string name="restore_title">I-restore ang wallet</string>
+    <string name="restore_body">Ilagay ang iyong 12 o 24 na salita, na pinaghihiwalay ng espasyo.</string>
+    <string name="restore_clone_hint">Pagkatapos maidagdag, maaari mo ring ilista ang wallet na ito sa %1$s mula sa Pamahalaan ang mga wallet — parehong phrase, parehong address.</string>
+    <string name="action_restore">I-restore</string>
+
+    <string name="field_wallet_name">Pangalan ng wallet</string>
+    <string name="field_passphrase">BIP-39 passphrase (opsyonal)</string>
+    <string name="field_app_password">Password ng app</string>
+    <string name="field_confirm_password">Kumpirmahin ang password</string>
+    <string name="field_to_address">Address ng tatanggap</string>
+    <string name="field_amount">Halaga</string>
+    <string name="field_custom_feerate">custom na sat/vB (opsyonal)</string>
+
+    <string name="reveal_title">Recovery phrase</string>
+    <string name="reveal_warning">Sinumang makakita ng mga salitang ito — kasama ang passphrase, kung nakatakda — ay maaaring gastusin ang wallet na ito. Tingnan lang ang mga ito sa pribadong lugar. Huwag kailanman i-type ang mga ito sa isang website o app. Naka-block ang mga screenshot dito.</string>
+    <string name="reveal_failed">Hindi ma-decrypt ang wallet na ito.</string>
+    <string name="reveal_passphrase_label">BIP-39 passphrase</string>
+    <string name="reveal_no_passphrase">Walang BIP-39 passphrase sa wallet na ito.</string>
+
+    <string name="nav_home">Home</string>
+    <string name="nav_wallet">Wallet</string>
+    <string name="nav_settings">Mga Setting</string>
+    <string name="tab_receive">Tumanggap</string>
+    <string name="tab_send">Magpadala</string>
+    <string name="tab_history">Kasaysayan</string>
+
+    <string name="home_title">Ang iyong mga wallet</string>
+    <string name="home_open">bukas</string>
+    <string name="home_tap_to_open">i-tap para buksan</string>
+    <string name="wallets_max">Naabot na ang maximum na %1$d na wallet.</string>
+
+    <string name="lock_password_prompt">Ilagay ang password ng iyong app.</string>
+    <string name="biometric_setup_title">Mag-set up ng app lock</string>
+    <string name="biometric_unlock_title">I-unlock ang Fortis Wallet</string>
+    <string name="biometric_subtitle">Fortis Wallet</string>
+    <string name="biometric_invalidated">Nagbago ang screen lock ng iyong device, kaya hindi na ma-unlock dito ang app. I-install muli at i-restore ang bawat wallet mula sa recovery phrase nito.</string>
+    <string name="lock_choice_use_biometric">I-lock ang app gamit ang fingerprint o PIN</string>
+    <string name="lock_choice_biometric_note">Isang unlock ang magbubukas sa lahat ng iyong wallet. Walang password na tatandaan — papapasukin ka ng fingerprint/mukha o screen-lock PIN ng iyong device.</string>
+    <string name="lock_choice_password_note">Ina-unlock ng password na ito ang app at bawat wallet dito.</string>
+
+    <string name="settings_title">Mga Setting</string>
+    <string name="settings_wallets">Mga Wallet</string>
+    <string name="settings_security">Seguridad</string>
+    <string name="settings_connection">Koneksyon</string>
+    <string name="settings_app_lock">App lock</string>
+    <string name="lock_mode_biometric">Fingerprint / PIN ng device</string>
+    <string name="lock_mode_password">Password</string>
+    <string name="settings_one_unlock">Isang unlock ang magbubukas sa bawat wallet sa app.</string>
+    <string name="settings_language">Wika</string>
+    <string name="language_system_default">Default ng system</string>
+    <string name="settings_status">Status</string>
+    <string name="settings_chain_height">Taas ng chain</string>
+    <string name="settings_degraded_note">Hindi maabot ang serbisyong fortis — gumagamit muna ng pampublikong block data. Awtomatiko itong babalik.</string>
+    <string name="settings_version">fortis %1$s</string>
+    <string name="xpub_loading">naglo-load pa — subukan muli</string>
+    <string name="also_add_on">Idagdag din sa %1$s</string>
+    <string name="dialog_rename_title">Palitan ang pangalan ng wallet</string>
+    <string name="dialog_reveal_title">Ipakita ang recovery phrase para sa %1$s?</string>
+    <string name="dialog_reveal_body">Ang recovery phrase (at passphrase, kung nagtakda ka) ang tanging makapagre-restore sa wallet na ito — at magagastos ng sinumang may hawak nito ang iyong pondo. Ipakita lang ito sa pribadong lugar, na walang nakatingin. Bina-block ng susunod na screen ang mga screenshot.</string>
+    <string name="dialog_remove_title">Alisin ang %1$s?</string>
+    <string name="dialog_remove_body">Inaalis lang nito ang wallet sa app na ito. Walang nagbabago sa blockchain, at maaari mo itong idagdag muli anumang oras gamit ang recovery phrase nito (at passphrase, kung nagtakda ka). Tiyaking naisulat ang phrase.</string>
+
+    <string name="status_offline">offline</string>
+    <string name="status_rescanning">muling nag-i-scan %1$d%%</string>
+    <string name="status_limited">limitadong serbisyo</string>
+    <string name="status_connected">nakakonekta</string>
+    <string name="status_syncing">nagsi-sync</string>
+
+    <string name="wallet_none_open">Walang bukas na wallet</string>
+    <string name="wallet_choose">Pumili ng wallet</string>
+    <string name="wallet_pending">%1$s %2$s nakabinbin</string>
+    <string name="wallet_block">block %1$s</string>
+    <string name="wallet_rescanning">muling nag-i-scan %1$d%%</string>
+    <string name="wallet_syncing">nagsi-sync</string>
+    <string name="wallet_limited_suffix">%1$s  ·  limitadong serbisyo</string>
+    <string name="wallet_connecting">kumokonekta…</string>
+    <string name="fiat_approx">≈ %1$s</string>
+
+    <string name="sent_title">Naipadala ang bayad</string>
+    <string name="sent_txid">%1$s… · i-tap para kopyahin</string>
+
+    <string name="cd_address_qr">QR code ng address</string>
+    <string name="receive_address_n">address #%1$d · i-tap para kopyahin</string>
+    <string name="share_address_chooser">Ibahagi ang address</string>
+
+    <string name="scan_prompt">Mag-scan ng payment address</string>
+    <string name="send_sweep">Ipadala ang maximum (sweep)</string>
+    <string name="send_alt_coin">= %1$s %2$s</string>
+    <string name="send_alt_sat">= %1$s sat</string>
+    <string name="send_alt_fiat">  ·  %1$s</string>
+    <string name="fee_fast">Mabilis</string>
+    <string name="fee_normal">Normal</string>
+    <string name="fee_slow">Mabagal</string>
+    <string name="send_replay_protect">XBT replay protection (100-byte OP_RETURN)</string>
+    <string name="send_replay_note">Nagdadagdag ng ~110 vB na bayad. Non-standard sa default na Bitcoin relay — mag-broadcast sa pamamagitan ng node/serbisyong tumatanggap ng malalaking OP_RETURN.</string>
+    <string name="send_service_fee">Bayad sa serbisyo: %1$s%% ng halagang ipinadala (min %2$d sat) — sumusuporta sa hosted node na ito.</string>
+    <string name="cd_amount_unit">unit ng halaga</string>
+    <string name="unit_sat">sat</string>
+
+    <string name="history_empty">wala pang transaksyon</string>
+    <string name="history_send">padala</string>
+    <string name="history_receive">tanggap</string>
+    <string name="history_row_subtitle">%1$s · %2$s…</string>
+    <string name="history_pending">nakabinbin</string>
+    <string name="history_conf_n">%1$d confirmation</string>
+    <string name="history_confirmed">nakumpirma</string>
+    <string name="history_hint">i-tap ang transaksyon para buksan ito sa explorer · pindutin nang matagal para kopyahin ang id</string>
+
+    <string name="confirm_sweep_title">Kumpirmahin ang sweep</string>
+    <string name="confirm_payment_title">Kumpirmahin ang bayad</string>
+    <string name="confirm_to">Para kay</string>
+    <string name="confirm_amount">Halaga</string>
+    <string name="confirm_network_fee">Network fee</string>
+    <string name="confirm_network_fee_value">%1$s %2$s · %3$d sat/vB</string>
+    <string name="confirm_service_fee">Bayad sa serbisyo</string>
+    <string name="confirm_change">Sukli</string>
+    <string name="confirm_replay">Replay protection</string>
+    <string name="confirm_replay_value">naka-on · 100-byte OP_RETURN</string>
+    <string name="confirm_total">Kabuuan</string>
+    <string name="value_with_fiat">%1$s %2$s  ·  %3$s</string>
+
+    <string name="mnemonic_not_in_list">%1$d wala sa listahan ng salita</string>
+    <string name="mnemonic_looks_good">mukhang maayos</string>
+    <string name="mnemonic_status">%1$s  ·  %2$s</string>
+
+    <string name="error_wallet_max">Maaari kang magtago ng hanggang %1$d na wallet sa isang device.</string>
+    <string name="error_clone_exists">Nasa %2$s na ang \"%1$s\".</string>
+    <string name="error_lock_setup_failed">nabigo ang pag-set up ng app lock</string>
+    <string name="error_enter_amount">maglagay ng halaga</string>
+    <string name="error_no_coins">walang nakumpirmang barya na magagastos</string>
+    <string name="error_open_wallet">hindi mabuksan ang wallet</string>
+
+    <plurals name="word_count">
+        <item quantity="one">%1$d salita</item>
+        <item quantity="other">%1$d na salita</item>
+    </plurals>
+</resources>

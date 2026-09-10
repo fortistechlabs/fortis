@@ -1,0 +1,189 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">fortis</string>
+
+    <string name="action_back">Emuva</string>
+    <string name="action_cancel">Khansela</string>
+    <string name="action_continue">Qhubeka</string>
+    <string name="action_save">Londoloza</string>
+    <string name="action_done">Kwenziwe</string>
+    <string name="action_show">Bonisa</string>
+    <string name="action_hide">Fihla</string>
+    <string name="action_copy">Kopisha</string>
+    <string name="action_share">Yabelana</string>
+    <string name="action_open">Vula</string>
+    <string name="action_remove">Susa</string>
+    <string name="action_rename">Qamba kabusha</string>
+    <string name="action_unlock">Vula</string>
+    <string name="action_add_wallet">Engeza isikhwama</string>
+    <string name="action_view">Buka</string>
+    <string name="action_refresh">Vuselela</string>
+    <string name="action_reconnect">Xhuma kabusha</string>
+    <string name="action_review">Buyekeza</string>
+    <string name="action_sign_send">Sayina uthumele</string>
+    <string name="action_new_address">Ikheli elisha</string>
+    <string name="action_scan_qr">Skena ikhodi ye-QR</string>
+    <string name="action_lock">Khiya</string>
+    <string name="action_lock_app">Khiya uhlelo lokusebenza</string>
+    <string name="action_copy_xpub">Kopisha i-xpub</string>
+    <string name="action_recovery_phrase">Umusho wokubuyisela</string>
+    <string name="toast_copied">Kukopishiwe</string>
+    <string name="cd_dismiss">Cashisa</string>
+
+    <string name="onboard_add_title">Engeza isikhwama</string>
+    <string name="onboard_tagline">isikhwama esingagcinwa se-Bitcoin XBT ne-Bitcoin BTC</string>
+    <string name="onboard_create">Dala isikhwama esisha</string>
+    <string name="onboard_restore">Buyisela usuka emushweni wokubuyisela</string>
+
+    <string name="gen_title">Engeza ukungahleleki okuncane</string>
+    <string name="gen_body">Ifoni yakho isivele idale imbewu ephephile. Yinyakazise — noma udwebe kuphedi — ukuze uhlanganise i-entropy eyengeziwe kusuka kuzinzwa zokunyakaza nokuguquguquka kwesikhathi. Ngenxa yokuqapha.</string>
+    <string name="gen_words_24">Amagama angu-24</string>
+    <string name="gen_words_12">Amagama angu-12</string>
+    <string name="gen_words_hint">Kokubili kuphephile; angu-12 kulula ukuwabhala phansi.</string>
+    <string name="gen_pad_hint">yinyakazise, noma udwebe lapha</string>
+    <string name="gen_entropy_full">i-entropy eyengeziwe eminingi — imbewu eyisisekelo isivele iphephile</string>
+    <string name="gen_entropy_partial">kuhlanganiswe amabhithi angu-~%1$d engeziwe</string>
+    <string name="gen_generate">Khiqiza isikhwama</string>
+
+    <string name="create_phrase_title">Umusho wakho wokubuyisela</string>
+    <string name="create_phrase_body">Bhala la magama angu-%1$d ephepheni, ungaxhunywe ku-inthanethi. Noma ubani onawo ulawula izimali zakho.</string>
+    <string name="create_passphrase_hint">\"Igama lama-25\" — imfihlo eyengeziwe, engagcinwa. Uma ulisetha, udinga umusho nalokhu ukuze ubuyisele. Shiya kungenalutho uma ungaqinisekile.</string>
+    <string name="create_ack">Ngiwubhalile umusho</string>
+
+    <string name="restore_title">Buyisela isikhwama</string>
+    <string name="restore_body">Faka amagama akho angu-12 noma angu-24, ehlukaniswe ngezikhala.</string>
+    <string name="restore_clone_hint">Ngemva kokwengezwa ungabuye ufake lesi sikhwama ku-%1$s kusuka ku-Phatha izikhwama — umusho ofanayo, amakheli afanayo.</string>
+    <string name="action_restore">Buyisela</string>
+
+    <string name="field_wallet_name">Igama lesikhwama</string>
+    <string name="field_passphrase">Umushwana wokungena we-BIP-39 (okukhethwayo)</string>
+    <string name="field_app_password">Iphasiwedi yohlelo lokusebenza</string>
+    <string name="field_confirm_password">Qinisekisa iphasiwedi</string>
+    <string name="field_to_address">Ikheli lomamukeli</string>
+    <string name="field_amount">Inani</string>
+    <string name="field_custom_feerate">i-sat/vB engokwezifiso (okukhethwayo)</string>
+
+    <string name="reveal_title">Umusho wokubuyisela</string>
+    <string name="reveal_warning">Noma ubani obona la magama — kanye nomushwana wokungena, uma usethiwe — angasebenzisa lesi sikhwama. Wabuke kuphela endaweni eyimfihlo. Ungalokothi uwathayiphe kuwebhusayithi noma kuhlelo lokusebenza. Izithombe-skrini zivinjelwe lapha.</string>
+    <string name="reveal_failed">Ayikwazanga ukususa umbhalo ocashile kulesi sikhwama.</string>
+    <string name="reveal_passphrase_label">Umushwana wokungena we-BIP-39</string>
+    <string name="reveal_no_passphrase">Awukho umushwana wokungena we-BIP-39 kulesi sikhwama.</string>
+
+    <string name="nav_home">Ikhaya</string>
+    <string name="nav_wallet">Isikhwama</string>
+    <string name="nav_settings">Izilungiselelo</string>
+    <string name="tab_receive">Yamukela</string>
+    <string name="tab_send">Thumela</string>
+    <string name="tab_history">Umlando</string>
+
+    <string name="home_title">Izikhwama zakho</string>
+    <string name="home_open">kuvuliwe</string>
+    <string name="home_tap_to_open">thepha ukuze uvule</string>
+    <string name="wallets_max">Kufinyelelwe kunani eliphezulu lezikhwama ezingu-%1$d.</string>
+
+    <string name="lock_password_prompt">Faka iphasiwedi yakho yohlelo lokusebenza.</string>
+    <string name="biometric_setup_title">Setha ukukhiya uhlelo lokusebenza</string>
+    <string name="biometric_unlock_title">Vula i-Fortis Wallet</string>
+    <string name="biometric_subtitle">Fortis Wallet</string>
+    <string name="biometric_invalidated">Ukukhiya isikrini sedivayisi yakho kushintshile, ngakho uhlelo lokusebenza alusakwazi ukuvulwa lapha. Faka kabusha futhi ubuyisele isikhwama ngasinye kusuka emushweni waso wokubuyisela.</string>
+    <string name="lock_choice_use_biometric">Khiya uhlelo lokusebenza ngesigxivizo somunwe noma i-PIN</string>
+    <string name="lock_choice_biometric_note">Ukuvula okukodwa kuvula zonke izikhwama zakho. Ayikho iphasiwedi ozoyikhumbula — isigxivizo somunwe/ubuso bedivayisi yakho noma i-PIN yokukhiya isikrini iyakungenisa.</string>
+    <string name="lock_choice_password_note">Le phasiwedi ivula uhlelo lokusebenza nesikhwama ngasinye kulo.</string>
+
+    <string name="settings_title">Izilungiselelo</string>
+    <string name="settings_wallets">Izikhwama</string>
+    <string name="settings_security">Ukuphepha</string>
+    <string name="settings_connection">Ukuxhumana</string>
+    <string name="settings_app_lock">Ukukhiya uhlelo lokusebenza</string>
+    <string name="lock_mode_biometric">Isigxivizo somunwe / i-PIN yedivayisi</string>
+    <string name="lock_mode_password">Iphasiwedi</string>
+    <string name="settings_one_unlock">Ukuvula okukodwa kuvula isikhwama ngasinye ohlelweni lokusebenza.</string>
+    <string name="settings_language">Ulimi</string>
+    <string name="language_system_default">Okuzenzakalelayo kwesistimu</string>
+    <string name="settings_status">Isimo</string>
+    <string name="settings_chain_height">Ubude beshumi</string>
+    <string name="settings_degraded_note">Isevisi ye-fortis ayifinyeleleki — isebenzisa idatha yebhulokhi yomphakathi okwamanje. Izobuyela ngokuzenzakalelayo.</string>
+    <string name="settings_version">fortis %1$s</string>
+    <string name="xpub_loading">isalayisha — zama futhi</string>
+    <string name="also_add_on">Engeza futhi ku-%1$s</string>
+    <string name="dialog_rename_title">Qamba kabusha isikhwama</string>
+    <string name="dialog_reveal_title">Bonisa umusho wokubuyisela ka-%1$s?</string>
+    <string name="dialog_reveal_body">Umusho wokubuyisela (nomushwana wokungena, uma usethile owodwa) uyinto kuphela engabuyisela lesi sikhwama — futhi noma ubani onawo angasebenzisa izimali zakho. Wembule kuphela endaweni eyimfihlo, kungekho muntu obukayo. Isikrini esilandelayo sivimba izithombe-skrini.</string>
+    <string name="dialog_remove_title">Susa %1$s?</string>
+    <string name="dialog_remove_body">Lokhu kususa isikhwama kulolu hlelo lokusebenza kuphela. Akukho okushintshayo ku-blockchain, futhi ungasengeza kabusha noma nini ngomusho waso wokubuyisela (nomushwana wokungena, uma usethile owodwa). Qiniseka ukuthi umusho ubhalwe phansi.</string>
+
+    <string name="status_offline">okungaxhunyiwe ku-inthanethi</string>
+    <string name="status_rescanning">iskena kabusha %1$d%%</string>
+    <string name="status_limited">isevisi elinganiselwe</string>
+    <string name="status_connected">kuxhunyiwe</string>
+    <string name="status_syncing">iyavumelanisa</string>
+
+    <string name="wallet_none_open">Asikho isikhwama esivuliwe</string>
+    <string name="wallet_choose">Khetha isikhwama</string>
+    <string name="wallet_pending">%1$s %2$s kulindile</string>
+    <string name="wallet_block">ibhulokhi %1$s</string>
+    <string name="wallet_rescanning">iskena kabusha %1$d%%</string>
+    <string name="wallet_syncing">iyavumelanisa</string>
+    <string name="wallet_limited_suffix">%1$s  ·  isevisi elinganiselwe</string>
+    <string name="wallet_connecting">iyaxhuma…</string>
+    <string name="fiat_approx">≈ %1$s</string>
+
+    <string name="sent_title">Inkokhelo ithunyelwe</string>
+    <string name="sent_txid">%1$s… · thepha ukuze ukopishe</string>
+
+    <string name="cd_address_qr">ikhodi ye-QR yekheli</string>
+    <string name="receive_address_n">ikheli #%1$d · thepha ukuze ukopishe</string>
+    <string name="share_address_chooser">Yabelana ngekheli</string>
+
+    <string name="scan_prompt">Skena ikheli lenkokhelo</string>
+    <string name="send_sweep">Thumela okuphezulu (sweep)</string>
+    <string name="send_alt_coin">= %1$s %2$s</string>
+    <string name="send_alt_sat">= %1$s sat</string>
+    <string name="send_alt_fiat">  ·  %1$s</string>
+    <string name="fee_fast">Shesha</string>
+    <string name="fee_normal">Okujwayelekile</string>
+    <string name="fee_slow">Nensa</string>
+    <string name="send_replay_protect">Ukuvikela ukudlala kabusha kwe-XBT (i-OP_RETURN yamabhayithi angu-100)</string>
+    <string name="send_replay_note">Yengeza imali engu-~110 vB. Akujwayelekile ku-relay ezenzakalelayo ye-Bitcoin — sakaza ngenodi/isevisi eyamukela ama-OP_RETURN amakhulu.</string>
+    <string name="send_service_fee">Imali yesevisi: %1$s%% yenani elithunyelwe (okuncane %2$d sat) — isekela le nodi ebanjiwe.</string>
+    <string name="cd_amount_unit">iyunithi yenani</string>
+    <string name="unit_sat">sat</string>
+
+    <string name="history_empty">azikho izenzo okwamanje</string>
+    <string name="history_send">thumela</string>
+    <string name="history_receive">yamukela</string>
+    <string name="history_row_subtitle">%1$s · %2$s…</string>
+    <string name="history_pending">kulindile</string>
+    <string name="history_conf_n">%1$d ukuqinisekiswa</string>
+    <string name="history_confirmed">kuqinisekisiwe</string>
+    <string name="history_hint">thepha isenzo ukuze usivule kusiphenyi · cindezela isikhathi eside ukuze ukopishe i-id</string>
+
+    <string name="confirm_sweep_title">Qinisekisa i-sweep</string>
+    <string name="confirm_payment_title">Qinisekisa inkokhelo</string>
+    <string name="confirm_to">Ku</string>
+    <string name="confirm_amount">Inani</string>
+    <string name="confirm_network_fee">Imali yenethiwekhi</string>
+    <string name="confirm_network_fee_value">%1$s %2$s · %3$d sat/vB</string>
+    <string name="confirm_service_fee">Imali yesevisi</string>
+    <string name="confirm_change">Ushintshi</string>
+    <string name="confirm_replay">Ukuvikela ukudlala kabusha</string>
+    <string name="confirm_replay_value">kuvuliwe · i-OP_RETURN yamabhayithi angu-100</string>
+    <string name="confirm_total">Isamba</string>
+    <string name="value_with_fiat">%1$s %2$s  ·  %3$s</string>
+
+    <string name="mnemonic_not_in_list">%1$d awakho ohlwini lwamagama</string>
+    <string name="mnemonic_looks_good">kubukeka kukuhle</string>
+    <string name="mnemonic_status">%1$s  ·  %2$s</string>
+
+    <string name="error_wallet_max">Ungagcina izikhwama ezifika ku-%1$d kudivayisi eyodwa.</string>
+    <string name="error_clone_exists">“%1$s” isivele iku-%2$s.</string>
+    <string name="error_lock_setup_failed">ukusetha ukukhiya uhlelo lokusebenza kwehlulekile</string>
+    <string name="error_enter_amount">faka inani</string>
+    <string name="error_no_coins">azikho izinhlamvu zemali eziqinisekisiwe zokusebenzisa</string>
+    <string name="error_open_wallet">ayikwazanga ukuvula isikhwama</string>
+
+    <plurals name="word_count">
+        <item quantity="one">igama elingu-%1$d</item>
+        <item quantity="other">amagama angu-%1$d</item>
+    </plurals>
+</resources>

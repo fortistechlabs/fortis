@@ -1,0 +1,189 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">fortis</string>
+
+    <string name="action_back">Артқа</string>
+    <string name="action_cancel">Бас тарту</string>
+    <string name="action_continue">Жалғастыру</string>
+    <string name="action_save">Сақтау</string>
+    <string name="action_done">Дайын</string>
+    <string name="action_show">Көрсету</string>
+    <string name="action_hide">Жасыру</string>
+    <string name="action_copy">Көшіру</string>
+    <string name="action_share">Бөлісу</string>
+    <string name="action_open">Ашу</string>
+    <string name="action_remove">Жою</string>
+    <string name="action_rename">Атын өзгерту</string>
+    <string name="action_unlock">Құлыпты ашу</string>
+    <string name="action_add_wallet">Әмиян қосу</string>
+    <string name="action_view">Қарау</string>
+    <string name="action_refresh">Жаңарту</string>
+    <string name="action_reconnect">Қайта қосылу</string>
+    <string name="action_review">Тексеру</string>
+    <string name="action_sign_send">Қол қойып жіберу</string>
+    <string name="action_new_address">Жаңа мекенжай</string>
+    <string name="action_scan_qr">QR кодын сканерлеу</string>
+    <string name="action_lock">Құлыптау</string>
+    <string name="action_lock_app">Қолданбаны құлыптау</string>
+    <string name="action_copy_xpub">xpub көшіру</string>
+    <string name="action_recovery_phrase">Қалпына келтіру тіркесі</string>
+    <string name="toast_copied">Көшірілді</string>
+    <string name="cd_dismiss">Жабу</string>
+
+    <string name="onboard_add_title">Әмиян қосу</string>
+    <string name="onboard_tagline">Bitcoin XBT және Bitcoin BTC-ге арналған кастодиалды емес әмиян</string>
+    <string name="onboard_create">Жаңа әмиян жасау</string>
+    <string name="onboard_restore">Қалпына келтіру тіркесінен қалпына келтіру</string>
+
+    <string name="gen_title">Кездейсоқтық қосыңыз</string>
+    <string name="gen_body">Телефоныңыз қауіпсіз тұқымды бұрыннан жасады. Қозғалыс сенсорлары мен уақыт ауытқуынан қосымша энтропияны араластыру үшін оны шайқаңыз — немесе алаңға сызыңыз. Сақтық үшін.</string>
+    <string name="gen_words_24">24 сөз</string>
+    <string name="gen_words_12">12 сөз</string>
+    <string name="gen_words_hint">Екеуі де қауіпсіз; 12 сөзді жазып алу оңайырақ.</string>
+    <string name="gen_pad_hint">шайқаңыз немесе осы жерге сызыңыз</string>
+    <string name="gen_entropy_full">қосымша энтропия жеткілікті — негізгі тұқым бұрыннан қауіпсіз</string>
+    <string name="gen_entropy_partial">~%1$d қосымша бит араластырылды</string>
+    <string name="gen_generate">Әмиян жасау</string>
+
+    <string name="create_phrase_title">Сіздің қалпына келтіру тіркесіңіз</string>
+    <string name="create_phrase_body">Осы %1$d сөзді қағазға, желіден тыс жазыңыз. Оларға ие болған кез келген адам сіздің қаражатыңызды басқарады.</string>
+    <string name="create_passphrase_hint">«25-ші сөз» — сақталмайтын қосымша құпия. Оны орнатсаңыз, қалпына келтіру үшін тіркес те, ол да қажет. Сенімді болмасаңыз, бос қалдырыңыз.</string>
+    <string name="create_ack">Тіркесті жазып алдым</string>
+
+    <string name="restore_title">Әмиянды қалпына келтіру</string>
+    <string name="restore_body">12 немесе 24 сөзіңізді бос орындармен бөліп енгізіңіз.</string>
+    <string name="restore_clone_hint">Қосқаннан кейін бұл әмиянды «Әмияндарды басқару» бөлімінен %1$s ішінде де тізімге қосуға болады — сол тіркес, сол мекенжайлар.</string>
+    <string name="action_restore">Қалпына келтіру</string>
+
+    <string name="field_wallet_name">Әмиян атауы</string>
+    <string name="field_passphrase">BIP-39 құпия тіркесі (міндетті емес)</string>
+    <string name="field_app_password">Қолданба құпия сөзі</string>
+    <string name="field_confirm_password">Құпия сөзді растау</string>
+    <string name="field_to_address">Алушы мекенжайы</string>
+    <string name="field_amount">Сома</string>
+    <string name="field_custom_feerate">теңшелетін sat/vB (міндетті емес)</string>
+
+    <string name="reveal_title">Қалпына келтіру тіркесі</string>
+    <string name="reveal_warning">Осы сөздерді — орнатылса, құпия тіркесті де — көрген кез келген адам осы әмияннан жұмсай алады. Оларға тек жеке жерде қараңыз. Оларды ешқашан веб-сайтқа немесе қолданбаға енгізбеңіз. Мұнда скриншоттар бөгелген.</string>
+    <string name="reveal_failed">Бұл әмиянды шифрдан шығару мүмкін болмады.</string>
+    <string name="reveal_passphrase_label">BIP-39 құпия тіркесі</string>
+    <string name="reveal_no_passphrase">Бұл әмиянда BIP-39 құпия тіркесі жоқ.</string>
+
+    <string name="nav_home">Басты бет</string>
+    <string name="nav_wallet">Әмиян</string>
+    <string name="nav_settings">Параметрлер</string>
+    <string name="tab_receive">Қабылдау</string>
+    <string name="tab_send">Жіберу</string>
+    <string name="tab_history">Тарих</string>
+
+    <string name="home_title">Сіздің әмияндарыңыз</string>
+    <string name="home_open">ашық</string>
+    <string name="home_tap_to_open">ашу үшін түртіңіз</string>
+    <string name="wallets_max">%1$d әмиянның ең көп санына жетті.</string>
+
+    <string name="lock_password_prompt">Қолданба құпия сөзін енгізіңіз.</string>
+    <string name="biometric_setup_title">Қолданба құлпын орнату</string>
+    <string name="biometric_unlock_title">Fortis Wallet құлпын ашу</string>
+    <string name="biometric_subtitle">Fortis Wallet</string>
+    <string name="biometric_invalidated">Құрылғының экран құлпы өзгерді, сондықтан қолданбаны мұнда енді ашу мүмкін емес. Қайта орнатыңыз және әр әмиянды оның қалпына келтіру тіркесінен қалпына келтіріңіз.</string>
+    <string name="lock_choice_use_biometric">Қолданбаны саусақ ізімен немесе PIN кодымен құлыптау</string>
+    <string name="lock_choice_biometric_note">Бір рет ашу барлық әмияндарыңызды ашады. Есте сақтайтын құпия сөз жоқ — құрылғының саусақ ізі/беті немесе экран құлпының PIN коды кіргізеді.</string>
+    <string name="lock_choice_password_note">Бұл құпия сөз қолданбаны және ондағы әр әмиянды ашады.</string>
+
+    <string name="settings_title">Параметрлер</string>
+    <string name="settings_wallets">Әмияндар</string>
+    <string name="settings_security">Қауіпсіздік</string>
+    <string name="settings_connection">Байланыс</string>
+    <string name="settings_app_lock">Қолданба құлпы</string>
+    <string name="lock_mode_biometric">Саусақ ізі / құрылғы PIN коды</string>
+    <string name="lock_mode_password">Құпия сөз</string>
+    <string name="settings_one_unlock">Бір рет ашу қолданбадағы әр әмиянды ашады.</string>
+    <string name="settings_language">Тіл</string>
+    <string name="language_system_default">Жүйе әдепкісі</string>
+    <string name="settings_status">Күй</string>
+    <string name="settings_chain_height">Тізбек биіктігі</string>
+    <string name="settings_degraded_note">fortis қызметіне қол жеткізу мүмкін емес — әзірге ашық блок деректері пайдаланылуда. Автоматты түрде қайта ауысады.</string>
+    <string name="settings_version">fortis %1$s</string>
+    <string name="xpub_loading">әлі жүктелуде — қайталап көріңіз</string>
+    <string name="also_add_on">%1$s ішіне де қосу</string>
+    <string name="dialog_rename_title">Әмиян атын өзгерту</string>
+    <string name="dialog_reveal_title">%1$s үшін қалпына келтіру тіркесі көрсетілсін бе?</string>
+    <string name="dialog_reveal_body">Қалпына келтіру тіркесі (және орнатқан болсаңыз, құпия тіркес) — осы әмиянды қалпына келтіре алатын жалғыз нәрсе, әрі оған ие болған кез келген адам қаражатыңызды жұмсай алады. Оны тек ешкім қарамай тұрғанда жеке жерде ашыңыз. Келесі экран скриншоттарды бөгейді.</string>
+    <string name="dialog_remove_title">%1$s жойылсын ба?</string>
+    <string name="dialog_remove_body">Бұл әмиянды тек осы қолданбадан жояды. Блокчейнде ештеңе өзгермейді және оны қалпына келтіру тіркесі (және орнатқан болсаңыз, құпия тіркес) арқылы кез келген уақытта қайта қосуға болады. Тіркестің жазылғанына көз жеткізіңіз.</string>
+
+    <string name="status_offline">желіден тыс</string>
+    <string name="status_rescanning">қайта сканерлеу %1$d%%</string>
+    <string name="status_limited">шектеулі қызмет</string>
+    <string name="status_connected">қосылды</string>
+    <string name="status_syncing">синхрондау</string>
+
+    <string name="wallet_none_open">Ашық әмиян жоқ</string>
+    <string name="wallet_choose">Әмиян таңдаңыз</string>
+    <string name="wallet_pending">%1$s %2$s күтуде</string>
+    <string name="wallet_block">блок %1$s</string>
+    <string name="wallet_rescanning">қайта сканерлеу %1$d%%</string>
+    <string name="wallet_syncing">синхрондау</string>
+    <string name="wallet_limited_suffix">%1$s  ·  шектеулі қызмет</string>
+    <string name="wallet_connecting">қосылуда…</string>
+    <string name="fiat_approx">≈ %1$s</string>
+
+    <string name="sent_title">Төлем жіберілді</string>
+    <string name="sent_txid">%1$s… · көшіру үшін түртіңіз</string>
+
+    <string name="cd_address_qr">мекенжайдың QR коды</string>
+    <string name="receive_address_n">мекенжай №%1$d · көшіру үшін түртіңіз</string>
+    <string name="share_address_chooser">Мекенжаймен бөлісу</string>
+
+    <string name="scan_prompt">Төлем мекенжайын сканерлеңіз</string>
+    <string name="send_sweep">Ең көп мөлшерді жіберу (sweep)</string>
+    <string name="send_alt_coin">= %1$s %2$s</string>
+    <string name="send_alt_sat">= %1$s sat</string>
+    <string name="send_alt_fiat">  ·  %1$s</string>
+    <string name="fee_fast">Жылдам</string>
+    <string name="fee_normal">Қалыпты</string>
+    <string name="fee_slow">Баяу</string>
+    <string name="send_replay_protect">XBT қайта ойнатудан қорғау (100 байттық OP_RETURN)</string>
+    <string name="send_replay_note">~110 vB комиссия қосады. Әдепкі Bitcoin релесінде стандартты емес — үлкен OP_RETURN қабылдайтын түйін/қызмет арқылы таратыңыз.</string>
+    <string name="send_service_fee">Қызмет ақысы: жіберілген соманың %1$s%%\'і (кемінде %2$d sat) — осы хостталған түйінді қолдайды.</string>
+    <string name="cd_amount_unit">сома бірлігі</string>
+    <string name="unit_sat">sat</string>
+
+    <string name="history_empty">әзірге транзакциялар жоқ</string>
+    <string name="history_send">жіберу</string>
+    <string name="history_receive">қабылдау</string>
+    <string name="history_row_subtitle">%1$s · %2$s…</string>
+    <string name="history_pending">күтуде</string>
+    <string name="history_conf_n">%1$d растау</string>
+    <string name="history_confirmed">расталды</string>
+    <string name="history_hint">транзакцияны браузерде ашу үшін оны түртіңіз · id көшіру үшін ұзақ басыңыз</string>
+
+    <string name="confirm_sweep_title">Sweep растау</string>
+    <string name="confirm_payment_title">Төлемді растау</string>
+    <string name="confirm_to">Кімге</string>
+    <string name="confirm_amount">Сома</string>
+    <string name="confirm_network_fee">Желі ақысы</string>
+    <string name="confirm_network_fee_value">%1$s %2$s · %3$d sat/vB</string>
+    <string name="confirm_service_fee">Қызмет ақысы</string>
+    <string name="confirm_change">Қайтарым</string>
+    <string name="confirm_replay">Қайта ойнатудан қорғау</string>
+    <string name="confirm_replay_value">қосулы · 100 байттық OP_RETURN</string>
+    <string name="confirm_total">Барлығы</string>
+    <string name="value_with_fiat">%1$s %2$s  ·  %3$s</string>
+
+    <string name="mnemonic_not_in_list">%1$d сөз тізімінде жоқ</string>
+    <string name="mnemonic_looks_good">жақсы көрінеді</string>
+    <string name="mnemonic_status">%1$s  ·  %2$s</string>
+
+    <string name="error_wallet_max">Бір құрылғыда %1$d әмиянға дейін сақтай аласыз.</string>
+    <string name="error_clone_exists">«%1$s» әлдеқашан %2$s ішінде.</string>
+    <string name="error_lock_setup_failed">қолданба құлпын орнату сәтсіз аяқталды</string>
+    <string name="error_enter_amount">сома енгізіңіз</string>
+    <string name="error_no_coins">жұмсауға расталған монеталар жоқ</string>
+    <string name="error_open_wallet">әмиянды ашу мүмкін болмады</string>
+
+    <plurals name="word_count">
+        <item quantity="one">%1$d сөз</item>
+        <item quantity="other">%1$d сөз</item>
+    </plurals>
+</resources>

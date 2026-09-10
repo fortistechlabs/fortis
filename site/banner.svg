@@ -1,0 +1,43 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1500 500">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1500" y2="500" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#151E34"/>
+      <stop offset="0.5" stop-color="#0D1322"/>
+      <stop offset="1" stop-color="#080A12"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="1120" cy="250" r="640" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#39519E" stop-opacity="0.5"/>
+      <stop offset="0.6" stop-color="#26386A" stop-opacity="0.16"/>
+      <stop offset="1" stop-color="#26386A" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="sh" x1="900" y1="-60" x2="1450" y2="560" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#5E7FCB"/>
+      <stop offset="1" stop-color="#2E447F"/>
+    </linearGradient>
+    <clipPath id="gate"><path d="M44,81 V51 a10,10 0 0 1 20,0 V81 Z"/></clipPath>
+  </defs>
+  <rect width="1500" height="500" fill="url(#bg)"/>
+  <rect width="1500" height="500" fill="url(#glow)"/>
+
+  <!-- oversized faint shield watermark, bleeding off the right edge -->
+  <g transform="translate(1000 -70) scale(9.2)" opacity="0.22">
+    <path d="M22,22 h8 v8 h6 v-8 h8 v8 h6 v-8 h8 v8 h6 v-8 h8 v8 h6 v-8 h8 V58 C86,72 73,82 54,89 C35,82 22,72 22,58 Z"
+          fill="#8FBCFF"/>
+    <path d="M44,81 V51 a10,10 0 0 1 20,0 V81 Z" fill="#0C1322"/>
+    <g clip-path="url(#gate)" stroke="#0C1322" stroke-width="2.4" stroke-linecap="round">
+      <path d="M49,49 V82 M54,47 V82 M59,49 V82"/>
+      <path d="M43,56 H65 M43,64 H65 M43,72 H65"/>
+    </g>
+  </g>
+
+  <!-- wordmark, left -->
+  <text x="110" y="232" fill="#EDF1FB"
+        font-family="'Segoe UI', system-ui, -apple-system, Roboto, sans-serif"
+        font-size="90" font-weight="600" letter-spacing="0.5">Fortis Tech Labs</text>
+  <text x="114" y="296" fill="#A2AEC9"
+        font-family="'Segoe UI', system-ui, -apple-system, Roboto, sans-serif"
+        font-size="35" font-weight="400" letter-spacing="0.4">Tools for Bitcoin self-custody</text>
+  <text x="114" y="350" fill="#6E7A97"
+        font-family="'Segoe UI', system-ui, -apple-system, Roboto, sans-serif"
+        font-size="26" font-weight="400" letter-spacing="0.3">fortistechlabs.com</text>
+</svg>

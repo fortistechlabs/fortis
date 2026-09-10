@@ -1,0 +1,32 @@
+# fortis-edge behind Caddy — automatic HTTPS (Let's Encrypt) + reverse proxy.
+#
+#   caddy run --config deploy/Caddyfile
+#
+# Replace api.fortis.example with your domain and point its A/AAAA record at this
+# host. Caddy fetches and renews the certificate on its own.
+
+api.fortis.example {
+	encode zstd gzip
+
+	# fortis-edge speaks plain HTTP on localhost; TLS terminates here.
+	reverse_proxy 127.0.0.1:8098 {
+		header_up X-Forwarded-For {remote_host}
+	}
+
+	# fortis-edge sets its own CORS + cache headers; don't double them.
+	log {
+		output file /var/log/caddy/fortis-edge.log
+		format json
+	}
+}
+
+# --- Local / no-domain testing -------------------------------------------------
+# Serve an internal cert on :8443 so the wallet can use https without a domain.
+# Trust it with `caddy trust`, or use the Tailscale path in README.md instead.
+#
+# localhost:8443 {
+# 	tls internal
+# 	reverse_proxy 127.0.0.1:8098 {
+# 		header_up X-Forwarded-For {remote_host}
+# 	}
+# }

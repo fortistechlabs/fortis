@@ -1,0 +1,189 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">fortis</string>
+
+    <string name="action_back">Назад</string>
+    <string name="action_cancel">Отказ</string>
+    <string name="action_continue">Продължи</string>
+    <string name="action_save">Запази</string>
+    <string name="action_done">Готово</string>
+    <string name="action_show">Покажи</string>
+    <string name="action_hide">Скрий</string>
+    <string name="action_copy">Копирай</string>
+    <string name="action_share">Сподели</string>
+    <string name="action_open">Отвори</string>
+    <string name="action_remove">Премахни</string>
+    <string name="action_rename">Преименувай</string>
+    <string name="action_unlock">Отключи</string>
+    <string name="action_add_wallet">Добави портфейл</string>
+    <string name="action_view">Преглед</string>
+    <string name="action_refresh">Опресни</string>
+    <string name="action_reconnect">Свържи се отново</string>
+    <string name="action_review">Прегледай</string>
+    <string name="action_sign_send">Подпиши и изпрати</string>
+    <string name="action_new_address">Нов адрес</string>
+    <string name="action_scan_qr">Сканирай QR код</string>
+    <string name="action_lock">Заключи</string>
+    <string name="action_lock_app">Заключи приложението</string>
+    <string name="action_copy_xpub">Копирай xpub</string>
+    <string name="action_recovery_phrase">Фраза за възстановяване</string>
+    <string name="toast_copied">Копирано</string>
+    <string name="cd_dismiss">Отхвърли</string>
+
+    <string name="onboard_add_title">Добави портфейл</string>
+    <string name="onboard_tagline">несъхранителен портфейл за Bitcoin XBT и Bitcoin BTC</string>
+    <string name="onboard_create">Създай нов портфейл</string>
+    <string name="onboard_restore">Възстанови от фраза за възстановяване</string>
+
+    <string name="gen_title">Добавете малко случайност</string>
+    <string name="gen_body">Телефонът ви вече генерира сигурен seed. Разклатете го — или драскайте върху полето — за да добавите допълнителна ентропия от сензорите за движение и колебанията във времето. За всеки случай.</string>
+    <string name="gen_words_24">24 думи</string>
+    <string name="gen_words_12">12 думи</string>
+    <string name="gen_words_hint">И двете са сигурни; 12 се записват по-лесно.</string>
+    <string name="gen_pad_hint">разклатете или драскайте тук</string>
+    <string name="gen_entropy_full">достатъчно допълнителна ентропия — базовият seed вече е сигурен</string>
+    <string name="gen_entropy_partial">добавени ~%1$d допълнителни бита</string>
+    <string name="gen_generate">Генерирай портфейл</string>
+
+    <string name="create_phrase_title">Вашата фраза за възстановяване</string>
+    <string name="create_phrase_body">Запишете тези %1$d думи на хартия, офлайн. Всеки, който ги притежава, контролира средствата ви.</string>
+    <string name="create_passphrase_hint">„25-а дума“ — допълнителна тайна, която не се съхранява. Ако зададете такава, за възстановяване ви трябват и фразата, и тя. Оставете празно, ако не сте сигурни.</string>
+    <string name="create_ack">Записах фразата</string>
+
+    <string name="restore_title">Възстанови портфейл</string>
+    <string name="restore_body">Въведете своите 12 или 24 думи, разделени с интервали.</string>
+    <string name="restore_clone_hint">След като бъде добавен, можете да включите този портфейл и в %1$s от „Управление на портфейли“ — същата фраза, същите адреси.</string>
+    <string name="action_restore">Възстанови</string>
+
+    <string name="field_wallet_name">Име на портфейла</string>
+    <string name="field_passphrase">BIP-39 парола-фраза (по избор)</string>
+    <string name="field_app_password">Парола на приложението</string>
+    <string name="field_confirm_password">Потвърдете паролата</string>
+    <string name="field_to_address">Адрес на получателя</string>
+    <string name="field_amount">Сума</string>
+    <string name="field_custom_feerate">персонализиран sat/vB (по избор)</string>
+
+    <string name="reveal_title">Фраза за възстановяване</string>
+    <string name="reveal_warning">Всеки, който види тези думи — плюс паролата-фраза, ако е зададена — може да похарчи този портфейл. Гледайте ги само на лично място. Никога не ги въвеждайте в уебсайт или приложение. Екранните снимки тук са блокирани.</string>
+    <string name="reveal_failed">Този портфейл не можа да бъде дешифриран.</string>
+    <string name="reveal_passphrase_label">BIP-39 парола-фраза</string>
+    <string name="reveal_no_passphrase">Няма BIP-39 парола-фраза в този портфейл.</string>
+
+    <string name="nav_home">Начало</string>
+    <string name="nav_wallet">Портфейл</string>
+    <string name="nav_settings">Настройки</string>
+    <string name="tab_receive">Получи</string>
+    <string name="tab_send">Изпрати</string>
+    <string name="tab_history">История</string>
+
+    <string name="home_title">Вашите портфейли</string>
+    <string name="home_open">отворен</string>
+    <string name="home_tap_to_open">докоснете за отваряне</string>
+    <string name="wallets_max">Достигнат е максимумът от %1$d портфейла.</string>
+
+    <string name="lock_password_prompt">Въведете паролата на приложението.</string>
+    <string name="biometric_setup_title">Настройка на заключването на приложението</string>
+    <string name="biometric_unlock_title">Отключи Fortis Wallet</string>
+    <string name="biometric_subtitle">Fortis Wallet</string>
+    <string name="biometric_invalidated">Заключването на екрана на устройството ви се промени, затова приложението вече не може да бъде отключено тук. Инсталирайте го отново и възстановете всеки портфейл от неговата фраза за възстановяване.</string>
+    <string name="lock_choice_use_biometric">Заключвай приложението с пръстов отпечатък или PIN</string>
+    <string name="lock_choice_biometric_note">Едно отключване отваря всичките ви портфейли. Няма парола за запомняне — пръстовият отпечатък/лицето или PIN кодът за заключване на екрана на устройството ви ви пуска.</string>
+    <string name="lock_choice_password_note">Тази парола отключва приложението и всеки портфейл в него.</string>
+
+    <string name="settings_title">Настройки</string>
+    <string name="settings_wallets">Портфейли</string>
+    <string name="settings_security">Сигурност</string>
+    <string name="settings_connection">Връзка</string>
+    <string name="settings_app_lock">Заключване на приложението</string>
+    <string name="lock_mode_biometric">Пръстов отпечатък / PIN на устройството</string>
+    <string name="lock_mode_password">Парола</string>
+    <string name="settings_one_unlock">Едно отключване отваря всеки портфейл в приложението.</string>
+    <string name="settings_language">Език</string>
+    <string name="language_system_default">Системна по подразбиране</string>
+    <string name="settings_status">Състояние</string>
+    <string name="settings_chain_height">Височина на веригата</string>
+    <string name="settings_degraded_note">Услугата fortis е недостъпна — засега се използват публични данни за блокове. Ще превключи обратно автоматично.</string>
+    <string name="settings_version">fortis %1$s</string>
+    <string name="xpub_loading">все още зарежда — опитайте отново</string>
+    <string name="also_add_on">Добави и в %1$s</string>
+    <string name="dialog_rename_title">Преименувай портфейла</string>
+    <string name="dialog_reveal_title">Да се покаже ли фразата за възстановяване за %1$s?</string>
+    <string name="dialog_reveal_body">Фразата за възстановяване (и паролата-фраза, ако сте задали такава) е единственото, което може да възстанови този портфейл — и всеки, който я притежава, може да похарчи средствата ви. Разкривайте я само на лично място, без никой да гледа. Следващият екран блокира екранните снимки.</string>
+    <string name="dialog_remove_title">Да се премахне ли %1$s?</string>
+    <string name="dialog_remove_body">Това премахва портфейла само от това приложение. Нищо не се променя в блокчейна и можете да го добавите обратно по всяко време с неговата фраза за възстановяване (и паролата-фраза, ако сте задали такава). Уверете се, че фразата е записана.</string>
+
+    <string name="status_offline">офлайн</string>
+    <string name="status_rescanning">повторно сканиране %1$d%%</string>
+    <string name="status_limited">ограничена услуга</string>
+    <string name="status_connected">свързан</string>
+    <string name="status_syncing">синхронизиране</string>
+
+    <string name="wallet_none_open">Няма отворен портфейл</string>
+    <string name="wallet_choose">Изберете портфейл</string>
+    <string name="wallet_pending">%1$s %2$s чакащи</string>
+    <string name="wallet_block">блок %1$s</string>
+    <string name="wallet_rescanning">повторно сканиране %1$d%%</string>
+    <string name="wallet_syncing">синхронизиране</string>
+    <string name="wallet_limited_suffix">%1$s  ·  ограничена услуга</string>
+    <string name="wallet_connecting">свързване…</string>
+    <string name="fiat_approx">≈ %1$s</string>
+
+    <string name="sent_title">Плащането е изпратено</string>
+    <string name="sent_txid">%1$s… · докоснете за копиране</string>
+
+    <string name="cd_address_qr">QR код на адреса</string>
+    <string name="receive_address_n">адрес №%1$d · докоснете за копиране</string>
+    <string name="share_address_chooser">Сподели адреса</string>
+
+    <string name="scan_prompt">Сканирайте адрес за плащане</string>
+    <string name="send_sweep">Изпрати максимума (sweep)</string>
+    <string name="send_alt_coin">= %1$s %2$s</string>
+    <string name="send_alt_sat">= %1$s sat</string>
+    <string name="send_alt_fiat">  ·  %1$s</string>
+    <string name="fee_fast">Бързо</string>
+    <string name="fee_normal">Нормално</string>
+    <string name="fee_slow">Бавно</string>
+    <string name="send_replay_protect">XBT защита срещу повторение (100-байтов OP_RETURN)</string>
+    <string name="send_replay_note">Добавя ~110 vB такса. Нестандартно за релето по подразбиране на Bitcoin — излъчете чрез възел/услуга, която приема големи OP_RETURN.</string>
+    <string name="send_service_fee">Такса за услугата: %1$s%% от изпратената сума (мин. %2$d sat) — поддържа този хостван възел.</string>
+    <string name="cd_amount_unit">единица за сумата</string>
+    <string name="unit_sat">sat</string>
+
+    <string name="history_empty">все още няма транзакции</string>
+    <string name="history_send">изпращане</string>
+    <string name="history_receive">получаване</string>
+    <string name="history_row_subtitle">%1$s · %2$s…</string>
+    <string name="history_pending">чакащо</string>
+    <string name="history_conf_n">%1$d потв.</string>
+    <string name="history_confirmed">потвърдена</string>
+    <string name="history_hint">докоснете транзакция, за да я отворите в експлоръра · задръжте, за да копирате id</string>
+
+    <string name="confirm_sweep_title">Потвърди sweep</string>
+    <string name="confirm_payment_title">Потвърди плащането</string>
+    <string name="confirm_to">До</string>
+    <string name="confirm_amount">Сума</string>
+    <string name="confirm_network_fee">Мрежова такса</string>
+    <string name="confirm_network_fee_value">%1$s %2$s · %3$d sat/vB</string>
+    <string name="confirm_service_fee">Такса за услугата</string>
+    <string name="confirm_change">Ресто</string>
+    <string name="confirm_replay">Защита срещу повторение</string>
+    <string name="confirm_replay_value">вкл. · 100-байтов OP_RETURN</string>
+    <string name="confirm_total">Общо</string>
+    <string name="value_with_fiat">%1$s %2$s  ·  %3$s</string>
+
+    <string name="mnemonic_not_in_list">%1$d извън списъка с думи</string>
+    <string name="mnemonic_looks_good">изглежда добре</string>
+    <string name="mnemonic_status">%1$s  ·  %2$s</string>
+
+    <string name="error_wallet_max">Можете да пазите до %1$d портфейла на едно устройство.</string>
+    <string name="error_clone_exists">„%1$s“ вече е в %2$s.</string>
+    <string name="error_lock_setup_failed">настройката на заключването на приложението не бе успешна</string>
+    <string name="error_enter_amount">въведете сума</string>
+    <string name="error_no_coins">няма потвърдени монети за харчене</string>
+    <string name="error_open_wallet">портфейлът не можа да бъде отворен</string>
+
+    <plurals name="word_count">
+        <item quantity="one">%1$d дума</item>
+        <item quantity="other">%1$d думи</item>
+    </plurals>
+</resources>

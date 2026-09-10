@@ -1,0 +1,188 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">fortis</string>
+
+    <string name="action_back">Kembali</string>
+    <string name="action_cancel">Batal</string>
+    <string name="action_continue">Teruskan</string>
+    <string name="action_save">Simpan</string>
+    <string name="action_done">Selesai</string>
+    <string name="action_show">Tunjuk</string>
+    <string name="action_hide">Sembunyi</string>
+    <string name="action_copy">Salin</string>
+    <string name="action_share">Kongsi</string>
+    <string name="action_open">Buka</string>
+    <string name="action_remove">Alih keluar</string>
+    <string name="action_rename">Namakan semula</string>
+    <string name="action_unlock">Buka kunci</string>
+    <string name="action_add_wallet">Tambah dompet</string>
+    <string name="action_view">Lihat</string>
+    <string name="action_refresh">Muat semula</string>
+    <string name="action_reconnect">Sambung semula</string>
+    <string name="action_review">Semak</string>
+    <string name="action_sign_send">Tandatangan &amp; hantar</string>
+    <string name="action_new_address">Alamat baharu</string>
+    <string name="action_scan_qr">Imbas kod QR</string>
+    <string name="action_lock">Kunci</string>
+    <string name="action_lock_app">Kunci apl</string>
+    <string name="action_copy_xpub">Salin xpub</string>
+    <string name="action_recovery_phrase">Frasa pemulihan</string>
+    <string name="toast_copied">Disalin</string>
+    <string name="cd_dismiss">Tolak</string>
+
+    <string name="onboard_add_title">Tambah dompet</string>
+    <string name="onboard_tagline">dompet bukan kustodi untuk Bitcoin XBT dan Bitcoin BTC</string>
+    <string name="onboard_create">Cipta dompet baharu</string>
+    <string name="onboard_restore">Pulihkan daripada frasa pemulihan</string>
+
+    <string name="gen_title">Tambah sedikit kerawakan</string>
+    <string name="gen_body">Telefon anda sudah menjana benih yang selamat. Goncang telefon — atau conteng pada pad — untuk mengadun entropi tambahan daripada penderia gerakan dan ketaran pemasaan. Untuk berjaga-jaga.</string>
+    <string name="gen_words_24">24 perkataan</string>
+    <string name="gen_words_12">12 perkataan</string>
+    <string name="gen_words_hint">Kedua-duanya selamat; 12 lebih mudah dicatat.</string>
+    <string name="gen_pad_hint">goncang, atau conteng di sini</string>
+    <string name="gen_entropy_full">entropi tambahan yang banyak — benih asas sudah selamat</string>
+    <string name="gen_entropy_partial">~%1$d bit tambahan diadun</string>
+    <string name="gen_generate">Jana dompet</string>
+
+    <string name="create_phrase_title">Frasa pemulihan anda</string>
+    <string name="create_phrase_body">Tulis %1$d perkataan ini pada kertas, luar talian. Sesiapa yang memilikinya mengawal dana anda.</string>
+    <string name="create_passphrase_hint">\"Perkataan ke-25\" — rahsia tambahan yang tidak disimpan. Jika anda menetapkannya, anda memerlukan frasa dan ini untuk memulihkan. Biarkan kosong jika tidak pasti.</string>
+    <string name="create_ack">Saya telah mencatat frasa</string>
+
+    <string name="restore_title">Pulihkan dompet</string>
+    <string name="restore_body">Masukkan 12 atau 24 perkataan anda, dipisahkan dengan ruang.</string>
+    <string name="restore_clone_hint">Selepas ditambah, anda juga boleh menyenaraikan dompet ini di %1$s daripada Urus dompet — frasa sama, alamat sama.</string>
+    <string name="action_restore">Pulihkan</string>
+
+    <string name="field_wallet_name">Nama dompet</string>
+    <string name="field_passphrase">Frasa laluan BIP-39 (pilihan)</string>
+    <string name="field_app_password">Kata laluan apl</string>
+    <string name="field_confirm_password">Sahkan kata laluan</string>
+    <string name="field_to_address">Alamat penerima</string>
+    <string name="field_amount">Jumlah</string>
+    <string name="field_custom_feerate">sat/vB tersuai (pilihan)</string>
+
+    <string name="reveal_title">Frasa pemulihan</string>
+    <string name="reveal_warning">Sesiapa yang melihat perkataan ini — serta frasa laluan, jika ditetapkan — boleh membelanjakan dompet ini. Lihat sahaja di tempat peribadi. Jangan sekali-kali menaipnya di tapak web atau apl. Tangkapan skrin disekat di sini.</string>
+    <string name="reveal_failed">Tidak dapat menyahsulit dompet ini.</string>
+    <string name="reveal_passphrase_label">Frasa laluan BIP-39</string>
+    <string name="reveal_no_passphrase">Tiada frasa laluan BIP-39 pada dompet ini.</string>
+
+    <string name="nav_home">Utama</string>
+    <string name="nav_wallet">Dompet</string>
+    <string name="nav_settings">Tetapan</string>
+    <string name="tab_receive">Terima</string>
+    <string name="tab_send">Hantar</string>
+    <string name="tab_history">Sejarah</string>
+
+    <string name="home_title">Dompet anda</string>
+    <string name="home_open">terbuka</string>
+    <string name="home_tap_to_open">ketik untuk membuka</string>
+    <string name="wallets_max">Maksimum %1$d dompet dicapai.</string>
+
+    <string name="lock_password_prompt">Masukkan kata laluan apl anda.</string>
+    <string name="biometric_setup_title">Sediakan kunci apl</string>
+    <string name="biometric_unlock_title">Buka kunci Fortis Wallet</string>
+    <string name="biometric_subtitle">Fortis Wallet</string>
+    <string name="biometric_invalidated">Kunci skrin peranti anda telah berubah, jadi apl tidak boleh dibuka kunci di sini lagi. Pasang semula dan pulihkan setiap dompet daripada frasa pemulihannya.</string>
+    <string name="lock_choice_use_biometric">Kunci apl dengan cap jari atau PIN</string>
+    <string name="lock_choice_biometric_note">Satu buka kunci membuka semua dompet anda. Tiada kata laluan untuk diingat — cap jari/wajah atau PIN kunci skrin peranti anda membenarkan anda masuk.</string>
+    <string name="lock_choice_password_note">Kata laluan ini membuka kunci apl dan setiap dompet di dalamnya.</string>
+
+    <string name="settings_title">Tetapan</string>
+    <string name="settings_wallets">Dompet</string>
+    <string name="settings_security">Keselamatan</string>
+    <string name="settings_connection">Sambungan</string>
+    <string name="settings_app_lock">Kunci apl</string>
+    <string name="lock_mode_biometric">Cap jari / PIN peranti</string>
+    <string name="lock_mode_password">Kata laluan</string>
+    <string name="settings_one_unlock">Satu buka kunci membuka setiap dompet dalam apl.</string>
+    <string name="settings_language">Bahasa</string>
+    <string name="language_system_default">Lalai sistem</string>
+    <string name="settings_status">Status</string>
+    <string name="settings_chain_height">Ketinggian rantai</string>
+    <string name="settings_degraded_note">Perkhidmatan fortis tidak dapat dicapai — menggunakan data blok awam buat masa ini. Ia akan bertukar semula secara automatik.</string>
+    <string name="settings_version">fortis %1$s</string>
+    <string name="xpub_loading">masih memuatkan — cuba lagi</string>
+    <string name="also_add_on">Tambah juga di %1$s</string>
+    <string name="dialog_rename_title">Namakan semula dompet</string>
+    <string name="dialog_reveal_title">Tunjukkan frasa pemulihan untuk %1$s?</string>
+    <string name="dialog_reveal_body">Frasa pemulihan (dan frasa laluan, jika anda menetapkannya) ialah satu-satunya perkara yang boleh memulihkan dompet ini — dan sesiapa yang memilikinya boleh membelanjakan dana anda. Dedahkan hanya di tempat peribadi, tanpa sesiapa memerhati. Skrin seterusnya menyekat tangkapan skrin.</string>
+    <string name="dialog_remove_title">Alih keluar %1$s?</string>
+    <string name="dialog_remove_body">Ini hanya mengalih keluar dompet daripada apl ini. Tiada apa-apa berubah pada blockchain, dan anda boleh menambahkannya semula bila-bila masa dengan frasa pemulihannya (dan frasa laluan, jika anda menetapkannya). Pastikan frasa telah dicatat.</string>
+
+    <string name="status_offline">luar talian</string>
+    <string name="status_rescanning">mengimbas semula %1$d%%</string>
+    <string name="status_limited">perkhidmatan terhad</string>
+    <string name="status_connected">disambungkan</string>
+    <string name="status_syncing">menyegerak</string>
+
+    <string name="wallet_none_open">Tiada dompet dibuka</string>
+    <string name="wallet_choose">Pilih dompet</string>
+    <string name="wallet_pending">%1$s %2$s belum selesai</string>
+    <string name="wallet_block">blok %1$s</string>
+    <string name="wallet_rescanning">mengimbas semula %1$d%%</string>
+    <string name="wallet_syncing">menyegerak</string>
+    <string name="wallet_limited_suffix">%1$s  ·  perkhidmatan terhad</string>
+    <string name="wallet_connecting">menyambung…</string>
+    <string name="fiat_approx">≈ %1$s</string>
+
+    <string name="sent_title">Pembayaran dihantar</string>
+    <string name="sent_txid">%1$s… · ketik untuk menyalin</string>
+
+    <string name="cd_address_qr">kod QR alamat</string>
+    <string name="receive_address_n">alamat #%1$d · ketik untuk menyalin</string>
+    <string name="share_address_chooser">Kongsi alamat</string>
+
+    <string name="scan_prompt">Imbas alamat pembayaran</string>
+    <string name="send_sweep">Hantar maksimum (sweep)</string>
+    <string name="send_alt_coin">= %1$s %2$s</string>
+    <string name="send_alt_sat">= %1$s sat</string>
+    <string name="send_alt_fiat">  ·  %1$s</string>
+    <string name="fee_fast">Pantas</string>
+    <string name="fee_normal">Biasa</string>
+    <string name="fee_slow">Perlahan</string>
+    <string name="send_replay_protect">Perlindungan main semula XBT (OP_RETURN 100 bait)</string>
+    <string name="send_replay_note">Menambah yuran ~110 vB. Bukan standard pada relay Bitcoin lalai — siarkan melalui nod/perkhidmatan yang menerima OP_RETURN besar.</string>
+    <string name="send_service_fee">Yuran perkhidmatan: %1$s%% daripada jumlah yang dihantar (min %2$d sat) — menyokong nod dihoskan ini.</string>
+    <string name="cd_amount_unit">unit jumlah</string>
+    <string name="unit_sat">sat</string>
+
+    <string name="history_empty">tiada transaksi lagi</string>
+    <string name="history_send">hantar</string>
+    <string name="history_receive">terima</string>
+    <string name="history_row_subtitle">%1$s · %2$s…</string>
+    <string name="history_pending">belum selesai</string>
+    <string name="history_conf_n">%1$d pengesahan</string>
+    <string name="history_confirmed">disahkan</string>
+    <string name="history_hint">ketik transaksi untuk membukanya dalam penjelajah · tekan lama untuk menyalin id</string>
+
+    <string name="confirm_sweep_title">Sahkan sweep</string>
+    <string name="confirm_payment_title">Sahkan pembayaran</string>
+    <string name="confirm_to">Kepada</string>
+    <string name="confirm_amount">Jumlah</string>
+    <string name="confirm_network_fee">Yuran rangkaian</string>
+    <string name="confirm_network_fee_value">%1$s %2$s · %3$d sat/vB</string>
+    <string name="confirm_service_fee">Yuran perkhidmatan</string>
+    <string name="confirm_change">Baki</string>
+    <string name="confirm_replay">Perlindungan main semula</string>
+    <string name="confirm_replay_value">hidup · OP_RETURN 100 bait</string>
+    <string name="confirm_total">Jumlah</string>
+    <string name="value_with_fiat">%1$s %2$s  ·  %3$s</string>
+
+    <string name="mnemonic_not_in_list">%1$d tiada dalam senarai perkataan</string>
+    <string name="mnemonic_looks_good">nampak elok</string>
+    <string name="mnemonic_status">%1$s  ·  %2$s</string>
+
+    <string name="error_wallet_max">Anda boleh menyimpan sehingga %1$d dompet pada satu peranti.</string>
+    <string name="error_clone_exists">\"%1$s\" sudah ada di %2$s.</string>
+    <string name="error_lock_setup_failed">penyediaan kunci apl gagal</string>
+    <string name="error_enter_amount">masukkan jumlah</string>
+    <string name="error_no_coins">tiada syiling disahkan untuk dibelanjakan</string>
+    <string name="error_open_wallet">tidak dapat membuka dompet</string>
+
+    <plurals name="word_count">
+        <item quantity="other">%1$d perkataan</item>
+    </plurals>
+</resources>

@@ -1,0 +1,3 @@
+# Copy to local.properties (git-ignored). Android Studio usually writes this for you.
+sdk.dir=C\:\\Users\\YOU\\AppData\\Local\\Android\\Sdk
+# NDK is picked up from the SDK once installed (Studio → SDK Manager → SDK Tools → NDK).

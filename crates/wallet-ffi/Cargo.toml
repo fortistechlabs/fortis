@@ -1,0 +1,22 @@
+[package]
+name = "wallet-ffi"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "UniFFI bindings for the fortis wallet core — Swift (iOS) and Kotlin (Android)."
+
+[lib]
+name = "wallet_ffi"
+crate-type = ["cdylib", "staticlib", "lib"]
+
+[dependencies]
+wallet-core = { path = "../wallet-core" }
+uniffi = { workspace = true, features = ["cli"] }
+thiserror = { workspace = true }
+hex = { workspace = true }
+
+[[bin]]
+name = "uniffi-bindgen"
+path = "src/bin/uniffi-bindgen.rs"

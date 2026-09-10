@@ -1,0 +1,188 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">fortis</string>
+
+    <string name="action_back">กลับ</string>
+    <string name="action_cancel">ยกเลิก</string>
+    <string name="action_continue">ดำเนินการต่อ</string>
+    <string name="action_save">บันทึก</string>
+    <string name="action_done">เสร็จ</string>
+    <string name="action_show">แสดง</string>
+    <string name="action_hide">ซ่อน</string>
+    <string name="action_copy">คัดลอก</string>
+    <string name="action_share">แชร์</string>
+    <string name="action_open">เปิด</string>
+    <string name="action_remove">นำออก</string>
+    <string name="action_rename">เปลี่ยนชื่อ</string>
+    <string name="action_unlock">ปลดล็อก</string>
+    <string name="action_add_wallet">เพิ่มกระเป๋าเงิน</string>
+    <string name="action_view">ดู</string>
+    <string name="action_refresh">รีเฟรช</string>
+    <string name="action_reconnect">เชื่อมต่อใหม่</string>
+    <string name="action_review">ตรวจสอบ</string>
+    <string name="action_sign_send">ลงนามและส่ง</string>
+    <string name="action_new_address">ที่อยู่ใหม่</string>
+    <string name="action_scan_qr">สแกนคิวอาร์โค้ด</string>
+    <string name="action_lock">ล็อก</string>
+    <string name="action_lock_app">ล็อกแอป</string>
+    <string name="action_copy_xpub">คัดลอก xpub</string>
+    <string name="action_recovery_phrase">วลีกู้คืน</string>
+    <string name="toast_copied">คัดลอกแล้ว</string>
+    <string name="cd_dismiss">ปิด</string>
+
+    <string name="onboard_add_title">เพิ่มกระเป๋าเงิน</string>
+    <string name="onboard_tagline">กระเป๋าเงินแบบไม่รับฝากสำหรับ Bitcoin XBT และ Bitcoin BTC</string>
+    <string name="onboard_create">สร้างกระเป๋าเงินใหม่</string>
+    <string name="onboard_restore">กู้คืนจากวลีกู้คืน</string>
+
+    <string name="gen_title">เพิ่มความสุ่มสักหน่อย</string>
+    <string name="gen_body">โทรศัพท์ของคุณสร้างซีดที่ปลอดภัยไว้แล้ว เขย่าเครื่อง — หรือขีดเขียนบนแผง — เพื่อผสมเอนโทรปีเพิ่มเติมจากเซนเซอร์การเคลื่อนไหวและความคลาดเคลื่อนของเวลา เผื่อไว้</string>
+    <string name="gen_words_24">24 คำ</string>
+    <string name="gen_words_12">12 คำ</string>
+    <string name="gen_words_hint">ทั้งสองแบบปลอดภัย 12 คำจดง่ายกว่า</string>
+    <string name="gen_pad_hint">เขย่า หรือขีดเขียนที่นี่</string>
+    <string name="gen_entropy_full">มีเอนโทรปีเพิ่มเติมมากพอ — ซีดพื้นฐานปลอดภัยอยู่แล้ว</string>
+    <string name="gen_entropy_partial">ผสมบิตเพิ่มเติมประมาณ %1$d บิต</string>
+    <string name="gen_generate">สร้างกระเป๋าเงิน</string>
+
+    <string name="create_phrase_title">วลีกู้คืนของคุณ</string>
+    <string name="create_phrase_body">เขียน %1$d คำนี้ลงบนกระดาษแบบออฟไลน์ ใครก็ตามที่มีคำเหล่านี้จะควบคุมเงินของคุณได้</string>
+    <string name="create_passphrase_hint">\"คำที่ 25\" — ความลับเพิ่มเติมที่ไม่ถูกจัดเก็บ หากตั้งค่าไว้ คุณต้องมีทั้งวลีและสิ่งนี้เพื่อกู้คืน เว้นว่างไว้หากไม่แน่ใจ</string>
+    <string name="create_ack">ฉันจดวลีไว้แล้ว</string>
+
+    <string name="restore_title">กู้คืนกระเป๋าเงิน</string>
+    <string name="restore_body">ป้อน 12 หรือ 24 คำของคุณ คั่นด้วยช่องว่าง</string>
+    <string name="restore_clone_hint">หลังจากเพิ่มแล้ว คุณยังลงรายการกระเป๋าเงินนี้ใน %1$s ได้จาก \"จัดการกระเป๋าเงิน\" — วลีเดียวกัน ที่อยู่เดียวกัน</string>
+    <string name="action_restore">กู้คืน</string>
+
+    <string name="field_wallet_name">ชื่อกระเป๋าเงิน</string>
+    <string name="field_passphrase">พาสเฟรส BIP-39 (ไม่บังคับ)</string>
+    <string name="field_app_password">รหัสผ่านแอป</string>
+    <string name="field_confirm_password">ยืนยันรหัสผ่าน</string>
+    <string name="field_to_address">ที่อยู่ผู้รับ</string>
+    <string name="field_amount">จำนวน</string>
+    <string name="field_custom_feerate">sat/vB กำหนดเอง (ไม่บังคับ)</string>
+
+    <string name="reveal_title">วลีกู้คืน</string>
+    <string name="reveal_warning">ใครก็ตามที่เห็นคำเหล่านี้ — รวมถึงพาสเฟรส หากตั้งค่าไว้ — สามารถใช้จ่ายจากกระเป๋าเงินนี้ได้ ดูเฉพาะในที่ส่วนตัวเท่านั้น อย่าพิมพ์ลงในเว็บไซต์หรือแอปเด็ดขาด ที่นี่บล็อกการจับภาพหน้าจอ</string>
+    <string name="reveal_failed">ไม่สามารถถอดรหัสกระเป๋าเงินนี้ได้</string>
+    <string name="reveal_passphrase_label">พาสเฟรส BIP-39</string>
+    <string name="reveal_no_passphrase">กระเป๋าเงินนี้ไม่มีพาสเฟรส BIP-39</string>
+
+    <string name="nav_home">หน้าแรก</string>
+    <string name="nav_wallet">กระเป๋าเงิน</string>
+    <string name="nav_settings">การตั้งค่า</string>
+    <string name="tab_receive">รับ</string>
+    <string name="tab_send">ส่ง</string>
+    <string name="tab_history">ประวัติ</string>
+
+    <string name="home_title">กระเป๋าเงินของคุณ</string>
+    <string name="home_open">เปิดอยู่</string>
+    <string name="home_tap_to_open">แตะเพื่อเปิด</string>
+    <string name="wallets_max">ถึงขีดจำกัดสูงสุด %1$d กระเป๋าเงินแล้ว</string>
+
+    <string name="lock_password_prompt">ป้อนรหัสผ่านแอปของคุณ</string>
+    <string name="biometric_setup_title">ตั้งค่าการล็อกแอป</string>
+    <string name="biometric_unlock_title">ปลดล็อก Fortis Wallet</string>
+    <string name="biometric_subtitle">Fortis Wallet</string>
+    <string name="biometric_invalidated">การล็อกหน้าจอของอุปกรณ์คุณเปลี่ยนไป จึงปลดล็อกแอปที่นี่ไม่ได้อีกต่อไป ติดตั้งใหม่และกู้คืนกระเป๋าเงินแต่ละใบจากวลีกู้คืนของมัน</string>
+    <string name="lock_choice_use_biometric">ล็อกแอปด้วยลายนิ้วมือหรือ PIN</string>
+    <string name="lock_choice_biometric_note">การปลดล็อกครั้งเดียวเปิดกระเป๋าเงินทั้งหมดของคุณ ไม่ต้องจำรหัสผ่าน — ลายนิ้วมือ/ใบหน้า หรือ PIN ล็อกหน้าจอของอุปกรณ์จะพาคุณเข้าไป</string>
+    <string name="lock_choice_password_note">รหัสผ่านนี้ปลดล็อกแอปและกระเป๋าเงินทุกใบในนั้น</string>
+
+    <string name="settings_title">การตั้งค่า</string>
+    <string name="settings_wallets">กระเป๋าเงิน</string>
+    <string name="settings_security">ความปลอดภัย</string>
+    <string name="settings_connection">การเชื่อมต่อ</string>
+    <string name="settings_app_lock">การล็อกแอป</string>
+    <string name="lock_mode_biometric">ลายนิ้วมือ / PIN ของอุปกรณ์</string>
+    <string name="lock_mode_password">รหัสผ่าน</string>
+    <string name="settings_one_unlock">การปลดล็อกครั้งเดียวเปิดกระเป๋าเงินทุกใบในแอป</string>
+    <string name="settings_language">ภาษา</string>
+    <string name="language_system_default">ค่าเริ่มต้นของระบบ</string>
+    <string name="settings_status">สถานะ</string>
+    <string name="settings_chain_height">ความสูงของเชน</string>
+    <string name="settings_degraded_note">ไม่สามารถเข้าถึงบริการ fortis ได้ — กำลังใช้ข้อมูลบล็อกสาธารณะชั่วคราว ระบบจะสลับกลับโดยอัตโนมัติ</string>
+    <string name="settings_version">fortis %1$s</string>
+    <string name="xpub_loading">ยังโหลดอยู่ — ลองอีกครั้ง</string>
+    <string name="also_add_on">เพิ่มใน %1$s ด้วย</string>
+    <string name="dialog_rename_title">เปลี่ยนชื่อกระเป๋าเงิน</string>
+    <string name="dialog_reveal_title">แสดงวลีกู้คืนสำหรับ %1$s ไหม</string>
+    <string name="dialog_reveal_body">วลีกู้คืน (และพาสเฟรส หากคุณตั้งไว้) เป็นสิ่งเดียวที่กู้คืนกระเป๋าเงินนี้ได้ — และใครก็ตามที่มีมันสามารถใช้จ่ายเงินของคุณได้ เปิดเผยเฉพาะในที่ส่วนตัวโดยไม่มีใครเห็น หน้าจอถัดไปจะบล็อกการจับภาพหน้าจอ</string>
+    <string name="dialog_remove_title">นำ %1$s ออกไหม</string>
+    <string name="dialog_remove_body">การกระทำนี้นำกระเป๋าเงินออกจากแอปนี้เท่านั้น ไม่มีอะไรเปลี่ยนแปลงบนบล็อกเชน และคุณเพิ่มมันกลับได้ทุกเมื่อด้วยวลีกู้คืน (และพาสเฟรส หากคุณตั้งไว้) ตรวจสอบให้แน่ใจว่าจดวลีไว้แล้ว</string>
+
+    <string name="status_offline">ออฟไลน์</string>
+    <string name="status_rescanning">กำลังสแกนใหม่ %1$d%%</string>
+    <string name="status_limited">บริการจำกัด</string>
+    <string name="status_connected">เชื่อมต่อแล้ว</string>
+    <string name="status_syncing">กำลังซิงค์</string>
+
+    <string name="wallet_none_open">ไม่มีกระเป๋าเงินที่เปิดอยู่</string>
+    <string name="wallet_choose">เลือกกระเป๋าเงิน</string>
+    <string name="wallet_pending">%1$s %2$s รอดำเนินการ</string>
+    <string name="wallet_block">บล็อก %1$s</string>
+    <string name="wallet_rescanning">กำลังสแกนใหม่ %1$d%%</string>
+    <string name="wallet_syncing">กำลังซิงค์</string>
+    <string name="wallet_limited_suffix">%1$s  ·  บริการจำกัด</string>
+    <string name="wallet_connecting">กำลังเชื่อมต่อ…</string>
+    <string name="fiat_approx">≈ %1$s</string>
+
+    <string name="sent_title">ส่งการชำระเงินแล้ว</string>
+    <string name="sent_txid">%1$s… · แตะเพื่อคัดลอก</string>
+
+    <string name="cd_address_qr">คิวอาร์โค้ดของที่อยู่</string>
+    <string name="receive_address_n">ที่อยู่ #%1$d · แตะเพื่อคัดลอก</string>
+    <string name="share_address_chooser">แชร์ที่อยู่</string>
+
+    <string name="scan_prompt">สแกนที่อยู่ชำระเงิน</string>
+    <string name="send_sweep">ส่งสูงสุด (sweep)</string>
+    <string name="send_alt_coin">= %1$s %2$s</string>
+    <string name="send_alt_sat">= %1$s sat</string>
+    <string name="send_alt_fiat">  ·  %1$s</string>
+    <string name="fee_fast">เร็ว</string>
+    <string name="fee_normal">ปกติ</string>
+    <string name="fee_slow">ช้า</string>
+    <string name="send_replay_protect">การป้องกันการเล่นซ้ำ XBT (OP_RETURN 100 ไบต์)</string>
+    <string name="send_replay_note">เพิ่มค่าธรรมเนียมประมาณ 110 vB ไม่เป็นมาตรฐานบนรีเลย์ Bitcoin เริ่มต้น — ออกอากาศผ่านโหนด/บริการที่รับ OP_RETURN ขนาดใหญ่</string>
+    <string name="send_service_fee">ค่าบริการ: %1$s%% ของจำนวนที่ส่ง (ขั้นต่ำ %2$d sat) — สนับสนุนโหนดที่โฮสต์นี้</string>
+    <string name="cd_amount_unit">หน่วยของจำนวน</string>
+    <string name="unit_sat">sat</string>
+
+    <string name="history_empty">ยังไม่มีธุรกรรม</string>
+    <string name="history_send">ส่ง</string>
+    <string name="history_receive">รับ</string>
+    <string name="history_row_subtitle">%1$s · %2$s…</string>
+    <string name="history_pending">รอดำเนินการ</string>
+    <string name="history_conf_n">%1$d ยืนยัน</string>
+    <string name="history_confirmed">ยืนยันแล้ว</string>
+    <string name="history_hint">แตะธุรกรรมเพื่อเปิดในเอ็กซ์พลอเรอร์ · กดค้างเพื่อคัดลอก id</string>
+
+    <string name="confirm_sweep_title">ยืนยัน sweep</string>
+    <string name="confirm_payment_title">ยืนยันการชำระเงิน</string>
+    <string name="confirm_to">ถึง</string>
+    <string name="confirm_amount">จำนวน</string>
+    <string name="confirm_network_fee">ค่าธรรมเนียมเครือข่าย</string>
+    <string name="confirm_network_fee_value">%1$s %2$s · %3$d sat/vB</string>
+    <string name="confirm_service_fee">ค่าบริการ</string>
+    <string name="confirm_change">เงินทอน</string>
+    <string name="confirm_replay">การป้องกันการเล่นซ้ำ</string>
+    <string name="confirm_replay_value">เปิด · OP_RETURN 100 ไบต์</string>
+    <string name="confirm_total">รวม</string>
+    <string name="value_with_fiat">%1$s %2$s  ·  %3$s</string>
+
+    <string name="mnemonic_not_in_list">%1$d ไม่อยู่ในรายการคำ</string>
+    <string name="mnemonic_looks_good">ดูเรียบร้อยดี</string>
+    <string name="mnemonic_status">%1$s  ·  %2$s</string>
+
+    <string name="error_wallet_max">คุณเก็บกระเป๋าเงินได้สูงสุด %1$d ใบในหนึ่งอุปกรณ์</string>
+    <string name="error_clone_exists">\"%1$s\" อยู่ใน %2$s แล้ว</string>
+    <string name="error_lock_setup_failed">ตั้งค่าการล็อกแอปไม่สำเร็จ</string>
+    <string name="error_enter_amount">ป้อนจำนวน</string>
+    <string name="error_no_coins">ไม่มีเหรียญที่ยืนยันแล้วให้ใช้จ่าย</string>
+    <string name="error_open_wallet">เปิดกระเป๋าเงินไม่ได้</string>
+
+    <plurals name="word_count">
+        <item quantity="other">%1$d คำ</item>
+    </plurals>
+</resources>

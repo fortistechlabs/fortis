@@ -1,0 +1,189 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">fortis</string>
+
+    <string name="action_back">Vissza</string>
+    <string name="action_cancel">Mégse</string>
+    <string name="action_continue">Tovább</string>
+    <string name="action_save">Mentés</string>
+    <string name="action_done">Kész</string>
+    <string name="action_show">Megjelenítés</string>
+    <string name="action_hide">Elrejtés</string>
+    <string name="action_copy">Másolás</string>
+    <string name="action_share">Megosztás</string>
+    <string name="action_open">Megnyitás</string>
+    <string name="action_remove">Eltávolítás</string>
+    <string name="action_rename">Átnevezés</string>
+    <string name="action_unlock">Feloldás</string>
+    <string name="action_add_wallet">Tárca hozzáadása</string>
+    <string name="action_view">Megtekintés</string>
+    <string name="action_refresh">Frissítés</string>
+    <string name="action_reconnect">Újracsatlakozás</string>
+    <string name="action_review">Ellenőrzés</string>
+    <string name="action_sign_send">Aláírás és küldés</string>
+    <string name="action_new_address">Új cím</string>
+    <string name="action_scan_qr">QR-kód beolvasása</string>
+    <string name="action_lock">Zárolás</string>
+    <string name="action_lock_app">Alkalmazás zárolása</string>
+    <string name="action_copy_xpub">xpub másolása</string>
+    <string name="action_recovery_phrase">Helyreállítási kifejezés</string>
+    <string name="toast_copied">Másolva</string>
+    <string name="cd_dismiss">Elvetés</string>
+
+    <string name="onboard_add_title">Tárca hozzáadása</string>
+    <string name="onboard_tagline">letétmentes tárca a Bitcoin XBT-hez és a Bitcoin BTC-hez</string>
+    <string name="onboard_create">Új tárca létrehozása</string>
+    <string name="onboard_restore">Visszaállítás helyreállítási kifejezésből</string>
+
+    <string name="gen_title">Adj hozzá egy kis véletlenszerűséget</string>
+    <string name="gen_body">A telefonod már generált egy biztonságos magot. Rázd meg — vagy firkálj a felületre — hogy extra entrópiát keverj bele a mozgásérzékelőkből és az időzítési ingadozásból. A biztonság kedvéért.</string>
+    <string name="gen_words_24">24 szó</string>
+    <string name="gen_words_12">12 szó</string>
+    <string name="gen_words_hint">Mindkettő biztonságos; a 12 könnyebben leírható.</string>
+    <string name="gen_pad_hint">rázd meg, vagy firkálj ide</string>
+    <string name="gen_entropy_full">bőven van extra entrópia — az alap mag már biztonságos</string>
+    <string name="gen_entropy_partial">~%1$d extra bit belekeverve</string>
+    <string name="gen_generate">Tárca generálása</string>
+
+    <string name="create_phrase_title">A helyreállítási kifejezésed</string>
+    <string name="create_phrase_body">Írd le ezt a(z) %1$d szót papírra, offline. Aki birtokolja őket, az irányítja a pénzedet.</string>
+    <string name="create_passphrase_hint">Egy „25. szó” — egy extra titok, amit nem tárolunk. Ha beállítasz egyet, a visszaállításhoz szükséged van a kifejezésre és erre is. Hagyd üresen, ha bizonytalan vagy.</string>
+    <string name="create_ack">Leírtam a kifejezést</string>
+
+    <string name="restore_title">Tárca visszaállítása</string>
+    <string name="restore_body">Add meg a 12 vagy 24 szavadat, szóközzel elválasztva.</string>
+    <string name="restore_clone_hint">A hozzáadás után ezt a tárcát a(z) %1$s szolgáltatásban is felveheted a Tárcák kezelése menüből — ugyanaz a kifejezés, ugyanazok a címek.</string>
+    <string name="action_restore">Visszaállítás</string>
+
+    <string name="field_wallet_name">Tárca neve</string>
+    <string name="field_passphrase">BIP-39 jelmondat (nem kötelező)</string>
+    <string name="field_app_password">Alkalmazásjelszó</string>
+    <string name="field_confirm_password">Jelszó megerősítése</string>
+    <string name="field_to_address">Címzett címe</string>
+    <string name="field_amount">Összeg</string>
+    <string name="field_custom_feerate">egyéni sat/vB (nem kötelező)</string>
+
+    <string name="reveal_title">Helyreállítási kifejezés</string>
+    <string name="reveal_warning">Bárki, aki látja ezeket a szavakat — és a jelmondatot, ha van beállítva — el tudja költeni ennek a tárcának a tartalmát. Csak privát helyen nézd meg őket. Soha ne írd be őket weboldalra vagy alkalmazásba. A képernyőképek itt le vannak tiltva.</string>
+    <string name="reveal_failed">Nem sikerült visszafejteni ezt a tárcát.</string>
+    <string name="reveal_passphrase_label">BIP-39 jelmondat</string>
+    <string name="reveal_no_passphrase">Ezen a tárcán nincs BIP-39 jelmondat.</string>
+
+    <string name="nav_home">Kezdőlap</string>
+    <string name="nav_wallet">Tárca</string>
+    <string name="nav_settings">Beállítások</string>
+    <string name="tab_receive">Fogadás</string>
+    <string name="tab_send">Küldés</string>
+    <string name="tab_history">Előzmények</string>
+
+    <string name="home_title">A tárcáid</string>
+    <string name="home_open">nyitva</string>
+    <string name="home_tap_to_open">koppints a megnyitáshoz</string>
+    <string name="wallets_max">Elérted a(z) %1$d tárcás maximumot.</string>
+
+    <string name="lock_password_prompt">Add meg az alkalmazás jelszavát.</string>
+    <string name="biometric_setup_title">Alkalmazászár beállítása</string>
+    <string name="biometric_unlock_title">Fortis Wallet feloldása</string>
+    <string name="biometric_subtitle">Fortis Wallet</string>
+    <string name="biometric_invalidated">Az eszközöd képernyőzárja megváltozott, ezért az alkalmazás itt már nem oldható fel. Telepítsd újra, és állíts vissza minden tárcát a helyreállítási kifejezéséből.</string>
+    <string name="lock_choice_use_biometric">Az alkalmazás zárolása ujjlenyomattal vagy PIN-kóddal</string>
+    <string name="lock_choice_biometric_note">Egyetlen feloldás megnyitja az összes tárcádat. Nincs megjegyzendő jelszó — az eszközöd ujjlenyomata/arca vagy a képernyőzár PIN-kódja beenged.</string>
+    <string name="lock_choice_password_note">Ez a jelszó feloldja az alkalmazást és benne minden tárcát.</string>
+
+    <string name="settings_title">Beállítások</string>
+    <string name="settings_wallets">Tárcák</string>
+    <string name="settings_security">Biztonság</string>
+    <string name="settings_connection">Kapcsolat</string>
+    <string name="settings_app_lock">Alkalmazászár</string>
+    <string name="lock_mode_biometric">Ujjlenyomat / eszköz PIN-kódja</string>
+    <string name="lock_mode_password">Jelszó</string>
+    <string name="settings_one_unlock">Egyetlen feloldás megnyit minden tárcát az alkalmazásban.</string>
+    <string name="settings_language">Nyelv</string>
+    <string name="language_system_default">Rendszer alapértelmezése</string>
+    <string name="settings_status">Állapot</string>
+    <string name="settings_chain_height">Lánc magassága</string>
+    <string name="settings_degraded_note">A fortis szolgáltatás nem érhető el — egyelőre nyilvános blokkadatokat használunk. Automatikusan visszavált.</string>
+    <string name="settings_version">fortis %1$s</string>
+    <string name="xpub_loading">még tölt — próbáld újra</string>
+    <string name="also_add_on">Hozzáadás a(z) %1$s szolgáltatáshoz is</string>
+    <string name="dialog_rename_title">Tárca átnevezése</string>
+    <string name="dialog_reveal_title">Megjeleníted a(z) %1$s helyreállítási kifejezését?</string>
+    <string name="dialog_reveal_body">A helyreállítási kifejezés (és a jelmondat, ha beállítottál egyet) az egyetlen dolog, ami visszaállíthatja ezt a tárcát — és aki birtokolja, elköltheti a pénzedet. Csak privát helyen fedd fel, amikor senki sem néz oda. A következő képernyő letiltja a képernyőképeket.</string>
+    <string name="dialog_remove_title">Eltávolítod: %1$s?</string>
+    <string name="dialog_remove_body">Ez csak ebből az alkalmazásból távolítja el a tárcát. A blokkláncon semmi nem változik, és bármikor visszaadhatod a helyreállítási kifejezésével (és a jelmondattal, ha beállítottál egyet). Győződj meg róla, hogy a kifejezés le van írva.</string>
+
+    <string name="status_offline">offline</string>
+    <string name="status_rescanning">újraszkennelés %1$d%%</string>
+    <string name="status_limited">korlátozott szolgáltatás</string>
+    <string name="status_connected">csatlakozva</string>
+    <string name="status_syncing">szinkronizálás</string>
+
+    <string name="wallet_none_open">Nincs nyitott tárca</string>
+    <string name="wallet_choose">Válassz tárcát</string>
+    <string name="wallet_pending">%1$s %2$s függőben</string>
+    <string name="wallet_block">%1$s. blokk</string>
+    <string name="wallet_rescanning">újraszkennelés %1$d%%</string>
+    <string name="wallet_syncing">szinkronizálás</string>
+    <string name="wallet_limited_suffix">%1$s  ·  korlátozott szolgáltatás</string>
+    <string name="wallet_connecting">csatlakozás…</string>
+    <string name="fiat_approx">≈ %1$s</string>
+
+    <string name="sent_title">Fizetés elküldve</string>
+    <string name="sent_txid">%1$s… · koppints a másoláshoz</string>
+
+    <string name="cd_address_qr">a cím QR-kódja</string>
+    <string name="receive_address_n">%1$d. cím · koppints a másoláshoz</string>
+    <string name="share_address_chooser">Cím megosztása</string>
+
+    <string name="scan_prompt">Olvass be egy fizetési címet</string>
+    <string name="send_sweep">Maximum küldése (sweep)</string>
+    <string name="send_alt_coin">= %1$s %2$s</string>
+    <string name="send_alt_sat">= %1$s sat</string>
+    <string name="send_alt_fiat">  ·  %1$s</string>
+    <string name="fee_fast">Gyors</string>
+    <string name="fee_normal">Normál</string>
+    <string name="fee_slow">Lassú</string>
+    <string name="send_replay_protect">XBT visszajátszás elleni védelem (100 bájtos OP_RETURN)</string>
+    <string name="send_replay_note">~110 vB díjat ad hozzá. Nem szabványos az alapértelmezett Bitcoin relayen — sugározd olyan csomóponton/szolgáltatáson keresztül, amely elfogadja a nagy OP_RETURN-t.</string>
+    <string name="send_service_fee">Szolgáltatási díj: az elküldött összeg %1$s%%-a (min. %2$d sat) — támogatja ezt a tárolt csomópontot.</string>
+    <string name="cd_amount_unit">összeg mértékegysége</string>
+    <string name="unit_sat">sat</string>
+
+    <string name="history_empty">még nincsenek tranzakciók</string>
+    <string name="history_send">küldés</string>
+    <string name="history_receive">fogadás</string>
+    <string name="history_row_subtitle">%1$s · %2$s…</string>
+    <string name="history_pending">függőben</string>
+    <string name="history_conf_n">%1$d megerős.</string>
+    <string name="history_confirmed">megerősítve</string>
+    <string name="history_hint">koppints egy tranzakcióra, hogy megnyisd a felfedezőben · tartsd lenyomva az azonosító másolásához</string>
+
+    <string name="confirm_sweep_title">Sweep megerősítése</string>
+    <string name="confirm_payment_title">Fizetés megerősítése</string>
+    <string name="confirm_to">Címzett</string>
+    <string name="confirm_amount">Összeg</string>
+    <string name="confirm_network_fee">Hálózati díj</string>
+    <string name="confirm_network_fee_value">%1$s %2$s · %3$d sat/vB</string>
+    <string name="confirm_service_fee">Szolgáltatási díj</string>
+    <string name="confirm_change">Visszajáró</string>
+    <string name="confirm_replay">Visszajátszás elleni védelem</string>
+    <string name="confirm_replay_value">be · 100 bájtos OP_RETURN</string>
+    <string name="confirm_total">Összesen</string>
+    <string name="value_with_fiat">%1$s %2$s  ·  %3$s</string>
+
+    <string name="mnemonic_not_in_list">%1$d nincs a szólistában</string>
+    <string name="mnemonic_looks_good">rendben van</string>
+    <string name="mnemonic_status">%1$s  ·  %2$s</string>
+
+    <string name="error_wallet_max">Legfeljebb %1$d tárcát tarthatsz egy eszközön.</string>
+    <string name="error_clone_exists">A(z) „%1$s” már fent van itt: %2$s.</string>
+    <string name="error_lock_setup_failed">az alkalmazászár beállítása nem sikerült</string>
+    <string name="error_enter_amount">adj meg egy összeget</string>
+    <string name="error_no_coins">nincs elkölthető megerősített érme</string>
+    <string name="error_open_wallet">nem sikerült megnyitni a tárcát</string>
+
+    <plurals name="word_count">
+        <item quantity="one">%1$d szó</item>
+        <item quantity="other">%1$d szó</item>
+    </plurals>
+</resources>

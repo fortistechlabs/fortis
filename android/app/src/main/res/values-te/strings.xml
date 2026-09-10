@@ -1,0 +1,189 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">fortis</string>
+
+    <string name="action_back">వెనుకకు</string>
+    <string name="action_cancel">రద్దు చేయి</string>
+    <string name="action_continue">కొనసాగించు</string>
+    <string name="action_save">సేవ్ చేయి</string>
+    <string name="action_done">పూర్తయింది</string>
+    <string name="action_show">చూపించు</string>
+    <string name="action_hide">దాచు</string>
+    <string name="action_copy">కాపీ చేయి</string>
+    <string name="action_share">షేర్ చేయి</string>
+    <string name="action_open">తెరువు</string>
+    <string name="action_remove">తీసివేయి</string>
+    <string name="action_rename">పేరు మార్చు</string>
+    <string name="action_unlock">అన్‌లాక్ చేయి</string>
+    <string name="action_add_wallet">వాలెట్‌ను జోడించు</string>
+    <string name="action_view">చూడు</string>
+    <string name="action_refresh">రిఫ్రెష్ చేయి</string>
+    <string name="action_reconnect">మళ్లీ కనెక్ట్ చేయి</string>
+    <string name="action_review">సమీక్షించు</string>
+    <string name="action_sign_send">సంతకం చేసి పంపు</string>
+    <string name="action_new_address">కొత్త చిరునామా</string>
+    <string name="action_scan_qr">QR కోడ్‌ను స్కాన్ చేయి</string>
+    <string name="action_lock">లాక్ చేయి</string>
+    <string name="action_lock_app">యాప్‌ను లాక్ చేయి</string>
+    <string name="action_copy_xpub">xpub కాపీ చేయి</string>
+    <string name="action_recovery_phrase">రికవరీ పదబంధం</string>
+    <string name="toast_copied">కాపీ చేయబడింది</string>
+    <string name="cd_dismiss">తీసివేయి</string>
+
+    <string name="onboard_add_title">వాలెట్‌ను జోడించు</string>
+    <string name="onboard_tagline">Bitcoin XBT మరియు Bitcoin BTC కోసం నాన్-కస్టోడియల్ వాలెట్</string>
+    <string name="onboard_create">కొత్త వాలెట్‌ను సృష్టించు</string>
+    <string name="onboard_restore">రికవరీ పదబంధం నుండి పునరుద్ధరించు</string>
+
+    <string name="gen_title">కొంత యాదృచ్ఛికతను జోడించండి</string>
+    <string name="gen_body">మీ ఫోన్ ఇప్పటికే సురక్షితమైన సీడ్‌ను రూపొందించింది. మోషన్ సెన్సర్‌లు మరియు సమయ హెచ్చుతగ్గుల నుండి అదనపు ఎంట్రోపీని కలపడానికి దాన్ని ఊపండి — లేదా ప్యాడ్‌పై గీయండి. జాగ్రత్త కోసం.</string>
+    <string name="gen_words_24">24 పదాలు</string>
+    <string name="gen_words_12">12 పదాలు</string>
+    <string name="gen_words_hint">రెండూ సురక్షితమే; 12 రాయడం సులభం.</string>
+    <string name="gen_pad_hint">ఊపండి, లేదా ఇక్కడ గీయండి</string>
+    <string name="gen_entropy_full">పుష్కలంగా అదనపు ఎంట్రోపీ — మూల సీడ్ ఇప్పటికే సురక్షితం</string>
+    <string name="gen_entropy_partial">~%1$d అదనపు బిట్‌లు కలపబడ్డాయి</string>
+    <string name="gen_generate">వాలెట్‌ను రూపొందించు</string>
+
+    <string name="create_phrase_title">మీ రికవరీ పదబంధం</string>
+    <string name="create_phrase_body">ఈ %1$d పదాలను కాగితంపై, ఆఫ్‌లైన్‌లో రాయండి. వీటిని కలిగి ఉన్న ఎవరైనా మీ నిధులను నియంత్రిస్తారు.</string>
+    <string name="create_passphrase_hint">ఒక «25వ పదం» — నిల్వ చేయని అదనపు రహస్యం. మీరు సెట్ చేస్తే పునరుద్ధరణకు పదబంధం మరియు ఇది రెండూ అవసరం. అనుమానం ఉంటే ఖాళీగా వదిలేయండి.</string>
+    <string name="create_ack">నేను పదబంధాన్ని రాశాను</string>
+
+    <string name="restore_title">వాలెట్‌ను పునరుద్ధరించు</string>
+    <string name="restore_body">మీ 12 లేదా 24 పదాలను ఖాళీలతో వేరు చేసి నమోదు చేయండి.</string>
+    <string name="restore_clone_hint">జోడించిన తర్వాత «వాలెట్‌లను నిర్వహించు» నుండి ఈ వాలెట్‌ను %1$s లో కూడా జాబితా చేయవచ్చు — అదే పదబంధం, అవే చిరునామాలు.</string>
+    <string name="action_restore">పునరుద్ధరించు</string>
+
+    <string name="field_wallet_name">వాలెట్ పేరు</string>
+    <string name="field_passphrase">BIP-39 పాస్‌ఫ్రేజ్ (ఐచ్ఛికం)</string>
+    <string name="field_app_password">యాప్ పాస్‌వర్డ్</string>
+    <string name="field_confirm_password">పాస్‌వర్డ్‌ను నిర్ధారించండి</string>
+    <string name="field_to_address">స్వీకర్త చిరునామా</string>
+    <string name="field_amount">మొత్తం</string>
+    <string name="field_custom_feerate">అనుకూల sat/vB (ఐచ్ఛికం)</string>
+
+    <string name="reveal_title">రికవరీ పదబంధం</string>
+    <string name="reveal_warning">ఈ పదాలను — సెట్ చేసి ఉంటే పాస్‌ఫ్రేజ్‌ను కూడా — చూసే ఎవరైనా ఈ వాలెట్ నుండి ఖర్చు చేయగలరు. వీటిని ప్రైవేట్ ప్రదేశంలో మాత్రమే చూడండి. వీటిని ఎప్పుడూ వెబ్‌సైట్ లేదా యాప్‌లో టైప్ చేయవద్దు. ఇక్కడ స్క్రీన్‌షాట్‌లు నిరోధించబడ్డాయి.</string>
+    <string name="reveal_failed">ఈ వాలెట్‌ను డీక్రిప్ట్ చేయడం సాధ్యం కాలేదు.</string>
+    <string name="reveal_passphrase_label">BIP-39 పాస్‌ఫ్రేజ్</string>
+    <string name="reveal_no_passphrase">ఈ వాలెట్‌పై BIP-39 పాస్‌ఫ్రేజ్ లేదు.</string>
+
+    <string name="nav_home">హోమ్</string>
+    <string name="nav_wallet">వాలెట్</string>
+    <string name="nav_settings">సెట్టింగ్‌లు</string>
+    <string name="tab_receive">స్వీకరించు</string>
+    <string name="tab_send">పంపు</string>
+    <string name="tab_history">చరిత్ర</string>
+
+    <string name="home_title">మీ వాలెట్‌లు</string>
+    <string name="home_open">తెరిచి ఉంది</string>
+    <string name="home_tap_to_open">తెరవడానికి ట్యాప్ చేయండి</string>
+    <string name="wallets_max">%1$d వాలెట్‌ల గరిష్ఠ పరిమితికి చేరుకున్నారు.</string>
+
+    <string name="lock_password_prompt">మీ యాప్ పాస్‌వర్డ్‌ను నమోదు చేయండి.</string>
+    <string name="biometric_setup_title">యాప్ లాక్‌ను సెటప్ చేయండి</string>
+    <string name="biometric_unlock_title">Fortis Wallet ను అన్‌లాక్ చేయండి</string>
+    <string name="biometric_subtitle">Fortis Wallet</string>
+    <string name="biometric_invalidated">మీ పరికర స్క్రీన్ లాక్ మారింది, కాబట్టి యాప్‌ను ఇక్కడ ఇకపై అన్‌లాక్ చేయలేరు. మళ్లీ ఇన్‌స్టాల్ చేసి, ప్రతి వాలెట్‌ను దాని రికవరీ పదబంధం నుండి పునరుద్ధరించండి.</string>
+    <string name="lock_choice_use_biometric">యాప్‌ను వేలిముద్ర లేదా PIN తో లాక్ చేయి</string>
+    <string name="lock_choice_biometric_note">ఒకసారి అన్‌లాక్ చేస్తే మీ అన్ని వాలెట్‌లు తెరుచుకుంటాయి. గుర్తుంచుకోవడానికి పాస్‌వర్డ్ లేదు — మీ పరికరం వేలిముద్ర/ముఖం లేదా స్క్రీన్-లాక్ PIN మిమ్మల్ని లోపలికి అనుమతిస్తుంది.</string>
+    <string name="lock_choice_password_note">ఈ పాస్‌వర్డ్ యాప్‌ను మరియు అందులోని ప్రతి వాలెట్‌ను అన్‌లాక్ చేస్తుంది.</string>
+
+    <string name="settings_title">సెట్టింగ్‌లు</string>
+    <string name="settings_wallets">వాలెట్‌లు</string>
+    <string name="settings_security">భద్రత</string>
+    <string name="settings_connection">కనెక్షన్</string>
+    <string name="settings_app_lock">యాప్ లాక్</string>
+    <string name="lock_mode_biometric">వేలిముద్ర / పరికర PIN</string>
+    <string name="lock_mode_password">పాస్‌వర్డ్</string>
+    <string name="settings_one_unlock">ఒకసారి అన్‌లాక్ చేస్తే యాప్‌లోని ప్రతి వాలెట్ తెరుచుకుంటుంది.</string>
+    <string name="settings_language">భాష</string>
+    <string name="language_system_default">సిస్టమ్ డిఫాల్ట్</string>
+    <string name="settings_status">స్థితి</string>
+    <string name="settings_chain_height">చెయిన్ ఎత్తు</string>
+    <string name="settings_degraded_note">fortis సేవ అందుబాటులో లేదు — ప్రస్తుతానికి పబ్లిక్ బ్లాక్ డేటా ఉపయోగించబడుతోంది. ఇది స్వయంచాలకంగా తిరిగి మారుతుంది.</string>
+    <string name="settings_version">fortis %1$s</string>
+    <string name="xpub_loading">ఇంకా లోడ్ అవుతోంది — మళ్లీ ప్రయత్నించండి</string>
+    <string name="also_add_on">%1$s లో కూడా జోడించండి</string>
+    <string name="dialog_rename_title">వాలెట్ పేరు మార్చు</string>
+    <string name="dialog_reveal_title">%1$s కోసం రికవరీ పదబంధాన్ని చూపించాలా?</string>
+    <string name="dialog_reveal_body">రికవరీ పదబంధం (మరియు మీరు సెట్ చేసి ఉంటే పాస్‌ఫ్రేజ్) ఈ వాలెట్‌ను పునరుద్ధరించగల ఏకైక విషయం — దాన్ని కలిగి ఉన్న ఎవరైనా మీ నిధులను ఖర్చు చేయగలరు. ఎవరూ చూడని ప్రైవేట్ ప్రదేశంలో మాత్రమే దాన్ని బహిర్గతం చేయండి. తదుపరి స్క్రీన్ స్క్రీన్‌షాట్‌లను నిరోధిస్తుంది.</string>
+    <string name="dialog_remove_title">%1$s ను తీసివేయాలా?</string>
+    <string name="dialog_remove_body">ఇది ఈ యాప్ నుండి మాత్రమే వాలెట్‌ను తీసివేస్తుంది. బ్లాక్‌చెయిన్‌పై ఏమీ మారదు, మరియు మీరు దాని రికవరీ పదబంధం (మరియు సెట్ చేసి ఉంటే పాస్‌ఫ్రేజ్) తో ఎప్పుడైనా దాన్ని తిరిగి జోడించవచ్చు. పదబంధం రాసి ఉందని నిర్ధారించుకోండి.</string>
+
+    <string name="status_offline">ఆఫ్‌లైన్</string>
+    <string name="status_rescanning">మళ్లీ స్కాన్ అవుతోంది %1$d%%</string>
+    <string name="status_limited">పరిమిత సేవ</string>
+    <string name="status_connected">కనెక్ట్ అయింది</string>
+    <string name="status_syncing">సింక్ అవుతోంది</string>
+
+    <string name="wallet_none_open">ఏ వాలెట్ తెరవబడలేదు</string>
+    <string name="wallet_choose">వాలెట్‌ను ఎంచుకోండి</string>
+    <string name="wallet_pending">%1$s %2$s పెండింగ్</string>
+    <string name="wallet_block">బ్లాక్ %1$s</string>
+    <string name="wallet_rescanning">మళ్లీ స్కాన్ అవుతోంది %1$d%%</string>
+    <string name="wallet_syncing">సింక్ అవుతోంది</string>
+    <string name="wallet_limited_suffix">%1$s  ·  పరిమిత సేవ</string>
+    <string name="wallet_connecting">కనెక్ట్ అవుతోంది…</string>
+    <string name="fiat_approx">≈ %1$s</string>
+
+    <string name="sent_title">చెల్లింపు పంపబడింది</string>
+    <string name="sent_txid">%1$s… · కాపీ చేయడానికి ట్యాప్ చేయండి</string>
+
+    <string name="cd_address_qr">చిరునామా QR కోడ్</string>
+    <string name="receive_address_n">చిరునామా #%1$d · కాపీ చేయడానికి ట్యాప్ చేయండి</string>
+    <string name="share_address_chooser">చిరునామాను షేర్ చేయి</string>
+
+    <string name="scan_prompt">చెల్లింపు చిరునామాను స్కాన్ చేయండి</string>
+    <string name="send_sweep">గరిష్ఠాన్ని పంపు (sweep)</string>
+    <string name="send_alt_coin">= %1$s %2$s</string>
+    <string name="send_alt_sat">= %1$s sat</string>
+    <string name="send_alt_fiat">  ·  %1$s</string>
+    <string name="fee_fast">వేగవంతం</string>
+    <string name="fee_normal">సాధారణం</string>
+    <string name="fee_slow">నెమ్మది</string>
+    <string name="send_replay_protect">XBT రీప్లే రక్షణ (100-బైట్ OP_RETURN)</string>
+    <string name="send_replay_note">~110 vB ఫీజును జోడిస్తుంది. డిఫాల్ట్ Bitcoin రిలేపై నాన్-స్టాండర్డ్ — పెద్ద OP_RETURN ను అంగీకరించే నోడ్/సేవ ద్వారా ప్రసారం చేయండి.</string>
+    <string name="send_service_fee">సేవా ఫీజు: పంపిన మొత్తంలో %1$s%% (కనిష్ఠం %2$d sat) — ఇది ఈ హోస్ట్ చేసిన నోడ్‌కు మద్దతు ఇస్తుంది.</string>
+    <string name="cd_amount_unit">మొత్తం యూనిట్</string>
+    <string name="unit_sat">sat</string>
+
+    <string name="history_empty">ఇంకా లావాదేవీలు లేవు</string>
+    <string name="history_send">పంపడం</string>
+    <string name="history_receive">స్వీకరించడం</string>
+    <string name="history_row_subtitle">%1$s · %2$s…</string>
+    <string name="history_pending">పెండింగ్</string>
+    <string name="history_conf_n">%1$d నిర్ధారణ</string>
+    <string name="history_confirmed">నిర్ధారించబడింది</string>
+    <string name="history_hint">లావాదేవీని ఎక్స్‌ప్లోరర్‌లో తెరవడానికి ట్యాప్ చేయండి · id కాపీ చేయడానికి నొక్కి పట్టుకోండి</string>
+
+    <string name="confirm_sweep_title">sweep ను నిర్ధారించు</string>
+    <string name="confirm_payment_title">చెల్లింపును నిర్ధారించు</string>
+    <string name="confirm_to">స్వీకర్త</string>
+    <string name="confirm_amount">మొత్తం</string>
+    <string name="confirm_network_fee">నెట్‌వర్క్ ఫీజు</string>
+    <string name="confirm_network_fee_value">%1$s %2$s · %3$d sat/vB</string>
+    <string name="confirm_service_fee">సేవా ఫీజు</string>
+    <string name="confirm_change">చిల్లర</string>
+    <string name="confirm_replay">రీప్లే రక్షణ</string>
+    <string name="confirm_replay_value">ఆన్ · 100-బైట్ OP_RETURN</string>
+    <string name="confirm_total">మొత్తం</string>
+    <string name="value_with_fiat">%1$s %2$s  ·  %3$s</string>
+
+    <string name="mnemonic_not_in_list">%1$d పదాల జాబితాలో లేదు</string>
+    <string name="mnemonic_looks_good">బాగానే ఉంది</string>
+    <string name="mnemonic_status">%1$s  ·  %2$s</string>
+
+    <string name="error_wallet_max">మీరు ఒక పరికరంలో %1$d వరకు వాలెట్‌లను ఉంచవచ్చు.</string>
+    <string name="error_clone_exists">«%1$s» ఇప్పటికే %2$s లో ఉంది.</string>
+    <string name="error_lock_setup_failed">యాప్ లాక్ సెటప్ విఫలమైంది</string>
+    <string name="error_enter_amount">మొత్తాన్ని నమోదు చేయండి</string>
+    <string name="error_no_coins">ఖర్చు చేయడానికి నిర్ధారించబడిన కాయిన్‌లు లేవు</string>
+    <string name="error_open_wallet">వాలెట్‌ను తెరవడం సాధ్యం కాలేదు</string>
+
+    <plurals name="word_count">
+        <item quantity="one">%1$d పదం</item>
+        <item quantity="other">%1$d పదాలు</item>
+    </plurals>
+</resources>

@@ -1,0 +1,189 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">fortis</string>
+
+    <string name="action_back">واپس</string>
+    <string name="action_cancel">منسوخ کریں</string>
+    <string name="action_continue">جاری رکھیں</string>
+    <string name="action_save">محفوظ کریں</string>
+    <string name="action_done">ہو گیا</string>
+    <string name="action_show">دکھائیں</string>
+    <string name="action_hide">چھپائیں</string>
+    <string name="action_copy">کاپی کریں</string>
+    <string name="action_share">اشتراک کریں</string>
+    <string name="action_open">کھولیں</string>
+    <string name="action_remove">ہٹائیں</string>
+    <string name="action_rename">نام تبدیل کریں</string>
+    <string name="action_unlock">ان لاک کریں</string>
+    <string name="action_add_wallet">والیٹ شامل کریں</string>
+    <string name="action_view">دیکھیں</string>
+    <string name="action_refresh">ریفریش کریں</string>
+    <string name="action_reconnect">دوبارہ منسلک کریں</string>
+    <string name="action_review">جائزہ لیں</string>
+    <string name="action_sign_send">دستخط کریں اور بھیجیں</string>
+    <string name="action_new_address">نیا پتہ</string>
+    <string name="action_scan_qr">QR کوڈ اسکین کریں</string>
+    <string name="action_lock">لاک کریں</string>
+    <string name="action_lock_app">ایپ لاک کریں</string>
+    <string name="action_copy_xpub">xpub کاپی کریں</string>
+    <string name="action_recovery_phrase">بازیابی کا جملہ</string>
+    <string name="toast_copied">کاپی ہو گیا</string>
+    <string name="cd_dismiss">برخاست کریں</string>
+
+    <string name="onboard_add_title">والیٹ شامل کریں</string>
+    <string name="onboard_tagline">Bitcoin XBT اور Bitcoin BTC کے لیے ایک غیر تحویلی والیٹ</string>
+    <string name="onboard_create">نیا والیٹ بنائیں</string>
+    <string name="onboard_restore">بازیابی کے جملے سے بحال کریں</string>
+
+    <string name="gen_title">کچھ بے ترتیبی شامل کریں</string>
+    <string name="gen_body">آپ کے فون نے پہلے ہی ایک محفوظ سیڈ بنا لیا ہے۔ اسے ہلائیں — یا پیڈ پر لکیریں کھینچیں — تاکہ حرکت کے سینسرز اور وقت کے اتار چڑھاؤ سے اضافی اینٹروپی شامل ہو جائے۔ احتیاطاً۔</string>
+    <string name="gen_words_24">24 الفاظ</string>
+    <string name="gen_words_12">12 الفاظ</string>
+    <string name="gen_words_hint">دونوں محفوظ ہیں؛ 12 لکھنا آسان ہے۔</string>
+    <string name="gen_pad_hint">ہلائیں، یا یہاں لکیریں کھینچیں</string>
+    <string name="gen_entropy_full">اضافی اینٹروپی وافر ہے — بنیادی سیڈ پہلے ہی محفوظ ہے</string>
+    <string name="gen_entropy_partial">~%1$d اضافی بٹس شامل کیے گئے</string>
+    <string name="gen_generate">والیٹ بنائیں</string>
+
+    <string name="create_phrase_title">آپ کا بازیابی کا جملہ</string>
+    <string name="create_phrase_body">ان %1$d الفاظ کو کاغذ پر، آف لائن لکھیں۔ جس کے پاس یہ ہوں وہ آپ کے فنڈز کو کنٹرول کرتا ہے۔</string>
+    <string name="create_passphrase_hint">ایک «25واں لفظ» — ایک اضافی راز جو محفوظ نہیں ہوتا۔ اگر آپ اسے سیٹ کریں تو بحالی کے لیے جملہ اور یہ دونوں درکار ہیں۔ اگر یقین نہ ہو تو خالی چھوڑ دیں۔</string>
+    <string name="create_ack">میں نے جملہ لکھ لیا ہے</string>
+
+    <string name="restore_title">والیٹ بحال کریں</string>
+    <string name="restore_body">اپنے 12 یا 24 الفاظ، خالی جگہوں سے الگ کر کے درج کریں۔</string>
+    <string name="restore_clone_hint">شامل کرنے کے بعد آپ اس والیٹ کو «والیٹس کا نظم کریں» سے %1$s پر بھی درج کر سکتے ہیں — وہی جملہ، وہی پتے۔</string>
+    <string name="action_restore">بحال کریں</string>
+
+    <string name="field_wallet_name">والیٹ کا نام</string>
+    <string name="field_passphrase">BIP-39 پاس فریز (اختیاری)</string>
+    <string name="field_app_password">ایپ کا پاس ورڈ</string>
+    <string name="field_confirm_password">پاس ورڈ کی تصدیق کریں</string>
+    <string name="field_to_address">وصول کنندہ کا پتہ</string>
+    <string name="field_amount">رقم</string>
+    <string name="field_custom_feerate">اپنی مرضی کا sat/vB (اختیاری)</string>
+
+    <string name="reveal_title">بازیابی کا جملہ</string>
+    <string name="reveal_warning">جو بھی یہ الفاظ دیکھے — اور پاس فریز، اگر سیٹ ہو — وہ اس والیٹ سے خرچ کر سکتا ہے۔ انہیں صرف نجی جگہ پر دیکھیں۔ انہیں کبھی کسی ویب سائٹ یا ایپ میں ٹائپ نہ کریں۔ یہاں اسکرین شاٹس بلاک ہیں۔</string>
+    <string name="reveal_failed">اس والیٹ کو ڈکرپٹ نہیں کیا جا سکا۔</string>
+    <string name="reveal_passphrase_label">BIP-39 پاس فریز</string>
+    <string name="reveal_no_passphrase">اس والیٹ پر کوئی BIP-39 پاس فریز نہیں ہے۔</string>
+
+    <string name="nav_home">ہوم</string>
+    <string name="nav_wallet">والیٹ</string>
+    <string name="nav_settings">ترتیبات</string>
+    <string name="tab_receive">وصول کریں</string>
+    <string name="tab_send">بھیجیں</string>
+    <string name="tab_history">تاریخ</string>
+
+    <string name="home_title">آپ کے والیٹس</string>
+    <string name="home_open">کھلا</string>
+    <string name="home_tap_to_open">کھولنے کے لیے تھپتھپائیں</string>
+    <string name="wallets_max">%1$d والیٹس کی زیادہ سے زیادہ حد پہنچ گئی۔</string>
+
+    <string name="lock_password_prompt">اپنی ایپ کا پاس ورڈ درج کریں۔</string>
+    <string name="biometric_setup_title">ایپ لاک سیٹ اپ کریں</string>
+    <string name="biometric_unlock_title">Fortis Wallet ان لاک کریں</string>
+    <string name="biometric_subtitle">Fortis Wallet</string>
+    <string name="biometric_invalidated">آپ کے آلے کا اسکرین لاک تبدیل ہو گیا، اس لیے ایپ کو یہاں مزید ان لاک نہیں کیا جا سکتا۔ دوبارہ انسٹال کریں اور ہر والیٹ کو اس کے بازیابی کے جملے سے بحال کریں۔</string>
+    <string name="lock_choice_use_biometric">ایپ کو فنگر پرنٹ یا PIN سے لاک کریں</string>
+    <string name="lock_choice_biometric_note">ایک بار ان لاک کرنے سے آپ کے تمام والیٹس کھل جاتے ہیں۔ یاد رکھنے کے لیے کوئی پاس ورڈ نہیں — آپ کے آلے کا فنگر پرنٹ/چہرہ یا اسکرین لاک PIN آپ کو داخل کرتا ہے۔</string>
+    <string name="lock_choice_password_note">یہ پاس ورڈ ایپ اور اس کے ہر والیٹ کو ان لاک کرتا ہے۔</string>
+
+    <string name="settings_title">ترتیبات</string>
+    <string name="settings_wallets">والیٹس</string>
+    <string name="settings_security">سیکیورٹی</string>
+    <string name="settings_connection">کنکشن</string>
+    <string name="settings_app_lock">ایپ لاک</string>
+    <string name="lock_mode_biometric">فنگر پرنٹ / آلے کا PIN</string>
+    <string name="lock_mode_password">پاس ورڈ</string>
+    <string name="settings_one_unlock">ایک بار ان لاک کرنے سے ایپ کا ہر والیٹ کھل جاتا ہے۔</string>
+    <string name="settings_language">زبان</string>
+    <string name="language_system_default">سسٹم ڈیفالٹ</string>
+    <string name="settings_status">حیثیت</string>
+    <string name="settings_chain_height">چین کی اونچائی</string>
+    <string name="settings_degraded_note">fortis سروس تک رسائی نہیں — فی الحال عوامی بلاک ڈیٹا استعمال ہو رہا ہے۔ یہ خود بخود واپس آ جائے گی۔</string>
+    <string name="settings_version">fortis %1$s</string>
+    <string name="xpub_loading">ابھی لوڈ ہو رہا ہے — دوبارہ کوشش کریں</string>
+    <string name="also_add_on">%1$s پر بھی شامل کریں</string>
+    <string name="dialog_rename_title">والیٹ کا نام تبدیل کریں</string>
+    <string name="dialog_reveal_title">%1$s کے لیے بازیابی کا جملہ دکھائیں؟</string>
+    <string name="dialog_reveal_body">بازیابی کا جملہ (اور پاس فریز، اگر آپ نے سیٹ کیا ہو) واحد چیز ہے جو اس والیٹ کو بحال کر سکتی ہے — اور جس کے پاس یہ ہو وہ آپ کے فنڈز خرچ کر سکتا ہے۔ اسے صرف نجی جگہ پر ظاہر کریں، جب کوئی نہ دیکھ رہا ہو۔ اگلی اسکرین اسکرین شاٹس بلاک کرتی ہے۔</string>
+    <string name="dialog_remove_title">%1$s ہٹائیں؟</string>
+    <string name="dialog_remove_body">یہ صرف اس ایپ سے والیٹ ہٹاتا ہے۔ بلاک چین پر کچھ تبدیل نہیں ہوتا، اور آپ اسے اس کے بازیابی کے جملے (اور پاس فریز، اگر آپ نے سیٹ کیا ہو) سے کسی بھی وقت واپس شامل کر سکتے ہیں۔ یقینی بنائیں کہ جملہ لکھا ہوا ہے۔</string>
+
+    <string name="status_offline">آف لائن</string>
+    <string name="status_rescanning">دوبارہ اسکین %1$d%%</string>
+    <string name="status_limited">محدود سروس</string>
+    <string name="status_connected">منسلک</string>
+    <string name="status_syncing">مطابقت پذیر</string>
+
+    <string name="wallet_none_open">کوئی والیٹ کھلا نہیں</string>
+    <string name="wallet_choose">ایک والیٹ منتخب کریں</string>
+    <string name="wallet_pending">%1$s %2$s زیر التوا</string>
+    <string name="wallet_block">بلاک %1$s</string>
+    <string name="wallet_rescanning">دوبارہ اسکین %1$d%%</string>
+    <string name="wallet_syncing">مطابقت پذیر</string>
+    <string name="wallet_limited_suffix">%1$s  ·  محدود سروس</string>
+    <string name="wallet_connecting">منسلک ہو رہا ہے…</string>
+    <string name="fiat_approx">≈ %1$s</string>
+
+    <string name="sent_title">ادائیگی بھیج دی گئی</string>
+    <string name="sent_txid">%1$s… · کاپی کرنے کے لیے تھپتھپائیں</string>
+
+    <string name="cd_address_qr">پتے کا QR کوڈ</string>
+    <string name="receive_address_n">پتہ #%1$d · کاپی کرنے کے لیے تھپتھپائیں</string>
+    <string name="share_address_chooser">پتہ شیئر کریں</string>
+
+    <string name="scan_prompt">ادائیگی کا پتہ اسکین کریں</string>
+    <string name="send_sweep">زیادہ سے زیادہ بھیجیں (sweep)</string>
+    <string name="send_alt_coin">= %1$s %2$s</string>
+    <string name="send_alt_sat">= %1$s sat</string>
+    <string name="send_alt_fiat">  ·  %1$s</string>
+    <string name="fee_fast">تیز</string>
+    <string name="fee_normal">عام</string>
+    <string name="fee_slow">سست</string>
+    <string name="send_replay_protect">XBT ری پلے تحفظ (100 بائٹ OP_RETURN)</string>
+    <string name="send_replay_note">~110 vB فیس شامل کرتا ہے۔ ڈیفالٹ Bitcoin ریلے پر غیر معیاری ہے — بڑے OP_RETURN قبول کرنے والے نوڈ/سروس کے ذریعے نشر کریں۔</string>
+    <string name="send_service_fee">سروس فیس: بھیجی گئی رقم کا %1$s%% (کم از کم %2$d sat) — اس میزبان نوڈ کی معاونت کرتی ہے۔</string>
+    <string name="cd_amount_unit">رقم کی اکائی</string>
+    <string name="unit_sat">sat</string>
+
+    <string name="history_empty">ابھی تک کوئی لین دین نہیں</string>
+    <string name="history_send">بھیجنا</string>
+    <string name="history_receive">وصول کرنا</string>
+    <string name="history_row_subtitle">%1$s · %2$s…</string>
+    <string name="history_pending">زیر التوا</string>
+    <string name="history_conf_n">%1$d تصدیق</string>
+    <string name="history_confirmed">تصدیق شدہ</string>
+    <string name="history_hint">لین دین کو ایکسپلورر میں کھولنے کے لیے تھپتھپائیں · id کاپی کرنے کے لیے دبائے رکھیں</string>
+
+    <string name="confirm_sweep_title">sweep کی تصدیق کریں</string>
+    <string name="confirm_payment_title">ادائیگی کی تصدیق کریں</string>
+    <string name="confirm_to">بنام</string>
+    <string name="confirm_amount">رقم</string>
+    <string name="confirm_network_fee">نیٹ ورک فیس</string>
+    <string name="confirm_network_fee_value">%1$s %2$s · %3$d sat/vB</string>
+    <string name="confirm_service_fee">سروس فیس</string>
+    <string name="confirm_change">بقایا</string>
+    <string name="confirm_replay">ری پلے تحفظ</string>
+    <string name="confirm_replay_value">آن · 100 بائٹ OP_RETURN</string>
+    <string name="confirm_total">کل</string>
+    <string name="value_with_fiat">%1$s %2$s  ·  %3$s</string>
+
+    <string name="mnemonic_not_in_list">%1$d الفاظ کی فہرست میں نہیں</string>
+    <string name="mnemonic_looks_good">ٹھیک لگتا ہے</string>
+    <string name="mnemonic_status">%1$s  ·  %2$s</string>
+
+    <string name="error_wallet_max">آپ ایک آلے پر %1$d تک والیٹس رکھ سکتے ہیں۔</string>
+    <string name="error_clone_exists">«%1$s» پہلے ہی %2$s پر ہے۔</string>
+    <string name="error_lock_setup_failed">ایپ لاک سیٹ اپ ناکام ہو گیا</string>
+    <string name="error_enter_amount">رقم درج کریں</string>
+    <string name="error_no_coins">خرچ کرنے کے لیے کوئی تصدیق شدہ سکے نہیں</string>
+    <string name="error_open_wallet">والیٹ نہیں کھولا جا سکا</string>
+
+    <plurals name="word_count">
+        <item quantity="one">%1$d لفظ</item>
+        <item quantity="other">%1$d الفاظ</item>
+    </plurals>
+</resources>

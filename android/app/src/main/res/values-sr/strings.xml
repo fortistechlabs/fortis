@@ -1,0 +1,190 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">fortis</string>
+
+    <string name="action_back">Назад</string>
+    <string name="action_cancel">Откажи</string>
+    <string name="action_continue">Настави</string>
+    <string name="action_save">Сачувај</string>
+    <string name="action_done">Готово</string>
+    <string name="action_show">Прикажи</string>
+    <string name="action_hide">Сакриј</string>
+    <string name="action_copy">Копирај</string>
+    <string name="action_share">Дели</string>
+    <string name="action_open">Отвори</string>
+    <string name="action_remove">Уклони</string>
+    <string name="action_rename">Преименуј</string>
+    <string name="action_unlock">Откључај</string>
+    <string name="action_add_wallet">Додај новчаник</string>
+    <string name="action_view">Прикажи</string>
+    <string name="action_refresh">Освежи</string>
+    <string name="action_reconnect">Поново повежи</string>
+    <string name="action_review">Прегледај</string>
+    <string name="action_sign_send">Потпиши и пошаљи</string>
+    <string name="action_new_address">Нова адреса</string>
+    <string name="action_scan_qr">Скенирај QR код</string>
+    <string name="action_lock">Закључај</string>
+    <string name="action_lock_app">Закључај апликацију</string>
+    <string name="action_copy_xpub">Копирај xpub</string>
+    <string name="action_recovery_phrase">Фраза за опоравак</string>
+    <string name="toast_copied">Копирано</string>
+    <string name="cd_dismiss">Одбаци</string>
+
+    <string name="onboard_add_title">Додај новчаник</string>
+    <string name="onboard_tagline">нескрбнички новчаник за Bitcoin XBT и Bitcoin BTC</string>
+    <string name="onboard_create">Направи нови новчаник</string>
+    <string name="onboard_restore">Опорави из фразе за опоравак</string>
+
+    <string name="gen_title">Додајте мало насумичности</string>
+    <string name="gen_body">Ваш телефон је већ генерисао безбедно семе. Протресите га — или шкработите по пољу — да умешате додатну ентропију из сензора покрета и временских одступања. За сваки случај.</string>
+    <string name="gen_words_24">24 речи</string>
+    <string name="gen_words_12">12 речи</string>
+    <string name="gen_words_hint">Обе су безбедне; 12 је лакше записати.</string>
+    <string name="gen_pad_hint">протресите или шкработите овде</string>
+    <string name="gen_entropy_full">довољно додатне ентропије — основно семе је већ безбедно</string>
+    <string name="gen_entropy_partial">умешано ~%1$d додатних битова</string>
+    <string name="gen_generate">Генериши новчаник</string>
+
+    <string name="create_phrase_title">Ваша фраза за опоравак</string>
+    <string name="create_phrase_body">Запишите ових %1$d речи на папир, ван мреже. Свако ко их има управља вашим средствима.</string>
+    <string name="create_passphrase_hint">„25. реч” — додатна тајна која се не чува. Ако је поставите, за опоравак вам требају и фраза и она. Оставите празно ако нисте сигурни.</string>
+    <string name="create_ack">Записао/ла сам фразу</string>
+
+    <string name="restore_title">Опорави новчаник</string>
+    <string name="restore_body">Унесите својих 12 или 24 речи, раздвојених размацима.</string>
+    <string name="restore_clone_hint">Након додавања овај новчаник можете навести и на %1$s преко Управљања новчаницима — иста фраза, исте адресе.</string>
+    <string name="action_restore">Опорави</string>
+
+    <string name="field_wallet_name">Назив новчаника</string>
+    <string name="field_passphrase">BIP-39 лозинка-фраза (опционо)</string>
+    <string name="field_app_password">Лозинка апликације</string>
+    <string name="field_confirm_password">Потврди лозинку</string>
+    <string name="field_to_address">Адреса примаоца</string>
+    <string name="field_amount">Износ</string>
+    <string name="field_custom_feerate">прилагођени sat/vB (опционо)</string>
+
+    <string name="reveal_title">Фраза за опоравак</string>
+    <string name="reveal_warning">Свако ко види ове речи — и лозинку-фразу, ако је постављена — може да потроши овај новчаник. Гледајте их само на приватном месту. Никада их не уносите на веб-сајт или у апликацију. Снимци екрана су овде блокирани.</string>
+    <string name="reveal_failed">Није било могуће дешифровати овај новчаник.</string>
+    <string name="reveal_passphrase_label">BIP-39 лозинка-фраза</string>
+    <string name="reveal_no_passphrase">Овај новчаник нема BIP-39 лозинку-фразу.</string>
+
+    <string name="nav_home">Почетна</string>
+    <string name="nav_wallet">Новчаник</string>
+    <string name="nav_settings">Подешавања</string>
+    <string name="tab_receive">Прими</string>
+    <string name="tab_send">Пошаљи</string>
+    <string name="tab_history">Историја</string>
+
+    <string name="home_title">Ваши новчаници</string>
+    <string name="home_open">отворен</string>
+    <string name="home_tap_to_open">додирните да отворите</string>
+    <string name="wallets_max">Достигнут је максимум од %1$d новчаника.</string>
+
+    <string name="lock_password_prompt">Унесите лозинку апликације.</string>
+    <string name="biometric_setup_title">Подеси закључавање апликације</string>
+    <string name="biometric_unlock_title">Откључај Fortis Wallet</string>
+    <string name="biometric_subtitle">Fortis Wallet</string>
+    <string name="biometric_invalidated">Закључавање екрана вашег уређаја се променило, па апликација овде више не може да се откључа. Поново је инсталирајте и опоравите сваки новчаник из његове фразе за опоравак.</string>
+    <string name="lock_choice_use_biometric">Закључај апликацију отиском прста или PIN-ом</string>
+    <string name="lock_choice_biometric_note">Једно откључавање отвара све ваше новчанике. Нема лозинке за памћење — отисак прста/лице или PIN закључавања екрана вашег уређаја вас пропушта.</string>
+    <string name="lock_choice_password_note">Ова лозинка откључава апликацију и сваки новчаник у њој.</string>
+
+    <string name="settings_title">Подешавања</string>
+    <string name="settings_wallets">Новчаници</string>
+    <string name="settings_security">Безбедност</string>
+    <string name="settings_connection">Веза</string>
+    <string name="settings_app_lock">Закључавање апликације</string>
+    <string name="lock_mode_biometric">Отисак прста / PIN уређаја</string>
+    <string name="lock_mode_password">Лозинка</string>
+    <string name="settings_one_unlock">Једно откључавање отвара сваки новчаник у апликацији.</string>
+    <string name="settings_language">Језик</string>
+    <string name="language_system_default">Подразумевано за систем</string>
+    <string name="settings_status">Статус</string>
+    <string name="settings_chain_height">Висина ланца</string>
+    <string name="settings_degraded_note">Услуга fortis није доступна — за сада се користе јавни подаци о блоковима. Аутоматски ће се вратити.</string>
+    <string name="settings_version">fortis %1$s</string>
+    <string name="xpub_loading">још се учитава — покушајте поново</string>
+    <string name="also_add_on">Додај и на %1$s</string>
+    <string name="dialog_rename_title">Преименуј новчаник</string>
+    <string name="dialog_reveal_title">Приказати фразу за опоравак за %1$s?</string>
+    <string name="dialog_reveal_body">Фраза за опоравак (и лозинка-фраза, ако сте је поставили) једино је што може да опорави овај новчаник — а свако ко је има може да потроши ваша средства. Откријте је само на приватном месту, док нико не гледа. Следећи екран блокира снимке екрана.</string>
+    <string name="dialog_remove_title">Уклонити %1$s?</string>
+    <string name="dialog_remove_body">Ово уклања новчаник само из ове апликације. На блокчејну се ништа не мења и можете га поново додати било када помоћу његове фразе за опоравак (и лозинке-фразе, ако сте је поставили). Уверите се да је фраза записана.</string>
+
+    <string name="status_offline">ван мреже</string>
+    <string name="status_rescanning">поновно скенирање %1$d%%</string>
+    <string name="status_limited">ограничена услуга</string>
+    <string name="status_connected">повезано</string>
+    <string name="status_syncing">синхронизација</string>
+
+    <string name="wallet_none_open">Ниједан новчаник није отворен</string>
+    <string name="wallet_choose">Изаберите новчаник</string>
+    <string name="wallet_pending">%1$s %2$s на чекању</string>
+    <string name="wallet_block">блок %1$s</string>
+    <string name="wallet_rescanning">поновно скенирање %1$d%%</string>
+    <string name="wallet_syncing">синхронизација</string>
+    <string name="wallet_limited_suffix">%1$s  ·  ограничена услуга</string>
+    <string name="wallet_connecting">повезивање…</string>
+    <string name="fiat_approx">≈ %1$s</string>
+
+    <string name="sent_title">Плаћање послато</string>
+    <string name="sent_txid">%1$s… · додирните да копирате</string>
+
+    <string name="cd_address_qr">QR код адресе</string>
+    <string name="receive_address_n">адреса бр. %1$d · додирните да копирате</string>
+    <string name="share_address_chooser">Дели адресу</string>
+
+    <string name="scan_prompt">Скенирајте адресу за плаћање</string>
+    <string name="send_sweep">Пошаљи максимум (sweep)</string>
+    <string name="send_alt_coin">= %1$s %2$s</string>
+    <string name="send_alt_sat">= %1$s sat</string>
+    <string name="send_alt_fiat">  ·  %1$s</string>
+    <string name="fee_fast">Брзо</string>
+    <string name="fee_normal">Нормално</string>
+    <string name="fee_slow">Споро</string>
+    <string name="send_replay_protect">XBT заштита од понављања (100-бајтни OP_RETURN)</string>
+    <string name="send_replay_note">Додаје ~110 vB накнаде. Нестандардно на подразумеваном Bitcoin релеју — емитујте преко чвора/услуге која прихвата велике OP_RETURN.</string>
+    <string name="send_service_fee">Накнада за услугу: %1$s%% послатог износа (мин. %2$d sat) — подржава овај хостовани чвор.</string>
+    <string name="cd_amount_unit">јединица износа</string>
+    <string name="unit_sat">sat</string>
+
+    <string name="history_empty">још нема трансакција</string>
+    <string name="history_send">слање</string>
+    <string name="history_receive">примање</string>
+    <string name="history_row_subtitle">%1$s · %2$s…</string>
+    <string name="history_pending">на чекању</string>
+    <string name="history_conf_n">%1$d потв.</string>
+    <string name="history_confirmed">потврђена</string>
+    <string name="history_hint">додирните трансакцију да је отворите у претраживачу · дуго притисните да копирате ид</string>
+
+    <string name="confirm_sweep_title">Потврди sweep</string>
+    <string name="confirm_payment_title">Потврди плаћање</string>
+    <string name="confirm_to">За</string>
+    <string name="confirm_amount">Износ</string>
+    <string name="confirm_network_fee">Мрежна накнада</string>
+    <string name="confirm_network_fee_value">%1$s %2$s · %3$d sat/vB</string>
+    <string name="confirm_service_fee">Накнада за услугу</string>
+    <string name="confirm_change">Кусур</string>
+    <string name="confirm_replay">Заштита од понављања</string>
+    <string name="confirm_replay_value">укључено · 100-бајтни OP_RETURN</string>
+    <string name="confirm_total">Укупно</string>
+    <string name="value_with_fiat">%1$s %2$s  ·  %3$s</string>
+
+    <string name="mnemonic_not_in_list">%1$d није на листи речи</string>
+    <string name="mnemonic_looks_good">изгледа добро</string>
+    <string name="mnemonic_status">%1$s  ·  %2$s</string>
+
+    <string name="error_wallet_max">На једном уређају можете имати до %1$d новчаника.</string>
+    <string name="error_clone_exists">„%1$s” је већ на %2$s.</string>
+    <string name="error_lock_setup_failed">подешавање закључавања апликације није успело</string>
+    <string name="error_enter_amount">унесите износ</string>
+    <string name="error_no_coins">нема потврђених новчића за трошење</string>
+    <string name="error_open_wallet">није могуће отворити новчаник</string>
+
+    <plurals name="word_count">
+        <item quantity="one">%1$d реч</item>
+        <item quantity="few">%1$d речи</item>
+        <item quantity="other">%1$d речи</item>
+    </plurals>
+</resources>

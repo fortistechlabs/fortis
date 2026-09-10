@@ -1,0 +1,189 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">fortis</string>
+
+    <string name="action_back">Prapa</string>
+    <string name="action_cancel">Anulo</string>
+    <string name="action_continue">Vazhdo</string>
+    <string name="action_save">Ruaj</string>
+    <string name="action_done">U krye</string>
+    <string name="action_show">Shfaq</string>
+    <string name="action_hide">Fshih</string>
+    <string name="action_copy">Kopjo</string>
+    <string name="action_share">Ndaj</string>
+    <string name="action_open">Hap</string>
+    <string name="action_remove">Hiq</string>
+    <string name="action_rename">Riemërto</string>
+    <string name="action_unlock">Shkyç</string>
+    <string name="action_add_wallet">Shto portofol</string>
+    <string name="action_view">Shiko</string>
+    <string name="action_refresh">Rifresko</string>
+    <string name="action_reconnect">Rilidhu</string>
+    <string name="action_review">Rishiko</string>
+    <string name="action_sign_send">Nënshkruaj dhe dërgo</string>
+    <string name="action_new_address">Adresë e re</string>
+    <string name="action_scan_qr">Skano kodin QR</string>
+    <string name="action_lock">Kyç</string>
+    <string name="action_lock_app">Kyç aplikacionin</string>
+    <string name="action_copy_xpub">Kopjo xpub</string>
+    <string name="action_recovery_phrase">Fraza e rikuperimit</string>
+    <string name="toast_copied">U kopjua</string>
+    <string name="cd_dismiss">Mbyll</string>
+
+    <string name="onboard_add_title">Shto një portofol</string>
+    <string name="onboard_tagline">një portofol jokustodial për Bitcoin XBT dhe Bitcoin BTC</string>
+    <string name="onboard_create">Krijo një portofol të ri</string>
+    <string name="onboard_restore">Rikupero nga një frazë rikuperimi</string>
+
+    <string name="gen_title">Shto pak rastësi</string>
+    <string name="gen_body">Telefoni yt tashmë ka gjeneruar një farë të sigurt. Shkunde — ose vizato mbi zonën — për të përzier entropi shtesë nga sensorët e lëvizjes dhe luhatjet e kohës. Për siguri.</string>
+    <string name="gen_words_24">24 fjalë</string>
+    <string name="gen_words_12">12 fjalë</string>
+    <string name="gen_words_hint">Të dyja janë të sigurta; 12 shkruhen më lehtë.</string>
+    <string name="gen_pad_hint">shkunde, ose vizato këtu</string>
+    <string name="gen_entropy_full">shumë entropi shtesë — fara bazë është tashmë e sigurt</string>
+    <string name="gen_entropy_partial">u përzien ~%1$d bit shtesë</string>
+    <string name="gen_generate">Gjenero portofolin</string>
+
+    <string name="create_phrase_title">Fraza jote e rikuperimit</string>
+    <string name="create_phrase_body">Shkruaji këto %1$d fjalë në letër, jashtë linje. Kushdo që i ka, kontrollon fondet e tua.</string>
+    <string name="create_passphrase_hint">Një „fjalë e 25-të” — një sekret shtesë, që nuk ruhet. Nëse cakton një, për rikuperim të duhet edhe fraza edhe kjo. Lëre bosh nëse nuk je i sigurt.</string>
+    <string name="create_ack">E shënova frazën</string>
+
+    <string name="restore_title">Rikupero portofolin</string>
+    <string name="restore_body">Fut 12 ose 24 fjalët e tua, të ndara me hapësira.</string>
+    <string name="restore_clone_hint">Pasi ta shtosh, mund ta listosh këtë portofol edhe në %1$s nga „Menaxho portofolët” — e njëjta frazë, të njëjtat adresa.</string>
+    <string name="action_restore">Rikupero</string>
+
+    <string name="field_wallet_name">Emri i portofolit</string>
+    <string name="field_passphrase">Fjalëkalim-frazë BIP-39 (opsionale)</string>
+    <string name="field_app_password">Fjalëkalimi i aplikacionit</string>
+    <string name="field_confirm_password">Konfirmo fjalëkalimin</string>
+    <string name="field_to_address">Adresa e marrësit</string>
+    <string name="field_amount">Shuma</string>
+    <string name="field_custom_feerate">sat/vB i personalizuar (opsionale)</string>
+
+    <string name="reveal_title">Fraza e rikuperimit</string>
+    <string name="reveal_warning">Kushdo që i sheh këto fjalë — plus fjalëkalimin-frazë, nëse është caktuar — mund t\'i shpenzojë fondet e këtij portofoli. Shikoji vetëm në një vend privat. Mos i shkruaj kurrë në një faqe interneti ose aplikacion. Pamjet e ekranit janë të bllokuara këtu.</string>
+    <string name="reveal_failed">Ky portofol nuk u deshifrua dot.</string>
+    <string name="reveal_passphrase_label">Fjalëkalim-frazë BIP-39</string>
+    <string name="reveal_no_passphrase">Nuk ka fjalëkalim-frazë BIP-39 në këtë portofol.</string>
+
+    <string name="nav_home">Kreu</string>
+    <string name="nav_wallet">Portofoli</string>
+    <string name="nav_settings">Cilësimet</string>
+    <string name="tab_receive">Merr</string>
+    <string name="tab_send">Dërgo</string>
+    <string name="tab_history">Historiku</string>
+
+    <string name="home_title">Portofolët e tu</string>
+    <string name="home_open">i hapur</string>
+    <string name="home_tap_to_open">trokit për ta hapur</string>
+    <string name="wallets_max">U arrit maksimumi prej %1$d portofolësh.</string>
+
+    <string name="lock_password_prompt">Fut fjalëkalimin e aplikacionit.</string>
+    <string name="biometric_setup_title">Konfiguro kyçjen e aplikacionit</string>
+    <string name="biometric_unlock_title">Shkyç Fortis Wallet</string>
+    <string name="biometric_subtitle">Fortis Wallet</string>
+    <string name="biometric_invalidated">Kyçja e ekranit të pajisjes sate ndryshoi, ndaj aplikacioni nuk mund të shkyçet më këtu. Riinstaloje dhe rikupero çdo portofol nga fraza e tij e rikuperimit.</string>
+    <string name="lock_choice_use_biometric">Kyç aplikacionin me gjurmë gishti ose PIN</string>
+    <string name="lock_choice_biometric_note">Një shkyçje i hap të gjithë portofolët e tu. Pa fjalëkalim për të mbajtur mend — të fut brenda gjurma e gishtit/fytyra ose PIN-i i kyçjes së ekranit të pajisjes.</string>
+    <string name="lock_choice_password_note">Ky fjalëkalim shkyç aplikacionin dhe çdo portofol në të.</string>
+
+    <string name="settings_title">Cilësimet</string>
+    <string name="settings_wallets">Portofolët</string>
+    <string name="settings_security">Siguria</string>
+    <string name="settings_connection">Lidhja</string>
+    <string name="settings_app_lock">Kyçja e aplikacionit</string>
+    <string name="lock_mode_biometric">Gjurmë gishti / PIN i pajisjes</string>
+    <string name="lock_mode_password">Fjalëkalim</string>
+    <string name="settings_one_unlock">Një shkyçje hap çdo portofol në aplikacion.</string>
+    <string name="settings_language">Gjuha</string>
+    <string name="language_system_default">Parazgjedhja e sistemit</string>
+    <string name="settings_status">Statusi</string>
+    <string name="settings_chain_height">Lartësia e zinxhirit</string>
+    <string name="settings_degraded_note">Shërbimi fortis është i paarritshëm — për momentin përdoren të dhëna publike blloqesh. Do të kthehet automatikisht.</string>
+    <string name="settings_version">fortis %1$s</string>
+    <string name="xpub_loading">ende po ngarkohet — provo sërish</string>
+    <string name="also_add_on">Shto edhe në %1$s</string>
+    <string name="dialog_rename_title">Riemërto portofolin</string>
+    <string name="dialog_reveal_title">Të shfaqet fraza e rikuperimit për %1$s?</string>
+    <string name="dialog_reveal_body">Fraza e rikuperimit (dhe fjalëkalimi-frazë, nëse ke caktuar një) është e vetmja gjë që mund ta rikuperojë këtë portofol — dhe kushdo që e ka mund t\'i shpenzojë fondet e tua. Zbuloje vetëm në një vend privat, pa e parë njeri. Ekrani tjetër bllokon pamjet e ekranit.</string>
+    <string name="dialog_remove_title">Të hiqet %1$s?</string>
+    <string name="dialog_remove_body">Kjo e heq portofolin vetëm nga ky aplikacion. Asgjë nuk ndryshon në blockchain dhe mund ta shtosh sërish në çdo kohë me frazën e tij të rikuperimit (dhe fjalëkalimin-frazë, nëse ke caktuar një). Sigurohu që fraza është shënuar.</string>
+
+    <string name="status_offline">jashtë linje</string>
+    <string name="status_rescanning">riskanim %1$d%%</string>
+    <string name="status_limited">shërbim i kufizuar</string>
+    <string name="status_connected">i lidhur</string>
+    <string name="status_syncing">po sinkronizohet</string>
+
+    <string name="wallet_none_open">Asnjë portofol i hapur</string>
+    <string name="wallet_choose">Zgjidh një portofol</string>
+    <string name="wallet_pending">%1$s %2$s në pritje</string>
+    <string name="wallet_block">blloku %1$s</string>
+    <string name="wallet_rescanning">riskanim %1$d%%</string>
+    <string name="wallet_syncing">po sinkronizohet</string>
+    <string name="wallet_limited_suffix">%1$s  ·  shërbim i kufizuar</string>
+    <string name="wallet_connecting">po lidhet…</string>
+    <string name="fiat_approx">≈ %1$s</string>
+
+    <string name="sent_title">Pagesa u dërgua</string>
+    <string name="sent_txid">%1$s… · trokit për të kopjuar</string>
+
+    <string name="cd_address_qr">kodi QR i adresës</string>
+    <string name="receive_address_n">adresa #%1$d · trokit për të kopjuar</string>
+    <string name="share_address_chooser">Ndaj adresën</string>
+
+    <string name="scan_prompt">Skano një adresë pagese</string>
+    <string name="send_sweep">Dërgo maksimumin (sweep)</string>
+    <string name="send_alt_coin">= %1$s %2$s</string>
+    <string name="send_alt_sat">= %1$s sat</string>
+    <string name="send_alt_fiat">  ·  %1$s</string>
+    <string name="fee_fast">Shpejt</string>
+    <string name="fee_normal">Normal</string>
+    <string name="fee_slow">Ngadalë</string>
+    <string name="send_replay_protect">Mbrojtje nga ripërsëritja XBT (OP_RETURN 100 bajt)</string>
+    <string name="send_replay_note">Shton ~110 vB tarifë. Jostandarde në relenë e parazgjedhur të Bitcoin — transmeto përmes një nyjeje/shërbimi që pranon OP_RETURN të mëdha.</string>
+    <string name="send_service_fee">Tarifë shërbimi: %1$s%% e shumës së dërguar (min. %2$d sat) — mbështet këtë nyje të strehuar.</string>
+    <string name="cd_amount_unit">njësia e shumës</string>
+    <string name="unit_sat">sat</string>
+
+    <string name="history_empty">ende asnjë transaksion</string>
+    <string name="history_send">dërgim</string>
+    <string name="history_receive">marrje</string>
+    <string name="history_row_subtitle">%1$s · %2$s…</string>
+    <string name="history_pending">në pritje</string>
+    <string name="history_conf_n">%1$d konf.</string>
+    <string name="history_confirmed">e konfirmuar</string>
+    <string name="history_hint">trokit një transaksion për ta hapur në eksplorues · shtyp gjatë për të kopjuar id-në</string>
+
+    <string name="confirm_sweep_title">Konfirmo sweep</string>
+    <string name="confirm_payment_title">Konfirmo pagesën</string>
+    <string name="confirm_to">Për</string>
+    <string name="confirm_amount">Shuma</string>
+    <string name="confirm_network_fee">Tarifa e rrjetit</string>
+    <string name="confirm_network_fee_value">%1$s %2$s · %3$d sat/vB</string>
+    <string name="confirm_service_fee">Tarifë shërbimi</string>
+    <string name="confirm_change">Kusuri</string>
+    <string name="confirm_replay">Mbrojtje nga ripërsëritja</string>
+    <string name="confirm_replay_value">aktive · OP_RETURN 100 bajt</string>
+    <string name="confirm_total">Totali</string>
+    <string name="value_with_fiat">%1$s %2$s  ·  %3$s</string>
+
+    <string name="mnemonic_not_in_list">%1$d jashtë listës së fjalëve</string>
+    <string name="mnemonic_looks_good">duket në rregull</string>
+    <string name="mnemonic_status">%1$s  ·  %2$s</string>
+
+    <string name="error_wallet_max">Mund të mbash deri në %1$d portofolë në një pajisje.</string>
+    <string name="error_clone_exists">„%1$s” është tashmë në %2$s.</string>
+    <string name="error_lock_setup_failed">konfigurimi i kyçjes së aplikacionit dështoi</string>
+    <string name="error_enter_amount">fut një shumë</string>
+    <string name="error_no_coins">asnjë monedhë e konfirmuar për të shpenzuar</string>
+    <string name="error_open_wallet">portofoli nuk u hap dot</string>
+
+    <plurals name="word_count">
+        <item quantity="one">%1$d fjalë</item>
+        <item quantity="other">%1$d fjalë</item>
+    </plurals>
+</resources>

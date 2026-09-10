@@ -1,0 +1,189 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">fortis</string>
+
+    <string name="action_back">Geri</string>
+    <string name="action_cancel">İptal</string>
+    <string name="action_continue">Devam</string>
+    <string name="action_save">Kaydet</string>
+    <string name="action_done">Bitti</string>
+    <string name="action_show">Göster</string>
+    <string name="action_hide">Gizle</string>
+    <string name="action_copy">Kopyala</string>
+    <string name="action_share">Paylaş</string>
+    <string name="action_open">Aç</string>
+    <string name="action_remove">Kaldır</string>
+    <string name="action_rename">Yeniden adlandır</string>
+    <string name="action_unlock">Kilidi aç</string>
+    <string name="action_add_wallet">Cüzdan ekle</string>
+    <string name="action_view">Görüntüle</string>
+    <string name="action_refresh">Yenile</string>
+    <string name="action_reconnect">Yeniden bağlan</string>
+    <string name="action_review">İncele</string>
+    <string name="action_sign_send">İmzala ve gönder</string>
+    <string name="action_new_address">Yeni adres</string>
+    <string name="action_scan_qr">QR kodu tara</string>
+    <string name="action_lock">Kilitle</string>
+    <string name="action_lock_app">Uygulamayı kilitle</string>
+    <string name="action_copy_xpub">xpub\'ı kopyala</string>
+    <string name="action_recovery_phrase">Kurtarma ifadesi</string>
+    <string name="toast_copied">Kopyalandı</string>
+    <string name="cd_dismiss">Kapat</string>
+
+    <string name="onboard_add_title">Cüzdan ekle</string>
+    <string name="onboard_tagline">Bitcoin XBT ve Bitcoin BTC için saklama gerektirmeyen bir cüzdan</string>
+    <string name="onboard_create">Yeni cüzdan oluştur</string>
+    <string name="onboard_restore">Kurtarma ifadesinden geri yükle</string>
+
+    <string name="gen_title">Biraz rastgelelik ekleyin</string>
+    <string name="gen_body">Telefonunuz zaten güvenli bir tohum oluşturdu. Hareket sensörlerinden ve zamanlama titremesinden ekstra entropi karıştırmak için telefonu sallayın ya da alana çizin. Ne olur ne olmaz.</string>
+    <string name="gen_words_24">24 kelime</string>
+    <string name="gen_words_12">12 kelime</string>
+    <string name="gen_words_hint">İkisi de güvenli; 12 kelimeyi yazmak daha kolay.</string>
+    <string name="gen_pad_hint">sallayın ya da buraya çizin</string>
+    <string name="gen_entropy_full">bolca ekstra entropi — temel tohum zaten güvenli</string>
+    <string name="gen_entropy_partial">~%1$d ekstra bit karıştırıldı</string>
+    <string name="gen_generate">Cüzdan oluştur</string>
+
+    <string name="create_phrase_title">Kurtarma ifadeniz</string>
+    <string name="create_phrase_body">Bu %1$d kelimeyi çevrimdışı olarak kâğıda yazın. Bunlara sahip olan herkes paranızı kontrol eder.</string>
+    <string name="create_passphrase_hint">Bir \"25. kelime\" — saklanmayan ekstra bir sır. Bir tane belirlerseniz geri yüklemek için hem ifadeye hem de buna ihtiyacınız olur. Emin değilseniz boş bırakın.</string>
+    <string name="create_ack">İfadeyi yazdım</string>
+
+    <string name="restore_title">Cüzdanı geri yükle</string>
+    <string name="restore_body">12 veya 24 kelimenizi boşluklarla ayırarak girin.</string>
+    <string name="restore_clone_hint">Ekledikten sonra bu cüzdanı Cüzdanları yönet\'ten %1$s üzerinde de listeleyebilirsiniz — aynı ifade, aynı adresler.</string>
+    <string name="action_restore">Geri yükle</string>
+
+    <string name="field_wallet_name">Cüzdan adı</string>
+    <string name="field_passphrase">BIP-39 parola ifadesi (isteğe bağlı)</string>
+    <string name="field_app_password">Uygulama parolası</string>
+    <string name="field_confirm_password">Parolayı onayla</string>
+    <string name="field_to_address">Alıcı adresi</string>
+    <string name="field_amount">Tutar</string>
+    <string name="field_custom_feerate">özel sat/vB (isteğe bağlı)</string>
+
+    <string name="reveal_title">Kurtarma ifadesi</string>
+    <string name="reveal_warning">Bu kelimeleri — ayarlanmışsa parola ifadesini de — gören herkes bu cüzdanı harcayabilir. Onlara yalnızca özel bir yerde bakın. Asla bir web sitesine veya uygulamaya yazmayın. Ekran görüntüleri burada engellenmiştir.</string>
+    <string name="reveal_failed">Bu cüzdanın şifresi çözülemedi.</string>
+    <string name="reveal_passphrase_label">BIP-39 parola ifadesi</string>
+    <string name="reveal_no_passphrase">Bu cüzdanda BIP-39 parola ifadesi yok.</string>
+
+    <string name="nav_home">Ana sayfa</string>
+    <string name="nav_wallet">Cüzdan</string>
+    <string name="nav_settings">Ayarlar</string>
+    <string name="tab_receive">Al</string>
+    <string name="tab_send">Gönder</string>
+    <string name="tab_history">Geçmiş</string>
+
+    <string name="home_title">Cüzdanlarınız</string>
+    <string name="home_open">açık</string>
+    <string name="home_tap_to_open">açmak için dokunun</string>
+    <string name="wallets_max">%1$d cüzdanlık üst sınıra ulaşıldı.</string>
+
+    <string name="lock_password_prompt">Uygulama parolanızı girin.</string>
+    <string name="biometric_setup_title">Uygulama kilidini ayarla</string>
+    <string name="biometric_unlock_title">Fortis Wallet kilidini aç</string>
+    <string name="biometric_subtitle">Fortis Wallet</string>
+    <string name="biometric_invalidated">Cihazınızın ekran kilidi değişti, bu yüzden uygulama artık burada açılamıyor. Yeniden yükleyin ve her cüzdanı kurtarma ifadesinden geri yükleyin.</string>
+    <string name="lock_choice_use_biometric">Uygulamayı parmak izi veya PIN ile kilitle</string>
+    <string name="lock_choice_biometric_note">Tek bir kilit açma tüm cüzdanlarınızı açar. Hatırlanacak parola yok — cihazınızın parmak izi/yüzü veya ekran kilidi PIN\'i sizi içeri alır.</string>
+    <string name="lock_choice_password_note">Bu parola uygulamanın ve içindeki her cüzdanın kilidini açar.</string>
+
+    <string name="settings_title">Ayarlar</string>
+    <string name="settings_wallets">Cüzdanlar</string>
+    <string name="settings_security">Güvenlik</string>
+    <string name="settings_connection">Bağlantı</string>
+    <string name="settings_app_lock">Uygulama kilidi</string>
+    <string name="lock_mode_biometric">Parmak izi / cihaz PIN\'i</string>
+    <string name="lock_mode_password">Parola</string>
+    <string name="settings_one_unlock">Tek bir kilit açma, uygulamadaki her cüzdanı açar.</string>
+    <string name="settings_language">Dil</string>
+    <string name="language_system_default">Sistem varsayılanı</string>
+    <string name="settings_status">Durum</string>
+    <string name="settings_chain_height">Zincir yüksekliği</string>
+    <string name="settings_degraded_note">fortis hizmetine ulaşılamıyor — şimdilik herkese açık blok verileri kullanılıyor. Otomatik olarak geri dönecek.</string>
+    <string name="settings_version">fortis %1$s</string>
+    <string name="xpub_loading">hâlâ yükleniyor — tekrar deneyin</string>
+    <string name="also_add_on">%1$s üzerine de ekle</string>
+    <string name="dialog_rename_title">Cüzdanı yeniden adlandır</string>
+    <string name="dialog_reveal_title">%1$s için kurtarma ifadesi gösterilsin mi?</string>
+    <string name="dialog_reveal_body">Kurtarma ifadesi (ve belirlediyseniz parola ifadesi), bu cüzdanı geri yükleyebilecek tek şeydir — ve ona sahip olan herkes paranızı harcayabilir. Yalnızca kimse bakmazken özel bir yerde açığa çıkarın. Sonraki ekran ekran görüntülerini engeller.</string>
+    <string name="dialog_remove_title">%1$s kaldırılsın mı?</string>
+    <string name="dialog_remove_body">Bu yalnızca cüzdanı bu uygulamadan kaldırır. Blok zincirinde hiçbir şey değişmez ve kurtarma ifadesiyle (ve belirlediyseniz parola ifadesiyle) istediğiniz zaman geri ekleyebilirsiniz. İfadenin yazılı olduğundan emin olun.</string>
+
+    <string name="status_offline">çevrimdışı</string>
+    <string name="status_rescanning">yeniden taranıyor %1$d%%</string>
+    <string name="status_limited">sınırlı hizmet</string>
+    <string name="status_connected">bağlandı</string>
+    <string name="status_syncing">eşitleniyor</string>
+
+    <string name="wallet_none_open">Açık cüzdan yok</string>
+    <string name="wallet_choose">Bir cüzdan seçin</string>
+    <string name="wallet_pending">%1$s %2$s beklemede</string>
+    <string name="wallet_block">blok %1$s</string>
+    <string name="wallet_rescanning">yeniden taranıyor %1$d%%</string>
+    <string name="wallet_syncing">eşitleniyor</string>
+    <string name="wallet_limited_suffix">%1$s  ·  sınırlı hizmet</string>
+    <string name="wallet_connecting">bağlanıyor…</string>
+    <string name="fiat_approx">≈ %1$s</string>
+
+    <string name="sent_title">Ödeme gönderildi</string>
+    <string name="sent_txid">%1$s… · kopyalamak için dokunun</string>
+
+    <string name="cd_address_qr">adres QR kodu</string>
+    <string name="receive_address_n">adres #%1$d · kopyalamak için dokunun</string>
+    <string name="share_address_chooser">Adresi paylaş</string>
+
+    <string name="scan_prompt">Bir ödeme adresi tarayın</string>
+    <string name="send_sweep">En yükseği gönder (sweep)</string>
+    <string name="send_alt_coin">= %1$s %2$s</string>
+    <string name="send_alt_sat">= %1$s sat</string>
+    <string name="send_alt_fiat">  ·  %1$s</string>
+    <string name="fee_fast">Hızlı</string>
+    <string name="fee_normal">Normal</string>
+    <string name="fee_slow">Yavaş</string>
+    <string name="send_replay_protect">XBT yeniden yürütme koruması (100 baytlık OP_RETURN)</string>
+    <string name="send_replay_note">~110 vB ücret ekler. Varsayılan Bitcoin rölesinde standart dışıdır — büyük OP_RETURN kabul eden bir düğüm/hizmet üzerinden yayın yapın.</string>
+    <string name="send_service_fee">Hizmet ücreti: gönderilen tutarın %1$s%%\'i (en az %2$d sat) — bu barındırılan düğümü destekler.</string>
+    <string name="cd_amount_unit">tutar birimi</string>
+    <string name="unit_sat">sat</string>
+
+    <string name="history_empty">henüz işlem yok</string>
+    <string name="history_send">gönder</string>
+    <string name="history_receive">al</string>
+    <string name="history_row_subtitle">%1$s · %2$s…</string>
+    <string name="history_pending">beklemede</string>
+    <string name="history_conf_n">%1$d onay</string>
+    <string name="history_confirmed">onaylandı</string>
+    <string name="history_hint">bir işleme dokunarak gezginde açın · id\'yi kopyalamak için uzun basın</string>
+
+    <string name="confirm_sweep_title">Sweep\'i onayla</string>
+    <string name="confirm_payment_title">Ödemeyi onayla</string>
+    <string name="confirm_to">Alıcı</string>
+    <string name="confirm_amount">Tutar</string>
+    <string name="confirm_network_fee">Ağ ücreti</string>
+    <string name="confirm_network_fee_value">%1$s %2$s · %3$d sat/vB</string>
+    <string name="confirm_service_fee">Hizmet ücreti</string>
+    <string name="confirm_change">Para üstü</string>
+    <string name="confirm_replay">Yeniden yürütme koruması</string>
+    <string name="confirm_replay_value">açık · 100 baytlık OP_RETURN</string>
+    <string name="confirm_total">Toplam</string>
+    <string name="value_with_fiat">%1$s %2$s  ·  %3$s</string>
+
+    <string name="mnemonic_not_in_list">%1$d kelime listesinde değil</string>
+    <string name="mnemonic_looks_good">iyi görünüyor</string>
+    <string name="mnemonic_status">%1$s  ·  %2$s</string>
+
+    <string name="error_wallet_max">Bir cihazda en fazla %1$d cüzdan tutabilirsiniz.</string>
+    <string name="error_clone_exists">\"%1$s\" zaten %2$s üzerinde.</string>
+    <string name="error_lock_setup_failed">uygulama kilidi kurulumu başarısız oldu</string>
+    <string name="error_enter_amount">bir tutar girin</string>
+    <string name="error_no_coins">harcanacak onaylanmış coin yok</string>
+    <string name="error_open_wallet">cüzdan açılamadı</string>
+
+    <plurals name="word_count">
+        <item quantity="one">%1$d kelime</item>
+        <item quantity="other">%1$d kelime</item>
+    </plurals>
+</resources>

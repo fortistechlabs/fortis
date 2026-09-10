@@ -1,0 +1,28 @@
+/target
+**/target
+Cargo.lock.bak
+*.log
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/extensions.json
+
+# binding outputs
+crates/wallet-wasm/pkg/
+crates/wallet-ffi/out/
+web/pkg/
+
+# fortisd / fortis local state
+*.token
+
+# fortis-index / fortis-edge local state
+fortis-index.sqlite*
+fortis-edge.secret
+
+# deploy secrets
+deploy/.env
+
+# wrangler local working state (cache, account id/name, local dev data)
+.wrangler/
+/fortis-wallet.apk

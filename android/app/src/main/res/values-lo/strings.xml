@@ -1,0 +1,188 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">fortis</string>
+
+    <string name="action_back">ກັບຄືນ</string>
+    <string name="action_cancel">ຍົກເລີກ</string>
+    <string name="action_continue">ສືບຕໍ່</string>
+    <string name="action_save">ບັນທຶກ</string>
+    <string name="action_done">ແລ້ວໆ</string>
+    <string name="action_show">ສະແດງ</string>
+    <string name="action_hide">ເຊື່ອງ</string>
+    <string name="action_copy">ສຳເນົາ</string>
+    <string name="action_share">ແບ່ງປັນ</string>
+    <string name="action_open">ເປີດ</string>
+    <string name="action_remove">ລຶບອອກ</string>
+    <string name="action_rename">ປ່ຽນຊື່</string>
+    <string name="action_unlock">ປົດລັອກ</string>
+    <string name="action_add_wallet">ເພີ່ມກະເປົາ</string>
+    <string name="action_view">ເບິ່ງ</string>
+    <string name="action_refresh">ໂຫຼດຄືນ</string>
+    <string name="action_reconnect">ເຊື່ອມຕໍ່ຄືນ</string>
+    <string name="action_review">ກວດສອບ</string>
+    <string name="action_sign_send">ເຊັນ ແລະ ສົ່ງ</string>
+    <string name="action_new_address">ທີ່ຢູ່ໃໝ່</string>
+    <string name="action_scan_qr">ສະແກນລະຫັດ QR</string>
+    <string name="action_lock">ລັອກ</string>
+    <string name="action_lock_app">ລັອກແອັບ</string>
+    <string name="action_copy_xpub">ສຳເນົາ xpub</string>
+    <string name="action_recovery_phrase">ວະລີກູ້ຄືນ</string>
+    <string name="toast_copied">ສຳເນົາແລ້ວ</string>
+    <string name="cd_dismiss">ປິດ</string>
+
+    <string name="onboard_add_title">ເພີ່ມກະເປົາ</string>
+    <string name="onboard_tagline">ກະເປົາແບບບໍ່ຮັກສາໃຫ້ສຳລັບ Bitcoin XBT ແລະ Bitcoin BTC</string>
+    <string name="onboard_create">ສ້າງກະເປົາໃໝ່</string>
+    <string name="onboard_restore">ກູ້ຄືນຈາກວະລີກູ້ຄືນ</string>
+
+    <string name="gen_title">ເພີ່ມຄວາມສຸ່ມເລັກນ້ອຍ</string>
+    <string name="gen_body">ໂທລະສັບຂອງທ່ານໄດ້ສ້າງ seed ທີ່ປອດໄພແລ້ວ. ເຂຍ່ານມັນ — ຫຼື ຂີດຂຽນເທິງແຜ່ນ — ເພື່ອປະສົມ entropy ເພີ່ມເຕີມຈາກເຊັນເຊີການເຄື່ອນໄຫວ ແລະ ຄວາມແປປວນຂອງເວລາ. ເພື່ອຄວາມປອດໄພ.</string>
+    <string name="gen_words_24">24 ຄຳ</string>
+    <string name="gen_words_12">12 ຄຳ</string>
+    <string name="gen_words_hint">ທັງສອງແບບປອດໄພ; 12 ຂຽນລົງງ່າຍກວ່າ.</string>
+    <string name="gen_pad_hint">ເຂຍ່ານ ຫຼື ຂີດຂຽນທີ່ນີ້</string>
+    <string name="gen_entropy_full">entropy ເພີ່ມເຕີມຫຼວງຫຼາຍ — seed ພື້ນຖານປອດໄພແລ້ວ</string>
+    <string name="gen_entropy_partial">ປະສົມ bit ເພີ່ມເຕີມ ~%1$d</string>
+    <string name="gen_generate">ສ້າງກະເປົາ</string>
+
+    <string name="create_phrase_title">ວະລີກູ້ຄືນຂອງທ່ານ</string>
+    <string name="create_phrase_body">ຂຽນ %1$d ຄຳເຫຼົ່ານີ້ໃສ່ເຈ້ຍ, ແບບອອບໄລນ໌. ຜູ້ໃດທີ່ມີພວກມັນຄວບຄຸມເງິນທຶນຂອງທ່ານ.</string>
+    <string name="create_passphrase_hint">«ຄຳທີ 25» — ຄວາມລັບເພີ່ມເຕີມ ທີ່ບໍ່ຖືກເກັບໄວ້. ຖ້າທ່ານຕັ້ງ, ການກູ້ຄືນຕ້ອງມີທັງວະລີ ແລະ ອັນນີ້. ຖ້າບໍ່ແນ່ໃຈ ໃຫ້ປະໄວ້ຫວ່າງ.</string>
+    <string name="create_ack">ຂ້ອຍໄດ້ຂຽນວະລີໄວ້ແລ້ວ</string>
+
+    <string name="restore_title">ກູ້ຄືນກະເປົາ</string>
+    <string name="restore_body">ໃສ່ 12 ຫຼື 24 ຄຳຂອງທ່ານ, ແຍກດ້ວຍຍະຫວ່າງ.</string>
+    <string name="restore_clone_hint">ຫຼັງຈາກເພີ່ມແລ້ວ ທ່ານຍັງສາມາດເອົາກະເປົານີ້ໄປໃສ່ %1$s ຈາກ «ຈັດການກະເປົາ» ໄດ້ — ວະລີດຽວກັນ, ທີ່ຢູ່ດຽວກັນ.</string>
+    <string name="action_restore">ກູ້ຄືນ</string>
+
+    <string name="field_wallet_name">ຊື່ກະເປົາ</string>
+    <string name="field_passphrase">ວະລີຜ່ານ BIP-39 (ທາງເລືອກ)</string>
+    <string name="field_app_password">ລະຫັດຜ່ານແອັບ</string>
+    <string name="field_confirm_password">ຢືນຢັນລະຫັດຜ່ານ</string>
+    <string name="field_to_address">ທີ່ຢູ່ຜູ້ຮັບ</string>
+    <string name="field_amount">ຈຳນວນ</string>
+    <string name="field_custom_feerate">sat/vB ກຳນົດເອງ (ທາງເລືອກ)</string>
+
+    <string name="reveal_title">ວະລີກູ້ຄືນ</string>
+    <string name="reveal_warning">ຜູ້ໃດກໍຕາມທີ່ເຫັນຄຳເຫຼົ່ານີ້ — ພ້ອມກັບວະລີຜ່ານ, ຖ້າຕັ້ງໄວ້ — ສາມາດໃຊ້ຈ່າຍຈາກກະເປົານີ້ໄດ້. ເບິ່ງພວກມັນສະເພາະໃນບ່ອນສ່ວນຕົວເທົ່ານັ້ນ. ຢ່າພິມພວກມັນໃສ່ເວັບໄຊ ຫຼື ແອັບເດັດຂາດ. ພາບໜ້າຈໍຖືກບລັອກຢູ່ນີ້.</string>
+    <string name="reveal_failed">ບໍ່ສາມາດຖອດລະຫັດກະເປົານີ້ໄດ້.</string>
+    <string name="reveal_passphrase_label">ວະລີຜ່ານ BIP-39</string>
+    <string name="reveal_no_passphrase">ບໍ່ມີວະລີຜ່ານ BIP-39 ໃນກະເປົານີ້.</string>
+
+    <string name="nav_home">ໜ້າຫຼັກ</string>
+    <string name="nav_wallet">ກະເປົາ</string>
+    <string name="nav_settings">ການຕັ້ງຄ່າ</string>
+    <string name="tab_receive">ຮັບ</string>
+    <string name="tab_send">ສົ່ງ</string>
+    <string name="tab_history">ປະຫວັດ</string>
+
+    <string name="home_title">ກະເປົາຂອງທ່ານ</string>
+    <string name="home_open">ເປີດຢູ່</string>
+    <string name="home_tap_to_open">ແຕະເພື່ອເປີດ</string>
+    <string name="wallets_max">ຮອດຂີດຈຳກັດສູງສຸດ %1$d ກະເປົາແລ້ວ.</string>
+
+    <string name="lock_password_prompt">ໃສ່ລະຫັດຜ່ານແອັບຂອງທ່ານ.</string>
+    <string name="biometric_setup_title">ຕັ້ງຄ່າການລັອກແອັບ</string>
+    <string name="biometric_unlock_title">ປົດລັອກ Fortis Wallet</string>
+    <string name="biometric_subtitle">Fortis Wallet</string>
+    <string name="biometric_invalidated">ການລັອກໜ້າຈໍຂອງອຸປະກອນທ່ານປ່ຽນແປງແລ້ວ, ດັ່ງນັ້ນແອັບບໍ່ສາມາດປົດລັອກຢູ່ນີ້ໄດ້ອີກ. ຕິດຕັ້ງຄືນ ແລະ ກູ້ຄືນແຕ່ລະກະເປົາຈາກວະລີກູ້ຄືນຂອງມັນ.</string>
+    <string name="lock_choice_use_biometric">ລັອກແອັບດ້ວຍລາຍນິ້ວມື ຫຼື PIN</string>
+    <string name="lock_choice_biometric_note">ການປົດລັອກຄັ້ງດຽວເປີດກະເປົາທັງໝົດຂອງທ່ານ. ບໍ່ມີລະຫັດຜ່ານໃຫ້ຈື່ — ລາຍນິ້ວມື/ໃບໜ້າ ຫຼື PIN ລັອກໜ້າຈໍຂອງອຸປະກອນທ່ານ ໃຫ້ທ່ານເຂົ້າໄດ້.</string>
+    <string name="lock_choice_password_note">ລະຫັດຜ່ານນີ້ປົດລັອກແອັບ ແລະ ທຸກກະເປົາໃນນັ້ນ.</string>
+
+    <string name="settings_title">ການຕັ້ງຄ່າ</string>
+    <string name="settings_wallets">ກະເປົາ</string>
+    <string name="settings_security">ຄວາມປອດໄພ</string>
+    <string name="settings_connection">ການເຊື່ອມຕໍ່</string>
+    <string name="settings_app_lock">ການລັອກແອັບ</string>
+    <string name="lock_mode_biometric">ລາຍນິ້ວມື / PIN ອຸປະກອນ</string>
+    <string name="lock_mode_password">ລະຫັດຜ່ານ</string>
+    <string name="settings_one_unlock">ການປົດລັອກຄັ້ງດຽວເປີດທຸກກະເປົາໃນແອັບ.</string>
+    <string name="settings_language">ພາສາ</string>
+    <string name="language_system_default">ຄ່າເລີ່ມຕົ້ນຂອງລະບົບ</string>
+    <string name="settings_status">ສະຖານະ</string>
+    <string name="settings_chain_height">ຄວາມສູງຂອງເຄນ</string>
+    <string name="settings_degraded_note">ບໍ່ສາມາດເຂົ້າເຖິງບໍລິການ fortis — ກຳລັງໃຊ້ຂໍ້ມູນບລັອກສາທາລະນະຊົ່ວຄາວ. ມັນຈະສະຫຼັບກັບຄືນໂດຍອັດຕະໂນມັດ.</string>
+    <string name="settings_version">fortis %1$s</string>
+    <string name="xpub_loading">ຍັງກຳລັງໂຫຼດ — ລອງໃໝ່</string>
+    <string name="also_add_on">ເພີ່ມໃສ່ %1$s ນຳ</string>
+    <string name="dialog_rename_title">ປ່ຽນຊື່ກະເປົາ</string>
+    <string name="dialog_reveal_title">ສະແດງວະລີກູ້ຄືນສຳລັບ %1$s ບໍ?</string>
+    <string name="dialog_reveal_body">ວະລີກູ້ຄືນ (ແລະ ວະລີຜ່ານ, ຖ້າທ່ານຕັ້ງໄວ້) ແມ່ນສິ່ງດຽວທີ່ສາມາດກູ້ຄືນກະເປົານີ້ໄດ້ — ແລະ ຜູ້ໃດທີ່ມີມັນສາມາດໃຊ້ຈ່າຍເງິນທຶນຂອງທ່ານໄດ້. ເປີດເຜີຍມັນສະເພາະໃນບ່ອນສ່ວນຕົວ, ໂດຍບໍ່ມີໃຜເບິ່ງ. ໜ້າຈໍຕໍ່ໄປບລັອກພາບໜ້າຈໍ.</string>
+    <string name="dialog_remove_title">ລຶບ %1$s ອອກບໍ?</string>
+    <string name="dialog_remove_body">ນີ້ພຽງແຕ່ລຶບກະເປົາອອກຈາກແອັບນີ້. ບໍ່ມີຫຍັງປ່ຽນແປງໃນ blockchain, ແລະ ທ່ານສາມາດເພີ່ມມັນຄືນໄດ້ທຸກເມື່ອດ້ວຍວະລີກູ້ຄືນຂອງມັນ (ແລະ ວະລີຜ່ານ, ຖ້າທ່ານຕັ້ງໄວ້). ໃຫ້ແນ່ໃຈວ່າວະລີໄດ້ຂຽນໄວ້ແລ້ວ.</string>
+
+    <string name="status_offline">ອອບໄລນ໌</string>
+    <string name="status_rescanning">ກຳລັງສະແກນຄືນ %1$d%%</string>
+    <string name="status_limited">ບໍລິການຈຳກັດ</string>
+    <string name="status_connected">ເຊື່ອມຕໍ່ແລ້ວ</string>
+    <string name="status_syncing">ກຳລັງຊິງຄ໌</string>
+
+    <string name="wallet_none_open">ບໍ່ມີກະເປົາເປີດ</string>
+    <string name="wallet_choose">ເລືອກກະເປົາ</string>
+    <string name="wallet_pending">%1$s %2$s ກຳລັງລໍຖ້າ</string>
+    <string name="wallet_block">ບລັອກ %1$s</string>
+    <string name="wallet_rescanning">ກຳລັງສະແກນຄືນ %1$d%%</string>
+    <string name="wallet_syncing">ກຳລັງຊິງຄ໌</string>
+    <string name="wallet_limited_suffix">%1$s  ·  ບໍລິການຈຳກັດ</string>
+    <string name="wallet_connecting">ກຳລັງເຊື່ອມຕໍ່…</string>
+    <string name="fiat_approx">≈ %1$s</string>
+
+    <string name="sent_title">ສົ່ງການຊຳລະແລ້ວ</string>
+    <string name="sent_txid">%1$s… · ແຕະເພື່ອສຳເນົາ</string>
+
+    <string name="cd_address_qr">ລະຫັດ QR ຂອງທີ່ຢູ່</string>
+    <string name="receive_address_n">ທີ່ຢູ່ #%1$d · ແຕະເພື່ອສຳເນົາ</string>
+    <string name="share_address_chooser">ແບ່ງປັນທີ່ຢູ່</string>
+
+    <string name="scan_prompt">ສະແກນທີ່ຢູ່ການຊຳລະ</string>
+    <string name="send_sweep">ສົ່ງສູງສຸດ (sweep)</string>
+    <string name="send_alt_coin">= %1$s %2$s</string>
+    <string name="send_alt_sat">= %1$s sat</string>
+    <string name="send_alt_fiat">  ·  %1$s</string>
+    <string name="fee_fast">ໄວ</string>
+    <string name="fee_normal">ປົກກະຕິ</string>
+    <string name="fee_slow">ຊ້າ</string>
+    <string name="send_replay_protect">ການປ້ອງກັນການຫຼິ້ນຄືນ XBT (OP_RETURN 100 ໄບຕ໌)</string>
+    <string name="send_replay_note">ເພີ່ມຄ່າທຳນຽມ ~110 vB. ບໍ່ໄດ້ມາດຕະຖານໃນ relay Bitcoin ຄ່າເລີ່ມຕົ້ນ — ອອກອາກາດຜ່ານ node/ບໍລິການ ທີ່ຮັບ OP_RETURN ຂະໜາດໃຫຍ່.</string>
+    <string name="send_service_fee">ຄ່າບໍລິການ: %1$s%% ຂອງຈຳນວນທີ່ສົ່ງ (ຢ່າງໜ້ອຍ %2$d sat) — ຮອງຮັບ node ທີ່ໂຮສນີ້.</string>
+    <string name="cd_amount_unit">ໜ່ວຍຈຳນວນ</string>
+    <string name="unit_sat">sat</string>
+
+    <string name="history_empty">ຍັງບໍ່ມີທຸລະກຳ</string>
+    <string name="history_send">ສົ່ງ</string>
+    <string name="history_receive">ຮັບ</string>
+    <string name="history_row_subtitle">%1$s · %2$s…</string>
+    <string name="history_pending">ກຳລັງລໍຖ້າ</string>
+    <string name="history_conf_n">%1$d ການຢືນຢັນ</string>
+    <string name="history_confirmed">ຢືນຢັນແລ້ວ</string>
+    <string name="history_hint">ແຕະທຸລະກຳເພື່ອເປີດມັນໃນ explorer · ກົດຄ້າງເພື່ອສຳເນົາ id</string>
+
+    <string name="confirm_sweep_title">ຢືນຢັນ sweep</string>
+    <string name="confirm_payment_title">ຢືນຢັນການຊຳລະ</string>
+    <string name="confirm_to">ຫາ</string>
+    <string name="confirm_amount">ຈຳນວນ</string>
+    <string name="confirm_network_fee">ຄ່າທຳນຽມເຄືອຂ່າຍ</string>
+    <string name="confirm_network_fee_value">%1$s %2$s · %3$d sat/vB</string>
+    <string name="confirm_service_fee">ຄ່າບໍລິການ</string>
+    <string name="confirm_change">ເງິນທອນ</string>
+    <string name="confirm_replay">ການປ້ອງກັນການຫຼິ້ນຄືນ</string>
+    <string name="confirm_replay_value">ເປີດ · OP_RETURN 100 ໄບຕ໌</string>
+    <string name="confirm_total">ລວມ</string>
+    <string name="value_with_fiat">%1$s %2$s  ·  %3$s</string>
+
+    <string name="mnemonic_not_in_list">%1$d ບໍ່ຢູ່ໃນລາຍການຄຳ</string>
+    <string name="mnemonic_looks_good">ເບິ່ງໂອເຄ</string>
+    <string name="mnemonic_status">%1$s  ·  %2$s</string>
+
+    <string name="error_wallet_max">ທ່ານສາມາດເກັບໄດ້ເຖິງ %1$d ກະເປົາໃນອຸປະກອນດຽວ.</string>
+    <string name="error_clone_exists">«%1$s» ຢູ່ໃນ %2$s ແລ້ວ.</string>
+    <string name="error_lock_setup_failed">ການຕັ້ງຄ່າການລັອກແອັບລົ້ມເຫຼວ</string>
+    <string name="error_enter_amount">ໃສ່ຈຳນວນ</string>
+    <string name="error_no_coins">ບໍ່ມີຫຼຽນທີ່ຢືນຢັນແລ້ວໃຫ້ໃຊ້ຈ່າຍ</string>
+    <string name="error_open_wallet">ບໍ່ສາມາດເປີດກະເປົາໄດ້</string>
+
+    <plurals name="word_count">
+        <item quantity="other">%1$d ຄຳ</item>
+    </plurals>
+</resources>

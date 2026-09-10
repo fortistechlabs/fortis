@@ -1,0 +1,189 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">fortis</string>
+
+    <string name="action_back">Terug</string>
+    <string name="action_cancel">Kanselleer</string>
+    <string name="action_continue">Gaan voort</string>
+    <string name="action_save">Stoor</string>
+    <string name="action_done">Klaar</string>
+    <string name="action_show">Wys</string>
+    <string name="action_hide">Versteek</string>
+    <string name="action_copy">Kopieer</string>
+    <string name="action_share">Deel</string>
+    <string name="action_open">Maak oop</string>
+    <string name="action_remove">Verwyder</string>
+    <string name="action_rename">Hernoem</string>
+    <string name="action_unlock">Ontsluit</string>
+    <string name="action_add_wallet">Voeg beursie by</string>
+    <string name="action_view">Bekyk</string>
+    <string name="action_refresh">Verfris</string>
+    <string name="action_reconnect">Herkoppel</string>
+    <string name="action_review">Hersien</string>
+    <string name="action_sign_send">Teken en stuur</string>
+    <string name="action_new_address">Nuwe adres</string>
+    <string name="action_scan_qr">Skandeer QR-kode</string>
+    <string name="action_lock">Sluit</string>
+    <string name="action_lock_app">Sluit die app</string>
+    <string name="action_copy_xpub">Kopieer xpub</string>
+    <string name="action_recovery_phrase">Herstelfrase</string>
+    <string name="toast_copied">Gekopieer</string>
+    <string name="cd_dismiss">Maak toe</string>
+
+    <string name="onboard_add_title">Voeg \'n beursie by</string>
+    <string name="onboard_tagline">\'n nie-bewaarnemende beursie vir Bitcoin XBT en Bitcoin BTC</string>
+    <string name="onboard_create">Skep \'n nuwe beursie</string>
+    <string name="onboard_restore">Herstel vanaf \'n herstelfrase</string>
+
+    <string name="gen_title">Voeg \'n bietjie willekeurigheid by</string>
+    <string name="gen_body">Jou foon het reeds \'n veilige saad gegenereer. Skud dit — of krap op die blok — om ekstra entropie uit die bewegingsensors en tydsberekeningswisseling in te meng. Vir ingeval.</string>
+    <string name="gen_words_24">24 woorde</string>
+    <string name="gen_words_12">12 woorde</string>
+    <string name="gen_words_hint">Albei is veilig; 12 is makliker om neer te skryf.</string>
+    <string name="gen_pad_hint">skud, of krap hier</string>
+    <string name="gen_entropy_full">volop ekstra entropie — die basissaad is reeds veilig</string>
+    <string name="gen_entropy_partial">~%1$d ekstra bisse ingemeng</string>
+    <string name="gen_generate">Genereer beursie</string>
+
+    <string name="create_phrase_title">Jou herstelfrase</string>
+    <string name="create_phrase_body">Skryf hierdie %1$d woorde op papier, vanlyn. Enigiemand met hulle beheer jou fondse.</string>
+    <string name="create_passphrase_hint">\'n \"25ste woord\" — \'n ekstra geheim wat nie gestoor word nie. As jy een stel, benodig jy sowel die frase as hierdie om te herstel. Los leeg as jy onseker is.</string>
+    <string name="create_ack">Ek het die frase neergeskryf</string>
+
+    <string name="restore_title">Herstel beursie</string>
+    <string name="restore_body">Voer jou 12 of 24 woorde in, geskei deur spasies.</string>
+    <string name="restore_clone_hint">Nadat dit bygevoeg is, kan jy hierdie beursie ook op %1$s lys vanaf Bestuur beursies — dieselfde frase, dieselfde adresse.</string>
+    <string name="action_restore">Herstel</string>
+
+    <string name="field_wallet_name">Beursienaam</string>
+    <string name="field_passphrase">BIP-39-wagfrase (opsioneel)</string>
+    <string name="field_app_password">App-wagwoord</string>
+    <string name="field_confirm_password">Bevestig wagwoord</string>
+    <string name="field_to_address">Ontvangeradres</string>
+    <string name="field_amount">Bedrag</string>
+    <string name="field_custom_feerate">pasgemaakte sat/vB (opsioneel)</string>
+
+    <string name="reveal_title">Herstelfrase</string>
+    <string name="reveal_warning">Enigiemand wat hierdie woorde sien — plus die wagfrase, indien gestel — kan hierdie beursie bestee. Kyk net na hulle op \'n private plek. Tik hulle nooit in \'n webwerf of app in nie. Skermkiekies is hier geblokkeer.</string>
+    <string name="reveal_failed">Kon nie hierdie beursie ontsleutel nie.</string>
+    <string name="reveal_passphrase_label">BIP-39-wagfrase</string>
+    <string name="reveal_no_passphrase">Geen BIP-39-wagfrase op hierdie beursie nie.</string>
+
+    <string name="nav_home">Tuis</string>
+    <string name="nav_wallet">Beursie</string>
+    <string name="nav_settings">Instellings</string>
+    <string name="tab_receive">Ontvang</string>
+    <string name="tab_send">Stuur</string>
+    <string name="tab_history">Geskiedenis</string>
+
+    <string name="home_title">Jou beursies</string>
+    <string name="home_open">oop</string>
+    <string name="home_tap_to_open">tik om oop te maak</string>
+    <string name="wallets_max">Maksimum van %1$d beursies bereik.</string>
+
+    <string name="lock_password_prompt">Voer jou app-wagwoord in.</string>
+    <string name="biometric_setup_title">Stel app-slot op</string>
+    <string name="biometric_unlock_title">Ontsluit Fortis Wallet</string>
+    <string name="biometric_subtitle">Fortis Wallet</string>
+    <string name="biometric_invalidated">Jou toestel se skermslot het verander, dus kan die app nie meer hier ontsluit word nie. Herinstalleer en herstel elke beursie vanaf sy herstelfrase.</string>
+    <string name="lock_choice_use_biometric">Sluit die app met vingerafdruk of PIN</string>
+    <string name="lock_choice_biometric_note">Een ontsluiting maak al jou beursies oop. Geen wagwoord om te onthou nie — jou toestel se vingerafdruk/gesig of skermslot-PIN laat jou in.</string>
+    <string name="lock_choice_password_note">Hierdie wagwoord ontsluit die app en elke beursie daarin.</string>
+
+    <string name="settings_title">Instellings</string>
+    <string name="settings_wallets">Beursies</string>
+    <string name="settings_security">Sekuriteit</string>
+    <string name="settings_connection">Verbinding</string>
+    <string name="settings_app_lock">App-slot</string>
+    <string name="lock_mode_biometric">Vingerafdruk / toestel-PIN</string>
+    <string name="lock_mode_password">Wagwoord</string>
+    <string name="settings_one_unlock">Een ontsluiting maak elke beursie in die app oop.</string>
+    <string name="settings_language">Taal</string>
+    <string name="language_system_default">Stelselverstek</string>
+    <string name="settings_status">Status</string>
+    <string name="settings_chain_height">Kettinghoogte</string>
+    <string name="settings_degraded_note">Die fortis-diens is onbereikbaar — gebruik voorlopig openbare blokdata. Dit sal outomaties terugskakel.</string>
+    <string name="settings_version">fortis %1$s</string>
+    <string name="xpub_loading">laai steeds — probeer weer</string>
+    <string name="also_add_on">Voeg ook op %1$s by</string>
+    <string name="dialog_rename_title">Hernoem beursie</string>
+    <string name="dialog_reveal_title">Wys die herstelfrase vir %1$s?</string>
+    <string name="dialog_reveal_body">Die herstelfrase (en wagfrase, as jy een gestel het) is die enigste ding wat hierdie beursie kan herstel — en enigiemand wat dit het, kan jou fondse bestee. Onthul dit net op \'n private plek, met niemand wat kyk nie. Die volgende skerm blokkeer skermkiekies.</string>
+    <string name="dialog_remove_title">Verwyder %1$s?</string>
+    <string name="dialog_remove_body">Dit verwyder die beursie net uit hierdie app. Niks verander op die blokketting nie, en jy kan dit enige tyd weer byvoeg met sy herstelfrase (en wagfrase, as jy een gestel het). Maak seker die frase is neergeskryf.</string>
+
+    <string name="status_offline">vanlyn</string>
+    <string name="status_rescanning">herskandeer %1$d%%</string>
+    <string name="status_limited">beperkte diens</string>
+    <string name="status_connected">gekoppel</string>
+    <string name="status_syncing">sinkroniseer</string>
+
+    <string name="wallet_none_open">Geen beursie oop nie</string>
+    <string name="wallet_choose">Kies \'n beursie</string>
+    <string name="wallet_pending">%1$s %2$s hangende</string>
+    <string name="wallet_block">blok %1$s</string>
+    <string name="wallet_rescanning">herskandeer %1$d%%</string>
+    <string name="wallet_syncing">sinkroniseer</string>
+    <string name="wallet_limited_suffix">%1$s  ·  beperkte diens</string>
+    <string name="wallet_connecting">koppel tans…</string>
+    <string name="fiat_approx">≈ %1$s</string>
+
+    <string name="sent_title">Betaling gestuur</string>
+    <string name="sent_txid">%1$s… · tik om te kopieer</string>
+
+    <string name="cd_address_qr">adres-QR-kode</string>
+    <string name="receive_address_n">adres #%1$d · tik om te kopieer</string>
+    <string name="share_address_chooser">Deel adres</string>
+
+    <string name="scan_prompt">Skandeer \'n betaaladres</string>
+    <string name="send_sweep">Stuur maksimum (sweep)</string>
+    <string name="send_alt_coin">= %1$s %2$s</string>
+    <string name="send_alt_sat">= %1$s sat</string>
+    <string name="send_alt_fiat">  ·  %1$s</string>
+    <string name="fee_fast">Vinnig</string>
+    <string name="fee_normal">Normaal</string>
+    <string name="fee_slow">Stadig</string>
+    <string name="send_replay_protect">XBT-herspeelbeskerming (100-greep OP_RETURN)</string>
+    <string name="send_replay_note">Voeg ~110 vB fooi by. Nie-standaard op die verstek-Bitcoin-aflos — saai uit via \'n nodus/diens wat groot OP_RETURN aanvaar.</string>
+    <string name="send_service_fee">Diensfooi: %1$s%% van die bedrag gestuur (min %2$d sat) — ondersteun hierdie gasheernodus.</string>
+    <string name="cd_amount_unit">bedrag-eenheid</string>
+    <string name="unit_sat">sat</string>
+
+    <string name="history_empty">nog geen transaksies nie</string>
+    <string name="history_send">stuur</string>
+    <string name="history_receive">ontvang</string>
+    <string name="history_row_subtitle">%1$s · %2$s…</string>
+    <string name="history_pending">hangende</string>
+    <string name="history_conf_n">%1$d bev.</string>
+    <string name="history_confirmed">bevestig</string>
+    <string name="history_hint">tik op \'n transaksie om dit in die verkenner oop te maak · hou in om die id te kopieer</string>
+
+    <string name="confirm_sweep_title">Bevestig sweep</string>
+    <string name="confirm_payment_title">Bevestig betaling</string>
+    <string name="confirm_to">Aan</string>
+    <string name="confirm_amount">Bedrag</string>
+    <string name="confirm_network_fee">Netwerkfooi</string>
+    <string name="confirm_network_fee_value">%1$s %2$s · %3$d sat/vB</string>
+    <string name="confirm_service_fee">Diensfooi</string>
+    <string name="confirm_change">Kleingeld</string>
+    <string name="confirm_replay">Herspeelbeskerming</string>
+    <string name="confirm_replay_value">aan · 100-greep OP_RETURN</string>
+    <string name="confirm_total">Totaal</string>
+    <string name="value_with_fiat">%1$s %2$s  ·  %3$s</string>
+
+    <string name="mnemonic_not_in_list">%1$d nie in die woordlys nie</string>
+    <string name="mnemonic_looks_good">lyk goed</string>
+    <string name="mnemonic_status">%1$s  ·  %2$s</string>
+
+    <string name="error_wallet_max">Jy kan tot %1$d beursies op een toestel hou.</string>
+    <string name="error_clone_exists">“%1$s” is reeds op %2$s.</string>
+    <string name="error_lock_setup_failed">app-slot-opstelling het misluk</string>
+    <string name="error_enter_amount">voer \'n bedrag in</string>
+    <string name="error_no_coins">geen bevestigde munte om te bestee nie</string>
+    <string name="error_open_wallet">kon nie beursie oopmaak nie</string>
+
+    <plurals name="word_count">
+        <item quantity="one">%1$d woord</item>
+        <item quantity="other">%1$d woorde</item>
+    </plurals>
+</resources>

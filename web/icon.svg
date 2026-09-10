@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="512" y2="512" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#0E1424"/><stop offset="1" stop-color="#080A12"/>
+    </linearGradient>
+    <linearGradient id="sh" x1="150" y1="60" x2="360" y2="470" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#8FBCFF"/><stop offset="1" stop-color="#4A73D0"/>
+    </linearGradient>
+    <clipPath id="gate"><path d="M44,81 V51 a10,10 0 0 1 20,0 V81 Z"/></clipPath>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="url(#bg)"/>
+  <g transform="translate(-25 -33) scale(5.3)">
+    <path d="M22,22 h8 v8 h6 v-8 h8 v8 h6 v-8 h8 v8 h6 v-8 h8 v8 h6 v-8 h8 V58 C86,72 73,82 54,89 C35,82 22,72 22,58 Z"
+          fill="url(#sh)" stroke="#233B6A" stroke-width="1.3" stroke-linejoin="round"/>
+    <path d="M44,81 V51 a10,10 0 0 1 20,0 V81 Z" fill="#0B0D18"/>
+    <g clip-path="url(#gate)" stroke="#8FBCFF" stroke-width="2">
+      <path d="M49,49 V82 M54,47 V82 M59,49 V82"/>
+      <path d="M43,56 H65 M43,64 H65 M43,72 H65"/>
+    </g>
+  </g>
+</svg>

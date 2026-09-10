@@ -1,0 +1,190 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">fortis</string>
+
+    <string name="action_back">Înapoi</string>
+    <string name="action_cancel">Anulează</string>
+    <string name="action_continue">Continuă</string>
+    <string name="action_save">Salvează</string>
+    <string name="action_done">Gata</string>
+    <string name="action_show">Afișează</string>
+    <string name="action_hide">Ascunde</string>
+    <string name="action_copy">Copiază</string>
+    <string name="action_share">Distribuie</string>
+    <string name="action_open">Deschide</string>
+    <string name="action_remove">Elimină</string>
+    <string name="action_rename">Redenumește</string>
+    <string name="action_unlock">Deblochează</string>
+    <string name="action_add_wallet">Adaugă portofel</string>
+    <string name="action_view">Vizualizează</string>
+    <string name="action_refresh">Reîmprospătează</string>
+    <string name="action_reconnect">Reconectează</string>
+    <string name="action_review">Verifică</string>
+    <string name="action_sign_send">Semnează și trimite</string>
+    <string name="action_new_address">Adresă nouă</string>
+    <string name="action_scan_qr">Scanează codul QR</string>
+    <string name="action_lock">Blochează</string>
+    <string name="action_lock_app">Blochează aplicația</string>
+    <string name="action_copy_xpub">Copiază xpub</string>
+    <string name="action_recovery_phrase">Frază de recuperare</string>
+    <string name="toast_copied">Copiat</string>
+    <string name="cd_dismiss">Închide</string>
+
+    <string name="onboard_add_title">Adaugă un portofel</string>
+    <string name="onboard_tagline">un portofel non-custodial pentru Bitcoin XBT și Bitcoin BTC</string>
+    <string name="onboard_create">Creează un portofel nou</string>
+    <string name="onboard_restore">Restaurează dintr-o frază de recuperare</string>
+
+    <string name="gen_title">Adaugă puțină aleatorietate</string>
+    <string name="gen_body">Telefonul tău a generat deja un seed sigur. Scutură-l — sau mâzgălește pe zonă — pentru a amesteca entropie suplimentară din senzorii de mișcare și variațiile de timp. Pentru siguranță.</string>
+    <string name="gen_words_24">24 de cuvinte</string>
+    <string name="gen_words_12">12 cuvinte</string>
+    <string name="gen_words_hint">Ambele sunt sigure; 12 se notează mai ușor.</string>
+    <string name="gen_pad_hint">scutură sau mâzgălește aici</string>
+    <string name="gen_entropy_full">multă entropie suplimentară — seedul de bază este deja sigur</string>
+    <string name="gen_entropy_partial">~%1$d biți suplimentari amestecați</string>
+    <string name="gen_generate">Generează portofelul</string>
+
+    <string name="create_phrase_title">Fraza ta de recuperare</string>
+    <string name="create_phrase_body">Scrie aceste %1$d cuvinte pe hârtie, offline. Oricine le deține îți controlează fondurile.</string>
+    <string name="create_passphrase_hint">Un „al 25-lea cuvânt” — un secret suplimentar, care nu este stocat. Dacă setezi unul, ai nevoie atât de frază, cât și de acesta pentru restaurare. Lasă gol dacă nu ești sigur.</string>
+    <string name="create_ack">Am notat fraza</string>
+
+    <string name="restore_title">Restaurează portofelul</string>
+    <string name="restore_body">Introdu cele 12 sau 24 de cuvinte, separate prin spații.</string>
+    <string name="restore_clone_hint">După adăugare poți lista acest portofel și pe %1$s din Gestionează portofelele — aceeași frază, aceleași adrese.</string>
+    <string name="action_restore">Restaurează</string>
+
+    <string name="field_wallet_name">Numele portofelului</string>
+    <string name="field_passphrase">Frază-parolă BIP-39 (opțional)</string>
+    <string name="field_app_password">Parola aplicației</string>
+    <string name="field_confirm_password">Confirmă parola</string>
+    <string name="field_to_address">Adresa destinatarului</string>
+    <string name="field_amount">Sumă</string>
+    <string name="field_custom_feerate">sat/vB personalizat (opțional)</string>
+
+    <string name="reveal_title">Frază de recuperare</string>
+    <string name="reveal_warning">Oricine vede aceste cuvinte — plus fraza-parolă, dacă este setată — poate cheltui acest portofel. Privește-le doar într-un loc privat. Nu le introduce niciodată pe un site web sau într-o aplicație. Capturile de ecran sunt blocate aici.</string>
+    <string name="reveal_failed">Nu s-a putut decripta acest portofel.</string>
+    <string name="reveal_passphrase_label">Frază-parolă BIP-39</string>
+    <string name="reveal_no_passphrase">Nicio frază-parolă BIP-39 pe acest portofel.</string>
+
+    <string name="nav_home">Acasă</string>
+    <string name="nav_wallet">Portofel</string>
+    <string name="nav_settings">Setări</string>
+    <string name="tab_receive">Primește</string>
+    <string name="tab_send">Trimite</string>
+    <string name="tab_history">Istoric</string>
+
+    <string name="home_title">Portofelele tale</string>
+    <string name="home_open">deschis</string>
+    <string name="home_tap_to_open">atinge pentru a deschide</string>
+    <string name="wallets_max">S-a atins maximul de %1$d portofele.</string>
+
+    <string name="lock_password_prompt">Introdu parola aplicației.</string>
+    <string name="biometric_setup_title">Configurează blocarea aplicației</string>
+    <string name="biometric_unlock_title">Deblochează Fortis Wallet</string>
+    <string name="biometric_subtitle">Fortis Wallet</string>
+    <string name="biometric_invalidated">Blocarea ecranului dispozitivului tău s-a schimbat, așa că aplicația nu mai poate fi deblocată aici. Reinstaleaz-o și restaurează fiecare portofel din fraza sa de recuperare.</string>
+    <string name="lock_choice_use_biometric">Blochează aplicația cu amprentă sau PIN</string>
+    <string name="lock_choice_biometric_note">O singură deblocare deschide toate portofelele tale. Nicio parolă de reținut — amprenta/fața sau PIN-ul de blocare a ecranului dispozitivului te lasă să intri.</string>
+    <string name="lock_choice_password_note">Această parolă deblochează aplicația și fiecare portofel din ea.</string>
+
+    <string name="settings_title">Setări</string>
+    <string name="settings_wallets">Portofele</string>
+    <string name="settings_security">Securitate</string>
+    <string name="settings_connection">Conexiune</string>
+    <string name="settings_app_lock">Blocarea aplicației</string>
+    <string name="lock_mode_biometric">Amprentă / PIN-ul dispozitivului</string>
+    <string name="lock_mode_password">Parolă</string>
+    <string name="settings_one_unlock">O singură deblocare deschide fiecare portofel din aplicație.</string>
+    <string name="settings_language">Limbă</string>
+    <string name="language_system_default">Implicit din sistem</string>
+    <string name="settings_status">Stare</string>
+    <string name="settings_chain_height">Înălțimea lanțului</string>
+    <string name="settings_degraded_note">Serviciul fortis este inaccesibil — se folosesc deocamdată date publice despre blocuri. Va reveni automat.</string>
+    <string name="settings_version">fortis %1$s</string>
+    <string name="xpub_loading">încă se încarcă — încearcă din nou</string>
+    <string name="also_add_on">Adaugă și pe %1$s</string>
+    <string name="dialog_rename_title">Redenumește portofelul</string>
+    <string name="dialog_reveal_title">Afișezi fraza de recuperare pentru %1$s?</string>
+    <string name="dialog_reveal_body">Fraza de recuperare (și fraza-parolă, dacă ai setat una) este singurul lucru care poate restaura acest portofel — iar oricine o deține îți poate cheltui fondurile. Dezvăluie-o doar într-un loc privat, fără să te vadă nimeni. Ecranul următor blochează capturile de ecran.</string>
+    <string name="dialog_remove_title">Elimini %1$s?</string>
+    <string name="dialog_remove_body">Aceasta elimină portofelul doar din această aplicație. Nimic nu se schimbă pe blockchain și îl poți adăuga oricând înapoi cu fraza sa de recuperare (și fraza-parolă, dacă ai setat una). Asigură-te că fraza este notată.</string>
+
+    <string name="status_offline">offline</string>
+    <string name="status_rescanning">rescanare %1$d%%</string>
+    <string name="status_limited">serviciu limitat</string>
+    <string name="status_connected">conectat</string>
+    <string name="status_syncing">sincronizare</string>
+
+    <string name="wallet_none_open">Niciun portofel deschis</string>
+    <string name="wallet_choose">Alege un portofel</string>
+    <string name="wallet_pending">%1$s %2$s în așteptare</string>
+    <string name="wallet_block">blocul %1$s</string>
+    <string name="wallet_rescanning">rescanare %1$d%%</string>
+    <string name="wallet_syncing">sincronizare</string>
+    <string name="wallet_limited_suffix">%1$s  ·  serviciu limitat</string>
+    <string name="wallet_connecting">se conectează…</string>
+    <string name="fiat_approx">≈ %1$s</string>
+
+    <string name="sent_title">Plată trimisă</string>
+    <string name="sent_txid">%1$s… · atinge pentru a copia</string>
+
+    <string name="cd_address_qr">codul QR al adresei</string>
+    <string name="receive_address_n">adresa nr. %1$d · atinge pentru a copia</string>
+    <string name="share_address_chooser">Distribuie adresa</string>
+
+    <string name="scan_prompt">Scanează o adresă de plată</string>
+    <string name="send_sweep">Trimite maximul (sweep)</string>
+    <string name="send_alt_coin">= %1$s %2$s</string>
+    <string name="send_alt_sat">= %1$s sat</string>
+    <string name="send_alt_fiat">  ·  %1$s</string>
+    <string name="fee_fast">Rapid</string>
+    <string name="fee_normal">Normal</string>
+    <string name="fee_slow">Lent</string>
+    <string name="send_replay_protect">Protecție împotriva reluării XBT (OP_RETURN de 100 de octeți)</string>
+    <string name="send_replay_note">Adaugă ~110 vB comision. Nestandard pe releul Bitcoin implicit — difuzează printr-un nod/serviciu care acceptă OP_RETURN mari.</string>
+    <string name="send_service_fee">Comision de serviciu: %1$s%% din suma trimisă (min. %2$d sat) — susține acest nod găzduit.</string>
+    <string name="cd_amount_unit">unitatea sumei</string>
+    <string name="unit_sat">sat</string>
+
+    <string name="history_empty">încă nicio tranzacție</string>
+    <string name="history_send">trimitere</string>
+    <string name="history_receive">primire</string>
+    <string name="history_row_subtitle">%1$s · %2$s…</string>
+    <string name="history_pending">în așteptare</string>
+    <string name="history_conf_n">%1$d conf.</string>
+    <string name="history_confirmed">confirmată</string>
+    <string name="history_hint">atinge o tranzacție pentru a o deschide în explorator · ține apăsat pentru a copia id-ul</string>
+
+    <string name="confirm_sweep_title">Confirmă sweep</string>
+    <string name="confirm_payment_title">Confirmă plata</string>
+    <string name="confirm_to">Către</string>
+    <string name="confirm_amount">Sumă</string>
+    <string name="confirm_network_fee">Comision de rețea</string>
+    <string name="confirm_network_fee_value">%1$s %2$s · %3$d sat/vB</string>
+    <string name="confirm_service_fee">Comision de serviciu</string>
+    <string name="confirm_change">Rest</string>
+    <string name="confirm_replay">Protecție împotriva reluării</string>
+    <string name="confirm_replay_value">activată · OP_RETURN de 100 de octeți</string>
+    <string name="confirm_total">Total</string>
+    <string name="value_with_fiat">%1$s %2$s  ·  %3$s</string>
+
+    <string name="mnemonic_not_in_list">%1$d în afara listei de cuvinte</string>
+    <string name="mnemonic_looks_good">arată bine</string>
+    <string name="mnemonic_status">%1$s  ·  %2$s</string>
+
+    <string name="error_wallet_max">Poți păstra până la %1$d portofele pe un dispozitiv.</string>
+    <string name="error_clone_exists">„%1$s” este deja pe %2$s.</string>
+    <string name="error_lock_setup_failed">configurarea blocării aplicației a eșuat</string>
+    <string name="error_enter_amount">introdu o sumă</string>
+    <string name="error_no_coins">nicio monedă confirmată de cheltuit</string>
+    <string name="error_open_wallet">portofelul nu a putut fi deschis</string>
+
+    <plurals name="word_count">
+        <item quantity="one">%1$d cuvânt</item>
+        <item quantity="few">%1$d cuvinte</item>
+        <item quantity="other">%1$d de cuvinte</item>
+    </plurals>
+</resources>

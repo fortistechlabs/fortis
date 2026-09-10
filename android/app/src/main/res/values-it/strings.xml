@@ -1,0 +1,189 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">fortis</string>
+
+    <string name="action_back">Indietro</string>
+    <string name="action_cancel">Annulla</string>
+    <string name="action_continue">Continua</string>
+    <string name="action_save">Salva</string>
+    <string name="action_done">Fatto</string>
+    <string name="action_show">Mostra</string>
+    <string name="action_hide">Nascondi</string>
+    <string name="action_copy">Copia</string>
+    <string name="action_share">Condividi</string>
+    <string name="action_open">Apri</string>
+    <string name="action_remove">Rimuovi</string>
+    <string name="action_rename">Rinomina</string>
+    <string name="action_unlock">Sblocca</string>
+    <string name="action_add_wallet">Aggiungi wallet</string>
+    <string name="action_view">Visualizza</string>
+    <string name="action_refresh">Aggiorna</string>
+    <string name="action_reconnect">Riconnetti</string>
+    <string name="action_review">Rivedi</string>
+    <string name="action_sign_send">Firma e invia</string>
+    <string name="action_new_address">Nuovo indirizzo</string>
+    <string name="action_scan_qr">Scansiona codice QR</string>
+    <string name="action_lock">Blocca</string>
+    <string name="action_lock_app">Blocca l\'app</string>
+    <string name="action_copy_xpub">Copia xpub</string>
+    <string name="action_recovery_phrase">Frase di recupero</string>
+    <string name="toast_copied">Copiato</string>
+    <string name="cd_dismiss">Chiudi</string>
+
+    <string name="onboard_add_title">Aggiungi un wallet</string>
+    <string name="onboard_tagline">un wallet non custodiale per Bitcoin XBT e Bitcoin BTC</string>
+    <string name="onboard_create">Crea un nuovo wallet</string>
+    <string name="onboard_restore">Ripristina da una frase di recupero</string>
+
+    <string name="gen_title">Aggiungi un po\' di casualità</string>
+    <string name="gen_body">Il tuo telefono ha già generato un seed sicuro. Scuotilo — o scarabocchia sul riquadro — per aggiungere entropia extra dai sensori di movimento e dalle variazioni di tempo. Non si sa mai.</string>
+    <string name="gen_words_24">24 parole</string>
+    <string name="gen_words_12">12 parole</string>
+    <string name="gen_words_hint">Entrambe sono sicure; 12 è più facile da annotare.</string>
+    <string name="gen_pad_hint">scuoti o scarabocchia qui</string>
+    <string name="gen_entropy_full">entropia extra in abbondanza — il seed di base è già sicuro</string>
+    <string name="gen_entropy_partial">~%1$d bit extra aggiunti</string>
+    <string name="gen_generate">Genera wallet</string>
+
+    <string name="create_phrase_title">La tua frase di recupero</string>
+    <string name="create_phrase_body">Scrivi queste %1$d parole su carta, offline. Chi le possiede controlla i tuoi fondi.</string>
+    <string name="create_passphrase_hint">Una \"25ª parola\" — un segreto in più, non memorizzato. Se ne imposti una, per il ripristino ti serviranno sia la frase sia questa. Lascia vuoto se non sei sicuro.</string>
+    <string name="create_ack">Ho annotato la frase</string>
+
+    <string name="restore_title">Ripristina wallet</string>
+    <string name="restore_body">Inserisci le tue 12 o 24 parole, separate da spazi.</string>
+    <string name="restore_clone_hint">Dopo averlo aggiunto puoi elencare questo wallet anche su %1$s da Gestisci wallet — stessa frase, stessi indirizzi.</string>
+    <string name="action_restore">Ripristina</string>
+
+    <string name="field_wallet_name">Nome del wallet</string>
+    <string name="field_passphrase">Passphrase BIP-39 (facoltativa)</string>
+    <string name="field_app_password">Password dell\'app</string>
+    <string name="field_confirm_password">Conferma password</string>
+    <string name="field_to_address">Indirizzo destinatario</string>
+    <string name="field_amount">Importo</string>
+    <string name="field_custom_feerate">sat/vB personalizzato (facoltativo)</string>
+
+    <string name="reveal_title">Frase di recupero</string>
+    <string name="reveal_warning">Chiunque veda queste parole — più la passphrase, se impostata — può spendere questo wallet. Guardale solo in un luogo privato. Non digitarle mai in un sito web o in un\'app. Qui gli screenshot sono bloccati.</string>
+    <string name="reveal_failed">Impossibile decifrare questo wallet.</string>
+    <string name="reveal_passphrase_label">Passphrase BIP-39</string>
+    <string name="reveal_no_passphrase">Questo wallet non ha una passphrase BIP-39.</string>
+
+    <string name="nav_home">Home</string>
+    <string name="nav_wallet">Wallet</string>
+    <string name="nav_settings">Impostazioni</string>
+    <string name="tab_receive">Ricevi</string>
+    <string name="tab_send">Invia</string>
+    <string name="tab_history">Cronologia</string>
+
+    <string name="home_title">I tuoi wallet</string>
+    <string name="home_open">aperto</string>
+    <string name="home_tap_to_open">tocca per aprire</string>
+    <string name="wallets_max">Raggiunto il massimo di %1$d wallet.</string>
+
+    <string name="lock_password_prompt">Inserisci la password dell\'app.</string>
+    <string name="biometric_setup_title">Configura il blocco dell\'app</string>
+    <string name="biometric_unlock_title">Sblocca Fortis Wallet</string>
+    <string name="biometric_subtitle">Fortis Wallet</string>
+    <string name="biometric_invalidated">Il blocco schermo del tuo dispositivo è cambiato, quindi l\'app non può più essere sbloccata qui. Reinstalla e ripristina ogni wallet dalla sua frase di recupero.</string>
+    <string name="lock_choice_use_biometric">Blocca l\'app con impronta o PIN</string>
+    <string name="lock_choice_biometric_note">Uno sblocco apre tutti i tuoi wallet. Nessuna password da ricordare — l\'impronta/il volto o il PIN di blocco del tuo dispositivo ti fa entrare.</string>
+    <string name="lock_choice_password_note">Questa password sblocca l\'app e ogni wallet al suo interno.</string>
+
+    <string name="settings_title">Impostazioni</string>
+    <string name="settings_wallets">Wallet</string>
+    <string name="settings_security">Sicurezza</string>
+    <string name="settings_connection">Connessione</string>
+    <string name="settings_app_lock">Blocco dell\'app</string>
+    <string name="lock_mode_biometric">Impronta / PIN del dispositivo</string>
+    <string name="lock_mode_password">Password</string>
+    <string name="settings_one_unlock">Uno sblocco apre ogni wallet nell\'app.</string>
+    <string name="settings_language">Lingua</string>
+    <string name="language_system_default">Predefinita di sistema</string>
+    <string name="settings_status">Stato</string>
+    <string name="settings_chain_height">Altezza della catena</string>
+    <string name="settings_degraded_note">Il servizio fortis non è raggiungibile — per ora si usano dati pubblici sui blocchi. Tornerà automaticamente.</string>
+    <string name="settings_version">fortis %1$s</string>
+    <string name="xpub_loading">ancora in caricamento — riprova</string>
+    <string name="also_add_on">Aggiungi anche su %1$s</string>
+    <string name="dialog_rename_title">Rinomina wallet</string>
+    <string name="dialog_reveal_title">Mostrare la frase di recupero di %1$s?</string>
+    <string name="dialog_reveal_body">La frase di recupero (e la passphrase, se ne hai impostata una) è l\'unica cosa che può ripristinare questo wallet — e chi la possiede può spendere i tuoi fondi. Rivelala solo in un luogo privato, senza nessuno che guardi. La schermata successiva blocca gli screenshot.</string>
+    <string name="dialog_remove_title">Rimuovere %1$s?</string>
+    <string name="dialog_remove_body">Questo rimuove il wallet solo da questa app. Nulla cambia sulla blockchain e puoi riaggiungerlo in qualsiasi momento con la sua frase di recupero (e la passphrase, se impostata). Assicurati che la frase sia annotata.</string>
+
+    <string name="status_offline">offline</string>
+    <string name="status_rescanning">nuova scansione %1$d%%</string>
+    <string name="status_limited">servizio limitato</string>
+    <string name="status_connected">connesso</string>
+    <string name="status_syncing">sincronizzazione</string>
+
+    <string name="wallet_none_open">Nessun wallet aperto</string>
+    <string name="wallet_choose">Scegli un wallet</string>
+    <string name="wallet_pending">%1$s %2$s in sospeso</string>
+    <string name="wallet_block">blocco %1$s</string>
+    <string name="wallet_rescanning">nuova scansione %1$d%%</string>
+    <string name="wallet_syncing">sincronizzazione</string>
+    <string name="wallet_limited_suffix">%1$s  ·  servizio limitato</string>
+    <string name="wallet_connecting">connessione…</string>
+    <string name="fiat_approx">≈ %1$s</string>
+
+    <string name="sent_title">Pagamento inviato</string>
+    <string name="sent_txid">%1$s… · tocca per copiare</string>
+
+    <string name="cd_address_qr">codice QR dell\'indirizzo</string>
+    <string name="receive_address_n">indirizzo n. %1$d · tocca per copiare</string>
+    <string name="share_address_chooser">Condividi indirizzo</string>
+
+    <string name="scan_prompt">Scansiona un indirizzo di pagamento</string>
+    <string name="send_sweep">Invia il massimo (sweep)</string>
+    <string name="send_alt_coin">= %1$s %2$s</string>
+    <string name="send_alt_sat">= %1$s sat</string>
+    <string name="send_alt_fiat">  ·  %1$s</string>
+    <string name="fee_fast">Veloce</string>
+    <string name="fee_normal">Normale</string>
+    <string name="fee_slow">Lenta</string>
+    <string name="send_replay_protect">Protezione replay XBT (OP_RETURN da 100 byte)</string>
+    <string name="send_replay_note">Aggiunge ~110 vB di commissione. Non standard sul relay Bitcoin predefinito — trasmetti tramite un nodo/servizio che accetta OP_RETURN grandi.</string>
+    <string name="send_service_fee">Commissione di servizio: %1$s%% dell\'importo inviato (min %2$d sat) — sostiene questo nodo ospitato.</string>
+    <string name="cd_amount_unit">unità dell\'importo</string>
+    <string name="unit_sat">sat</string>
+
+    <string name="history_empty">ancora nessuna transazione</string>
+    <string name="history_send">invio</string>
+    <string name="history_receive">ricezione</string>
+    <string name="history_row_subtitle">%1$s · %2$s…</string>
+    <string name="history_pending">in sospeso</string>
+    <string name="history_conf_n">%1$d conf.</string>
+    <string name="history_confirmed">confermata</string>
+    <string name="history_hint">tocca una transazione per aprirla nell\'explorer · tieni premuto per copiare l\'id</string>
+
+    <string name="confirm_sweep_title">Conferma sweep</string>
+    <string name="confirm_payment_title">Conferma pagamento</string>
+    <string name="confirm_to">A</string>
+    <string name="confirm_amount">Importo</string>
+    <string name="confirm_network_fee">Commissione di rete</string>
+    <string name="confirm_network_fee_value">%1$s %2$s · %3$d sat/vB</string>
+    <string name="confirm_service_fee">Commissione di servizio</string>
+    <string name="confirm_change">Resto</string>
+    <string name="confirm_replay">Protezione replay</string>
+    <string name="confirm_replay_value">attiva · OP_RETURN da 100 byte</string>
+    <string name="confirm_total">Totale</string>
+    <string name="value_with_fiat">%1$s %2$s  ·  %3$s</string>
+
+    <string name="mnemonic_not_in_list">%1$d non nell\'elenco parole</string>
+    <string name="mnemonic_looks_good">sembra tutto ok</string>
+    <string name="mnemonic_status">%1$s  ·  %2$s</string>
+
+    <string name="error_wallet_max">Puoi tenere fino a %1$d wallet su un dispositivo.</string>
+    <string name="error_clone_exists">«%1$s» è già su %2$s.</string>
+    <string name="error_lock_setup_failed">configurazione del blocco dell\'app non riuscita</string>
+    <string name="error_enter_amount">inserisci un importo</string>
+    <string name="error_no_coins">nessuna moneta confermata da spendere</string>
+    <string name="error_open_wallet">impossibile aprire il wallet</string>
+
+    <plurals name="word_count">
+        <item quantity="one">%1$d parola</item>
+        <item quantity="other">%1$d parole</item>
+    </plurals>
+</resources>

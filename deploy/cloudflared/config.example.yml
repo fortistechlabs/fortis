@@ -1,0 +1,17 @@
+# Cloudflare Tunnel — expose a home/localhost fortis-edge under your own domain
+# with a real cert and no open ports. Copy to ~/.cloudflared/config.yml.
+#
+#   winget install Cloudflare.cloudflared
+#   cloudflared tunnel login
+#   cloudflared tunnel create fortis
+#   cloudflared tunnel route dns fortis api.example.com
+#   cloudflared tunnel run fortis          # test
+#   cloudflared service install            # run on boot
+
+tunnel: <TUNNEL_ID>
+credentials-file: <HOME>/.cloudflared/<TUNNEL_ID>.json
+
+ingress:
+  - hostname: api.example.com
+    service: http://localhost:8098        # fortis-edge --bind 127.0.0.1:8098
+  - service: http_status:404

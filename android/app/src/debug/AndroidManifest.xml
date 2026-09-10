@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Debug only. API 37 gates access to RFC1918 / link-local addresses behind
+     ACCESS_LOCAL_NETWORK; debug builds may talk to a dev node on the LAN or the
+     emulator host (10.0.2.2). Release is hosted-edge-only over HTTPS and never
+     needs this. -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <uses-permission android:name="android.permission.ACCESS_LOCAL_NETWORK" />
+</manifest>

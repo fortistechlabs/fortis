@@ -1,0 +1,189 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">fortis</string>
+
+    <string name="action_back">Takaisin</string>
+    <string name="action_cancel">Peruuta</string>
+    <string name="action_continue">Jatka</string>
+    <string name="action_save">Tallenna</string>
+    <string name="action_done">Valmis</string>
+    <string name="action_show">Näytä</string>
+    <string name="action_hide">Piilota</string>
+    <string name="action_copy">Kopioi</string>
+    <string name="action_share">Jaa</string>
+    <string name="action_open">Avaa</string>
+    <string name="action_remove">Poista</string>
+    <string name="action_rename">Nimeä uudelleen</string>
+    <string name="action_unlock">Avaa lukitus</string>
+    <string name="action_add_wallet">Lisää lompakko</string>
+    <string name="action_view">Näytä</string>
+    <string name="action_refresh">Päivitä</string>
+    <string name="action_reconnect">Yhdistä uudelleen</string>
+    <string name="action_review">Tarkista</string>
+    <string name="action_sign_send">Allekirjoita ja lähetä</string>
+    <string name="action_new_address">Uusi osoite</string>
+    <string name="action_scan_qr">Skannaa QR-koodi</string>
+    <string name="action_lock">Lukitse</string>
+    <string name="action_lock_app">Lukitse sovellus</string>
+    <string name="action_copy_xpub">Kopioi xpub</string>
+    <string name="action_recovery_phrase">Palautuslause</string>
+    <string name="toast_copied">Kopioitu</string>
+    <string name="cd_dismiss">Hylkää</string>
+
+    <string name="onboard_add_title">Lisää lompakko</string>
+    <string name="onboard_tagline">ei-säilyttävä lompakko Bitcoin XBT:lle ja Bitcoin BTC:lle</string>
+    <string name="onboard_create">Luo uusi lompakko</string>
+    <string name="onboard_restore">Palauta palautuslauseesta</string>
+
+    <string name="gen_title">Lisää hieman satunnaisuutta</string>
+    <string name="gen_body">Puhelimesi loi jo turvallisen siemenen. Ravista sitä — tai piirrä alueelle — jotta liikeantureista ja ajoitusvaihtelusta saadaan lisää entropiaa. Varmuuden vuoksi.</string>
+    <string name="gen_words_24">24 sanaa</string>
+    <string name="gen_words_12">12 sanaa</string>
+    <string name="gen_words_hint">Molemmat ovat turvallisia; 12 on helpompi kirjoittaa muistiin.</string>
+    <string name="gen_pad_hint">ravista tai piirrä tähän</string>
+    <string name="gen_entropy_full">runsaasti lisäentropiaa — perussiemen on jo turvallinen</string>
+    <string name="gen_entropy_partial">~%1$d lisäbittiä sekoitettu</string>
+    <string name="gen_generate">Luo lompakko</string>
+
+    <string name="create_phrase_title">Palautuslauseesi</string>
+    <string name="create_phrase_body">Kirjoita nämä %1$d sanaa paperille, ilman verkkoyhteyttä. Kuka tahansa, jolla ne on, hallitsee varojasi.</string>
+    <string name="create_passphrase_hint">\"25. sana\" — ylimääräinen salaisuus, jota ei tallenneta. Jos asetat sellaisen, tarvitset palautukseen sekä lauseen että tämän. Jätä tyhjäksi, jos et ole varma.</string>
+    <string name="create_ack">Olen kirjoittanut lauseen muistiin</string>
+
+    <string name="restore_title">Palauta lompakko</string>
+    <string name="restore_body">Syötä 12 tai 24 sanaasi välilyönnein erotettuina.</string>
+    <string name="restore_clone_hint">Kun se on lisätty, voit listata tämän lompakon myös palvelussa %1$s Hallitse lompakoita -näkymästä — sama lause, samat osoitteet.</string>
+    <string name="action_restore">Palauta</string>
+
+    <string name="field_wallet_name">Lompakon nimi</string>
+    <string name="field_passphrase">BIP-39-tunnuslause (valinnainen)</string>
+    <string name="field_app_password">Sovelluksen salasana</string>
+    <string name="field_confirm_password">Vahvista salasana</string>
+    <string name="field_to_address">Vastaanottajan osoite</string>
+    <string name="field_amount">Määrä</string>
+    <string name="field_custom_feerate">mukautettu sat/vB (valinnainen)</string>
+
+    <string name="reveal_title">Palautuslause</string>
+    <string name="reveal_warning">Kuka tahansa, joka näkee nämä sanat — sekä tunnuslauseen, jos se on asetettu — voi käyttää tämän lompakon varat. Katso niitä vain yksityisessä paikassa. Älä koskaan kirjoita niitä verkkosivustolle tai sovellukseen. Kuvakaappaukset on estetty täällä.</string>
+    <string name="reveal_failed">Tämän lompakon salauksen purku epäonnistui.</string>
+    <string name="reveal_passphrase_label">BIP-39-tunnuslause</string>
+    <string name="reveal_no_passphrase">Tällä lompakolla ei ole BIP-39-tunnuslausetta.</string>
+
+    <string name="nav_home">Etusivu</string>
+    <string name="nav_wallet">Lompakko</string>
+    <string name="nav_settings">Asetukset</string>
+    <string name="tab_receive">Vastaanota</string>
+    <string name="tab_send">Lähetä</string>
+    <string name="tab_history">Historia</string>
+
+    <string name="home_title">Lompakkosi</string>
+    <string name="home_open">avoinna</string>
+    <string name="home_tap_to_open">avaa napauttamalla</string>
+    <string name="wallets_max">Enimmäismäärä %1$d lompakkoa saavutettu.</string>
+
+    <string name="lock_password_prompt">Syötä sovelluksen salasana.</string>
+    <string name="biometric_setup_title">Määritä sovelluksen lukitus</string>
+    <string name="biometric_unlock_title">Avaa Fortis Walletin lukitus</string>
+    <string name="biometric_subtitle">Fortis Wallet</string>
+    <string name="biometric_invalidated">Laitteesi näytön lukitus muuttui, joten sovelluksen lukitusta ei voi enää avata täällä. Asenna uudelleen ja palauta jokainen lompakko sen palautuslauseesta.</string>
+    <string name="lock_choice_use_biometric">Lukitse sovellus sormenjäljellä tai PIN-koodilla</string>
+    <string name="lock_choice_biometric_note">Yksi avaus avaa kaikki lompakkosi. Ei salasanaa muistettavaksi — laitteesi sormenjälki/kasvot tai näytön lukituksen PIN päästää sisään.</string>
+    <string name="lock_choice_password_note">Tämä salasana avaa sovelluksen ja jokaisen sen lompakon.</string>
+
+    <string name="settings_title">Asetukset</string>
+    <string name="settings_wallets">Lompakot</string>
+    <string name="settings_security">Turvallisuus</string>
+    <string name="settings_connection">Yhteys</string>
+    <string name="settings_app_lock">Sovelluksen lukitus</string>
+    <string name="lock_mode_biometric">Sormenjälki / laitteen PIN</string>
+    <string name="lock_mode_password">Salasana</string>
+    <string name="settings_one_unlock">Yksi avaus avaa jokaisen lompakon sovelluksessa.</string>
+    <string name="settings_language">Kieli</string>
+    <string name="language_system_default">Järjestelmän oletus</string>
+    <string name="settings_status">Tila</string>
+    <string name="settings_chain_height">Ketjun korkeus</string>
+    <string name="settings_degraded_note">Fortis-palveluun ei saada yhteyttä — käytetään toistaiseksi julkisia lohkotietoja. Yhteys palautuu automaattisesti.</string>
+    <string name="settings_version">fortis %1$s</string>
+    <string name="xpub_loading">ladataan vielä — yritä uudelleen</string>
+    <string name="also_add_on">Lisää myös palveluun %1$s</string>
+    <string name="dialog_rename_title">Nimeä lompakko uudelleen</string>
+    <string name="dialog_reveal_title">Näytetäänkö lompakon %1$s palautuslause?</string>
+    <string name="dialog_reveal_body">Palautuslause (ja tunnuslause, jos asetit sellaisen) on ainoa, joka voi palauttaa tämän lompakon — ja kuka tahansa, jolla se on, voi käyttää varasi. Paljasta se vain yksityisessä paikassa, kun kukaan ei katso. Seuraava näyttö estää kuvakaappaukset.</string>
+    <string name="dialog_remove_title">Poistetaanko %1$s?</string>
+    <string name="dialog_remove_body">Tämä poistaa lompakon vain tästä sovelluksesta. Mikään ei muutu lohkoketjussa, ja voit lisätä sen takaisin milloin tahansa sen palautuslauseella (ja tunnuslauseella, jos asetit sellaisen). Varmista, että lause on kirjoitettu muistiin.</string>
+
+    <string name="status_offline">offline</string>
+    <string name="status_rescanning">skannataan uudelleen %1$d%%</string>
+    <string name="status_limited">rajoitettu palvelu</string>
+    <string name="status_connected">yhdistetty</string>
+    <string name="status_syncing">synkronoidaan</string>
+
+    <string name="wallet_none_open">Ei avointa lompakkoa</string>
+    <string name="wallet_choose">Valitse lompakko</string>
+    <string name="wallet_pending">%1$s %2$s odottaa</string>
+    <string name="wallet_block">lohko %1$s</string>
+    <string name="wallet_rescanning">skannataan uudelleen %1$d%%</string>
+    <string name="wallet_syncing">synkronoidaan</string>
+    <string name="wallet_limited_suffix">%1$s  ·  rajoitettu palvelu</string>
+    <string name="wallet_connecting">yhdistetään…</string>
+    <string name="fiat_approx">≈ %1$s</string>
+
+    <string name="sent_title">Maksu lähetetty</string>
+    <string name="sent_txid">%1$s… · kopioi napauttamalla</string>
+
+    <string name="cd_address_qr">osoitteen QR-koodi</string>
+    <string name="receive_address_n">osoite #%1$d · kopioi napauttamalla</string>
+    <string name="share_address_chooser">Jaa osoite</string>
+
+    <string name="scan_prompt">Skannaa maksuosoite</string>
+    <string name="send_sweep">Lähetä enimmäismäärä (sweep)</string>
+    <string name="send_alt_coin">= %1$s %2$s</string>
+    <string name="send_alt_sat">= %1$s sat</string>
+    <string name="send_alt_fiat">  ·  %1$s</string>
+    <string name="fee_fast">Nopea</string>
+    <string name="fee_normal">Normaali</string>
+    <string name="fee_slow">Hidas</string>
+    <string name="send_replay_protect">XBT-toistosuojaus (100 tavun OP_RETURN)</string>
+    <string name="send_replay_note">Lisää ~110 vB maksua. Ei-standardi Bitcoinin oletusreleessä — lähetä solmun/palvelun kautta, joka hyväksyy suuret OP_RETURN.</string>
+    <string name="send_service_fee">Palvelumaksu: %1$s%% lähetetystä määrästä (väh. %2$d sat) — tukee tätä isännöityä solmua.</string>
+    <string name="cd_amount_unit">määrän yksikkö</string>
+    <string name="unit_sat">sat</string>
+
+    <string name="history_empty">ei vielä tapahtumia</string>
+    <string name="history_send">lähetys</string>
+    <string name="history_receive">vastaanotto</string>
+    <string name="history_row_subtitle">%1$s · %2$s…</string>
+    <string name="history_pending">odottaa</string>
+    <string name="history_conf_n">%1$d vahv.</string>
+    <string name="history_confirmed">vahvistettu</string>
+    <string name="history_hint">avaa tapahtuma selaimessa napauttamalla · kopioi tunnus painamalla pitkään</string>
+
+    <string name="confirm_sweep_title">Vahvista sweep</string>
+    <string name="confirm_payment_title">Vahvista maksu</string>
+    <string name="confirm_to">Vastaanottaja</string>
+    <string name="confirm_amount">Määrä</string>
+    <string name="confirm_network_fee">Verkkomaksu</string>
+    <string name="confirm_network_fee_value">%1$s %2$s · %3$d sat/vB</string>
+    <string name="confirm_service_fee">Palvelumaksu</string>
+    <string name="confirm_change">Vaihtoraha</string>
+    <string name="confirm_replay">Toistosuojaus</string>
+    <string name="confirm_replay_value">päällä · 100 tavun OP_RETURN</string>
+    <string name="confirm_total">Yhteensä</string>
+    <string name="value_with_fiat">%1$s %2$s  ·  %3$s</string>
+
+    <string name="mnemonic_not_in_list">%1$d ei ole sanalistalla</string>
+    <string name="mnemonic_looks_good">näyttää hyvältä</string>
+    <string name="mnemonic_status">%1$s  ·  %2$s</string>
+
+    <string name="error_wallet_max">Voit pitää enintään %1$d lompakkoa yhdellä laitteella.</string>
+    <string name="error_clone_exists">”%1$s” on jo palvelussa %2$s.</string>
+    <string name="error_lock_setup_failed">sovelluksen lukituksen määritys epäonnistui</string>
+    <string name="error_enter_amount">syötä määrä</string>
+    <string name="error_no_coins">ei vahvistettuja kolikoita käytettäväksi</string>
+    <string name="error_open_wallet">lompakon avaaminen epäonnistui</string>
+
+    <plurals name="word_count">
+        <item quantity="one">%1$d sana</item>
+        <item quantity="other">%1$d sanaa</item>
+    </plurals>
+</resources>

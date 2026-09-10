@@ -1,0 +1,169 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Fortis Wallet — Privacy Policy</title>
+<meta name="robots" content="index,follow">
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: #0b0d16; color: #dfe4f2;
+    font: 16px/1.65 -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    -webkit-text-size-adjust: 100%;
+  }
+  .wrap { max-width: 760px; margin: 0 auto; padding: 48px 22px 96px; }
+  header { display: flex; align-items: center; gap: 14px; margin-bottom: 8px; }
+  header img { width: 44px; height: 44px; }
+  header .name { font-size: 20px; font-weight: 700; letter-spacing: .2px; color: #fff; }
+  h1 { font-size: 28px; margin: 28px 0 4px; color: #fff; }
+  .meta { color: #8a93ab; font-size: 14px; margin-bottom: 32px; }
+  h2 { font-size: 19px; margin: 40px 0 10px; color: #fff; }
+  h3 { font-size: 16px; margin: 22px 0 6px; color: #c7cee0; }
+  p, li { color: #cfd6e6; }
+  a { color: #8fbcff; }
+  ul { padding-left: 22px; }
+  li { margin: 5px 0; }
+  code { background: #171a27; padding: 1px 5px; border-radius: 4px; font-size: 13px; }
+  hr { border: 0; border-top: 1px solid #1e2333; margin: 40px 0; }
+  .fill { color: #ffcf7a; }
+  footer { margin-top: 56px; color: #8a93ab; font-size: 14px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <img src="/icon.svg" alt="">
+    <span class="name">Fortis Wallet</span>
+  </header>
+
+  <h1>Privacy Policy</h1>
+  <p class="meta">Effective 10 Sept 2026 · applies to the Fortis&nbsp;Wallet mobile app and its backend service, operated by Fortis&nbsp;Tech&nbsp;Labs.</p>
+
+  <p>Fortis Wallet is a <strong>non-custodial</strong> wallet for Bitcoin&nbsp;XBT
+  and Bitcoin&nbsp;BTC. Your keys and recovery phrase are generated on your
+  device, encrypted under a password you choose, and never leave the device. We cannot
+  access your funds and cannot move them for you.</p>
+
+  <p>This policy explains the limited data the app and its backend handle.</p>
+
+  <h2>1. What stays on your device</h2>
+  <p>Stored only in the app's private storage on your phone, never transmitted:</p>
+  <ul>
+    <li>Your 12- or 24-word recovery phrase and optional BIP-39 passphrase, encrypted
+      (Argon2id key derivation + XChaCha20-Poly1305) under your app password.</li>
+    <li>Wallet settings: which chain you use and the address counters needed to
+      re-derive your addresses.</li>
+    <li>A per-install token (see below).</li>
+  </ul>
+  <p>Uninstalling the app, or using <em>Forget this wallet</em>, deletes all of it.
+  If you lose your recovery phrase we cannot recover it.</p>
+
+  <h2>2. What the app sends to the backend</h2>
+  <p>To show your balance and history and to broadcast payments, the app contacts the
+  fortis backend at <code>api.fortistechlabs.com</code>. It sends:</p>
+  <ul>
+    <li><strong>A per-install token</strong> — a random string created the first time
+      the app connects. It is not linked to your name, email, phone number, or any
+      device identifier. It exists only so the service can rate-limit abuse. It is
+      replaced automatically if it stops working.</li>
+    <li><strong>Your wallet addresses</strong> — public bech32 addresses derived from
+      your keys, sent so the service can return their balances, unspent outputs, and
+      transactions. These addresses and their transactions are already public on the
+      blockchain.</li>
+    <li><strong>Signed transactions</strong> you choose to send, for broadcast to the
+      network.</li>
+    <li><strong>Fee-rate requests.</strong></li>
+    <li><strong>Connection metadata</strong> (your IP address) — used transiently to
+      rate-limit requests. It is not written to durable per-request logs and is not
+      used to build a profile of you. The service keeps only aggregate counters.</li>
+  </ul>
+  <p>The backend keeps <strong>no account</strong> for you: no sign-up, no email, no
+  password held on a server.</p>
+
+  <h2>3. Third parties</h2>
+  <h3>Cloudflare</h3>
+  <p>The backend is served through Cloudflare (TLS, CDN, DDoS protection). Cloudflare
+  processes connection data (IP address, request metadata) on our behalf under its own
+  <a href="https://www.cloudflare.com/privacypolicy/">privacy policy</a>.</p>
+  <h3>Public explorers (fallback only)</h3>
+  <p>If <code>api.fortistechlabs.com</code> is unreachable, the app queries a public block
+  explorer directly until the backend is available again —
+  <a href="https://mempool.space/">mempool.space</a> for Bitcoin,
+  <a href="https://mempool.guide/">mempool.guide</a> for XBT. During that time the
+  explorer receives the same wallet addresses and your IP address, governed by its
+  own privacy policy.</p>
+
+  <h2>4. Camera</h2>
+  <p>The camera permission is used only to scan a QR code containing a payment address,
+  entirely on your device. No image is stored or transmitted.</p>
+
+  <h2>5. Crash diagnostics</h2>
+  <p>If the app crashes it sends a diagnostic report to a Fortis Tech Labs endpoint
+  containing the app version, your Android version, your device model and
+  manufacturer, the error stack trace, and (recorded server-side) your IP address.
+  <strong>No</strong> wallet addresses, keys, transactions, or your recovery phrase
+  are included. Reports are stored in a plain log file and are not linked to any
+  account or identifier.</p>
+
+  <h2>6. What we do not do</h2>
+  <ul>
+    <li>No analytics or usage-tracking SDKs.</li>
+    <li>No advertising, no ad identifiers, no third-party trackers.</li>
+    <li>No sale or sharing of personal data for marketing.</li>
+  </ul>
+
+  <h2>7. Service fee</h2>
+  <p>To fund the hosted backend, payments made through it carry a service fee:
+  <strong>1% of the amount sent, minimum 400&nbsp;sat</strong>, paid to a Bitcoin
+  address operated by Fortis&nbsp;Tech&nbsp;Labs. The app adds this as a separate
+  output in the transaction and shows the exact amount on the confirmation screen
+  before you sign. It is part of the transaction you approve — not something we
+  can charge afterwards.</p>
+
+  <h2>8. Data retention and your choices</h2>
+  <ul>
+    <li>On-device data: removed on uninstall or <em>Forget this wallet</em>.</li>
+    <li>Backend: no per-user account exists; per-install tokens are random and
+      short-lived; connection metadata is not retained per-request.</li>
+    <li>To ask about or request deletion of any residual server-side records, email
+      <a href="mailto:support@fortistechlabs.com">support@fortistechlabs.com</a>.</li>
+  </ul>
+
+  <h2>9. Security</h2>
+  <p>Keys are encrypted at rest with a key derived from your password. Screens that
+  show the recovery phrase or a password block screenshots and screen recording.</p>
+
+  <h2>10. Children</h2>
+  <p>Fortis Wallet is not directed to children under 13, or under the age of digital consent
+  where you live.</p>
+
+  <h2>11. Changes</h2>
+  <p>We will post any changes on this page and update the effective date above.</p>
+
+  <hr>
+
+  <h2>Data safety summary</h2>
+  <p>For reference, matching Google Play's Data safety categories:</p>
+  <ul>
+    <li><strong>Data collected:</strong> approximate/precise location — none;
+      personal info — none; financial info — wallet addresses and on-chain transaction
+      data (public), submitted transactions; app activity — none; device IDs — none.</li>
+    <li><strong>Data shared:</strong> wallet addresses and IP address are processed by
+      Cloudflare (infrastructure) and, during a backend outage, by mempool.space / mempool.guide
+      (fallback data source).</li>
+    <li><strong>Security practices:</strong> data encrypted in transit (HTTPS);
+      on-device secrets encrypted at rest; users can request deletion.</li>
+    <li><strong>Data collection is:</strong> not required to be linked to identity;
+      the per-install token is not an identifier of the user.</li>
+  </ul>
+
+  <footer>
+    <p>Operator: Fortis Tech Labs<br>
+    Contact: <a href="mailto:info@fortistechlabs.com">info@fortistechlabs.com</a> ·
+    Support &amp; data requests: <a href="mailto:support@fortistechlabs.com">support@fortistechlabs.com</a></p>
+  </footer>
+</div>
+</body>
+</html>

@@ -1,0 +1,189 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">fortis</string>
+
+    <string name="action_back">Артка</string>
+    <string name="action_cancel">Жокко чыгаруу</string>
+    <string name="action_continue">Улантуу</string>
+    <string name="action_save">Сактоо</string>
+    <string name="action_done">Даяр</string>
+    <string name="action_show">Көрсөтүү</string>
+    <string name="action_hide">Жашыруу</string>
+    <string name="action_copy">Көчүрүү</string>
+    <string name="action_share">Бөлүшүү</string>
+    <string name="action_open">Ачуу</string>
+    <string name="action_remove">Өчүрүү</string>
+    <string name="action_rename">Атын өзгөртүү</string>
+    <string name="action_unlock">Кулпуну ачуу</string>
+    <string name="action_add_wallet">Капчык кошуу</string>
+    <string name="action_view">Кароо</string>
+    <string name="action_refresh">Жаңылоо</string>
+    <string name="action_reconnect">Кайра туташуу</string>
+    <string name="action_review">Текшерүү</string>
+    <string name="action_sign_send">Кол коюп жөнөтүү</string>
+    <string name="action_new_address">Жаңы дарек</string>
+    <string name="action_scan_qr">QR кодду сканерлөө</string>
+    <string name="action_lock">Кулпулоо</string>
+    <string name="action_lock_app">Колдонмону кулпулоо</string>
+    <string name="action_copy_xpub">xpub көчүрүү</string>
+    <string name="action_recovery_phrase">Калыбына келтирүү фразасы</string>
+    <string name="toast_copied">Көчүрүлдү</string>
+    <string name="cd_dismiss">Жабуу</string>
+
+    <string name="onboard_add_title">Капчык кошуу</string>
+    <string name="onboard_tagline">Bitcoin XBT жана Bitcoin BTC үчүн кастодиалдык эмес капчык</string>
+    <string name="onboard_create">Жаңы капчык түзүү</string>
+    <string name="onboard_restore">Калыбына келтирүү фразасынан калыбына келтирүү</string>
+
+    <string name="gen_title">Бир аз кокустук кошуңуз</string>
+    <string name="gen_body">Телефонуңуз коопсуз үрөндү мурунтан түзгөн. Кыймыл сенсорлорунан жана убакыт термелүүсүнөн кошумча энтропияны аралаштыруу үчүн аны силкиңиз — же аянтка чиймелеңиз. Ар кандай учур үчүн.</string>
+    <string name="gen_words_24">24 сөз</string>
+    <string name="gen_words_12">12 сөз</string>
+    <string name="gen_words_hint">Экөө тең коопсуз; 12 сөздү жазып алуу оңой.</string>
+    <string name="gen_pad_hint">силкиңиз же ушул жерге чиймелеңиз</string>
+    <string name="gen_entropy_full">кошумча энтропия жетиштүү — негизги үрөн мурунтан коопсуз</string>
+    <string name="gen_entropy_partial">~%1$d кошумча бит аралашты</string>
+    <string name="gen_generate">Капчык түзүү</string>
+
+    <string name="create_phrase_title">Сиздин калыбына келтирүү фразаңыз</string>
+    <string name="create_phrase_body">Бул %1$d сөздү кагазга, оффлайн жазыңыз. Аларга ээ болгон ар бир адам сиздин каражатыңызды башкарат.</string>
+    <string name="create_passphrase_hint">«25-сөз» — сакталбаган кошумча сыр. Аны орнотсоңуз, калыбына келтирүү үчүн фраза да, ал да керек. Ишенбесеңиз, бош калтырыңыз.</string>
+    <string name="create_ack">Фразаны жазып алдым</string>
+
+    <string name="restore_title">Капчыкты калыбына келтирүү</string>
+    <string name="restore_body">12 же 24 сөзүңүздү боштуктар менен бөлүп киргизиңиз.</string>
+    <string name="restore_clone_hint">Кошулгандан кийин бул капчыкты «Капчыктарды башкаруу» бөлүмүнөн %1$s ичинде да тизмелей аласыз — ошол эле фраза, ошол эле даректер.</string>
+    <string name="action_restore">Калыбына келтирүү</string>
+
+    <string name="field_wallet_name">Капчыктын аты</string>
+    <string name="field_passphrase">BIP-39 сырсөз фразасы (милдеттүү эмес)</string>
+    <string name="field_app_password">Колдонмонун сырсөзү</string>
+    <string name="field_confirm_password">Сырсөздү тастыктоо</string>
+    <string name="field_to_address">Алуучунун дареги</string>
+    <string name="field_amount">Сумма</string>
+    <string name="field_custom_feerate">ыңгайлаштырылган sat/vB (милдеттүү эмес)</string>
+
+    <string name="reveal_title">Калыбына келтирүү фразасы</string>
+    <string name="reveal_warning">Бул сөздөрдү — орнотулса, сырсөз фразасын да — көргөн ар бир адам бул капчыктан сарптай алат. Аларга сөзсүз жеке жерде гана караңыз. Аларды эч качан веб-сайтка же колдонмого жазбаңыз. Бул жерде скриншоттор бөгөттөлгөн.</string>
+    <string name="reveal_failed">Бул капчыкты чечмелөө мүмкүн болбоду.</string>
+    <string name="reveal_passphrase_label">BIP-39 сырсөз фразасы</string>
+    <string name="reveal_no_passphrase">Бул капчыкта BIP-39 сырсөз фразасы жок.</string>
+
+    <string name="nav_home">Башкы бет</string>
+    <string name="nav_wallet">Капчык</string>
+    <string name="nav_settings">Жөндөөлөр</string>
+    <string name="tab_receive">Кабыл алуу</string>
+    <string name="tab_send">Жөнөтүү</string>
+    <string name="tab_history">Тарых</string>
+
+    <string name="home_title">Сиздин капчыктарыңыз</string>
+    <string name="home_open">ачык</string>
+    <string name="home_tap_to_open">ачуу үчүн таптаңыз</string>
+    <string name="wallets_max">%1$d капчыктын максимумуна жетти.</string>
+
+    <string name="lock_password_prompt">Колдонмонун сырсөзүн киргизиңиз.</string>
+    <string name="biometric_setup_title">Колдонмо кулпусун орнотуу</string>
+    <string name="biometric_unlock_title">Fortis Wallet кулпусун ачуу</string>
+    <string name="biometric_subtitle">Fortis Wallet</string>
+    <string name="biometric_invalidated">Түзмөгүңүздүн экран кулпусу өзгөрдү, ошондуктан колдонмону бул жерде мындан ары ачуу мүмкүн эмес. Кайра орнотуп, ар бир капчыкты анын калыбына келтирүү фразасынан калыбына келтириңиз.</string>
+    <string name="lock_choice_use_biometric">Колдонмону манжа изи же PIN менен кулпулоо</string>
+    <string name="lock_choice_biometric_note">Бир жолу кулпуну ачуу бардык капчыктарыңызды ачат. Эстеп калуучу сырсөз жок — түзмөгүңүздүн манжа изи/бети же экран кулпусунун PIN коду киргизет.</string>
+    <string name="lock_choice_password_note">Бул сырсөз колдонмону жана андагы ар бир капчыкты ачат.</string>
+
+    <string name="settings_title">Жөндөөлөр</string>
+    <string name="settings_wallets">Капчыктар</string>
+    <string name="settings_security">Коопсуздук</string>
+    <string name="settings_connection">Байланыш</string>
+    <string name="settings_app_lock">Колдонмо кулпусу</string>
+    <string name="lock_mode_biometric">Манжа изи / түзмөк PIN коду</string>
+    <string name="lock_mode_password">Сырсөз</string>
+    <string name="settings_one_unlock">Бир жолу кулпуну ачуу колдонмодогу ар бир капчыкты ачат.</string>
+    <string name="settings_language">Тил</string>
+    <string name="language_system_default">Тутумдун демейкиси</string>
+    <string name="settings_status">Абал</string>
+    <string name="settings_chain_height">Чынжырдын бийиктиги</string>
+    <string name="settings_degraded_note">fortis кызматына жетүү мүмкүн эмес — азырынча ачык блок маалыматтары колдонулууда. Автоматтык түрдө кайра которулат.</string>
+    <string name="settings_version">fortis %1$s</string>
+    <string name="xpub_loading">дагы жүктөлүүдө — кайра аракет кылыңыз</string>
+    <string name="also_add_on">%1$s ичине да кошуу</string>
+    <string name="dialog_rename_title">Капчыктын атын өзгөртүү</string>
+    <string name="dialog_reveal_title">%1$s үчүн калыбына келтирүү фразасы көрсөтүлсүнбү?</string>
+    <string name="dialog_reveal_body">Калыбына келтирүү фразасы (жана орноткон болсоңуз, сырсөз фразасы) — бул капчыкты калыбына келтире турган жалгыз нерсе, ага ээ болгон ар бир адам каражатыңызды сарптай алат. Аны эч ким карабай турганда гана жеке жерде ачыңыз. Кийинки экран скриншотторду бөгөттөйт.</string>
+    <string name="dialog_remove_title">%1$s өчүрүлсүнбү?</string>
+    <string name="dialog_remove_body">Бул капчыкты бул колдонмодон гана өчүрөт. Блокчейнде эч нерсе өзгөрбөйт жана аны калыбына келтирүү фразасы (жана орноткон болсоңуз, сырсөз фразасы) менен каалаган убакта кайра кошо аласыз. Фраза жазылганына ынаныңыз.</string>
+
+    <string name="status_offline">оффлайн</string>
+    <string name="status_rescanning">кайра сканерлөө %1$d%%</string>
+    <string name="status_limited">чектелген кызмат</string>
+    <string name="status_connected">туташты</string>
+    <string name="status_syncing">шайкештирүү</string>
+
+    <string name="wallet_none_open">Ачык капчык жок</string>
+    <string name="wallet_choose">Капчык тандаңыз</string>
+    <string name="wallet_pending">%1$s %2$s күтүүдө</string>
+    <string name="wallet_block">блок %1$s</string>
+    <string name="wallet_rescanning">кайра сканерлөө %1$d%%</string>
+    <string name="wallet_syncing">шайкештирүү</string>
+    <string name="wallet_limited_suffix">%1$s  ·  чектелген кызмат</string>
+    <string name="wallet_connecting">туташууда…</string>
+    <string name="fiat_approx">≈ %1$s</string>
+
+    <string name="sent_title">Төлөм жөнөтүлдү</string>
+    <string name="sent_txid">%1$s… · көчүрүү үчүн таптаңыз</string>
+
+    <string name="cd_address_qr">даректин QR коду</string>
+    <string name="receive_address_n">дарек №%1$d · көчүрүү үчүн таптаңыз</string>
+    <string name="share_address_chooser">Дарек менен бөлүшүү</string>
+
+    <string name="scan_prompt">Төлөм дарегин сканерлеңиз</string>
+    <string name="send_sweep">Максимумду жөнөтүү (sweep)</string>
+    <string name="send_alt_coin">= %1$s %2$s</string>
+    <string name="send_alt_sat">= %1$s sat</string>
+    <string name="send_alt_fiat">  ·  %1$s</string>
+    <string name="fee_fast">Ылдам</string>
+    <string name="fee_normal">Кадимки</string>
+    <string name="fee_slow">Жай</string>
+    <string name="send_replay_protect">XBT кайра ойнотуудан коргоо (100 байттык OP_RETURN)</string>
+    <string name="send_replay_note">~110 vB комиссия кошот. Демейки Bitcoin релесинде стандарттуу эмес — чоң OP_RETURN кабыл алган түйүн/кызмат аркылуу таратыңыз.</string>
+    <string name="send_service_fee">Кызмат акысы: жөнөтүлгөн суммунун %1$s%%\'и (кеминде %2$d sat) — бул жайгаштырылган түйүндү колдойт.</string>
+    <string name="cd_amount_unit">сумма бирдиги</string>
+    <string name="unit_sat">sat</string>
+
+    <string name="history_empty">азырынча транзакциялар жок</string>
+    <string name="history_send">жөнөтүү</string>
+    <string name="history_receive">кабыл алуу</string>
+    <string name="history_row_subtitle">%1$s · %2$s…</string>
+    <string name="history_pending">күтүүдө</string>
+    <string name="history_conf_n">%1$d ырастоо</string>
+    <string name="history_confirmed">ырасталды</string>
+    <string name="history_hint">транзакцияны браузерде ачуу үчүн аны таптаңыз · id көчүрүү үчүн узак басыңыз</string>
+
+    <string name="confirm_sweep_title">Sweep ырастоо</string>
+    <string name="confirm_payment_title">Төлөмдү ырастоо</string>
+    <string name="confirm_to">Кимге</string>
+    <string name="confirm_amount">Сумма</string>
+    <string name="confirm_network_fee">Тармак акысы</string>
+    <string name="confirm_network_fee_value">%1$s %2$s · %3$d sat/vB</string>
+    <string name="confirm_service_fee">Кызмат акысы</string>
+    <string name="confirm_change">Кайтарым</string>
+    <string name="confirm_replay">Кайра ойнотуудан коргоо</string>
+    <string name="confirm_replay_value">күйүк · 100 байттык OP_RETURN</string>
+    <string name="confirm_total">Жалпы</string>
+    <string name="value_with_fiat">%1$s %2$s  ·  %3$s</string>
+
+    <string name="mnemonic_not_in_list">%1$d сөз тизмесинде жок</string>
+    <string name="mnemonic_looks_good">жакшы көрүнөт</string>
+    <string name="mnemonic_status">%1$s  ·  %2$s</string>
+
+    <string name="error_wallet_max">Бир түзмөктө %1$d капчыкка чейин сактай аласыз.</string>
+    <string name="error_clone_exists">«%1$s» мурунтан %2$s ичинде.</string>
+    <string name="error_lock_setup_failed">колдонмо кулпусун орнотуу ишке ашкан жок</string>
+    <string name="error_enter_amount">сумма киргизиңиз</string>
+    <string name="error_no_coins">сарптоого ырасталган монеталар жок</string>
+    <string name="error_open_wallet">капчыкты ачуу мүмкүн болбоду</string>
+
+    <plurals name="word_count">
+        <item quantity="one">%1$d сөз</item>
+        <item quantity="other">%1$d сөз</item>
+    </plurals>
+</resources>

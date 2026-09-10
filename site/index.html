@@ -1,0 +1,256 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Fortis Tech Labs — tools for Bitcoin self-custody</title>
+<meta name="description" content="Fortis Tech Labs builds non-custodial software for Bitcoin. Our first app is Fortis Wallet, for Bitcoin XBT and Bitcoin BTC.">
+<meta property="og:title" content="Fortis Tech Labs">
+<meta property="og:description" content="Non-custodial software for Bitcoin XBT and Bitcoin BTC.">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://fortistechlabs.com/">
+<meta property="og:image" content="https://fortistechlabs.com/img/receive.jpg">
+<link rel="icon" href="/icon.svg">
+<style>
+  :root {
+    color-scheme: dark;
+    --bg: #0b0d16; --card: #12151f; --line: #1e2333;
+    --ink: #e7ebf6; --dim: #aab2c8; --faint: #7b849c; --accent: #8fbcff;
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; overflow-x: hidden; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font: 16px/1.65 -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    -webkit-text-size-adjust: 100%; overflow-x: hidden;
+  }
+  img { max-width: 100%; }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+  .wrap { max-width: 1000px; margin: 0 auto; padding: 0 24px; }
+
+  nav { display: flex; align-items: center; justify-content: space-between; padding: 22px 0; }
+  nav .brand { display: flex; align-items: center; gap: 11px; font-weight: 700; font-size: 17px; color: #fff; }
+  nav .brand img { width: 28px; height: 28px; }
+  nav .links a { color: var(--dim); margin-left: 22px; font-size: 14px; }
+
+  header.hero {
+    text-align: center; padding: 76px 0 84px;
+    background:
+      radial-gradient(600px 380px at 18% -10%, rgba(63,92,196,.34), transparent 70%),
+      radial-gradient(560px 380px at 92% 15%, rgba(111,58,168,.26), transparent 70%);
+  }
+  header.hero .eyebrow { color: var(--faint); letter-spacing: .18em; text-transform: uppercase; font-size: 12px; }
+  header.hero h1 { font-size: clamp(34px, 7vw, 58px); margin: 12px 0 16px; letter-spacing: .4px; color: #fff; }
+  header.hero p { font-size: clamp(16px, 3.4vw, 20px); color: var(--dim); margin: 0 auto; max-width: 660px; }
+
+  section { padding: 56px 0; border-top: 1px solid var(--line); }
+  section h2 { font-size: 24px; color: #fff; margin: 0 0 8px; }
+  section .lead { color: var(--dim); max-width: 660px; margin: 0 0 32px; }
+
+  .product {
+    display: grid; grid-template-columns: 1.1fr 1fr; gap: 40px; align-items: center;
+    background: var(--card); border: 1px solid var(--line); border-radius: 18px; padding: 32px;
+  }
+  .product h3 { margin: 0 0 4px; font-size: 22px; color: #fff; }
+  .product .kicker { color: var(--faint); font-size: 13px; margin: 0 0 14px; }
+  .product ul { margin: 14px 0 20px; padding-left: 18px; color: var(--dim); }
+  .product li { margin: 5px 0; }
+  .product .cta { display: inline-block; font-size: 13px; color: var(--faint);
+    border: 1px solid var(--line); border-radius: 999px; padding: 7px 16px; }
+  .dl { display: flex; flex-wrap: wrap; gap: 10px; margin: 4px 0 10px; }
+  .dl a { display: inline-flex; align-items: center; gap: 8px; font-size: 14px;
+    font-weight: 600; border-radius: 999px; padding: 10px 20px; }
+  .dl .primary { background: var(--accent); color: #0b0d16; }
+  .dl .primary:hover { text-decoration: none; filter: brightness(1.06); }
+  .dl .secondary { border: 1px solid var(--line); color: var(--ink); }
+  .dl .secondary:hover { text-decoration: none; border-color: var(--accent); }
+  .dl-note { font-size: 12.5px; color: var(--faint); margin: 0 0 10px; line-height: 1.7; }
+  .dl-note code { font-size: 11px; word-break: break-all; }
+  .install { margin: 0 0 6px; border: 1px solid var(--line); border-radius: 12px;
+    background: rgba(255,255,255,.015); }
+  .install > summary { cursor: pointer; padding: 12px 16px; font-size: 13.5px;
+    font-weight: 600; color: var(--ink); list-style: none; }
+  .install > summary::-webkit-details-marker { display: none; }
+  .install > summary::marker { content: ""; }
+  .install > summary::before { content: "+"; color: var(--faint); margin-right: 8px; }
+  .install[open] > summary::before { content: "\2212"; }
+  .install .body { padding: 0 16px 14px; }
+  .install ol { margin: 4px 0 0; padding-left: 20px; color: var(--dim);
+    font-size: 13.5px; line-height: 1.7; }
+  .install li { margin: 6px 0; }
+  .install .sub { margin: 12px 0 0; font-size: 12.5px; color: var(--faint); line-height: 1.7; }
+  .install code { font-size: 11px; word-break: break-all; }
+  .product .shots { display: flex; gap: 14px; max-width: 100%; overflow-x: auto; padding-bottom: 8px; }
+  .product .shots img { width: 168px; flex: none; border-radius: 16px; border: 1px solid var(--line); }
+
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr)); gap: 16px; }
+  .feature { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 20px; }
+  .feature h3 { margin: 0 0 6px; font-size: 16px; color: #fff; }
+  .feature p { margin: 0; color: var(--dim); font-size: 14.5px; }
+
+  footer { border-top: 1px solid var(--line); padding: 40px 0 64px; color: var(--faint); font-size: 14px; }
+  footer .row { display: flex; flex-wrap: wrap; gap: 14px 26px; align-items: center; justify-content: space-between; }
+  footer a { color: var(--dim); }
+  .warn { color: #ffcf7a; }
+
+  @media (max-width: 720px) {
+    .product { grid-template-columns: 1fr; gap: 26px; padding: 24px; }
+  }
+  @media (max-width: 560px) {
+    nav .links a[href="#wallet"] { display: none; }
+    nav .links a { margin-left: 16px; font-size: 13px; }
+    header.hero { padding: 52px 0 60px; }
+    section { padding: 44px 0; }
+  }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <nav>
+    <span class="brand"><img src="/icon.svg" alt=""> Fortis Tech Labs</span>
+    <span class="links">
+      <a href="#wallet">Fortis Wallet</a>
+      <a href="#features">Features</a>
+      <a href="/privacy">Privacy</a>
+      <a href="mailto:info@fortistechlabs.com">Contact</a>
+    </span>
+  </nav>
+</div>
+
+<header class="hero">
+  <div class="wrap">
+    <div class="eyebrow">Fortis Tech Labs</div>
+    <h1>Tools for Bitcoin self-custody</h1>
+    <p>We build non-custodial software for Bitcoin XBT and Bitcoin BTC — apps that put the keys, and the responsibility that comes with them, in the hands of the people who own the coins. No accounts, no custody, no one who can move your coins but you.</p>
+  </div>
+</header>
+
+<section id="wallet">
+  <div class="wrap">
+    <h2>Our apps</h2>
+    <p class="lead">One so far, with more to come.</p>
+    <div class="product">
+      <div>
+        <h3>Fortis Wallet</h3>
+        <p class="kicker">Android 8+ · direct download &amp; Obtainium</p>
+        <p style="color:var(--dim)">A non-custodial mobile wallet for Bitcoin XBT and Bitcoin BTC. Your recovery phrase is generated on your device, encrypted under a password you choose, and never leaves it.</p>
+        <ul>
+          <li>12- or 24-word BIP-39 phrase, BIP-84 native SegWit, optional passphrase ("25th word")</li>
+          <li>Up to 10 named wallets — any mix of XBT and BTC — from the one phrase</li>
+          <li>Send &amp; receive with QR codes, a built-in camera scanner, or paste</li>
+          <li>Fee presets or a custom sat/vB rate; "take the fees out of this amount"; sweep a whole balance</li>
+          <li>History with a tap-through to a block explorer; approximate USD value</li>
+          <li>One unlock — fingerprint, face, or device PIN — opens every wallet</li>
+          <li>Phrase and password screens blocked from screenshots, screen recording, and the app switcher</li>
+          <li>A 1% fee (min 400&nbsp;sat) funds the backend — added as a transaction output, shown before you sign</li>
+        </ul>
+        <div class="dl">
+          <a class="primary" href="https://github.com/fortistechlabs/fortis/releases/latest/download/fortis-wallet.apk">Download APK</a>
+          <a class="secondary" href="https://apps.obtainium.imranr.dev/redirect?r=obtainium%3A%2F%2Fadd%2Fhttps%253A%252F%252Fgithub.com%252Ffortistechlabs%252Ffortis" target="_blank" rel="noopener">Add to Obtainium</a>
+        </div>
+        <p class="dl-note">
+          Latest: <strong>v0.2.0</strong> · ~10&nbsp;MB · Android 8+ ·
+          <a href="https://github.com/fortistechlabs/fortis/releases">all releases &amp; changelog</a>
+        </p>
+        <details class="install" open>
+          <summary>How to install</summary>
+          <div class="body">
+            <ol>
+              <li>On your phone, tap <strong>Download APK</strong> above. Your browser warns that this kind of file can harm your device — choose <strong>Download</strong> / <strong>OK</strong>.</li>
+              <li>Open the file — from the download notification, or <em>Files → Downloads → fortis-wallet.apk</em>.</li>
+              <li>The first time, Android asks whether to let your browser install unknown apps. Tap <strong>Settings</strong>, turn on <strong>Allow from this source</strong>, then go back.</li>
+              <li>Tap <strong>Install</strong>. Play Protect may say it <em>doesn't recognise this developer</em> — expected for any app not shipped through the Play Store, not a sign anything's wrong. Tap <strong>More details → Install anyway</strong> (some phones say <strong>Install without scanning</strong>).</li>
+              <li>Tap <strong>Open</strong>.</li>
+            </ol>
+            <p class="sub">
+              <strong>Keep it updated:</strong> install <a href="https://obtainium.imranr.dev/">Obtainium</a>, then tap
+              <strong>Add to Obtainium</strong> above (or in Obtainium: <em>Add App</em> → paste
+              <code>github.com/fortistechlabs/fortis</code>). It watches for new releases and prompts you to update — there's no in-app updater.
+            </p>
+            <p class="sub">
+              <strong>Verify it's genuine</strong> — the real check behind that Play Protect prompt:
+              <code>apksigner verify --print-certs fortis-wallet.apk</code> should report certificate SHA-256<br>
+              <code>16:1A:B9:3F:D5:71:21:99:6A:E0:8E:FD:B4:82:75:DF:D4:AE:55:9B:CB:10:64:12:FB:C4:50:79:1B:94:CD:48</code>
+            </p>
+          </div>
+        </details>
+      </div>
+      <div class="shots">
+        <img src="/img/onboard.jpg" alt="Fortis Wallet onboarding" loading="lazy">
+        <img src="/img/receive.jpg" alt="Fortis Wallet receive screen" loading="lazy">
+        <img src="/img/send.jpg" alt="Fortis Wallet send screen" loading="lazy">
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="features">
+  <div class="wrap">
+    <h2>What sets it apart</h2>
+    <p class="lead">The basics work the way you'd expect. These are the parts that don't.</p>
+    <div class="grid">
+      <div class="feature">
+        <h3>Made for Bitcoin XBT</h3>
+        <p>Bitcoin XBT is a chain almost no wallet supports. Fortis runs it right alongside regular Bitcoin (BTC), chosen per wallet.</p>
+      </div>
+      <div class="feature">
+        <h3>Cross-chain replay protection</h3>
+        <p>Both directions are covered. Every XBT send is signed with <code>SIGHASH_UNIFIED</code> (Knots PR&nbsp;#357), which binds the signature to the XBT chain — automatic, nothing to enable. Going the other way, a BTC send can optionally carry an oversized OP_RETURN that makes that exact transaction invalid on XBT (off by default; adds a little fee).</p>
+      </div>
+      <div class="feature">
+        <h3>Entropy from your hands</h3>
+        <p>Creating a wallet, you can shake the phone, scribble on the screen, or let it sample CPU-timing jitter — real physical noise folded into the seed on top of the system RNG, with a meter for how much you've stirred in.</p>
+      </div>
+      <div class="feature">
+        <h3>Straight about your hardware</h3>
+        <p>The key that unlocks the app goes into your phone's secure element — StrongBox or the TEE — when there is one. When there isn't, Settings says so plainly: "software only." No pretending.</p>
+      </div>
+      <div class="feature">
+        <h3>No account, nothing held over you</h3>
+        <p>No sign-up, no login. The backend only ever sees public addresses and finished signed transactions; a random per-install token rate-limits abuse and is tied to nothing about you. If it's unreachable, the app reads the chain from public explorers instead.</p>
+      </div>
+      <div class="feature">
+        <h3>Yours to leave with</h3>
+        <p>A standard 12- or 24-word BIP-39 phrase with BIP-84 derivation — restore it in any compatible wallet. No Google Play Services (the scanner is built in). Open source, MIT; every release APK signed with the same published key.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <h2>How we build</h2>
+    <div class="grid">
+      <div class="feature">
+        <h3>One core, every platform</h3>
+        <p>The security-critical code — key derivation, coin selection, signing, seed encryption — is a single Rust library shared by the Android app and the web wallet. The crypto isn't reimplemented per platform.</p>
+      </div>
+      <div class="feature">
+        <h3>Open and checkable</h3>
+        <p>Source is public under the MIT licence. Every release APK is signed with one key whose SHA-256 fingerprint is published, so <code>apksigner</code> can confirm a download is the real thing.</p>
+      </div>
+      <div class="feature">
+        <h3>No trackers</h3>
+        <p>No analytics, no ad SDKs, no third-party SDKs of any kind. Everything the backend can see is spelled out in the <a href="/privacy">privacy policy</a>.</p>
+      </div>
+    </div>
+    <p class="warn" style="font-size:14px; margin-top:26px">Our software is early. Back up your recovery phrase offline and start with small amounts.</p>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap row">
+    <span>&copy; Fortis Tech Labs 2026</span>
+    <span>
+      <a href="/privacy">Privacy Policy</a> &nbsp;·&nbsp;
+      <a href="mailto:info@fortistechlabs.com">info@fortistechlabs.com</a> &nbsp;·&nbsp;
+      <a href="mailto:support@fortistechlabs.com">support@fortistechlabs.com</a>
+    </span>
+  </div>
+</footer>
+
+</body>
+</html>

@@ -1,0 +1,189 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">fortis</string>
+
+    <string name="action_back">Հետ</string>
+    <string name="action_cancel">Չեղարկել</string>
+    <string name="action_continue">Շարունակել</string>
+    <string name="action_save">Պահել</string>
+    <string name="action_done">Պատրաստ է</string>
+    <string name="action_show">Ցուցադրել</string>
+    <string name="action_hide">Թաքցնել</string>
+    <string name="action_copy">Պատճենել</string>
+    <string name="action_share">Կիսվել</string>
+    <string name="action_open">Բացել</string>
+    <string name="action_remove">Հեռացնել</string>
+    <string name="action_rename">Վերանվանել</string>
+    <string name="action_unlock">Ապակողպել</string>
+    <string name="action_add_wallet">Ավելացնել դրամապանակ</string>
+    <string name="action_view">Դիտել</string>
+    <string name="action_refresh">Թարմացնել</string>
+    <string name="action_reconnect">Վերամիացնել</string>
+    <string name="action_review">Ստուգել</string>
+    <string name="action_sign_send">Ստորագրել և ուղարկել</string>
+    <string name="action_new_address">Նոր հասցե</string>
+    <string name="action_scan_qr">Սկանավորել QR կոդը</string>
+    <string name="action_lock">Կողպել</string>
+    <string name="action_lock_app">Կողպել հավելվածը</string>
+    <string name="action_copy_xpub">Պատճենել xpub</string>
+    <string name="action_recovery_phrase">Վերականգնման արտահայտություն</string>
+    <string name="toast_copied">Պատճենվեց</string>
+    <string name="cd_dismiss">Փակել</string>
+
+    <string name="onboard_add_title">Ավելացնել դրամապանակ</string>
+    <string name="onboard_tagline">ոչ պահառու դրամապանակ Bitcoin XBT-ի և Bitcoin BTC-ի համար</string>
+    <string name="onboard_create">Ստեղծել նոր դրամապանակ</string>
+    <string name="onboard_restore">Վերականգնել վերականգնման արտահայտությունից</string>
+
+    <string name="gen_title">Ավելացրեք որոշ պատահականություն</string>
+    <string name="gen_body">Ձեր հեռախոսն արդեն ստեղծել է անվտանգ սերմ։ Թափահարեք այն, կամ խզբզեք վահանակի վրա՝ շարժման տվիչներից և ժամանակի տատանումներից լրացուցիչ էնտրոպիա խառնելու համար։ Ամեն դեպքի համար։</string>
+    <string name="gen_words_24">24 բառ</string>
+    <string name="gen_words_12">12 բառ</string>
+    <string name="gen_words_hint">Երկուսն էլ անվտանգ են. 12-ը ավելի հեշտ է գրի առնել։</string>
+    <string name="gen_pad_hint">թափահարեք կամ խզբզեք այստեղ</string>
+    <string name="gen_entropy_full">առատ լրացուցիչ էնտրոպիա — հիմնական սերմն արդեն անվտանգ է</string>
+    <string name="gen_entropy_partial">խառնվեց ~%1$d լրացուցիչ բիթ</string>
+    <string name="gen_generate">Ստեղծել դրամապանակ</string>
+
+    <string name="create_phrase_title">Ձեր վերականգնման արտահայտությունը</string>
+    <string name="create_phrase_body">Այս %1$d բառը գրեք թղթի վրա՝ առցանց ռեժիմից դուրս։ Դրանք ունեցող ցանկացած անձ վերահսկում է ձեր միջոցները։</string>
+    <string name="create_passphrase_hint">«25-րդ բառ»՝ լրացուցիչ գաղտնիք, որը չի պահվում։ Եթե սահմանեք, վերականգնման համար անհրաժեշտ է և՛ արտահայտությունը, և՛ սա։ Կասկածի դեպքում թողեք դատարկ։</string>
+    <string name="create_ack">Ես գրի եմ առել արտահայտությունը</string>
+
+    <string name="restore_title">Վերականգնել դրամապանակը</string>
+    <string name="restore_body">Մուտքագրեք ձեր 12 կամ 24 բառերը՝ բացատներով բաժանված։</string>
+    <string name="restore_clone_hint">Ավելացնելուց հետո կարող եք այս դրամապանակը նշել նաև %1$s-ում «Կառավարել դրամապանակները» բաժնից՝ նույն արտահայտությունը, նույն հասցեները։</string>
+    <string name="action_restore">Վերականգնել</string>
+
+    <string name="field_wallet_name">Դրամապանակի անվանումը</string>
+    <string name="field_passphrase">BIP-39 գաղտնաբառ-արտահայտություն (ընտրովի)</string>
+    <string name="field_app_password">Հավելվածի գաղտնաբառ</string>
+    <string name="field_confirm_password">Հաստատել գաղտնաբառը</string>
+    <string name="field_to_address">Ստացողի հասցե</string>
+    <string name="field_amount">Գումար</string>
+    <string name="field_custom_feerate">հատուկ sat/vB (ընտրովի)</string>
+
+    <string name="reveal_title">Վերականգնման արտահայտություն</string>
+    <string name="reveal_warning">Ցանկացած ոք, ով տեսնում է այս բառերը, ինչպես նաև գաղտնաբառ-արտահայտությունը, եթե սահմանված է, կարող է ծախսել այս դրամապանակը։ Նայեք դրանց միայն մասնավոր վայրում։ Երբեք մի մուտքագրեք դրանք կայքում կամ հավելվածում։ Այստեղ սքրինշոթներն արգելափակված են։</string>
+    <string name="reveal_failed">Չհաջողվեց վերծանել այս դրամապանակը։</string>
+    <string name="reveal_passphrase_label">BIP-39 գաղտնաբառ-արտահայտություն</string>
+    <string name="reveal_no_passphrase">Այս դրամապանակում չկա BIP-39 գաղտնաբառ-արտահայտություն։</string>
+
+    <string name="nav_home">Գլխավոր</string>
+    <string name="nav_wallet">Դրամապանակ</string>
+    <string name="nav_settings">Կարգավորումներ</string>
+    <string name="tab_receive">Ստանալ</string>
+    <string name="tab_send">Ուղարկել</string>
+    <string name="tab_history">Պատմություն</string>
+
+    <string name="home_title">Ձեր դրամապանակները</string>
+    <string name="home_open">բացված է</string>
+    <string name="home_tap_to_open">հպեք՝ բացելու համար</string>
+    <string name="wallets_max">Հասել եք %1$d դրամապանակի առավելագույնին։</string>
+
+    <string name="lock_password_prompt">Մուտքագրեք ձեր հավելվածի գաղտնաբառը։</string>
+    <string name="biometric_setup_title">Կարգավորել հավելվածի կողպեքը</string>
+    <string name="biometric_unlock_title">Ապակողպել Fortis Wallet</string>
+    <string name="biometric_subtitle">Fortis Wallet</string>
+    <string name="biometric_invalidated">Ձեր սարքի էկրանի կողպեքը փոխվել է, ուստի հավելվածն այլևս հնարավոր չէ ապակողպել այստեղ։ Վերատեղադրեք և վերականգնեք յուրաքանչյուր դրամապանակ դրա վերականգնման արտահայտությունից։</string>
+    <string name="lock_choice_use_biometric">Կողպել հավելվածը մատնահետքով կամ PIN-ով</string>
+    <string name="lock_choice_biometric_note">Մեկ ապակողպումը բացում է ձեր բոլոր դրամապանակները։ Հիշելու գաղտնաբառ չկա. ձեզ ներս է թողնում ձեր սարքի մատնահետքը/դեմքը կամ էկրանի կողպեքի PIN-ը։</string>
+    <string name="lock_choice_password_note">Այս գաղտնաբառը ապակողպում է հավելվածը և դրա մեջ գտնվող յուրաքանչյուր դրամապանակ։</string>
+
+    <string name="settings_title">Կարգավորումներ</string>
+    <string name="settings_wallets">Դրամապանակներ</string>
+    <string name="settings_security">Անվտանգություն</string>
+    <string name="settings_connection">Կապ</string>
+    <string name="settings_app_lock">Հավելվածի կողպեք</string>
+    <string name="lock_mode_biometric">Մատնահետք / սարքի PIN</string>
+    <string name="lock_mode_password">Գաղտնաբառ</string>
+    <string name="settings_one_unlock">Մեկ ապակողպումը բացում է հավելվածի յուրաքանչյուր դրամապանակ։</string>
+    <string name="settings_language">Լեզու</string>
+    <string name="language_system_default">Համակարգի կանխադրված</string>
+    <string name="settings_status">Կարգավիճակ</string>
+    <string name="settings_chain_height">Շղթայի բարձրություն</string>
+    <string name="settings_degraded_note">fortis ծառայությունն անհասանելի է — առայժմ օգտագործվում են հանրային բլոկների տվյալները։ Ավտոմատ կվերադառնա։</string>
+    <string name="settings_version">fortis %1$s</string>
+    <string name="xpub_loading">դեռ բեռնվում է — կրկին փորձեք</string>
+    <string name="also_add_on">Ավելացնել նաև %1$s-ում</string>
+    <string name="dialog_rename_title">Վերանվանել դրամապանակը</string>
+    <string name="dialog_reveal_title">Ցուցադրե՞լ %1$s-ի վերականգնման արտահայտությունը</string>
+    <string name="dialog_reveal_body">Վերականգնման արտահայտությունը (և գաղտնաբառ-արտահայտությունը, եթե սահմանել եք) միակ բանն է, որ կարող է վերականգնել այս դրամապանակը, և ցանկացած ոք, ով ունի այն, կարող է ծախսել ձեր միջոցները։ Բացահայտեք այն միայն մասնավոր վայրում, երբ ոչ ոք չի նայում։ Հաջորդ էկրանն արգելափակում է սքրինշոթները։</string>
+    <string name="dialog_remove_title">Հեռացնե՞լ %1$s-ը</string>
+    <string name="dialog_remove_body">Սա հեռացնում է դրամապանակը միայն այս հավելվածից։ Բլոկչեյնում ոչինչ չի փոխվում, և կարող եք այն ցանկացած պահի կրկին ավելացնել դրա վերականգնման արտահայտությամբ (և գաղտնաբառ-արտահայտությամբ, եթե սահմանել եք)։ Համոզվեք, որ արտահայտությունը գրի է առնված։</string>
+
+    <string name="status_offline">անցանց</string>
+    <string name="status_rescanning">վերասկանավորում %1$d%%</string>
+    <string name="status_limited">սահմանափակ ծառայություն</string>
+    <string name="status_connected">միացված է</string>
+    <string name="status_syncing">համաժամեցում</string>
+
+    <string name="wallet_none_open">Բացված դրամապանակ չկա</string>
+    <string name="wallet_choose">Ընտրեք դրամապանակ</string>
+    <string name="wallet_pending">%1$s %2$s սպասման մեջ</string>
+    <string name="wallet_block">բլոկ %1$s</string>
+    <string name="wallet_rescanning">վերասկանավորում %1$d%%</string>
+    <string name="wallet_syncing">համաժամեցում</string>
+    <string name="wallet_limited_suffix">%1$s  ·  սահմանափակ ծառայություն</string>
+    <string name="wallet_connecting">միանում է…</string>
+    <string name="fiat_approx">≈ %1$s</string>
+
+    <string name="sent_title">Վճարումն ուղարկվեց</string>
+    <string name="sent_txid">%1$s… · հպեք՝ պատճենելու համար</string>
+
+    <string name="cd_address_qr">հասցեի QR կոդ</string>
+    <string name="receive_address_n">հասցե #%1$d · հպեք՝ պատճենելու համար</string>
+    <string name="share_address_chooser">Կիսվել հասցեով</string>
+
+    <string name="scan_prompt">Սկանավորեք վճարման հասցեն</string>
+    <string name="send_sweep">Ուղարկել առավելագույնը (sweep)</string>
+    <string name="send_alt_coin">= %1$s %2$s</string>
+    <string name="send_alt_sat">= %1$s sat</string>
+    <string name="send_alt_fiat">  ·  %1$s</string>
+    <string name="fee_fast">Արագ</string>
+    <string name="fee_normal">Սովորական</string>
+    <string name="fee_slow">Դանդաղ</string>
+    <string name="send_replay_protect">XBT վերարտադրման պաշտպանություն (100 բայթ OP_RETURN)</string>
+    <string name="send_replay_note">Ավելացնում է ~110 vB վճար։ Ոչ ստանդարտ է Bitcoin-ի կանխադրված ռելեում — հեռարձակեք մեծ OP_RETURN ընդունող հանգույցի/ծառայության միջոցով։</string>
+    <string name="send_service_fee">Ծառայության վճար՝ ուղարկված գումարի %1$s%%-ը (նվազ. %2$d sat) — աջակցում է այս հոսթինգային հանգույցին։</string>
+    <string name="cd_amount_unit">գումարի միավոր</string>
+    <string name="unit_sat">sat</string>
+
+    <string name="history_empty">դեռ գործարքներ չկան</string>
+    <string name="history_send">ուղարկում</string>
+    <string name="history_receive">ստացում</string>
+    <string name="history_row_subtitle">%1$s · %2$s…</string>
+    <string name="history_pending">սպասման մեջ</string>
+    <string name="history_conf_n">%1$d հաստատում</string>
+    <string name="history_confirmed">հաստատված</string>
+    <string name="history_hint">հպեք գործարքին՝ այն դիտարկիչում բացելու համար · երկար սեղմեք՝ id-ն պատճենելու համար</string>
+
+    <string name="confirm_sweep_title">Հաստատել sweep</string>
+    <string name="confirm_payment_title">Հաստատել վճարումը</string>
+    <string name="confirm_to">Ում</string>
+    <string name="confirm_amount">Գումար</string>
+    <string name="confirm_network_fee">Ցանցի վճար</string>
+    <string name="confirm_network_fee_value">%1$s %2$s · %3$d sat/vB</string>
+    <string name="confirm_service_fee">Ծառայության վճար</string>
+    <string name="confirm_change">Մանրադրամ</string>
+    <string name="confirm_replay">Վերարտադրման պաշտպանություն</string>
+    <string name="confirm_replay_value">միացված · 100 բայթ OP_RETURN</string>
+    <string name="confirm_total">Ընդամենը</string>
+    <string name="value_with_fiat">%1$s %2$s  ·  %3$s</string>
+
+    <string name="mnemonic_not_in_list">%1$d-ը բառերի ցանկում չէ</string>
+    <string name="mnemonic_looks_good">լավ տեսք ունի</string>
+    <string name="mnemonic_status">%1$s  ·  %2$s</string>
+
+    <string name="error_wallet_max">Մեկ սարքում կարող եք պահել մինչև %1$d դրամապանակ։</string>
+    <string name="error_clone_exists">«%1$s»-ն արդեն %2$s-ում է։</string>
+    <string name="error_lock_setup_failed">հավելվածի կողպեքի կարգավորումը ձախողվեց</string>
+    <string name="error_enter_amount">մուտքագրեք գումար</string>
+    <string name="error_no_coins">ծախսելու հաստատված մետաղադրամներ չկան</string>
+    <string name="error_open_wallet">չհաջողվեց բացել դրամապանակը</string>
+
+    <plurals name="word_count">
+        <item quantity="one">%1$d բառ</item>
+        <item quantity="other">%1$d բառ</item>
+    </plurals>
+</resources>

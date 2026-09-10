@@ -1,0 +1,189 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">fortis</string>
+
+    <string name="action_back">પાછળ</string>
+    <string name="action_cancel">રદ કરો</string>
+    <string name="action_continue">ચાલુ રાખો</string>
+    <string name="action_save">સાચવો</string>
+    <string name="action_done">થઈ ગયું</string>
+    <string name="action_show">બતાવો</string>
+    <string name="action_hide">છુપાવો</string>
+    <string name="action_copy">કૉપિ કરો</string>
+    <string name="action_share">શેર કરો</string>
+    <string name="action_open">ખોલો</string>
+    <string name="action_remove">દૂર કરો</string>
+    <string name="action_rename">નામ બદલો</string>
+    <string name="action_unlock">અનલૉક કરો</string>
+    <string name="action_add_wallet">વૉલેટ ઉમેરો</string>
+    <string name="action_view">જુઓ</string>
+    <string name="action_refresh">રિફ્રેશ કરો</string>
+    <string name="action_reconnect">ફરી કનેક્ટ કરો</string>
+    <string name="action_review">સમીક્ષા કરો</string>
+    <string name="action_sign_send">સાઇન કરીને મોકલો</string>
+    <string name="action_new_address">નવું સરનામું</string>
+    <string name="action_scan_qr">QR કોડ સ્કૅન કરો</string>
+    <string name="action_lock">લૉક કરો</string>
+    <string name="action_lock_app">ઍપ લૉક કરો</string>
+    <string name="action_copy_xpub">xpub કૉપિ કરો</string>
+    <string name="action_recovery_phrase">પુનઃપ્રાપ્તિ શબ્દસમૂહ</string>
+    <string name="toast_copied">કૉપિ થયું</string>
+    <string name="cd_dismiss">બરતરફ કરો</string>
+
+    <string name="onboard_add_title">વૉલેટ ઉમેરો</string>
+    <string name="onboard_tagline">Bitcoin XBT અને Bitcoin BTC માટે નૉન-કસ્ટોડિયલ વૉલેટ</string>
+    <string name="onboard_create">નવું વૉલેટ બનાવો</string>
+    <string name="onboard_restore">પુનઃપ્રાપ્તિ શબ્દસમૂહથી પુનઃસ્થાપિત કરો</string>
+
+    <string name="gen_title">થોડી અવ્યવસ્થિતતા ઉમેરો</string>
+    <string name="gen_body">તમારા ફોને પહેલેથી જ સુરક્ષિત સીડ બનાવી લીધું છે. ગતિ સેન્સર અને સમયના ઉતાર-ચઢાવમાંથી વધારાની એન્ટ્રોપી ભેળવવા માટે તેને હલાવો — અથવા પૅડ પર લીટા કરો. સાવચેતી માટે.</string>
+    <string name="gen_words_24">24 શબ્દ</string>
+    <string name="gen_words_12">12 શબ્દ</string>
+    <string name="gen_words_hint">બંને સુરક્ષિત છે; 12 લખવા સરળ છે.</string>
+    <string name="gen_pad_hint">હલાવો, અથવા અહીં લીટા કરો</string>
+    <string name="gen_entropy_full">પુષ્કળ વધારાની એન્ટ્રોપી — મૂળ સીડ પહેલેથી જ સુરક્ષિત છે</string>
+    <string name="gen_entropy_partial">~%1$d વધારાના બિટ ભેળવ્યા</string>
+    <string name="gen_generate">વૉલેટ બનાવો</string>
+
+    <string name="create_phrase_title">તમારો પુનઃપ્રાપ્તિ શબ્દસમૂહ</string>
+    <string name="create_phrase_body">આ %1$d શબ્દો કાગળ પર, ઑફલાઇન લખો. જેની પાસે તે છે તે તમારા ભંડોળ પર નિયંત્રણ રાખે છે.</string>
+    <string name="create_passphrase_hint">એક «25મો શબ્દ» — એક વધારાનું ગુપ્ત, જે સંગ્રહાતું નથી. તમે તે સેટ કરો તો પુનઃસ્થાપન માટે શબ્દસમૂહ અને આ બંને જોઈએ. શંકા હોય તો ખાલી રાખો.</string>
+    <string name="create_ack">મેં શબ્દસમૂહ લખી લીધો છે</string>
+
+    <string name="restore_title">વૉલેટ પુનઃસ્થાપિત કરો</string>
+    <string name="restore_body">તમારા 12 અથવા 24 શબ્દો, સ્પેસથી અલગ કરીને દાખલ કરો.</string>
+    <string name="restore_clone_hint">ઉમેર્યા પછી તમે «વૉલેટ મેનેજ કરો»માંથી આ વૉલેટને %1$s પર પણ સૂચિબદ્ધ કરી શકો છો — એ જ શબ્દસમૂહ, એ જ સરનામાં.</string>
+    <string name="action_restore">પુનઃસ્થાપિત કરો</string>
+
+    <string name="field_wallet_name">વૉલેટનું નામ</string>
+    <string name="field_passphrase">BIP-39 પાસફ્રેઝ (વૈકલ્પિક)</string>
+    <string name="field_app_password">ઍપ પાસવર્ડ</string>
+    <string name="field_confirm_password">પાસવર્ડની પુષ્ટિ કરો</string>
+    <string name="field_to_address">પ્રાપ્તકર્તાનું સરનામું</string>
+    <string name="field_amount">રકમ</string>
+    <string name="field_custom_feerate">કસ્ટમ sat/vB (વૈકલ્પિક)</string>
+
+    <string name="reveal_title">પુનઃપ્રાપ્તિ શબ્દસમૂહ</string>
+    <string name="reveal_warning">જે કોઈ આ શબ્દો જુએ છે — અને સેટ હોય તો પાસફ્રેઝ — તે આ વૉલેટમાંથી ખર્ચ કરી શકે છે. તેમને ફક્ત ખાનગી જગ્યાએ જ જુઓ. તેમને ક્યારેય કોઈ વેબસાઇટ કે ઍપમાં ટાઇપ ન કરો. અહીં સ્ક્રીનશૉટ બ્લૉક છે.</string>
+    <string name="reveal_failed">આ વૉલેટ ડિક્રિપ્ટ કરી શકાયું નહીં.</string>
+    <string name="reveal_passphrase_label">BIP-39 પાસફ્રેઝ</string>
+    <string name="reveal_no_passphrase">આ વૉલેટ પર કોઈ BIP-39 પાસફ્રેઝ નથી.</string>
+
+    <string name="nav_home">હોમ</string>
+    <string name="nav_wallet">વૉલેટ</string>
+    <string name="nav_settings">સેટિંગ</string>
+    <string name="tab_receive">મેળવો</string>
+    <string name="tab_send">મોકલો</string>
+    <string name="tab_history">ઇતિહાસ</string>
+
+    <string name="home_title">તમારા વૉલેટ</string>
+    <string name="home_open">ખુલ્લું</string>
+    <string name="home_tap_to_open">ખોલવા માટે ટૅપ કરો</string>
+    <string name="wallets_max">%1$d વૉલેટની મહત્તમ મર્યાદાએ પહોંચ્યા.</string>
+
+    <string name="lock_password_prompt">તમારો ઍપ પાસવર્ડ દાખલ કરો.</string>
+    <string name="biometric_setup_title">ઍપ લૉક સેટ કરો</string>
+    <string name="biometric_unlock_title">Fortis Wallet અનલૉક કરો</string>
+    <string name="biometric_subtitle">Fortis Wallet</string>
+    <string name="biometric_invalidated">તમારા ઉપકરણનું સ્ક્રીન લૉક બદલાયું, તેથી ઍપ અહીં હવે અનલૉક કરી શકાતી નથી. ફરીથી ઇન્સ્ટૉલ કરો અને દરેક વૉલેટને તેના પુનઃપ્રાપ્તિ શબ્દસમૂહથી પુનઃસ્થાપિત કરો.</string>
+    <string name="lock_choice_use_biometric">ઍપને ફિંગરપ્રિન્ટ કે PIN વડે લૉક કરો</string>
+    <string name="lock_choice_biometric_note">એક વાર અનલૉક કરવાથી તમારા બધા વૉલેટ ખૂલે છે. યાદ રાખવા માટે કોઈ પાસવર્ડ નથી — તમારા ઉપકરણનું ફિંગરપ્રિન્ટ/ચહેરો કે સ્ક્રીન-લૉક PIN તમને અંદર લે છે.</string>
+    <string name="lock_choice_password_note">આ પાસવર્ડ ઍપ અને તેમાંના દરેક વૉલેટને અનલૉક કરે છે.</string>
+
+    <string name="settings_title">સેટિંગ</string>
+    <string name="settings_wallets">વૉલેટ</string>
+    <string name="settings_security">સુરક્ષા</string>
+    <string name="settings_connection">કનેક્શન</string>
+    <string name="settings_app_lock">ઍપ લૉક</string>
+    <string name="lock_mode_biometric">ફિંગરપ્રિન્ટ / ઉપકરણ PIN</string>
+    <string name="lock_mode_password">પાસવર્ડ</string>
+    <string name="settings_one_unlock">એક વાર અનલૉક કરવાથી ઍપમાંનું દરેક વૉલેટ ખૂલે છે.</string>
+    <string name="settings_language">ભાષા</string>
+    <string name="language_system_default">સિસ્ટમ ડિફૉલ્ટ</string>
+    <string name="settings_status">સ્થિતિ</string>
+    <string name="settings_chain_height">ચેઇન ઊંચાઈ</string>
+    <string name="settings_degraded_note">fortis સેવા ઉપલબ્ધ નથી — હાલ સાર્વજનિક બ્લૉક ડેટા વપરાય છે. તે આપમેળે પાછી આવશે.</string>
+    <string name="settings_version">fortis %1$s</string>
+    <string name="xpub_loading">હજી લોડ થઈ રહ્યું છે — ફરી પ્રયાસ કરો</string>
+    <string name="also_add_on">%1$s પર પણ ઉમેરો</string>
+    <string name="dialog_rename_title">વૉલેટનું નામ બદલો</string>
+    <string name="dialog_reveal_title">%1$s માટે પુનઃપ્રાપ્તિ શબ્દસમૂહ બતાવવો?</string>
+    <string name="dialog_reveal_body">પુનઃપ્રાપ્તિ શબ્દસમૂહ (અને તમે સેટ કર્યો હોય તો પાસફ્રેઝ) એ એકમાત્ર વસ્તુ છે જે આ વૉલેટ પુનઃસ્થાપિત કરી શકે — અને જેની પાસે તે છે તે તમારું ભંડોળ ખર્ચ કરી શકે છે. તેને ફક્ત ખાનગી જગ્યાએ, કોઈ જોતું ન હોય ત્યારે જ જાહેર કરો. આગળની સ્ક્રીન સ્ક્રીનશૉટ બ્લૉક કરે છે.</string>
+    <string name="dialog_remove_title">%1$s દૂર કરવું?</string>
+    <string name="dialog_remove_body">આ ફક્ત આ ઍપમાંથી વૉલેટ દૂર કરે છે. બ્લૉકચેન પર કંઈ બદલાતું નથી, અને તમે તેને તેના પુનઃપ્રાપ્તિ શબ્દસમૂહ (અને સેટ કર્યો હોય તો પાસફ્રેઝ) વડે ગમે ત્યારે પાછું ઉમેરી શકો છો. શબ્દસમૂહ લખેલો છે તેની ખાતરી કરો.</string>
+
+    <string name="status_offline">ઑફલાઇન</string>
+    <string name="status_rescanning">ફરી સ્કૅન થઈ રહ્યું છે %1$d%%</string>
+    <string name="status_limited">મર્યાદિત સેવા</string>
+    <string name="status_connected">કનેક્ટ થયું</string>
+    <string name="status_syncing">સિંક થઈ રહ્યું છે</string>
+
+    <string name="wallet_none_open">કોઈ વૉલેટ ખુલ્લું નથી</string>
+    <string name="wallet_choose">વૉલેટ પસંદ કરો</string>
+    <string name="wallet_pending">%1$s %2$s બાકી</string>
+    <string name="wallet_block">બ્લૉક %1$s</string>
+    <string name="wallet_rescanning">ફરી સ્કૅન થઈ રહ્યું છે %1$d%%</string>
+    <string name="wallet_syncing">સિંક થઈ રહ્યું છે</string>
+    <string name="wallet_limited_suffix">%1$s  ·  મર્યાદિત સેવા</string>
+    <string name="wallet_connecting">કનેક્ટ થઈ રહ્યું છે…</string>
+    <string name="fiat_approx">≈ %1$s</string>
+
+    <string name="sent_title">ચુકવણી મોકલી</string>
+    <string name="sent_txid">%1$s… · કૉપિ કરવા ટૅપ કરો</string>
+
+    <string name="cd_address_qr">સરનામાનો QR કોડ</string>
+    <string name="receive_address_n">સરનામું #%1$d · કૉપિ કરવા ટૅપ કરો</string>
+    <string name="share_address_chooser">સરનામું શેર કરો</string>
+
+    <string name="scan_prompt">ચુકવણી સરનામું સ્કૅન કરો</string>
+    <string name="send_sweep">મહત્તમ મોકલો (sweep)</string>
+    <string name="send_alt_coin">= %1$s %2$s</string>
+    <string name="send_alt_sat">= %1$s sat</string>
+    <string name="send_alt_fiat">  ·  %1$s</string>
+    <string name="fee_fast">ઝડપી</string>
+    <string name="fee_normal">સામાન્ય</string>
+    <string name="fee_slow">ધીમું</string>
+    <string name="send_replay_protect">XBT રિપ્લે સુરક્ષા (100-બાઇટ OP_RETURN)</string>
+    <string name="send_replay_note">~110 vB ફી ઉમેરે છે. ડિફૉલ્ટ Bitcoin રિલે પર બિન-માનક — મોટા OP_RETURN સ્વીકારતા નોડ/સેવા દ્વારા બ્રોડકાસ્ટ કરો.</string>
+    <string name="send_service_fee">સેવા ફી: મોકલેલી રકમના %1$s%% (ન્યૂનતમ %2$d sat) — આ હોસ્ટ કરેલા નોડને સમર્થન આપે છે.</string>
+    <string name="cd_amount_unit">રકમનું એકમ</string>
+    <string name="unit_sat">sat</string>
+
+    <string name="history_empty">હજી કોઈ ટ્રાન્ઝેક્શન નથી</string>
+    <string name="history_send">મોકલવું</string>
+    <string name="history_receive">મેળવવું</string>
+    <string name="history_row_subtitle">%1$s · %2$s…</string>
+    <string name="history_pending">બાકી</string>
+    <string name="history_conf_n">%1$d પુષ્ટિ</string>
+    <string name="history_confirmed">પુષ્ટ</string>
+    <string name="history_hint">ટ્રાન્ઝેક્શન એક્સપ્લોરરમાં ખોલવા ટૅપ કરો · id કૉપિ કરવા લાંબું દબાવો</string>
+
+    <string name="confirm_sweep_title">sweep ની પુષ્ટિ કરો</string>
+    <string name="confirm_payment_title">ચુકવણીની પુષ્ટિ કરો</string>
+    <string name="confirm_to">પ્રાપ્તકર્તા</string>
+    <string name="confirm_amount">રકમ</string>
+    <string name="confirm_network_fee">નેટવર્ક ફી</string>
+    <string name="confirm_network_fee_value">%1$s %2$s · %3$d sat/vB</string>
+    <string name="confirm_service_fee">સેવા ફી</string>
+    <string name="confirm_change">પરત</string>
+    <string name="confirm_replay">રિપ્લે સુરક્ષા</string>
+    <string name="confirm_replay_value">ચાલુ · 100-બાઇટ OP_RETURN</string>
+    <string name="confirm_total">કુલ</string>
+    <string name="value_with_fiat">%1$s %2$s  ·  %3$s</string>
+
+    <string name="mnemonic_not_in_list">%1$d શબ્દ યાદીમાં નથી</string>
+    <string name="mnemonic_looks_good">બરાબર લાગે છે</string>
+    <string name="mnemonic_status">%1$s  ·  %2$s</string>
+
+    <string name="error_wallet_max">તમે એક ઉપકરણ પર %1$d સુધી વૉલેટ રાખી શકો છો.</string>
+    <string name="error_clone_exists">«%1$s» પહેલેથી જ %2$s પર છે.</string>
+    <string name="error_lock_setup_failed">ઍપ લૉક સેટઅપ નિષ્ફળ</string>
+    <string name="error_enter_amount">રકમ દાખલ કરો</string>
+    <string name="error_no_coins">ખર્ચવા માટે કોઈ પુષ્ટ કૉઇન નથી</string>
+    <string name="error_open_wallet">વૉલેટ ખોલી શકાયું નહીં</string>
+
+    <plurals name="word_count">
+        <item quantity="one">%1$d શબ્દ</item>
+        <item quantity="other">%1$d શબ્દ</item>
+    </plurals>
+</resources>
