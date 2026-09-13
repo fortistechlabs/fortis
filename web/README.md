@@ -2,9 +2,17 @@
 
 A static, offline-capable (PWA) browser wallet. Keys are generated and every
 signature is produced **inside WebAssembly** (`wallet-wasm`); the encrypted seed
-lives in this browser's IndexedDB and never leaves the device.
+lives in this browser's IndexedDB and never leaves the device. Feature parity
+with the Android app: up to 10 named wallets behind one app lock (password,
+plus optional WebAuthn quick-unlock on supporting browsers), approximate USD
+value, and the UI in ~75 languages (Settings → Language).
 
-At onboarding you pick where it reads the chain:
+At onboarding you create or restore your first wallet, which connects to the
+hosted `fortis` edge automatically (mainnet only — no picker shown). Each
+wallet has its own backend, so a BTC wallet and an XBT wallet can use
+different sources at once; switch a wallet's backend any time from Settings
+→ that wallet's card → Reconnect, or create a regtest wallet, which always
+asks since the hosted edge doesn't serve it:
 
 ```
                          ┌─ Public explorer ──────────────────────────────┐
@@ -102,13 +110,36 @@ network.
 
 ## Scope
 
-Create / restore (12 or 24 words, optional passphrase), password-encrypted seed,
-balance, receive addresses, send + sweep with a fee-rate control, transaction
-history, on either backend. Not yet: QR codes, RBF fee-bump, coin control, swaps.
+Create / restore (12 or 24 words, optional passphrase), up to 10 named wallets
+behind one app lock, balance with approximate USD value, receive addresses,
+send + sweep with a fee-rate control, transaction history, on either backend,
+in ~75 languages, a QR code on the receive address. Not yet: RBF fee-bump, coin control, swaps.
+
+### Multi-wallet & app lock
+
+One in-memory app secret unseals every wallet. It's wrapped under an app
+password (mandatory — always the fallback) and, on browsers that support the
+WebAuthn PRF extension, optionally also under this device's platform
+authenticator ("quick unlock" — enable/disable it any time from Settings →
+Security). PRF support is inconsistent across browsers today; the password
+always works regardless.
+
+Settings → a wallet's card → **Also add on BTC/XBT** clones a wallet onto the
+other chain from the *same* recovery phrase (same derivation, just a different
+chain code) — no new phrase to write down.
+
+### Translations
+
+UI strings live in `src/locales/*.json`, converted from the Android app's
+`res/values*/strings.xml` by `tools/i18n_extract.py` (re-run it after Android's
+strings change — it's a manual step, not part of any build). A locale not
+fully translated falls back to English per missing key. Fiat is USD-only
+regardless of language.
 
 Verified in headless Chrome: send → broadcast against a regtest node with BLAKE2b
 active, and the explorer path (scan / balance / fees / history) against live
-mempool.guide data via `--esplora-proxy`.
+mempool.guide data via `--esplora-proxy`; multi-wallet creation/switching,
+the language picker, and wallet management actions against the hosted edge.
 
 ## Files
 
@@ -117,9 +148,13 @@ mempool.guide data via `--esplora-proxy`.
 | `index.html`, `style.css` | shell |
 | `src/app.js` | controller + screens (no framework) |
 | `src/wallet.js` | `wallet-wasm` wrapper — the only file that touches keys |
+| `src/webauthn.js` | WebAuthn PRF registration/assertion for quick unlock |
+| `src/i18n.js`, `src/locales/*.json` | translation loader + per-locale strings |
 | `src/gateway.js` | `fortisd` gateway client (your own node) |
-| `src/esplora.js` | Esplora client — address-gap-limit scan, same interface as the gateway |
-| `src/store.js` | IndexedDB (one encrypted record) |
+| `src/esplora.js` | Esplora/edge client — address-gap-limit scan, USD price, same interface as the gateway |
+| `src/store.js` | IndexedDB (wallet list + app-lock block; migrates a v1 single-wallet record) |
 | `src/ui.js` | DOM helpers, formatting |
 | `sw.js`, `manifest.webmanifest` | PWA / offline shell |
+| `tools/i18n_extract.py` | Android strings.xml → `src/locales/*.json` (manual, one-off) |
+| `vendor/qrcode.js` | [qrcode-generator](https://github.com/kazuhikoarase/qrcode-generator) (MIT) — receive-address QR |
 | `pkg/` | `wasm-pack` output (git-ignored) |

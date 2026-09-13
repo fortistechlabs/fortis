@@ -37,7 +37,7 @@ services:
     command: >
       --bind 0.0.0.0:8098
       --xbt-upstream http://index:8094
-      --btc-upstream ${BTC_UPSTREAM:-https://mempool.space/api}
+      --btc-upstream ${BTC_UPSTREAM:-https://blockstream.info/api}
       --btc-price-url ${BTC_PRICE_URL:-https://api.kraken.com/0/public/Ticker?pair=XBTUSD}
       --xbt-price-url ${XBT_PRICE_URL:-https://mempool.kilombino.com/api/v1/prices}
       --btc-upstream-rate ${BTC_UPSTREAM_RATE:-5}

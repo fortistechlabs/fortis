@@ -2,6 +2,8 @@
 //! Esplora API for BTC) and return the raw response.
 
 use anyhow::Result;
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
 use tiny_http::Method;
 
 pub struct Upstream {
@@ -82,5 +84,79 @@ impl Upstream {
             return Ok(UpstreamResponse { status, content_type, body: out });
         }
         Err(last_err.map_or_else(|| anyhow::anyhow!("upstream unreachable"), Into::into))
+    }
+}
+
+/// Background-refreshed chain tip height — same fix, same reason, as
+/// `price::PriceCache`: any upstream this proxies to can go slow or
+/// unreachable, and `forward`'s retry-with-backoff means recovering from
+/// that can legitimately take many seconds on the request path. Found live,
+/// 2026-09-13: `--btc-upstream https://mempool.space/api` reliably timed out
+/// reading a response through this exact `ureq`-based client (confirmed
+/// with added logging: consistent read timeouts, not occasional), while a
+/// plain `curl` to the identical URL from the same machine answered in
+/// under a second every time, and the same client code against
+/// `https://blockstream.info/api` succeeded in ~0.5s — which is why the
+/// deployed upstream is blockstream.info now, not mempool.space. This cache
+/// exists regardless of which upstream is configured: `/blocks/tip/height`'s
+/// old 5s response-cache TTL was shorter than a single bad-upstream retry
+/// cycle can take, so almost every request paid the full synchronous cost
+/// whenever the upstream degraded. `current()` only ever locks a mutex — it
+/// never touches the network, so a degraded upstream can no longer stall a
+/// request, it just leaves the served height briefly behind by up to one
+/// `interval`.
+pub struct TipCache {
+    current: Arc<Mutex<Option<u64>>>,
+}
+
+impl TipCache {
+    /// `interval` is how often to refresh on success; a failed fetch (or an
+    /// unparseable body) retries sooner (5s) so a transient blip recovers
+    /// quickly instead of leaving a stale height up for the full interval.
+    pub fn spawn(upstream: Upstream, interval: Duration) -> Self {
+        let current = Arc::new(Mutex::new(None));
+        let bg = current.clone();
+        std::thread::spawn(move || loop {
+            // Only failures are logged — like PriceCache, a healthy cycle stays
+            // silent. This is what caught the mempool.space issue: without it,
+            // "no successful height yet" and "actively failing every attempt"
+            // looked identical from the outside.
+            let t0 = std::time::Instant::now();
+            let result = upstream.forward(&Method::Get, "blocks/tip/height", "", &[]);
+            let height = match &result {
+                Ok(r) if r.status == 200 => {
+                    match std::str::from_utf8(&r.body).ok().and_then(|s| s.trim().parse::<u64>().ok()) {
+                        Some(h) => Some(h),
+                        None => {
+                            eprintln!("tip-cache: unparseable body: {:?}", String::from_utf8_lossy(&r.body));
+                            None
+                        }
+                    }
+                }
+                Ok(r) => {
+                    eprintln!("tip-cache: upstream returned status {}", r.status);
+                    None
+                }
+                Err(e) => {
+                    eprintln!("tip-cache: fetch failed after {:?}: {e:#}", t0.elapsed());
+                    None
+                }
+            };
+            let sleep_for = match height {
+                Some(h) => {
+                    *bg.lock().unwrap() = Some(h);
+                    interval
+                }
+                None => Duration::from_secs(5),
+            };
+            std::thread::sleep(sleep_for);
+        });
+        Self { current }
+    }
+
+    /// The last successfully fetched tip height, or `None` before the first
+    /// fetch completes (briefly, at startup) — never blocks.
+    pub fn current(&self) -> Option<u64> {
+        *self.current.lock().unwrap()
     }
 }

@@ -11,70 +11,87 @@
 <meta property="og:url" content="https://fortistechlabs.com/">
 <meta property="og:image" content="https://fortistechlabs.com/img/receive.jpg">
 <link rel="icon" href="/icon.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
   :root {
     color-scheme: dark;
-    --bg: #0b0d16; --card: #12151f; --line: #1e2333;
-    --ink: #e7ebf6; --dim: #aab2c8; --faint: #7b849c; --accent: #8fbcff;
+    --bg: #0a1420; --card: #0d1e2c; --line: rgba(90,212,255,.28);
+    --ink: #eaf6ff; --dim: #7fa0b8; --faint: #4d6b82; --accent: #5ad4ff;
   }
   * { box-sizing: border-box; }
   html { scroll-behavior: smooth; overflow-x: hidden; }
   body {
     margin: 0; background: var(--bg); color: var(--ink);
-    font: 16px/1.65 -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    font: 16px/1.65 'Space Grotesk', -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
     -webkit-text-size-adjust: 100%; overflow-x: hidden;
+    background-image:
+      linear-gradient(rgba(90,212,255,.055) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(90,212,255,.055) 1px, transparent 1px);
+    background-size: 32px 32px;
   }
   img { max-width: 100%; }
   a { color: var(--accent); text-decoration: none; }
   a:hover { text-decoration: underline; }
-  code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+  code, .mono { font-family: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
   .wrap { max-width: 1000px; margin: 0 auto; padding: 0 24px; }
 
   nav { display: flex; align-items: center; justify-content: space-between; padding: 22px 0; }
   nav .brand { display: flex; align-items: center; gap: 11px; font-weight: 700; font-size: 17px; color: #fff; }
   nav .brand img { width: 28px; height: 28px; }
-  nav .links a { color: var(--dim); margin-left: 22px; font-size: 14px; }
+  nav .links a { color: var(--dim); margin-left: 22px; font-size: 13px; font-family: 'IBM Plex Mono', monospace; }
 
   header.hero {
     text-align: center; padding: 76px 0 84px;
     background:
-      radial-gradient(600px 380px at 18% -10%, rgba(63,92,196,.34), transparent 70%),
-      radial-gradient(560px 380px at 92% 15%, rgba(111,58,168,.26), transparent 70%);
+      radial-gradient(600px 380px at 18% -10%, rgba(90,212,255,.14), transparent 70%),
+      radial-gradient(560px 380px at 92% 15%, rgba(90,212,255,.08), transparent 70%);
   }
-  header.hero .eyebrow { color: var(--faint); letter-spacing: .18em; text-transform: uppercase; font-size: 12px; }
-  header.hero h1 { font-size: clamp(34px, 7vw, 58px); margin: 12px 0 16px; letter-spacing: .4px; color: #fff; }
+  header.hero .eyebrow {
+    color: var(--accent); letter-spacing: .18em; text-transform: uppercase; font-size: 12px;
+    font-family: 'IBM Plex Mono', monospace;
+  }
+  header.hero h1 { font-size: clamp(34px, 7vw, 58px); margin: 12px 0 16px; letter-spacing: -.01em; color: #fff; font-weight: 600; }
   header.hero p { font-size: clamp(16px, 3.4vw, 20px); color: var(--dim); margin: 0 auto; max-width: 660px; }
 
   section { padding: 56px 0; border-top: 1px solid var(--line); }
-  section h2 { font-size: 24px; color: #fff; margin: 0 0 8px; }
+  section h2 { font-size: 24px; color: #fff; margin: 0 0 8px; font-weight: 600; }
   section .lead { color: var(--dim); max-width: 660px; margin: 0 0 32px; }
 
   .product {
     display: grid; grid-template-columns: 1.1fr 1fr; gap: 40px; align-items: center;
-    background: var(--card); border: 1px solid var(--line); border-radius: 18px; padding: 32px;
+    background: var(--card); border: 1px solid var(--line); border-radius: 4px; padding: 32px;
   }
-  .product h3 { margin: 0 0 4px; font-size: 22px; color: #fff; }
-  .product .kicker { color: var(--faint); font-size: 13px; margin: 0 0 14px; }
+  .product + .product { margin-top: 20px; }
+  .product h3 { margin: 0 0 4px; font-size: 22px; color: #fff; font-weight: 600; }
+  .product .kicker { color: var(--accent); font-size: 12.5px; margin: 0 0 14px; font-family: 'IBM Plex Mono', monospace; letter-spacing: .03em; }
   .product ul { margin: 14px 0 20px; padding-left: 18px; color: var(--dim); }
   .product li { margin: 5px 0; }
   .product .cta { display: inline-block; font-size: 13px; color: var(--faint);
-    border: 1px solid var(--line); border-radius: 999px; padding: 7px 16px; }
+    border: 1px solid var(--line); border-radius: 4px; padding: 7px 16px; font-family: 'IBM Plex Mono', monospace; }
   .dl { display: flex; flex-wrap: wrap; gap: 10px; margin: 4px 0 10px; }
-  .dl a { display: inline-flex; align-items: center; gap: 8px; font-size: 14px;
-    font-weight: 600; border-radius: 999px; padding: 10px 20px; }
-  .dl .primary { background: var(--accent); color: #0b0d16; }
-  .dl .primary:hover { text-decoration: none; filter: brightness(1.06); }
+  .dl a {
+    position: relative; display: inline-flex; align-items: center; gap: 8px; font-size: 13.5px;
+    font-weight: 600; border-radius: 2px; padding: 12px 22px; font-family: 'IBM Plex Mono', monospace;
+    letter-spacing: .02em;
+  }
+  .dl a::before, .dl a::after { content: ""; position: absolute; width: 9px; height: 9px; border-color: var(--accent); border-style: solid; }
+  .dl a::before { left: -1px; top: -1px; border-width: 1.5px 0 0 1.5px; }
+  .dl a::after { right: -1px; bottom: -1px; border-width: 0 1.5px 1.5px 0; }
+  .dl .primary { background: rgba(90,212,255,.12); color: var(--ink); border: 1px solid var(--accent); }
+  .dl .primary:hover { text-decoration: none; background: rgba(90,212,255,.2); }
   .dl .secondary { border: 1px solid var(--line); color: var(--ink); }
   .dl .secondary:hover { text-decoration: none; border-color: var(--accent); }
-  .dl-note { font-size: 12.5px; color: var(--faint); margin: 0 0 10px; line-height: 1.7; }
+  .dl-note { font-size: 12.5px; color: var(--faint); margin: 0 0 10px; line-height: 1.7; font-family: 'IBM Plex Mono', monospace; }
   .dl-note code { font-size: 11px; word-break: break-all; }
-  .install { margin: 0 0 6px; border: 1px solid var(--line); border-radius: 12px;
-    background: rgba(255,255,255,.015); }
+  .install { margin: 0 0 6px; border: 1px solid var(--line); border-radius: 4px;
+    background: rgba(90,212,255,.03); }
   .install > summary { cursor: pointer; padding: 12px 16px; font-size: 13.5px;
     font-weight: 600; color: var(--ink); list-style: none; }
   .install > summary::-webkit-details-marker { display: none; }
   .install > summary::marker { content: ""; }
-  .install > summary::before { content: "+"; color: var(--faint); margin-right: 8px; }
+  .install > summary::before { content: "+"; color: var(--accent); margin-right: 8px; font-family: 'IBM Plex Mono', monospace; }
   .install[open] > summary::before { content: "\2212"; }
   .install .body { padding: 0 16px 14px; }
   .install ol { margin: 4px 0 0; padding-left: 20px; color: var(--dim);
@@ -83,16 +100,17 @@
   .install .sub { margin: 12px 0 0; font-size: 12.5px; color: var(--faint); line-height: 1.7; }
   .install code { font-size: 11px; word-break: break-all; }
   .product .shots { display: flex; gap: 14px; max-width: 100%; overflow-x: auto; padding-bottom: 8px; }
-  .product .shots img { width: 168px; flex: none; border-radius: 16px; border: 1px solid var(--line); }
+  .product .shots img { width: 168px; flex: none; border-radius: 4px; border: 1px solid var(--line); }
 
   .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr)); gap: 16px; }
-  .feature { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 20px; }
-  .feature h3 { margin: 0 0 6px; font-size: 16px; color: #fff; }
+  .feature { background: var(--card); border: 1px solid var(--line); border-radius: 4px; padding: 20px; }
+  .feature h3 { margin: 0 0 6px; font-size: 16px; color: #fff; font-weight: 600; }
   .feature p { margin: 0; color: var(--dim); font-size: 14.5px; }
 
   footer { border-top: 1px solid var(--line); padding: 40px 0 64px; color: var(--faint); font-size: 14px; }
   footer .row { display: flex; flex-wrap: wrap; gap: 14px 26px; align-items: center; justify-content: space-between; }
   footer a { color: var(--dim); }
+  footer .row > span:last-child { font-family: 'IBM Plex Mono', monospace; font-size: 12.5px; }
   .warn { color: #ffcf7a; }
 
   @media (max-width: 720px) {
@@ -100,7 +118,7 @@
   }
   @media (max-width: 560px) {
     nav .links a[href="#wallet"] { display: none; }
-    nav .links a { margin-left: 16px; font-size: 13px; }
+    nav .links a { margin-left: 16px; font-size: 12px; }
     header.hero { padding: 52px 0 60px; }
     section { padding: 44px 0; }
   }
@@ -132,7 +150,30 @@
 <section id="wallet">
   <div class="wrap">
     <h2>Our apps</h2>
-    <p class="lead">One so far, with more to come.</p>
+    <p class="lead">One wallet — on Android, or straight in your browser.</p>
+    <div class="product">
+      <div>
+        <h3>Fortis Wallet — Web</h3>
+        <p class="kicker">Any modern browser · installable as a PWA · no download</p>
+        <p style="color:var(--dim)">The same non-custodial wallet, running entirely in your browser. Your recovery phrase is generated on your device and never leaves it — there's no account and nothing held on a server but public chain data. Open it, use it, or add it to your home screen and it works like any other app.</p>
+        <ul>
+          <li>Up to 10 named wallets — any mix of XBT and BTC — from the one phrase</li>
+          <li>Optional quick-unlock via your device's fingerprint, face, or screen lock (WebAuthn), password always works as a fallback</li>
+          <li>Installable as a Progressive Web App — an icon on your home screen, works offline once loaded</li>
+          <li>Same open-source Rust core as the Android app — the signing code isn't reimplemented per platform</li>
+        </ul>
+        <div class="dl">
+          <a class="primary" href="https://app.fortistechlabs.com/" target="_blank" rel="noopener">Open Fortis Wallet</a>
+        </div>
+      </div>
+      <div class="shots">
+        <img src="/img/web-onboard.jpg" alt="Fortis Wallet web onboarding" loading="lazy">
+        <img src="/img/web-wallet.jpg" alt="Fortis Wallet web wallet screen" loading="lazy">
+        <img src="/img/web-history.jpg" alt="Fortis Wallet web history screen" loading="lazy">
+        <img src="/img/web-settings.jpg" alt="Fortis Wallet web settings screen" loading="lazy">
+      </div>
+    </div>
+
     <div class="product">
       <div>
         <h3>Fortis Wallet</h3>

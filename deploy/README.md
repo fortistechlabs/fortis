@@ -41,9 +41,9 @@ cargo build --release -p fortis-index -p fortis-edge
 ./target/release/fortis-edge \
   --bind 127.0.0.1:8098 \
   --xbt-upstream http://127.0.0.1:8094 \
-  --btc-upstream https://mempool.space/api \
-  --btc-price-url 'https://api.kraken.com/0/public/Ticker?pair=XBTUSD' \
-  --xbt-price-url https://mempool.kilombino.com/api/v1/prices \
+  --btc-upstream https://blockstream.info/api \
+  --btc-price-url https://neoxa.exchange/api/exchange/ticker/BTC_USDC \
+  --xbt-price-url https://neoxa.exchange/api/exchange/ticker/BTCB2_USDC \
   --btc-upstream-rate 5 --btc-haskoin-url https://api.haskoin.com/btc \
   --require-token --trust-forwarded-for \
   --crash-log /var/log/fortis/crashes.ndjson

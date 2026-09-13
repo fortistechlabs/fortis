@@ -4,16 +4,21 @@
   --bg-0: #070810;
   --bg-1: #0a0c1a;
   --bg-2: #0c1024;
+  --bg-ambient: #060713;
   --blob-a: rgba(88, 128, 255, 0.85);
   --blob-b: rgba(168, 96, 255, 0.62);
   --blob-c: rgba(58, 224, 205, 0.36);
 
   --text: #eef1f8;
   --text-dim: #9aa3ba;
-  --text-faint: #5c6580;
+  --text-faint: #7681a4;
 
   --accent: #6ea8fe;
   --accent-2: #b98cff;
+  /* text/link use of accent — same as --accent in dark mode (already high-contrast);
+     light mode needs a darker variant since --accent itself is tuned for button
+     fills (dark text sits on it), not for reading as text on the page background. */
+  --accent-ink: var(--accent);
   --good: #49e0a6;
   --bad: #ff6b7d;
   --warn: #f6c445;
@@ -46,18 +51,30 @@
   color-scheme: dark;
 }
 
-@media (prefers-color-scheme: light) {
-  :root:not([data-theme='dark']) {
-    --bg-0: #eef1f8; --bg-1: #e7ebf5; --bg-2: #dce2f0;
-    --text: #10131c; --text-dim: #55607a; --text-faint: #97a0b6;
-    --glass-1: rgba(255, 255, 255, 0.62);
-    --glass-2: rgba(255, 255, 255, 0.8);
-    --glass-hero: rgba(255, 255, 255, 0.72);
-    --hair: rgba(10, 15, 30, 0.1);
-    --sheen: inset 0 1px 0 rgba(255, 255, 255, 0.9);
-    --e-card: 0 12px 30px -16px rgba(20, 30, 60, 0.25), var(--sheen);
-    --e-hero: 0 20px 50px -22px rgba(20, 30, 60, 0.3), 0 0 60px -24px var(--accent), var(--sheen);
-  }
+/* Explicit attribute, not a media query — src/theme.js (and the inline
+   pre-paint script in index.html) always sets this to "light" or "dark",
+   resolving "system" itself, so a manual override and the OS preference go
+   through the exact same switch. */
+:root[data-theme='light'] {
+  color-scheme: light;
+  --bg-0: #eef1f8; --bg-1: #e7ebf5; --bg-2: #dce2f0;
+  --bg-ambient: #eef1f8;
+  --blob-a: rgba(88, 128, 255, 0.35);
+  --blob-b: rgba(168, 96, 255, 0.25);
+  --blob-c: rgba(58, 224, 205, 0.18);
+  --text: #10131c; --text-dim: #55607a; --text-faint: #5d6b85;
+  --accent-ink: #3e6bc4;
+  /* dark mode's good/bad/warn are far too light to read as text on a light
+     background (this was previously masked entirely by a --bg-ambient bug
+     that made the whole light theme unreadable, text and all) */
+  --good: #0f7a52; --bad: #c4293e; --warn: #8a6209;
+  --glass-1: rgba(255, 255, 255, 0.62);
+  --glass-2: rgba(255, 255, 255, 0.8);
+  --glass-hero: rgba(255, 255, 255, 0.72);
+  --hair: rgba(10, 15, 30, 0.1);
+  --sheen: inset 0 1px 0 rgba(255, 255, 255, 0.9);
+  --e-card: 0 12px 30px -16px rgba(20, 30, 60, 0.25), var(--sheen);
+  --e-hero: 0 20px 50px -22px rgba(20, 30, 60, 0.3), 0 0 60px -24px var(--accent), var(--sheen);
 }
 
 * { box-sizing: border-box; margin: 0; }
@@ -86,7 +103,7 @@ body::after {
   position: fixed;
   inset: 0;
   z-index: -2;
-  background: #060713;
+  background: var(--bg-ambient);
   overflow: hidden;
   will-change: transform;
 }
@@ -126,7 +143,7 @@ body::after {
 
 /* ---- brand mark (onboard / locked) ---- */
 .brand { display: flex; flex-direction: column; align-items: center; gap: var(--s3); }
-.brand svg { width: 56px; height: 56px; filter: drop-shadow(0 0 18px rgba(110, 168, 254, 0.45)); }
+.brand svg { width: 56px; height: 56px; filter: drop-shadow(0 0 18px rgba(143, 188, 255, 0.45)); }
 .brand .name {
   font-size: 2.4rem;
   font-weight: 680;
@@ -142,7 +159,7 @@ body::after {
 h1 { font-size: 1.6rem; font-weight: 650; letter-spacing: -0.02em; }
 h2 { font-size: 1.05rem; font-weight: 620; letter-spacing: -0.01em; margin-bottom: var(--s2); }
 p { color: var(--text-dim); }
-a { color: var(--accent); }
+a { color: var(--accent-ink); }
 code, .mono { font-family: ui-monospace, "SF Mono", "Cascadia Code", Menlo, monospace; }
 label {
   display: block;
@@ -198,6 +215,17 @@ button.ghost:hover:not(:disabled) { background: var(--glass-1); }
 button.danger { color: var(--bad); border-color: rgba(255, 107, 125, 0.3); }
 button.wide { width: 100%; }
 
+.spinner {
+  display: inline-block;
+  width: 14px; height: 14px;
+  border: 2px solid rgba(10, 12, 22, 0.3);
+  border-top-color: currentColor;
+  border-radius: 50%;
+  vertical-align: -2px;
+  animation: spin 0.7s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
 input, textarea, select {
   font: inherit;
   width: 100%;
@@ -249,6 +277,12 @@ textarea { resize: vertical; min-height: 4.5rem; font-family: ui-monospace, mono
   inset: 0 0 auto 0;
   height: 1px;
   background: linear-gradient(90deg, transparent, rgba(110, 168, 254, 0.7), rgba(185, 140, 255, 0.7), transparent);
+}
+.topbar .name {
+  font-size: 0.82rem;
+  font-weight: 620;
+  color: var(--text-dim);
+  margin-bottom: var(--s1);
 }
 .topbar .bal {
   font-family: ui-monospace, monospace;
@@ -327,7 +361,7 @@ textarea { resize: vertical; min-height: 4.5rem; font-family: ui-monospace, mono
   padding: 0.36rem 0.5rem;
   font-size: 0.9rem;
 }
-.words li b { color: var(--accent); opacity: 0.7; font-weight: 500; margin-right: 0.4rem; font-variant-numeric: tabular-nums; }
+.words li b { color: var(--accent-ink); opacity: 0.7; font-weight: 500; margin-right: 0.4rem; font-variant-numeric: tabular-nums; }
 
 /* ---- history ---- */
 .hist { display: flex; flex-direction: column; }
@@ -442,6 +476,63 @@ textarea { resize: vertical; min-height: 4.5rem; font-family: ui-monospace, mono
   animation: toastIn var(--t) var(--ease-spring) both;
 }
 @keyframes toastIn { from { opacity: 0; transform: translate(-50%, 12px); } }
+
+/* ---- PWA update bar ---- */
+.update-bar {
+  position: fixed;
+  left: 0; right: 0; bottom: 0;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  gap: var(--s3);
+  padding: 0.8rem 1rem calc(0.8rem + env(safe-area-inset-bottom, 0px));
+  background: var(--glass-2);
+  -webkit-backdrop-filter: blur(var(--blur));
+  backdrop-filter: blur(var(--blur));
+  border-top: 1px solid var(--hair);
+  color: var(--text);
+  font-size: 0.88rem;
+  box-shadow: var(--e-pop);
+  animation: updateBarIn var(--t) var(--ease-spring) both;
+}
+.update-bar span { flex: 1; }
+.update-bar button { padding: 0.5rem 0.9rem; font-size: 0.85rem; }
+@keyframes updateBarIn { from { opacity: 0; transform: translateY(100%); } }
+
+/* ---- wallet list (Home tab) ---- */
+.walletlist { display: flex; flex-direction: column; }
+.walletrow {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--s3);
+  padding: 0.85rem 0;
+  border-bottom: 1px solid var(--hair);
+  cursor: pointer;
+  transition: opacity var(--t-fast);
+}
+.walletrow:last-child { border-bottom: 0; }
+.walletrow:hover { opacity: 0.8; }
+.walletrow .name { font-weight: 620; }
+.walletrow .chain { color: var(--text-faint); font-size: 0.78rem; }
+.walletrow .amt { font-family: ui-monospace, monospace; font-variant-numeric: tabular-nums; }
+
+/* ---- settings ---- */
+.wallet-card + .wallet-card { margin-top: var(--s2); }
+.actions-wrap { display: flex; flex-wrap: wrap; gap: var(--s2); }
+.actions-wrap button { flex: none; font-size: 0.82rem; padding: 0.42rem 0.85rem; }
+
+/* ---- language picker sheet ---- */
+.locale-list { max-height: 60vh; overflow-y: auto; display: flex; flex-direction: column; gap: 2px; }
+.locale-list button {
+  justify-content: flex-start;
+  text-align: left;
+  background: transparent;
+  border: 0;
+  border-radius: var(--r-sm);
+  padding: 0.55rem 0.7rem;
+}
+.locale-list button.on { background: var(--glass-2); font-weight: 620; }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {

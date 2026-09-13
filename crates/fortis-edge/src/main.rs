@@ -162,9 +162,10 @@ struct State {
     allow_origin: String,
     xbt: Option<Upstream>,
     btc: Option<Upstream>,
+    btc_tip: Option<proxy::TipCache>,
     btc_broadcast: Option<fortis_node::Rpc>,
-    btc_price: Option<price::PriceSource>,
-    xbt_price: Option<price::PriceSource>,
+    btc_price: Option<price::PriceCache>,
+    xbt_price: Option<price::PriceCache>,
     btc_haskoin: Option<haskoin::HaskoinStore>,
     btc_pacer: Option<Pacer>,
     limiter: RateLimiter,
@@ -268,9 +269,20 @@ fn run() -> Result<()> {
         allow_origin: args.allow_origin.clone(),
         xbt: args.xbt_upstream.as_deref().map(Upstream::new),
         btc: args.btc_upstream.as_deref().map(Upstream::new),
+        // XBT's tip comes from fortis-index (local, fast — no hang risk seen
+        // there); only BTC's public-explorer proxy needs the background cache.
+        btc_tip: args
+            .btc_upstream
+            .as_deref()
+            .map(|u| proxy::TipCache::spawn(Upstream::new(u), std::time::Duration::from_secs(20))),
         btc_broadcast,
-        btc_price: args.btc_price_url.as_deref().map(price::PriceSource::new),
-        xbt_price: xbt_price_url.as_deref().map(price::PriceSource::new),
+        btc_price: args
+            .btc_price_url
+            .as_deref()
+            .map(|u| price::PriceCache::spawn(price::PriceSource::new(u), std::time::Duration::from_secs(60))),
+        xbt_price: xbt_price_url
+            .as_deref()
+            .map(|u| price::PriceCache::spawn(price::PriceSource::new(u), std::time::Duration::from_secs(60))),
         btc_haskoin: (!args.btc_haskoin_url.trim().is_empty())
             .then(|| haskoin::HaskoinStore::new(&args.btc_haskoin_url, args.btc_haskoin_key.clone())),
         btc_pacer: (args.btc_upstream_rate > 0.0).then(|| Pacer::new(args.btc_upstream_rate)),
@@ -489,8 +501,9 @@ fn proxy_chain(req: &mut Request, st: &State, method: &Method, path: &str, query
     let tok = bearer(req);
     let token_ok = || matches!(&tok, Some(t) if token::verify(&st.secret, t));
 
-    // `GET /{chain}/v1/prices` with a configured price source is normalised, not
-    // proxied: fetch the source and return `{ "USD": <spot> }`, cached 60 s.
+    // `GET /{chain}/v1/prices` with a configured price source reads a value a
+    // background thread keeps refreshed (see PriceCache) — never a live fetch
+    // on the request path, so a slow or wedged price feed can't stall this.
     if method == &Method::Get && rest == "v1/prices" {
         let source = match chain {
             "btc" => st.btc_price.as_ref(),
@@ -502,33 +515,39 @@ fn proxy_chain(req: &mut Request, st: &State, method: &Method, path: &str, query
                 Metrics::inc(&st.metrics.unauthorized);
                 return err(401, "missing or invalid token — POST /register first");
             }
-            let key = format!("{chain}/v1/prices");
-            if let Some(hit) = st.cache.get(&key) {
-                Metrics::inc(&st.metrics.cache_hits);
-                return Reply::Raw(hit.status, hit.content_type, hit.body);
-            }
-            return match source.fetch_usd() {
-                Ok(usd) => {
+            return match source.current() {
+                Some(usd) => {
                     let body = serde_json::to_vec(&json!({ "USD": usd })).unwrap_or_default();
-                    st.cache.put(
-                        &key,
-                        std::time::Duration::from_secs(60),
-                        cache::Cached {
-                            status: 200,
-                            content_type: "application/json".into(),
-                            body: body.clone(),
-                        },
-                    );
                     Reply::Raw(200, "application/json".into(), body)
                 }
-                Err(e) => {
+                None => {
                     Metrics::inc(&st.metrics.upstream_errors);
-                    err(502, &format!("price source {chain}: {e}"))
+                    err(503, &format!("price source {chain}: not yet available"))
                 }
             };
         }
         // no source configured → fall through: /btc/v1/prices proxies to the BTC
         // Esplora upstream; /xbt/v1/prices has no fallback and 404s below.
+    }
+
+    // `GET /btc/blocks/tip/height` reads a value TipCache's background thread
+    // keeps refreshed — see its doc comment for why this route specifically
+    // needed the same treatment as /v1/prices. XBT falls through to its own
+    // upstream unchanged; fortis-index has shown no sign of this problem.
+    if method == &Method::Get && chain == "btc" && rest == "blocks/tip/height" {
+        if let Some(tip) = st.btc_tip.as_ref() {
+            if st.require_token && !token_ok() {
+                Metrics::inc(&st.metrics.unauthorized);
+                return err(401, "missing or invalid token — POST /register first");
+            }
+            return match tip.current() {
+                Some(h) => Reply::Raw(200, "text/plain".into(), h.to_string().into_bytes()),
+                None => {
+                    Metrics::inc(&st.metrics.upstream_errors);
+                    err(503, "btc tip height: not yet available")
+                }
+            };
+        }
     }
 
     // `POST /btc/prewarm` — body is a JSON array of the wallet's addresses. Pull

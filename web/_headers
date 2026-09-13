@@ -1,0 +1,40 @@
+# Cloudflare Pages header rules.
+#
+# No build step here means no content-hashed filenames — app.js today and
+# app.js after a fix are the same URL. Without this, the CDN edge (or the
+# browser's own HTTP cache) is free to keep serving a fixed response for a
+# while, which would silently delay both the service worker's own update
+# check on sw.js and every network-first fetch() it makes for the rest of
+# the app shell. `no-cache` still allows conditional revalidation (304s),
+# it just forbids serving a cached copy without checking first.
+#
+# Content-Security-Policy:
+#   script-src is 'self' plus 'wasm-unsafe-eval' — every script is a same-
+#   origin file (src/app.js, vendor/qrcode.js, src/preinit.js), no inline
+#   scripts left (see src/preinit.js's own comment on why that one was moved
+#   out of index.html rather than covered by a content hash here), but
+#   'wasm-unsafe-eval' is load-bearing: WebAssembly.instantiate() (how
+#   wallet_wasm.js boots the actual signing engine) is blocked by CSP without
+#   it, same as eval() would be — confirmed by testing this exact policy
+#   locally, where its absence silently broke wallet creation entirely
+#   (caught by app.js's own error screen, not a visible CSP console message).
+#   style-src needs 'unsafe-inline': the hand-rolled `el()` helper sets
+#   plenty of inline `style="..."` attributes — scoping that down to CSS
+#   classes everywhere would be a large, separate refactor, and inline
+#   *styles* (unlike inline *scripts*) can't run code.
+#   connect-src only lists the hosts the app can actually reach today: the
+#   hosted edge and the two public-explorer fallbacks (mempool.guide/
+#   blockstream.info — swapped from mempool.space 2026-09-13: identical Rust
+#   client code reliably timed out reading mempool.space's response while
+#   blockstream.info answered in under 1s, and a user separately reported
+#   mempool.space itself being unreachable in-browser around the same time).
+#   NOTE: this deliberately does not allow arbitrary hosts,
+#   so a wallet still holding a pre-existing self-hosted `fortisd` gateway
+#   backend (from before the backend picker was removed) would have its
+#   connection blocked by this CSP. Nothing has been published to
+#   app.fortistechlabs.com yet, so no such wallet exists in the wild today —
+#   revisit this if self-hosted gateway support is ever reintroduced.
+#   img-src needs data: for style.css's inline SVG noise-texture background.
+/*
+  Cache-Control: no-cache
+  Content-Security-Policy: default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; connect-src 'self' https://api.fortistechlabs.com https://mempool.guide https://blockstream.info; img-src 'self' data:; style-src 'self' 'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; object-src 'none'

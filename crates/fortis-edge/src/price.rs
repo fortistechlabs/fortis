@@ -5,6 +5,8 @@
 
 use anyhow::{anyhow, Result};
 use serde_json::Value;
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 pub struct PriceSource {
     url: String,
@@ -28,15 +30,66 @@ impl PriceSource {
     }
 }
 
+/// Refreshes a `PriceSource` on its own background thread and hands request
+/// handlers a value that's always already in hand — `current()` only ever
+/// locks a mutex, it never touches the network. A slow or wedged price feed
+/// (a real incident: mempool.space's IPv6 path hanging past its own 15s
+/// per-call timeout under load, once compounded across enough concurrent
+/// requests) can no longer stall — or, worse, pile up threads on — a
+/// client request just to answer `/v1/prices`.
+pub struct PriceCache {
+    current: Arc<Mutex<Option<f64>>>,
+}
+
+impl PriceCache {
+    /// `interval` is how often to refresh on success; a failed fetch retries
+    /// sooner (15s) so a transient blip recovers quickly instead of leaving
+    /// a stale price up for the full interval.
+    pub fn spawn(source: PriceSource, interval: Duration) -> Self {
+        let current = Arc::new(Mutex::new(None));
+        let bg = current.clone();
+        std::thread::spawn(move || loop {
+            let sleep_for = match source.fetch_usd() {
+                Ok(usd) => {
+                    *bg.lock().unwrap() = Some(usd);
+                    interval
+                }
+                Err(_) => Duration::from_secs(15),
+            };
+            std::thread::sleep(sleep_for);
+        });
+        Self { current }
+    }
+
+    /// The last successfully fetched price, or `None` before the first
+    /// fetch completes (briefly, at startup) — never blocks.
+    pub fn current(&self) -> Option<f64> {
+        *self.current.lock().unwrap()
+    }
+}
+
 /// Known shapes:
 /// - mempool.space / a mempool instance: `{ "USD": 79465, "EUR": … }`
 /// - Kraken `Ticker`: `{ "error": [], "result": { "<PAIR>": { "c": ["79465.8", …] } } }`
 ///   (`c` = last trade closed: `[price, lot volume]`)
+/// - neoxa.exchange single-ticker: `{ "success": true, "pair": "BTCB2_USDC",
+///   "ticker": { "lastPrice": 170.9, … } }` (`GET /api/exchange/ticker/:pair`,
+///   public, no auth — quoted in USDC, which we treat as USD)
 fn extract_usd(v: &Value) -> Option<f64> {
     let positive = |n: f64| (n.is_finite() && n > 0.0).then_some(n);
 
     // mempool-style
     if let Some(n) = v.get("USD").and_then(Value::as_f64).and_then(positive) {
+        return Some(n);
+    }
+
+    // neoxa.exchange single-ticker
+    if let Some(n) = v
+        .get("ticker")
+        .and_then(|t| t.get("lastPrice"))
+        .and_then(Value::as_f64)
+        .and_then(positive)
+    {
         return Some(n);
     }
 
@@ -82,6 +135,16 @@ mod tests {
             }}
         });
         assert_eq!(extract_usd(&v), Some(79465.8));
+    }
+
+    #[test]
+    fn reads_the_neoxa_single_ticker_shape() {
+        let v = json!({
+            "success": true,
+            "pair": "BTCB2_USDC",
+            "ticker": { "lastPrice": 170.9, "bestBid": 171.0, "bestAsk": 172.79 }
+        });
+        assert_eq!(extract_usd(&v), Some(170.9));
     }
 
     #[test]

@@ -6,6 +6,8 @@ import init, {
   setNetwork,
   Wallet,
   WalletView,
+  sealMnemonic,
+  unsealMnemonic,
   sealMnemonicWithPassword,
   unsealMnemonicWithPassword,
 } from '../pkg/wallet_wasm.js';
@@ -13,6 +15,14 @@ import init, {
 let ready;
 export function ensureWasm() {
   return (ready ||= init());
+}
+
+/** `NETWORK` is a wasm-global (thread_local), not per-`Wallet`/`WalletView` —
+ *  call this before touching a given wallet's session/backend whenever more
+ *  than one wallet may be held in memory on different networks (mainnet +
+ *  regtest side by side). */
+export function activateNetwork(network) {
+  setNetwork(network);
 }
 
 const rand = (n) => crypto.getRandomValues(new Uint8Array(n));
@@ -50,6 +60,43 @@ export function unseal(sealed, saltHex, password) {
   const json = unsealMnemonicWithPassword(sealed, password, fromHex(saltHex));
   const { m, p } = JSON.parse(json);
   return { mnemonic: m, passphrase: p || '' };
+}
+
+/** A fresh random 32-byte app secret — the one thing that, combined with a
+ *  wallet's own `salt`, unseals its mnemonic. Wrapped at rest under a
+ *  password and/or a WebAuthn-PRF secret (see webauthn.js); never stored raw. */
+export function newAppSecret() {
+  return rand(32);
+}
+
+/** Seal a wallet's mnemonic under the app secret (fed through the same
+ *  Argon2id-then-XChaCha20-Poly1305 path as a plain password — one seal code
+ *  path per wallet regardless of which lock mode unlocked `appSecret`). */
+export function sealWithAppSecret(mnemonic, passphrase, appSecret) {
+  return seal(mnemonic, passphrase, toHex(appSecret));
+}
+export function unsealWithAppSecret(sealed, saltHex, appSecret) {
+  return unseal(sealed, saltHex, toHex(appSecret));
+}
+
+/** Wrap/unwrap the app secret itself under the user's app password. */
+export function wrapAppSecretWithPassword(appSecret, password) {
+  const salt = rand(16);
+  const nonce = rand(24);
+  return { wrapped: sealMnemonicWithPassword(toHex(appSecret), password, salt, nonce), salt: toHex(salt) };
+}
+export function unwrapAppSecretWithPassword(wrapped, saltHex, password) {
+  return fromHex(unsealMnemonicWithPassword(wrapped, password, fromHex(saltHex)));
+}
+
+/** Wrap/unwrap the app secret under a raw 32-byte key (a WebAuthn-PRF
+ *  secret). */
+export function wrapAppSecretWithKey(appSecret, kek) {
+  const nonce = rand(24);
+  return { wrapped: sealMnemonic(toHex(appSecret), kek, nonce) };
+}
+export function unwrapAppSecretWithKey(wrapped, kek) {
+  return fromHex(unsealMnemonic(wrapped, kek));
 }
 
 /** A live signing session. Holds the wasm `Wallet` + `WalletView` handles. */

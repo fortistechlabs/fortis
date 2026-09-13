@@ -17,6 +17,11 @@ export class Gateway {
           ...(body ? { 'content-type': 'application/json' } : {}),
         },
         body: body ? JSON.stringify(body) : undefined,
+        // Without this, a fortisd that's running but unreachable (wrong
+        // port, firewalled, stuck) hangs the caller forever instead of
+        // surfacing "cannot reach gateway" — e.g. the connect screen would
+        // just sit on "connecting…" with no way out.
+        signal: AbortSignal.timeout(10_000),
       });
     } catch (e) {
       throw new Error(`cannot reach gateway at ${this.url} — is fortisd running?`);
