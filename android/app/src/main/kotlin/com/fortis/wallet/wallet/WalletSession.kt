@@ -44,17 +44,32 @@ fun unsealSeed(blobHex: String, saltHex: String, password: String): Pair<String,
     return if (nl < 0) payload to "" else payload.substring(0, nl) to payload.substring(nl + 1)
 }
 
-/** Held in memory only while unlocked. Wraps the wallet-ffi objects. */
-class WalletSession(
+/** Held in memory only while unlocked. Wraps the wallet-ffi objects.
+ *
+ *  `wallet` is null for a watch-only session — [WalletView] (what `view`
+ *  wraps) stores only a public `Xpub` and derives addresses via
+ *  secp256k1's verification-only context, so a watch-only session is
+ *  provably incapable of signing by construction, not just convention.
+ *  Private constructor + named factories rather than constructor
+ *  overloading, since `xpub`/`view` for the signing path depend on
+ *  `wallet` existing first. */
+class WalletSession private constructor(
     val chain: String,
-    network: String,
-    mnemonic: String,
-    passphrase: String,
+    val wallet: Wallet?,
+    val xpub: String,
+    val fingerprint: String?,
+    val view: WalletView,
 ) {
-    val wallet: Wallet = Wallet.fromMnemonic(mnemonic, passphrase, network)
-    val xpub: String = wallet.accountXpub(chain, 0u)
-    val fingerprint: String = wallet.masterFingerprint()
-    val view: WalletView = WalletView(chain, network, xpub)
+    companion object {
+        fun signing(chain: String, network: String, mnemonic: String, passphrase: String): WalletSession {
+            val wallet = Wallet.fromMnemonic(mnemonic, passphrase, network)
+            val xpub = wallet.accountXpub(chain, 0u)
+            return WalletSession(chain, wallet, xpub, wallet.masterFingerprint(), WalletView(chain, network, xpub))
+        }
+
+        fun watchOnly(chain: String, network: String, xpub: String) =
+            WalletSession(chain, null, xpub, null, WalletView(chain, network, xpub))
+    }
 
     fun setIndices(nextReceive: Int, nextChange: Int) =
         view.setNextIndices(nextReceive.toUInt(), nextChange.toUInt())
@@ -65,13 +80,17 @@ class WalletSession(
      *  "… is not a valid address" if it doesn't parse — cheap, no I/O. */
     fun checkAddress(address: String): String = view.checkAddress(address)
 
-    fun sign(planTxHex: String, selected: List<SelectedInput>): String =
-        wallet.signFundingTx(chain, 0u, planTxHex, selected.map {
+    /** Defense in depth — the real gate is that a watch-only wallet never
+     *  shows a Send tab, so this should never actually be reached. */
+    fun sign(planTxHex: String, selected: List<SelectedInput>): String {
+        val w = wallet ?: error("watch-only — cannot sign")
+        return w.signFundingTx(chain, 0u, planTxHex, selected.map {
             SpentInput(it.valueSat, it.scriptPubkeyHex, it.derivationIndex, it.isChange)
         })
+    }
 
     fun close() {
-        wallet.close()
+        wallet?.close()
         view.close()
     }
 }

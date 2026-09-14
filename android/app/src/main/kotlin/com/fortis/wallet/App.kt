@@ -46,6 +46,7 @@ fun FortisApp(vm: WalletViewModel = viewModel()) {
                 Phase.Gen -> GenScreen(vm)
                 Phase.Create -> CreateScreen(vm)
                 Phase.Restore -> RestoreScreen(vm)
+                Phase.Watch -> WatchScreen(vm)
                 Phase.Shell -> Shell(vm)
                 Phase.RevealSeed -> RevealSeedScreen(vm)
             }

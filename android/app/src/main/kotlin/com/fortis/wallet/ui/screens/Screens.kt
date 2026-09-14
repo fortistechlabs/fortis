@@ -140,6 +140,7 @@ fun OnboardScreen(vm: WalletViewModel) = Screen {
     Spacer(Modifier.weight(1f))
     PrimaryButton(stringResource(R.string.onboard_create)) { vm.goCreate() }
     GhostButton(stringResource(R.string.onboard_restore)) { vm.goRestore() }
+    GhostButton(stringResource(R.string.onboard_watch)) { vm.goWatch() }
     if (adding) GhostButton(stringResource(R.string.action_cancel), tint = Fx.textDim) { vm.cancelOnboard() }
     Spacer(Modifier.weight(1f))
 }
@@ -325,6 +326,28 @@ fun RestoreScreen(vm: WalletViewModel) {
                         vm.restoreWallet(name, phrase, passphrase, chain, "mainnet", lock)
                     }
                 }
+            }
+        }
+    }
+}
+
+@Composable
+fun WatchScreen(vm: WalletViewModel) {
+    var name by remember { mutableStateOf("") }
+    var xpub by remember { mutableStateOf("") }
+    var chain by remember { mutableStateOf("xbt") }
+    val scope = rememberCoroutineScope()
+    Screen(scroll = true) {
+        Text(stringResource(R.string.watch_title), style = MaterialTheme.typography.titleMedium, color = Fx.text)
+        Text(stringResource(R.string.watch_body), color = Fx.textDim)
+        Field(name, { name = it }, stringResource(R.string.field_wallet_name), maxLen = MAX_WALLET_NAME)
+        Field(xpub, { xpub = it }, stringResource(R.string.field_xpub), mono = true)
+        ChainRow(chain) { chain = it }
+        ErrorText(vm.error)
+        Row(horizontalArrangement = Arrangement.spacedBy(Fx.s2)) {
+            GhostButton(stringResource(R.string.action_back), Modifier.weight(1f)) { vm.cancelOnboard() }
+            PrimaryButton(stringResource(R.string.action_watch), Modifier.weight(1f)) {
+                scope.launch { vm.watchWallet(name, xpub, chain) }
             }
         }
     }
@@ -586,9 +609,9 @@ private fun SettingsTab(vm: WalletViewModel) {
                             else Toast.makeText(ctx, xpubLoading, Toast.LENGTH_SHORT).show()
                         }
                     }
-                    GhostButton(stringResource(R.string.action_recovery_phrase), dense = true) { revealWarn = w.id }
+                    if (!w.watchOnly) GhostButton(stringResource(R.string.action_recovery_phrase), dense = true) { revealWarn = w.id }
                     val hasOther = vm.wallets.any { it.name == w.name && it.chain == w.otherChain }
-                    if (!hasOther && vm.canAddWallet) GhostButton(stringResource(R.string.also_add_on, w.otherChain.uppercase()), dense = true) {
+                    if (!w.watchOnly && !hasOther && vm.canAddWallet) GhostButton(stringResource(R.string.also_add_on, w.otherChain.uppercase()), dense = true) {
                         vm.cloneToOtherChain(w.id)
                     }
                     GhostButton(stringResource(R.string.action_remove), tint = Fx.bad, dense = true) { removing = w.id }
@@ -692,7 +715,7 @@ private fun WalletTab(vm: WalletViewModel) {
         }
         return
     }
-    var tab by remember { mutableStateOf(0) }
+    var tab by remember { mutableStateOf("receive") }
     val unit = if (c.chain == "btc") "BTC" else "XBT"
     val b = vm.balances
 
@@ -743,17 +766,19 @@ private fun WalletTab(vm: WalletViewModel) {
                 TextButton({ vm.lock() }) { Text(stringResource(R.string.action_lock), color = Fx.textDim) }
             }
         }
-        val tabs = listOf(
-            stringResource(R.string.tab_receive),
-            stringResource(R.string.tab_send),
-            stringResource(R.string.tab_history),
+        val tabKeys = if (c.watchOnly) listOf("receive", "history") else listOf("receive", "send", "history")
+        if (tab !in tabKeys) tab = "receive" // e.g. a stale "send" selection on a watch-only wallet
+        val tabLabels = mapOf(
+            "receive" to stringResource(R.string.tab_receive),
+            "send" to stringResource(R.string.tab_send),
+            "history" to stringResource(R.string.tab_history),
         )
         Row(Modifier.background(Fx.glass1, RoundedCornerShape(Fx.pill)).padding(3.dp)) {
-            tabs.forEachIndexed { i, label ->
+            tabKeys.forEach { key ->
                 Box(Modifier.weight(1f).clip(RoundedCornerShape(Fx.pill))
-                    .background(if (tab == i) Brush.linearGradient(listOf(Fx.accent, Fx.accent2)) else Brush.linearGradient(listOf(Color.Transparent, Color.Transparent)))
-                    .clickable { tab = i }.padding(vertical = 8.dp), contentAlignment = Alignment.Center) {
-                    Text(label, color = if (tab == i) Color(0xFF0A0C16) else Color.White.copy(alpha = 0.75f), fontSize = 13.sp)
+                    .background(if (tab == key) Brush.linearGradient(listOf(Fx.accent, Fx.accent2)) else Brush.linearGradient(listOf(Color.Transparent, Color.Transparent)))
+                    .clickable { tab = key }.padding(vertical = 8.dp), contentAlignment = Alignment.Center) {
+                    Text(tabLabels.getValue(key), color = if (tab == key) Color(0xFF0A0C16) else Color.White.copy(alpha = 0.75f), fontSize = 13.sp)
                 }
             }
         }
@@ -763,8 +788,8 @@ private fun WalletTab(vm: WalletViewModel) {
             verticalArrangement = Arrangement.spacedBy(Fx.s4),
         ) {
             when (tab) {
-                0 -> ReceiveTab(vm)
-                1 -> SendTab(vm)
+                "receive" -> ReceiveTab(vm)
+                "send" -> SendTab(vm)
                 else -> HistoryTab(vm, unit)
             }
         }

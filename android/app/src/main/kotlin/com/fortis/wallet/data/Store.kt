@@ -21,28 +21,35 @@ private fun normalizeChain(chain: String) = if (chain == "btcb2") "xbt" else cha
 
 /** One wallet on this device. `sealed` is the seed, already encrypted under the
  *  app secret — safe at rest. Chain-independent: the same seed can be listed on
- *  both chains (addresses are identical), so a "clone" just copies `sealed`. */
+ *  both chains (addresses are identical), so a "clone" just copies `sealed`.
+ *  A watch-only wallet has no seed at all — `sealed`/`salt` are null, `xpub`
+ *  holds its account-level extended public key instead (not secret, stored
+ *  plain). */
 data class WalletConfig(
     val id: String,
     val name: String,
     val chain: String,
     val network: String,
-    val sealed: String,
-    val salt: String,
+    val sealed: String? = null,
+    val salt: String? = null,
     val nextReceive: Int = 0,
     val nextChange: Int = 0,
     /** The per-install token for the hosted edge. */
     val backendToken: String? = null,
+    val watchOnly: Boolean = false,
+    val xpub: String? = null,
 ) {
     /** e.g. `XBT · Savings` — the label the picker shows. */
-    val display: String get() = "${chain.uppercase()} · $name"
+    val display: String get() = "${chain.uppercase()} · $name" + if (watchOnly) " · watch-only" else ""
     val otherChain: String get() = if (chain == "btc") "xbt" else "btc"
 
     fun toJson(): JSONObject = JSONObject().apply {
         put("id", id); put("name", name); put("chain", chain); put("network", network)
-        put("sealed", sealed); put("salt", salt)
+        sealed?.let { put("sealed", it) }; salt?.let { put("salt", it) }
         put("next_receive", nextReceive); put("next_change", nextChange)
         backendToken?.let { put("token", it) }
+        if (watchOnly) put("watch_only", true)
+        xpub?.let { put("xpub", it) }
     }
 
     companion object {
@@ -51,11 +58,13 @@ data class WalletConfig(
             name = o.optString("name", "Wallet"),
             chain = normalizeChain(o.optString("chain", "xbt")),
             network = o.optString("network", "mainnet"),
-            sealed = o.getString("sealed"),
-            salt = o.getString("salt"),
+            sealed = o.optString("sealed").ifBlank { null },
+            salt = o.optString("salt").ifBlank { null },
             nextReceive = o.optInt("next_receive", 0),
             nextChange = o.optInt("next_change", 0),
             backendToken = o.optString("token").ifBlank { null },
+            watchOnly = o.optBoolean("watch_only", false),
+            xpub = o.optString("xpub").ifBlank { null },
         )
     }
 }
@@ -99,7 +108,14 @@ class Store(private val ctx: Context) {
             // Persist the btcb2 → xbt rename so the stored JSON stops carrying the old code.
             if (raw.contains("btcb2")) ctx.dataStore.edit { it[K.wallets] = encode(list) }
             val sel = p[K.selected]?.takeIf { id -> list.any { it.id == id } } ?: list.firstOrNull()?.id
-            val lock = p[K.lockMode] ?: if (list.isNotEmpty()) LOCK_PASSWORD else null
+            // A device holding only watch-only wallets never actually sets up a
+            // lock — defaulting to password here just because the list is
+            // non-empty would force one on anyway. Only fall back to password
+            // when a lock was genuinely configured before (appWrapped set, or a
+            // signing wallet exists — the pre-watch-only-feature signal this
+            // default originally covered).
+            val lock = p[K.lockMode]
+                ?: if (p[K.appWrapped] != null || list.any { !it.watchOnly }) LOCK_PASSWORD else null
             return WalletState(list, sel, lock, p[K.appWrapped])
         }
 

@@ -21,7 +21,7 @@ import java.net.Proxy
 import java.util.UUID
 import java.util.concurrent.TimeUnit
 
-enum class Phase { Loading, AppLock, Onboard, Gen, Create, Restore, Shell, RevealSeed }
+enum class Phase { Loading, AppLock, Onboard, Gen, Create, Restore, Watch, Shell, RevealSeed }
 
 /** The three top-level destinations inside [Phase.Shell]'s nav bar. */
 enum class NavTab { Home, Wallet, Settings }
@@ -69,7 +69,7 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
     private var appWrapped: String? = null
     /** The seal secret for every wallet, held only while the app is unlocked. */
     private var appSecret by mutableStateOf<String?>(null)
-    val locked: Boolean get() = appSecret == null && wallets.isNotEmpty()
+    val locked: Boolean get() = appSecret == null && wallets.any { !it.watchOnly }
     val appWrappedSecret: String? get() = appWrapped
 
     /** Where the biometric-mode unlock key actually lives (StrongBox / TEE /
@@ -125,6 +125,7 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
     private fun resolvePhase() {
         phase = when {
             wallets.isEmpty() -> Phase.Onboard
+            wallets.all { it.watchOnly } -> Phase.Shell // no lock exists yet to check
             appSecret == null -> Phase.AppLock
             else -> Phase.Shell
         }
@@ -145,11 +146,16 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
      *  `quiet` suppresses the error banner (used by the bulk balance scan). */
     private fun ensureSession(id: String, quiet: Boolean = false): WalletSession? {
         sessions[id]?.let { return it }
-        val secret = appSecret ?: return null
         val c = wallets.firstOrNull { it.id == id } ?: return null
         return try {
-            val (mnemonic, passphrase) = unsealSeed(c.sealed, c.salt, secret)
-            WalletSession(c.chain, c.network, mnemonic, passphrase).also {
+            val session = if (c.watchOnly) {
+                WalletSession.watchOnly(c.chain, c.network, c.xpub ?: return null)
+            } else {
+                val secret = appSecret ?: return null
+                val (mnemonic, passphrase) = unsealSeed(c.sealed!!, c.salt!!, secret)
+                WalletSession.signing(c.chain, c.network, mnemonic, passphrase)
+            }
+            session.also {
                 it.setIndices(c.nextReceive, c.nextChange)
                 sessions[id] = it
             }
@@ -250,9 +256,12 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
         phase = Phase.Create
     }
     fun goRestore() { phase = Phase.Restore }
+    fun goWatch() { phase = Phase.Watch }
 
-    /** Is the first wallet still to be made? (The app lock is set up alongside it.) */
-    val settingUp: Boolean get() = wallets.isEmpty()
+    /** Is the next wallet the first one requiring an app lock? True until a
+     *  signing wallet exists — a device holding only watch-only wallets has
+     *  never actually set one up. */
+    val settingUp: Boolean get() = wallets.all { it.watchOnly }
 
     /** Pick a wallet from the Home list — opens it on the Wallet tab. */
     fun selectWallet(id: String) {
@@ -276,14 +285,14 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
     /** Password mode: open a wallet with the password off the main thread (it
      *  runs Argon2id), caching the session so the balance scan reuses it. */
     fun appUnlockWithPassword(pw: String) = wrap {
-        val c = config ?: wallets.first()
+        val c = config?.takeIf { !it.watchOnly } ?: wallets.first { !it.watchOnly }
         withContext(Dispatchers.Default) {
             val (mnemonic, passphrase) = try {
-                unsealSeed(c.sealed, c.salt, pw)
+                unsealSeed(c.sealed!!, c.salt!!, pw)
             } catch (e: com.fortis.wallet.wallet.WrongPassword) {
                 throw Exception(str(R.string.error_wrong_password))
             }
-            WalletSession(c.chain, c.network, mnemonic, passphrase).also {
+            WalletSession.signing(c.chain, c.network, mnemonic, passphrase).also {
                 it.setIndices(c.nextReceive, c.nextChange)
                 sessions[c.id] = it
             }
@@ -302,7 +311,11 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
         revealingId = null
         resetView()
         nav = NavTab.Home
-        phase = if (wallets.isEmpty()) Phase.Onboard else Phase.AppLock
+        phase = when {
+            wallets.isEmpty() -> Phase.Onboard
+            wallets.all { it.watchOnly } -> Phase.Shell // nothing was ever locked
+            else -> Phase.AppLock
+        }
     }
 
     // --- create / restore ---
@@ -328,7 +341,7 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
             store.setLock(lock.mode, lock.appWrapped)
         }
         val secret = appSecret ?: error("the app is locked")
-        val s = WalletSession(chain, network, mnemonic, passphrase)
+        val s = WalletSession.signing(chain, network, mnemonic, passphrase)
         val sealed = sealSeed(mnemonic, passphrase, secret)
         val id = UUID.randomUUID().toString()
         val cleanName = name.trim().take(MAX_WALLET_NAME).ifBlank { "Wallet" }
@@ -338,6 +351,35 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
         selectedId = id
         resetView()
         sessions[id] = s
+        draftMnemonic = null
+        nav = NavTab.Wallet
+        resolvePhase()
+    }
+
+    /** Import an account-level xpub with no seed at all — nothing to sign
+     *  with, nothing to seal, no app-lock interaction even as a device's
+     *  very first wallet. */
+    fun watchWallet(name: String, xpub: String, chain: String) = wrap {
+        val trimmed = xpub.trim()
+        if (trimmed.isEmpty()) throw Exception(str(R.string.error_enter_xpub))
+        if (xpubDepth(trimmed) == 0) throw Exception(str(R.string.error_xpub_is_master_key))
+        try {
+            WalletSession.watchOnly(chain, "mainnet", trimmed).close() // throws on a malformed xpub
+        } catch (e: Exception) {
+            val invalid = e.message?.contains("invalid account xpub", ignoreCase = true) == true
+            throw Exception(if (invalid) str(R.string.error_invalid_xpub) else (e.message ?: str(R.string.error_invalid_xpub)))
+        }
+        finishWatchOnly(name, chain, trimmed)
+    }
+
+    private suspend fun finishWatchOnly(name: String, chain: String, xpub: String) {
+        val id = UUID.randomUUID().toString()
+        val cleanName = name.trim().take(MAX_WALLET_NAME).ifBlank { "Wallet" }
+        val c = WalletConfig(id, cleanName, chain, "mainnet", watchOnly = true, xpub = xpub)
+        store.save(c); store.setSelected(id)
+        wallets = wallets + c
+        selectedId = id
+        resetView()
         draftMnemonic = null
         nav = NavTab.Wallet
         resolvePhase()
@@ -362,9 +404,10 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
      *  "" when none was set. Runs Argon2id — call from a coroutine. */
     suspend fun seedFor(id: String): Pair<List<String>, String>? {
         val c = wallets.firstOrNull { it.id == id } ?: return null
+        if (c.watchOnly) return null
         val secret = appSecret ?: return null
         return withContext(Dispatchers.Default) {
-            val (mnemonic, passphrase) = unsealSeed(c.sealed, c.salt, secret)
+            val (mnemonic, passphrase) = unsealSeed(c.sealed!!, c.salt!!, secret)
             mnemonic.trim().split(Regex("\\s+")) to passphrase
         }
     }
@@ -536,4 +579,26 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
         error = null
         runCatching { block() }.onFailure { error = it.message ?: it.toString() }
     }
+}
+
+/** Base58Check-decode just far enough to read a BIP-32 extended key's depth
+ *  byte — for a friendlier check than wasm/wallet-ffi's generic "invalid xpub"
+ *  error in the one case worth calling out by name: a *master* key (depth 0)
+ *  is structurally valid, so it parses fine, but it silently derives
+ *  addresses from a non-standard path that no real wallet ever used, leaving
+ *  a wallet that looks connected but has permanently empty history. Ported
+ *  from the identical helper in web/src/app.js. */
+private fun xpubDepth(s: String): Int? {
+    val alphabet = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
+    val fiftyEight = java.math.BigInteger.valueOf(58)
+    var num = java.math.BigInteger.ZERO
+    for (ch in s) {
+        val idx = alphabet.indexOf(ch)
+        if (idx == -1) return null
+        num = num * fiftyEight + java.math.BigInteger.valueOf(idx.toLong())
+    }
+    var hex = num.toString(16)
+    if (hex.length % 2 != 0) hex = "0$hex"
+    val bytes = hex.chunked(2)
+    return if (bytes.size > 4) bytes[4].toInt(16) else null
 }

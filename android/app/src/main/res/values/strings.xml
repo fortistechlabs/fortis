@@ -36,6 +36,7 @@
     <string name="onboard_tagline">a non-custodial wallet for Bitcoin XBT and Bitcoin BTC</string>
     <string name="onboard_create">Create a new wallet</string>
     <string name="onboard_restore">Restore from a recovery phrase</string>
+    <string name="onboard_watch">Watch an address (no spending key)</string>
 
     <!-- entropy screen -->
     <string name="gen_title">Add some randomness</string>
@@ -60,6 +61,14 @@
     <string name="restore_clone_hint">After it\'s added you can also list this wallet on %1$s from Manage wallets — same phrase, same addresses.</string>
     <string name="action_restore">Restore</string>
 
+    <!-- watch-only -->
+    <string name="watch_title">Watch an address</string>
+    <string name="watch_body">Paste an account-level extended public key (xpub). It can only ever see this wallet\'s addresses, balance, and history — it can never spend from it.</string>
+    <string name="action_watch">Watch</string>
+    <string name="error_enter_xpub">Enter an extended public key (xpub) first.</string>
+    <string name="error_invalid_xpub">That extended public key (xpub) is not valid.</string>
+    <string name="error_xpub_is_master_key">That\'s a master key (depth 0), not an account xpub — export your wallet\'s account-level xpub instead (its own \"Copy xpub\"/watch-only export).</string>
+
     <!-- shared fields -->
     <string name="field_wallet_name">Wallet name</string>
     <string name="field_passphrase">BIP-39 passphrase (optional)</string>
@@ -68,6 +77,7 @@
     <string name="field_to_address">To address</string>
     <string name="field_amount">Amount</string>
     <string name="field_custom_feerate">custom sat/vB (optional)</string>
+    <string name="field_xpub">Extended public key (xpub)</string>
 
     <!-- reveal recovery phrase -->
     <string name="reveal_title">Recovery phrase</string>
