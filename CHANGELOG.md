@@ -2,6 +2,13 @@
 
 Fortis Wallet (Android). Versions are `versionName (versionCode)`.
 
+## 0.3.0 (5) — 2026-09-14
+
+- Watch-only wallets: import an account-level extended public key (xpub) to
+  watch a wallet's addresses, balance, and history — with no seed and no
+  ability to ever spend from it. Useful for watching a hardware wallet or
+  another device's wallet from your phone.
+
 ## 0.2.0 (4) — 2026-09-10
 
 - Changes for fortistechlabs.com domain. Android treats this as a new app: it
