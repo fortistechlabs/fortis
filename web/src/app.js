@@ -102,8 +102,12 @@ function ensureSession(wallet) {
   activateNetwork(wallet.network);
   let session = sessions.get(wallet.id);
   if (!session) {
-    const { mnemonic, passphrase } = unsealWithAppSecret(wallet.sealed, wallet.salt, appSecret);
-    session = new Session(wallet.chain, wallet.network, mnemonic, passphrase);
+    if (wallet.watchOnly) {
+      session = Session.watchOnly(wallet.chain, wallet.network, wallet.xpub);
+    } else {
+      const { mnemonic, passphrase } = unsealWithAppSecret(wallet.sealed, wallet.salt, appSecret);
+      session = new Session(wallet.chain, wallet.network, mnemonic, passphrase);
+    }
     sessions.set(wallet.id, session);
   }
   session.setIndices(wallet.next_receive, wallet.next_change);
@@ -145,7 +149,10 @@ function render() {
   if (bootError) return;
   if (pendingLegacy) return renderMigrate();
   if (!state) return renderOnboard();
-  if (!appSecret) return renderLocked();
+  // Watch-only wallets have nothing to seal, so a device holding only those
+  // can have state with no lock at all — only demand unlocking when a lock
+  // actually exists.
+  if (state.lock && !appSecret) return renderLocked();
   if (ui.addingWallet) return renderOnboard();
   renderShell(true);
 }
@@ -188,6 +195,7 @@ function renderOnboard() {
   if (ui.screen === 'gen') return renderGen();
   if (ui.screen === 'create') return renderCreate();
   if (ui.screen === 'restore') return renderRestore();
+  if (ui.screen === 'watch') return renderWatchImport();
   if (ui.screen === 'lock-setup') return renderLockSetup();
   mount(el('div', { class: 'screen' },
     el('div', { class: 'spacer' }),
@@ -195,6 +203,7 @@ function renderOnboard() {
     el('div', { class: 'spacer' }),
     el('button', { class: 'primary wide', onclick: () => go('gen') }, t('onboard_create')),
     el('button', { class: 'ghost wide', onclick: () => go('restore') }, t('onboard_restore')),
+    el('button', { class: 'ghost wide', onclick: () => go('watch') }, t('onboard_watch')),
     ui.addingWallet ? el('button', { class: 'ghost wide', onclick: onCancelAddWallet }, t('action_cancel')) : null,
     el('div', { class: 'spacer' })));
 }
@@ -406,6 +415,98 @@ async function onRestore() {
   }
 }
 
+function renderWatchImport() {
+  mount(el('div', { class: 'screen' },
+    el('h2', {}, t('watch_title')),
+    el('label', {}, t('watch_body')),
+    el('textarea', { id: 'xpub', rows: 3, autocapitalize: 'none', autocomplete: 'off', spellcheck: 'false' }),
+    el('label', {}, t('field_wallet_name')),
+    el('input', { id: 'name', value: nextWalletName(), maxlength: MAX_WALLET_NAME_LEN, autocomplete: 'off' }),
+    el('label', {}, t('field_chain')), chainPicker(),
+    el('div', { id: 'err', class: 'err' }),
+    el('div', { class: 'row' },
+      el('button', { id: 'backBtn', class: 'ghost', onclick: () => go('main') }, t('action_back')),
+      el('button', { id: 'watchBtn', class: 'primary', onclick: onWatchImport }, t('action_watch')))));
+}
+
+/** Base58Check-decode just far enough to read a BIP-32 extended key's depth
+ *  byte — for a friendlier check than the generic "invalid xpub" error wasm
+ *  gives, in the one specific case worth calling out by name: a *master*
+ *  key (depth 0) is a structurally valid xpub, so it passes wasm's own
+ *  parser fine, but it silently derives addresses from a completely
+ *  non-standard path (`m/0/N` instead of `m/84'/coin'/account'/0/N`) that no
+ *  real wallet ever uses — the result looks like a working wallet with
+ *  permanently empty history, with no error to explain why. wasm's parser
+ *  (called right after this) is still the real validity check for
+ *  everything else — checksum, curve point, network. Every real xpub starts
+ *  with a nonzero version byte, so the usual base58 leading-zero-byte edge
+ *  case never applies here. */
+function xpubDepth(s) {
+  const ALPHABET = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
+  try {
+    let num = 0n;
+    for (const c of s) {
+      const idx = ALPHABET.indexOf(c);
+      if (idx === -1) return null;
+      num = num * 58n + BigInt(idx);
+    }
+    let hex = num.toString(16);
+    if (hex.length % 2) hex = '0' + hex;
+    const bytes = hex.match(/../g) || [];
+    return bytes.length > 4 ? parseInt(bytes[4], 16) : null; // [version(4) depth(1) ...]
+  } catch {
+    return null;
+  }
+}
+
+async function onWatchImport() {
+  const btn = document.getElementById('watchBtn');
+  if (btn.disabled) return; // guards against a mashed button firing this repeatedly
+  const err = document.getElementById('err');
+  const xpub = val('xpub');
+  const chain = val('chain');
+  if (!xpub) return (err.textContent = t('error_enter_xpub'));
+  if (xpubDepth(xpub) === 0) return (err.textContent = t('error_xpub_is_master_key'));
+  let name;
+  try {
+    name = readWalletName('name');
+  } catch (e) {
+    return (err.textContent = e.message);
+  }
+  err.textContent = '';
+  try {
+    Session.watchOnly(chain, 'mainnet', xpub).free(); // throws on a malformed xpub
+  } catch (e) {
+    return (err.textContent = /invalid account xpub/i.test(String(e)) ? t('error_invalid_xpub') : String(e.message || e));
+  }
+  setBusy(btn, document.getElementById('backBtn'), t('action_creating'));
+  try {
+    await finishWatchWallet(chain, name, xpub);
+  } catch (e) {
+    err.textContent = String(e.message || e);
+    clearBusy(btn, document.getElementById('backBtn'), t('action_watch'));
+  }
+}
+
+/** A watch-only wallet has nothing to seal — no mnemonic, no app-lock
+ *  interaction at all, even as a device's very first wallet. */
+async function finishWatchWallet(chain, name, xpub) {
+  const wallet = {
+    id: crypto.randomUUID(), name, chain, network: 'mainnet', watchOnly: true, xpub,
+    next_receive: 0, next_change: 0, backend: null,
+  };
+  await autoConnectBackend(wallet);
+  state = state
+    ? { ...state, wallets: [...state.wallets, wallet], selected: wallet.id }
+    : { v: 2, wallets: [wallet], selected: wallet.id, lock: null };
+  await saveState(state);
+  ui.addingWallet = false;
+  ui.screen = 'main';
+  ui.nav = 'wallet';
+  ui.tab = 'receive';
+  render();
+}
+
 /** Every wallet connects to the hosted edge automatically — mainnet only,
  *  no picker, no self-hosted-node option. If the hosted edge can't be
  *  reached, fall back to a public explorer silently (matching the Android
@@ -467,7 +568,11 @@ setInterval(retryEdgeUpgrades, 10_000);
 /** First wallet ever -> app-lock setup first. Otherwise (adding wallet #2+,
  *  already unlocked) seal straight under the in-memory `appSecret`. */
 async function finishNewWallet(chain, network, mnemonic, passphrase, name) {
-  if (!state) {
+  // A signing wallet always needs an app-lock to seal its mnemonic under —
+  // check for "no lock exists yet", not "no state exists yet": a device can
+  // already hold `state` full of watch-only wallets (which need no lock at
+  // all) by the time its first signing wallet is added.
+  if (!state?.lock) {
     ui.pendingWallet = { chain, network, mnemonic, passphrase, name };
     ui.screen = 'lock-setup';
     return render();
@@ -531,11 +636,20 @@ async function onLockSetupSubmit() {
     const id = crypto.randomUUID();
     const wallet = { id, name: name || nextWalletName(), chain, network, sealed, salt: wSalt, next_receive: 0, next_change: 0, backend: null };
     await autoConnectBackend(wallet);
-    state = { v: 2, wallets: [wallet], selected: id, lock: { password: { wrapped, salt }, prf } };
+    // Append onto whatever's already there instead of overwriting — a device
+    // can already hold watch-only wallets (which need no lock) by the time
+    // its first signing wallet triggers this setup.
+    state = { v: 2, wallets: [...(state?.wallets ?? []), wallet], selected: id, lock: { password: { wrapped, salt }, prf } };
     appSecret = secret;
     await saveState(state);
     ui.pendingWallet = null;
     ui.draftMnemonic = null;
+    // Was never reachable while true before watch-only wallets existed (you
+    // can't be "adding an additional wallet" before a device has its first
+    // one) — now it can be, e.g. a watch-only-only device adding its first
+    // signing wallet. Left set, render() would loop back to onboarding
+    // instead of the shell.
+    ui.addingWallet = false;
     ui.screen = 'main';
     ui.nav = 'wallet';
     ui.tab = 'receive';
@@ -699,7 +813,15 @@ function renderShell(fresh = false) {
 /** Re-render the shell in place (no phase/backend re-check, no polling churn)
  *  — what poll timers call once new data has arrived. */
 function renderShellIfIdle() {
-  if (state && appSecret && !ui.addingWallet && !ui.pendingPlan && !ui.dialog) renderShell();
+  // Mirrors render()'s own gate: the shell is valid to show once state
+  // exists and either no lock exists at all (a watch-only-only device,
+  // which never sets appSecret) or the lock is unlocked. This used to just
+  // check `appSecret`, which was correct back when every unlocked app had
+  // one — with watch-only wallets that's no longer true, and every
+  // background poll's re-render was silently a no-op on such a device: the
+  // data was fetched and detail.status updated correctly, the screen just
+  // never got told to redraw, so it looked permanently stuck connecting.
+  if (state && (!state.lock || appSecret) && !ui.addingWallet && !ui.pendingPlan && !ui.dialog) renderShell();
 }
 
 function renderHomeTab() {
@@ -717,7 +839,7 @@ function renderHomeTab() {
             },
               el('div', {},
                 el('div', { class: 'name' }, w.name),
-                el('div', { class: 'chain' }, `${UNIT[w.chain]}${w.network === 'regtest' ? ' · regtest' : ''}  ·  ${t('home_tap_to_open')}`)),
+                el('div', { class: 'chain' }, `${UNIT[w.chain]}${w.network === 'regtest' ? ' · regtest' : ''}${w.watchOnly ? ` · ${t('watch_badge')}` : ''}  ·  ${t('home_tap_to_open')}`)),
               el('div', { style: 'text-align:right' },
                 el('div', { class: 'amt' }, sat != null ? `${fmt(sat)} ${UNIT[w.chain]}` : '…'),
                 usd ? el('div', { class: 'hint' }, usd) : null));
@@ -761,7 +883,7 @@ function renderWalletTab() {
 
   const top = el('div', { class: 'topbar' },
     el('div', {},
-      el('div', { class: 'name' }, w.name),
+      el('div', { class: 'name' }, w.name + (w.watchOnly ? `  ·  ${t('watch_badge')}` : '')),
       el('div', { class: 'bal' },
         el('span', { class: 'num' }, b ? fmt(b.confirmed_sat) : '—'), ' ',
         el('span', { class: 'unit' }, unit)),
@@ -770,8 +892,10 @@ function renderWalletTab() {
         el('span', { class: `dot ${dot}` }), ' ', hint, `  ·  ${via}`,
         b && b.pending_sat ? `  ·  ${t('wallet_pending', fmt(b.pending_sat), unit)}` : '')));
 
+  const tabIds = w.watchOnly ? ['receive', 'history'] : ['receive', 'send', 'history'];
+  if (!tabIds.includes(ui.tab)) ui.tab = 'receive'; // e.g. stale 'send' on a watch-only wallet
   const tabs = el('div', { class: 'tabs card' },
-    ['receive', 'send', 'history'].map((tid) =>
+    tabIds.map((tid) =>
       el('button', { class: ui.tab === tid ? 'active' : '', onclick: () => { ui.tab = tid; render(); } }, t(`tab_${tid}`))));
 
   let body;
@@ -1008,7 +1132,10 @@ function renderSettingsTab() {
       state.wallets.length < MAX_WALLETS
         ? el('button', { class: 'ghost wide', onclick: onAddWalletStart }, t('action_add_wallet'))
         : el('div', { class: 'hint' }, t('wallets_max', MAX_WALLETS))),
-    el('div', { class: 'card stack' },
+    // A device holding only watch-only wallets has no app-lock and nothing
+    // secret to protect — there's no password to change, no appSecret for
+    // quick-unlock to wrap, and nothing for "Lock app" to lock.
+    state.lock ? el('div', { class: 'card stack' },
       el('h2', {}, t('settings_security')),
       el('div', { class: 'hint' }, t('settings_one_unlock')),
       state.lock.prf
@@ -1018,7 +1145,7 @@ function renderSettingsTab() {
         : prfPossible()
           ? el('button', { class: 'ghost wide', onclick: actionEnableQuickUnlock }, t('action_enable_quick_unlock'))
           : el('div', { class: 'hint' }, t('prf_not_supported')),
-      el('button', { class: 'ghost wide', onclick: () => { ui.dialog = { kind: 'change-password' }; renderDialogSheet(); } }, t('action_change_password'))),
+      el('button', { class: 'ghost wide', onclick: () => { ui.dialog = { kind: 'change-password' }; renderDialogSheet(); } }, t('action_change_password'))) : null,
     el('div', { class: 'card stack' },
       el('h2', {}, t('settings_language')),
       el('button', { class: 'ghost wide', onclick: () => { ui.dialog = { kind: 'locale' }; renderDialogSheet(); } },
@@ -1031,25 +1158,27 @@ function renderSettingsTab() {
             class: storedTheme() === id ? 'on' : '',
             onclick: () => { setTheme(id); render(); },
           }, label)))),
-    el('div', { class: 'card stack' },
-      el('button', { class: 'ghost wide danger', onclick: onLock }, t('action_lock_app'))));
+    state.lock ? el('div', { class: 'card stack' },
+      el('button', { class: 'ghost wide danger', onclick: onLock }, t('action_lock_app'))) : null);
 }
 
 function renderWalletCard(w) {
   const otherChain = w.chain === 'xbt' ? 'btc' : 'xbt';
-  const canClone = state.wallets.length < MAX_WALLETS && !state.wallets.some((x) => x.chain === otherChain && x.name === w.name);
+  const canClone = !w.watchOnly && state.wallets.length < MAX_WALLETS
+    && !state.wallets.some((x) => x.chain === otherChain && x.name === w.name);
   const connLabel = !w.backend ? '—'
     : w.backend.kind === 'edge' ? 'fortis'
     : w.backend.kind === 'esplora' ? new URL(w.backend.url).host
     : t('wallet_via_node');
   return el('div', { class: 'card stack wallet-card' },
     el('div', { class: 'row', style: 'align-items:center' },
-      el('b', {}, w.name), el('span', { class: 'badge' }, UNIT[w.chain])),
+      el('b', {}, w.name), el('span', { class: 'badge' }, UNIT[w.chain]),
+      w.watchOnly ? el('span', { class: 'badge' }, t('watch_badge')) : null),
     el('div', { class: 'hint' }, `${t('settings_connection')}: ${connLabel}`),
     el('div', { class: 'actions-wrap' },
       el('button', { onclick: () => actionRename(w.id) }, t('action_rename')),
       el('button', { onclick: () => actionCopyXpub(w.id) }, t('action_copy_xpub')),
-      el('button', { onclick: () => actionReveal(w.id) }, t('action_recovery_phrase')),
+      w.watchOnly ? null : el('button', { onclick: () => actionReveal(w.id) }, t('action_recovery_phrase')),
       el('button', { onclick: () => actionChangeBackend(w.id) }, t('action_reconnect')),
       canClone ? el('button', { onclick: () => actionClone(w.id) }, t('also_add_on', UNIT[otherChain])) : null,
       el('button', { class: 'danger', onclick: () => actionRemove(w.id) }, t('action_remove'))));
@@ -1356,9 +1485,19 @@ async function refreshAllBalances() {
 function startPolling() {
   if (ui.nav === 'wallet') {
     if (detailPoll) return;
-    const every = currentWallet()?.backend?.kind === 'gateway' ? 15_000 : 25_000;
-    refresh().then(renderShellIfIdle);
-    detailPoll = setInterval(() => refresh().then(renderShellIfIdle), every);
+    // Self-rescheduling rather than a fixed setInterval so the cadence can
+    // react to the last result: still on the yellow "connecting…" dot
+    // (detail.status not yet populated) -> retry every few seconds on this
+    // async, non-blocking loop instead of waiting out a full normal-cadence
+    // tick; once actually connected, back off to the normal interval.
+    const tick = async () => {
+      await refresh();
+      renderShellIfIdle();
+      const every = !detail.status ? 3_000
+        : currentWallet()?.backend?.kind === 'gateway' ? 15_000 : 25_000;
+      detailPoll = setTimeout(tick, every);
+    };
+    tick();
   } else {
     if (overviewPoll) return;
     refreshAllBalances();
@@ -1366,7 +1505,7 @@ function startPolling() {
   }
 }
 function stopPolling() {
-  if (detailPoll) clearInterval(detailPoll);
+  if (detailPoll) clearTimeout(detailPoll);
   detailPoll = null;
   if (overviewPoll) clearInterval(overviewPoll);
   overviewPoll = null;

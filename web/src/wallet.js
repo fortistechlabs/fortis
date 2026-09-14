@@ -110,6 +110,22 @@ export class Session {
     this.view = new WalletView(chain, this.xpub);
   }
 
+  /** A read-only session from just an xpub — no `Wallet`, no private key,
+   *  ever. `wallet_core::WalletView` (what this wraps) stores only a public
+   *  `Xpub` and derives addresses via secp256k1's verification-only context
+   *  — there is no signing method anywhere on the type, so this is
+   *  incapable of signing by construction, not just by convention. */
+  static watchOnly(chain, network, xpub) {
+    const s = Object.create(Session.prototype);
+    setNetwork(network);
+    s.chain = chain;
+    s.wallet = null;
+    s.xpub = xpub;
+    s.fingerprint = null;
+    s.view = new WalletView(chain, xpub);
+    return s;
+  }
+
   setIndices(nextReceive, nextChange) {
     this.view.setNextIndices(nextReceive >>> 0, nextChange >>> 0);
   }
@@ -137,13 +153,16 @@ export class Session {
   planSweep(utxos, destAddress, feerate, minConf, serviceFee) {
     return this.view.planSweep(utxos, destAddress, BigInt(feerate), minConf >>> 0, serviceFee || undefined);
   }
+  /** Defense in depth — the real gate is that a watch-only wallet never
+   *  shows a Send tab, so this should never actually be reached. */
   sign(planTxHex, selected) {
+    if (!this.wallet) throw new Error('watch-only — cannot sign');
     return this.wallet.signFundingTx(this.chain, 0, planTxHex, selected);
   }
   free() {
     try {
       this.view.free();
-      this.wallet.free();
+      this.wallet?.free();
     } catch {
       /* already freed */
     }
