@@ -2,6 +2,21 @@
 
 Fortis Wallet (Android). Versions are `versionName (versionCode)`.
 
+## 0.3.3 (8) — 2026-09-15
+
+- Fixed a crash: a watch-only wallet with hundreds of used addresses could
+  run out of memory partway through scanning and close the app.
+- Fixed a bug where a wallet with a lot of history could get stuck showing
+  "connecting…" indefinitely, or show a wrong (too low) balance, especially
+  after leaving the wallet screen open for a while. Refreshing no longer
+  piles up overlapping scans on top of each other, and a single address
+  that's slow to answer no longer cuts the rest of the scan short.
+- Address scans are noticeably faster: requests within a scan now go out
+  several at a time instead of strictly one after another.
+- Backend reliability: the hosted service now tries more than one data
+  provider and keeps the useful parts of its cache across restarts, so a
+  hiccup with one provider is less likely to be visible in the app.
+
 ## 0.3.2 (7) — 2026-09-15
 
 - Fixed a bug where a watch-only wallet with a lot of history could show
