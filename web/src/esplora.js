@@ -6,6 +6,9 @@
 
 const GAP = 20; // stop scanning a branch after this many consecutive unused
 const CHUNK = 8; // parallel requests per batch
+// How deep _guessWatchAddresses()'s prewarm guess goes per branch. 500×2
+// branches = 1000, matching the edge's own /btc/prewarm address cap exactly.
+const PREWARM_DEPTH = 500;
 // Absolute backstop on how far a single gap-limit walk will go per branch —
 // not a limit any real wallet should hit (the walk already stops itself after
 // GAP consecutive never-used addresses); just a bound on worst-case work
@@ -20,6 +23,27 @@ const WATCH_SET_HARD_CAP = 2_000;
 // spend-planning can't work from a stale UTXO set.
 const SNAP_TTL = 60_000; // ms — reuse the UTXO scan within a poll burst
 const HIST_TTL = 60_000;
+
+/** Just what `history()` needs from one `/txs` entry — not the raw object.
+ *  A real, heavily-automated wallet found live, 2026-09-15, kept several
+ *  hundred used addresses (still climbing past 300 when this was caught)
+ *  with many-input/many-output transactions; the Android port of this same
+ *  class cached the *raw* parsed tx (full scriptpubkey/witness hex for every
+ *  vin and vout) per address and crashed with a genuine OutOfMemoryError
+ *  mid-scan once enough addresses piled up. Browsers have a much larger heap
+ *  than a phone, but the waste is the same — keep only the txid, fee,
+ *  confirmation status, and each vin/vout's (address, value) pair. */
+function summarizeTx(tx) {
+  return {
+    txid: tx.txid,
+    fee: tx.fee || 0,
+    confirmed: !!tx.status?.confirmed,
+    block_height: tx.status?.block_height || 0,
+    block_time: tx.status?.block_time || 0,
+    vin: (tx.vin || []).map((v) => [v.prevout?.scriptpubkey_address ?? null, v.prevout?.value ?? 0]),
+    vout: (tx.vout || []).map((o) => [o.scriptpubkey_address ?? null, o.value ?? 0]),
+  };
+}
 
 async function chunked(items, n, fn) {
   const out = [];
@@ -186,19 +210,23 @@ export class EsploraBackend {
     return Promise.resolve({ imported: true });
   }
 
-  /** Cheap, no-network guess at the watch set — the plain `[from, from+GAP)`
-   *  window `_watchSet()` used to always use. Good enough to warm the edge's
-   *  cache for the common case (a wallet whose real gap doesn't exceed GAP,
-   *  which is every wallet the app itself has been managing) without paying
-   *  `_watchSet()`'s own per-address probing — that would defeat the point of
-   *  prewarming before the real scan. A freshly imported deep-history xpub
-   *  just gets a smaller head start; `_refresh()`/`history()` still find
-   *  everything via `_watchSet()`'s real walk. */
+  /** Cheap, no-network guess at the watch set: every address from 0 up to
+   *  PREWARM_DEPTH on each branch, handed to the edge's batch Haskoin path
+   *  so the real per-address walk that follows is served from cache instead
+   *  of the slow, paced, one-at-a-time route this exists to avoid.
+   *
+   *  Used to be just `[from, from+GAP)` near the stored next-index — cheap,
+   *  but only ever covered a wallet with a handful of used addresses. Found
+   *  live, 2026-09-15: a real watch-only import with several hundred used
+   *  addresses barely benefited from prewarm at all, since the guessed
+   *  window covered a small fraction of what the walk actually needed.
+   *  Deriving addresses is a local, no-network computation regardless of how
+   *  many, so guessing wide costs nothing extra on this side; the edge's own
+   *  `/btc/prewarm` cap and chunked batch calls bound the real cost. */
   _guessWatchAddresses() {
-    const { next_receive, next_change } = this.session.indices();
     const list = [];
-    for (const [branch, from] of [[0, next_receive], [1, next_change]]) {
-      for (let i = from; i < from + GAP; i++) list.push(this.session.addressAt(branch, i).address);
+    for (const branch of [0, 1]) {
+      for (let i = 0; i < PREWARM_DEPTH; i++) list.push(this.session.addressAt(branch, i).address);
     }
     return list;
   }
@@ -206,47 +234,73 @@ export class EsploraBackend {
   /** Every address worth checking right now, each carrying its `/txs`
    *  response (so `history()` never re-fetches what this walk already has).
    *
-   *  For each branch, walks forward from the stored next-index in GAP-sized
-   *  batches (fetched CHUNK at a time, in parallel), extending the window
-   *  whenever the batch just checked had *any* address with transaction
-   *  history — the standard BIP-44 gap-limit walk — instead of one
-   *  fixed-size `[from, from+GAP)` pass. That fixed pass is wrong for a
-   *  freshly imported watch-only xpub: its counters start at 0, so a real
-   *  wallet with more than ~20 used receive or change addresses had
-   *  everything past index ~20 silently invisible — wrong balance, missing
-   *  history, forever (nothing about the bug is self-correcting, since the
-   *  window never had a reason to grow).
+   *  For each branch, walks forward from index 0 in GAP-sized batches
+   *  (fetched CHUNK at a time, in parallel), extending the window whenever
+   *  the batch just checked had *any* address with transaction history — the
+   *  standard BIP-44 gap-limit walk — instead of one fixed-size `[0, GAP)`
+   *  pass. That fixed pass is wrong for a wallet with more than ~20 used
+   *  receive or change addresses: everything past index ~20 was silently
+   *  invisible — wrong balance, missing history, forever (nothing about the
+   *  bug is self-correcting, since the window never had a reason to grow).
    *
    *  "Used" here means *ever* appeared in a transaction (`/txs` non-empty),
    *  not "currently has an unspent output" (`/utxo` non-empty) — an address
    *  that received funds and was later fully spent shows an *empty* `/utxo`
    *  response but is still a real, used address. Deciding gap continuation
    *  on `/utxo` alone stops the walk right after a run of spent-through
-   *  addresses, before it ever reaches a live balance sitting past them. */
+   *  addresses, before it ever reaches a live balance sitting past them.
+   *
+   *  Always starts at 0, never at `session.indices()`' stored next-index —
+   *  that counter exists purely to pick which address the UI offers next for
+   *  "Receive"; treating it as the scan floor drops every address below it
+   *  from balance *and* history the moment it advances. Found live on
+   *  Android's port of this same class: its gap-limit auto-advance persisted
+   *  next-receive past dozens of addresses still holding real, unspent
+   *  balance, and the next scan never looked at them again. Nothing stops a
+   *  later deposit landing on an address below that counter either, so there
+   *  is no index this can safely stop rechecking. */
   async _watchSet() {
     const now = Date.now();
     if (this._watchSetCache && now - this._watchSetCacheAt < SNAP_TTL) return this._watchSetCache;
-    const { next_receive, next_change } = this.session.indices();
     const out = [];
-    for (const [branch, from] of [[0, next_receive], [1, next_change]]) {
-      let next = from;
-      let end = from + GAP;
+    let anySuccess = false;
+    for (const branch of [0, 1]) {
+      let next = 0;
+      let end = GAP;
       while (next < end && next < WATCH_SET_HARD_CAP) {
         const batchEnd = Math.min(end, next + CHUNK, WATCH_SET_HARD_CAP);
         const batch = await Promise.all(
           Array.from({ length: batchEnd - next }, (_, k) => next + k).map(async (i) => {
             const a = this.session.addressAt(branch, i);
-            const txs = await this.get(`/address/${a.address}/txs`).catch(() => []);
-            return { address: a.address, spk: a.script_pubkey_hex, branch, index: i, txs: Array.isArray(txs) ? txs : [] };
+            let ok = true;
+            const txs = await this.get(`/address/${a.address}/txs`)
+              .then((t) => { anySuccess = true; return t; })
+              .catch(() => { ok = false; return []; });
+            const summarized = (Array.isArray(txs) ? txs : []).map(summarizeTx);
+            return { address: a.address, spk: a.script_pubkey_hex, branch, index: i, txs: summarized, ok };
           }),
         );
         for (const entry of batch) {
           out.push(entry);
-          if (entry.txs.length > 0) end = Math.max(end, entry.index + 1 + GAP);
+          // A persistent failure (after get()'s own retries) must never be
+          // treated as "confirmed unused" — extend the window defensively
+          // instead of letting it shrink the "consecutive unused" runway.
+          // Found live, 2026-09-15: this exact `.catch(() => [])` pattern, with
+          // no `ok` distinction, silently capped a real ~300-address wallet's
+          // walk partway through a spell of upstream 403s, undercounting its
+          // balance with no error shown anywhere — same bug as Android's
+          // `break`, just via "confirmed empty" instead of "stop".
+          if (entry.txs.length > 0 || !entry.ok) end = Math.max(end, entry.index + 1 + GAP);
         }
         next = batchEnd;
       }
     }
+    // Every probe failed — the upstream is unreachable right now, not "this
+    // xpub genuinely has no history". Without this, balances()/history() both
+    // resolve to a confident, wrong zero (every address's txs quietly became
+    // `[]` via the .catch() above) instead of surfacing as the failure it is.
+    // Same bug, same fix, as the Android port of this class.
+    if (!anySuccess) throw new Error('no address probe succeeded — upstream unreachable');
     this._watchSetCache = out;
     this._watchSetCacheAt = now;
     return out;
@@ -384,29 +438,20 @@ export class EsploraBackend {
       for (const a of snap.addrs) {
         for (const tx of a.txs) {
           if (byTxid.has(tx.txid)) continue;
-          const inOurs = (tx.vin || []).reduce(
-            (s, v) => s + (mine.has(v.prevout?.scriptpubkey_address) ? v.prevout.value : 0),
-            0,
-          );
-          const outs = tx.vout || [];
-          const outOurs = outs.reduce(
-            (s, o) => s + (mine.has(o.scriptpubkey_address) ? o.value : 0),
-            0,
-          );
+          const inOurs = tx.vin.reduce((s, [addr, value]) => s + (addr && mine.has(addr) ? value : 0), 0);
+          const outOurs = tx.vout.reduce((s, [addr, value]) => s + (addr && mine.has(addr) ? value : 0), 0);
           const delta = outOurs - inOurs;
           const send = delta < 0;
           const counterparty = send
-            ? outs.find((o) => !mine.has(o.scriptpubkey_address))?.scriptpubkey_address
-            : outs.find((o) => mine.has(o.scriptpubkey_address))?.scriptpubkey_address;
+            ? tx.vout.find(([addr]) => addr && !mine.has(addr))?.[0]
+            : tx.vout.find(([addr]) => addr && mine.has(addr))?.[0];
           byTxid.set(tx.txid, {
             txid: tx.txid,
             direction: send ? 'send' : 'receive',
-            amount_sat: send ? delta + (tx.fee || 0) : delta,
-            fee_sat: send ? -(tx.fee || 0) : 0,
-            confirmations: tx.status?.confirmed
-              ? Math.max(1, snap.tip - tx.status.block_height + 1)
-              : 0,
-            time: tx.status?.block_time || Math.floor(Date.now() / 1000),
+            amount_sat: send ? delta + tx.fee : delta,
+            fee_sat: send ? -tx.fee : 0,
+            confirmations: tx.confirmed ? Math.max(1, snap.tip - tx.block_height + 1) : 0,
+            time: tx.block_time || Math.floor(Date.now() / 1000),
             address: counterparty || null,
           });
         }

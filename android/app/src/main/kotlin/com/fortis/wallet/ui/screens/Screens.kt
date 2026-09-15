@@ -26,6 +26,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -761,7 +762,19 @@ private fun WalletTab(vm: WalletViewModel) {
                         }
                         if (it.degraded) stringResource(R.string.wallet_limited_suffix, head) else head
                     } ?: stringResource(R.string.wallet_connecting)
-                    Text(hint, color = Fx.textFaint, fontSize = 12.sp)
+                    // Connection dot — same ok/connecting semantics as the web wallet's
+                    // `.dot`: green once a status reply landed and the scan isn't still
+                    // catching up, yellow (pulsing there; a plain dot here) otherwise,
+                    // including the null-status "haven't heard back yet" case. Text-only
+                    // status ("Connected · block N") was the only signal before this —
+                    // easy to miss at a glance, especially on a watch-only wallet where
+                    // there's no other activity on screen to suggest it's still loading.
+                    val dotColor = vm.status?.let { if (it.synced && it.scanningPct == null) Fx.good else Fx.warn } ?: Fx.warn
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Box(Modifier.size(7.dp).clip(CircleShape).background(dotColor))
+                        Spacer(Modifier.width(6.dp))
+                        Text(hint, color = Fx.textFaint, fontSize = 12.sp)
+                    }
                 }
                 TextButton({ vm.lock() }) { Text(stringResource(R.string.action_lock), color = Fx.textDim) }
             }

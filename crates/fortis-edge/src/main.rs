@@ -46,6 +46,31 @@ struct Args {
     /// http://127.0.0.1:8088/esplora.
     #[arg(long)]
     btc_upstream: Option<String>,
+    /// Extra BTC upstream(s), tried in order for a request that fails against
+    /// `--btc-upstream` (429 after retries, 5xx, or unreachable), and against
+    /// each other in turn. Repeat the flag to list more than one. Different
+    /// providers so one explorer rate-limiting or dropping *this edge's own
+    /// egress IP* doesn't take every BTC wallet behind this edge down with
+    /// it — every client's address lookups funnel through that one IP, so
+    /// the explorer sees them as a single very busy caller regardless of how
+    /// many distinct end users there are. Confirmed live, 2026-09-15:
+    /// blockstream.info (the deployed `--btc-upstream`) started 429ing this
+    /// machine's IP outright after a day of wallet-scan testing, while
+    /// mempool.space kept answering normally throughout — this default just
+    /// codifies that as a standing fallback chain. Pass an empty string alone
+    /// to disable.
+    #[arg(long, default_values_t = vec!["https://mempool.space/api".to_string()])]
+    btc_upstream_fallback: Vec<String>,
+    /// Maestro (gomaestro.org) API key. When set, its Esplora-compatible BTC
+    /// endpoint (`https://xbt-mainnet.gomaestro-api.org/v0/esplora`, same
+    /// `/address/{addr}/utxo|txs` shape as the rest of the chain) is appended
+    /// as the last fallback — a paid, per-key-metered provider rather than a
+    /// shared public explorer, so it isn't exposed to other users' traffic
+    /// tripping a shared IP's rate limit the way `--btc-upstream-fallback`'s
+    /// public explorers are. Kept last since it's metered: only reached once
+    /// the free options have all failed.
+    #[arg(long)]
+    btc_maestro_key: Option<String>,
     /// USD price source for `GET /btc/v1/prices`. A full URL the edge fetches and
     /// normalises to `{ "USD": <n> }` — a mempool `/v1/prices` endpoint or a
     /// Kraken-style `Ticker` (e.g.
@@ -121,9 +146,15 @@ struct Args {
     /// `POST /register` calls allowed per hour, per client IP.
     #[arg(long, default_value_t = 10)]
     register_per_hour: u32,
-    /// Max cached responses.
+    /// Max cached responses (the fast in-memory layer; the SQLite file backing
+    /// it has no such cap).
     #[arg(long, default_value_t = 4096)]
     cache_entries: usize,
+    /// SQLite file the response cache persists to, so a restart doesn't throw
+    /// away already-fetched (and, for confirmed transaction history,
+    /// unchanging) data. Default: <home>/fortis-edge-cache.sqlite.
+    #[arg(long)]
+    cache_db: Option<PathBuf>,
     /// HTTP worker threads.
     #[arg(long, default_value_t = 4)]
     workers: usize,
@@ -162,6 +193,9 @@ struct State {
     allow_origin: String,
     xbt: Option<Upstream>,
     btc: Option<Upstream>,
+    /// Tried in order after `btc` fails; see `--btc-upstream-fallback` /
+    /// `--btc-maestro-key`.
+    btc_fallbacks: Vec<Upstream>,
     btc_tip: Option<proxy::TipCache>,
     btc_broadcast: Option<fortis_node::Rpc>,
     btc_price: Option<price::PriceCache>,
@@ -208,6 +242,8 @@ fn run() -> Result<()> {
         .clone()
         .unwrap_or_else(|| default_home().join("fortis-edge.secret"));
     let secret = token::load_or_create_secret(&secret_file)?;
+    let cache_db =
+        args.cache_db.clone().unwrap_or_else(|| default_home().join("fortis-edge-cache.sqlite"));
 
     // `--xbt-price-url` wins; `--xbt-price-upstream <base>` is the old form
     // that pointed at a mempool base and implied `/v1/prices`.
@@ -262,19 +298,70 @@ fn run() -> Result<()> {
         }
     };
 
+    // Maestro (when a key is given) goes first, ahead of --btc-upstream: it's
+    // a paid, per-key-metered provider rather than a shared public explorer,
+    // so it isn't exposed to a public IP-wide rate limit or the public
+    // explorers' own reliability wobbles (confirmed live, 2026-09-15:
+    // blockstream.info 429ing outright and mempool.space hanging entirely,
+    // while Maestro answered in under 300ms) — worth trying first, not last,
+    // once it's configured. Demotes the configured --btc-upstream to the
+    // first fallback rather than dropping it, so a Maestro outage still
+    // recovers instead of losing BTC entirely.
+    let maestro = args.btc_maestro_key.as_deref().map(|key| {
+        (
+            "https://xbt-mainnet.gomaestro-api.org/v0/esplora",
+            ("api-key".to_string(), key.to_string()),
+        )
+    });
+    // The full ordered BTC chain (Maestro first when configured, then
+    // --btc-upstream, then --btc-upstream-fallback) as fresh `Upstream`
+    // instances — called once for the per-request `btc`/`btc_fallbacks`
+    // split and again for `TipCache`, since `Upstream` isn't `Clone` and both
+    // need their *own* chain, not a shared one, to fail over independently.
+    let build_btc_chain = || -> Vec<Upstream> {
+        let mut chain = Vec::new();
+        if let Some((url, header)) = &maestro {
+            chain.push(Upstream::with_header(url, Some(header.clone())));
+        }
+        if let Some(primary) = &args.btc_upstream {
+            chain.push(if maestro.is_some() { Upstream::fallback(primary, None) } else { Upstream::new(primary) });
+        }
+        chain.extend(
+            args.btc_upstream_fallback
+                .iter()
+                .map(|u| u.trim())
+                .filter(|u| !u.is_empty() && Some(*u) != args.btc_upstream.as_deref())
+                .map(|u| Upstream::fallback(u, None)),
+        );
+        chain
+    };
+    let (btc, btc_fallbacks): (Option<Upstream>, Vec<Upstream>) = {
+        let mut chain = build_btc_chain();
+        if chain.is_empty() {
+            (None, Vec::new())
+        } else {
+            let rest = chain.split_off(1);
+            (chain.into_iter().next(), rest)
+        }
+    };
+
     let state = Arc::new(State {
         secret,
         require_token: args.require_token,
         trust_forwarded_for: args.trust_forwarded_for,
         allow_origin: args.allow_origin.clone(),
         xbt: args.xbt_upstream.as_deref().map(Upstream::new),
-        btc: args.btc_upstream.as_deref().map(Upstream::new),
+        btc,
+        btc_fallbacks,
         // XBT's tip comes from fortis-index (local, fast — no hang risk seen
-        // there); only BTC's public-explorer proxy needs the background cache.
-        btc_tip: args
-            .btc_upstream
-            .as_deref()
-            .map(|u| proxy::TipCache::spawn(Upstream::new(u), std::time::Duration::from_secs(20))),
+        // there); only BTC's public-explorer proxy needs the background
+        // cache. Uses the *whole* chain, same order as `btc`/`btc_fallbacks`
+        // — see `TipCache::spawn`'s doc for why a primary-only tip cache is
+        // exactly the outage this caused live.
+        btc_tip: {
+            let chain = build_btc_chain();
+            (!chain.is_empty()).then(|| proxy::TipCache::spawn(chain, std::time::Duration::from_secs(20)))
+        },
         btc_broadcast,
         btc_price: args
             .btc_price_url
@@ -292,7 +379,7 @@ fn run() -> Result<()> {
         crash_limiter: RateLimiter::new(2, 8),
         crash_log: args.crash_log.clone(),
         pricing: fee,
-        cache: Cache::new(args.cache_entries),
+        cache: Cache::new(args.cache_entries, Some(&cache_db)),
         metrics: Metrics::default(),
     });
 
@@ -302,10 +389,25 @@ fn run() -> Result<()> {
 
     eprintln!("fortis-edge listening on  http://{}", args.bind);
     eprintln!("  xbt upstream   {}", args.xbt_upstream.as_deref().unwrap_or("(none)"));
-    eprintln!("  btc upstream   {}", args.btc_upstream.as_deref().unwrap_or("(none)"));
+    eprintln!(
+        "  btc upstream   {}",
+        if args.btc_maestro_key.is_some() { "maestro (xbt-mainnet.gomaestro-api.org)" }
+        else { args.btc_upstream.as_deref().unwrap_or("(none)") }
+    );
+    eprintln!(
+        "  btc fallback   {}",
+        if state.btc_fallbacks.is_empty() {
+            "(none)".to_string()
+        } else if args.btc_maestro_key.is_some() {
+            args.btc_upstream.iter().chain(args.btc_upstream_fallback.iter()).cloned().collect::<Vec<_>>().join(", ")
+        } else {
+            args.btc_upstream_fallback.join(", ")
+        }
+    );
     eprintln!("  btc broadcast  {}", args.btc_rpc_url.as_deref().unwrap_or("(via btc upstream)"));
     eprintln!("  btc price      {}", args.btc_price_url.as_deref().unwrap_or("(via btc upstream)"));
     eprintln!("  xbt price    {}", xbt_price_url.as_deref().unwrap_or("(none)"));
+    eprintln!("  cache db       {}", cache_db.display());
     eprintln!(
         "  btc pacing     {}",
         if args.btc_upstream_rate > 0.0 {
@@ -563,21 +665,34 @@ fn proxy_chain(req: &mut Request, st: &State, method: &Method, path: &str, query
             return err(401, "missing or invalid token — POST /register first");
         }
         let mut raw = Vec::new();
-        let _ = req.as_reader().take(64 * 1024).read_to_end(&mut raw);
+        let _ = req.as_reader().take(256 * 1024).read_to_end(&mut raw);
+        // 1000, not the old 80: that was sized for a guessed near-next-index
+        // window, not a wallet's *real* depth. Found live, 2026-09-15, a
+        // genuinely active watch-only import with several hundred used
+        // addresses — an 80-address prewarm covers barely a tenth of that, so
+        // almost the whole scan still fell through to the slow, one-at-a-time
+        // paced path this endpoint exists to avoid. `warm()` chunks its own
+        // upstream calls, so this doesn't risk a single oversized URL.
         let addrs: Vec<String> = serde_json::from_slice::<Vec<String>>(&raw)
             .unwrap_or_default()
             .into_iter()
             .filter(|a| !a.is_empty() && a.len() < 128)
-            .take(80)
+            .take(1000)
             .collect();
         if addrs.is_empty() {
             return err(400, "expected a non-empty JSON array of addresses");
         }
         return match hs.warm(&addrs) {
             Ok(warmed) => {
-                let ttl = std::time::Duration::from_secs(60);
                 for (a, w) in &warmed {
-                    for (suffix, body) in [("utxo", &w.utxo), ("txs", &w.txs)] {
+                    // `/txs` earns the same long TTL as the regular per-address
+                    // path once nothing in it is pending — see `cache::ttl_for`.
+                    // `/utxo` keeps the short default (it can genuinely change).
+                    for (suffix, body, path) in [
+                        ("utxo", &w.utxo, format!("/btc/address/{a}/utxo")),
+                        ("txs", &w.txs, format!("/btc/address/{a}/txs")),
+                    ] {
+                        let Some(ttl) = cache::ttl_for(&path, Some(body)) else { continue };
                         st.cache.put(
                             &format!("btc/address/{a}/{suffix}?"),
                             ttl,
@@ -615,7 +730,7 @@ fn proxy_chain(req: &mut Request, st: &State, method: &Method, path: &str, query
     // Cache hits never touch the upstream, so they don't spend rate budget —
     // check the cache before the limiter.
     let cache_key = format!("{chain}/{rest}?{query}");
-    let ttl = if method == &Method::Get { cache::ttl_for(path) } else { None };
+    let ttl = if method == &Method::Get { cache::ttl_for(path, None) } else { None };
     if ttl.is_some() {
         if let Some(hit) = st.cache.get(&cache_key) {
             Metrics::inc(&st.metrics.cache_hits);
@@ -691,9 +806,44 @@ fn proxy_chain(req: &mut Request, st: &State, method: &Method, path: &str, query
     // recently-cached copy keeps a wallet scan from aborting on one bad address.
     let stale = || st.cache.get_stale(&cache_key, std::time::Duration::from_secs(600));
 
-    match upstream.forward(method, rest, query, &body) {
+    // 403 alongside 429/5xx: confirmed live, 2026-09-15, that's exactly what
+    // Maestro returns once its metered credit budget is exhausted
+    // (`{"message":"Credits limit exceeded"}`) — a quota failure is just as
+    // much a reason to try the next upstream as a rate limit is, and without
+    // this a credits-exhausted primary silently passes that error straight
+    // through to every client instead of failing over.
+    let bad = |r: &std::result::Result<proxy::UpstreamResponse, anyhow::Error>| match r {
+        Ok(resp) => resp.status == 429 || resp.status == 403 || (500..=599).contains(&resp.status),
+        Err(_) => true,
+    };
+    let mut result = upstream.forward(method, rest, query, &body);
+    // `--btc-upstream` failing outright (not just one flaky address, the whole
+    // host refusing) is exactly what a single shared egress IP risks at real
+    // scale: every wallet behind this edge reads that upstream as one very
+    // busy caller, so one explorer's rate limit or outage can take all of
+    // them down together. Working through `btc_fallbacks` in order — each an
+    // independent provider — means that failure mode costs a slower response
+    // instead of a broken one, and keeps trying rather than giving up after
+    // one alternate. Only BTC has this — XBT's upstream is our own
+    // fortis-index, not a rate-limited public API.
+    if chain == "btc" && bad(&result) {
+        for fb in &st.btc_fallbacks {
+            if !bad(&result) {
+                break;
+            }
+            let fb_result = fb.forward(method, rest, query, &body);
+            if !bad(&fb_result) {
+                result = fb_result;
+            }
+        }
+    }
+
+    match result {
         Ok(resp) if resp.status == 200 => {
-            if let Some(ttl) = ttl {
+            // Recomputed with the body in hand: a `/txs` response with nothing
+            // pending earns the long TTL here, even though the pre-fetch check
+            // above (no body yet) only knew the short one.
+            if let Some(ttl) = if ttl.is_some() { cache::ttl_for(path, Some(&resp.body)) } else { None } {
                 st.cache.put(
                     &cache_key,
                     ttl,

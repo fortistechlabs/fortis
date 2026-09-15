@@ -52,8 +52,16 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
     private fun str(id: Int, vararg args: Any) = getApplication<Application>().getString(id, *args)
     private val http = OkHttpClient.Builder()
         .proxy(Proxy.NO_PROXY) // ignore any Wi-Fi/Studio proxy — local hosts must be direct
-        .connectTimeout(15, TimeUnit.SECONDS)
-        .readTimeout(30, TimeUnit.SECONDS)
+        // A watch-only scan makes dozens to hundreds of these; EsploraBackend's
+        // get() retries each one up to 3 times on top of whatever this client
+        // itself waits out. At the old 15s/30s, one genuinely dead address cost
+        // up to ~135s before get() gave up on it — found live, 2026-09-15, when
+        // a scan against a degraded upstream took many minutes because most of
+        // that time was spent waiting out timeouts one at a time, not doing
+        // useful work. 6s/8s is still generous for a JSON REST call and cuts
+        // that same worst case to well under a minute.
+        .connectTimeout(6, TimeUnit.SECONDS)
+        .readTimeout(8, TimeUnit.SECONDS)
         .build()
 
     var phase by mutableStateOf(Phase.Loading); private set
@@ -506,8 +514,23 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    private var refreshing = false
+
     fun refresh() = viewModelScope.launch {
-        val edge = backend ?: return@launch
+        // The wallet-detail screen's poll loop calls this every 20s with no
+        // memory of whether the last call ever finished — without this guard,
+        // a scan that runs longer than 20s (any real watch-only import with
+        // more than a handful of used addresses; a deep one can take minutes)
+        // gets a *second*, fully overlapping refresh() stacked on top of it
+        // every single tick, then a third, then a fourth. Found live,
+        // 2026-09-15: this is what turned "a slow scan" into "an ever-growing
+        // pile of concurrent scans all sharing one OkHttpClient and one
+        // EsploraBackend's mutable cache fields", which is a completely
+        // different and far worse problem — the request volume alone was
+        // enough to make an otherwise-healthy edge look unreliable.
+        if (refreshing) return@launch
+        refreshing = true
+        val edge = backend ?: run { refreshing = false; return@launch }
         suspend fun load(b: Backend, degraded: Boolean) {
             runCatching { b.prewarm() }
             status = b.status().copy(degraded = degraded)
@@ -525,9 +548,13 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
                 if (fresh > cur) updateConfig(id) { it.copy(nextReceive = fresh) }
             }
         }
-        runCatching { load(edge, false) }
-            .recoverCatching { e -> fallback?.let { load(it, true) } ?: throw e }
-            .onFailure { status = null }
+        try {
+            runCatching { load(edge, false) }
+                .recoverCatching { e -> fallback?.let { load(it, true) } ?: throw e }
+                .onFailure { status = null }
+        } finally {
+            refreshing = false
+        }
     }
 
     fun newReceiveAddress() = viewModelScope.launch {

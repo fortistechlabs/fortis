@@ -584,6 +584,7 @@ dependencies = [
  "hex",
  "hmac",
  "native-tls",
+ "rusqlite",
  "serde_json",
  "sha2",
  "tiny_http",

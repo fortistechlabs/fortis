@@ -24,6 +24,7 @@ sha2 = "0.10"
 tiny_http = "0.12"
 ureq = { version = "2", default-features = false, features = ["json", "native-tls"] }
 native-tls = "0.2"
+rusqlite = { version = "0.32", features = ["bundled"] }
 
 [dev-dependencies]
 wallet-core = { path = "../wallet-core" }

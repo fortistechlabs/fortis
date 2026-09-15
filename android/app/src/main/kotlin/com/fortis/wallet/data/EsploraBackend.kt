@@ -1,6 +1,9 @@
 package com.fortis.wallet.data
 
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
@@ -13,6 +16,20 @@ import uniffi.wallet_ffi.WalletUtxo
 import uniffi.wallet_ffi.WalletView
 
 private const val GAP = 20
+
+/** Addresses fetched concurrently per batch, in both [EsploraBackend.watchSet]
+ *  and [EsploraBackend.scan] — same shape and same value as web's `CHUNK` in
+ *  `esplora.js`. Strictly sequential (one request, wait for the full round
+ *  trip, then the next) was the default until 2026-09-15: for a wallet with
+ *  hundreds of used addresses, that round-trip latency is pure dead time that
+ *  doesn't need to be serial — the edge's own pacer, not the client, is what
+ *  should govern the real request rate to the upstream. */
+private const val CHUNK = 8
+
+/** How deep [EsploraBackend.guessWatchAddresses]'s prewarm guess goes per
+ *  branch. 500×2 branches = 1000, matching the edge's own `/btc/prewarm`
+ *  address cap exactly — no point guessing wider than the edge will accept. */
+private const val PREWARM_DEPTH = 500
 
 /** Absolute backstop on how far a single gap-limit walk will go per branch —
  *  not a limit any real wallet should hit (the walk already stops itself after
@@ -72,21 +89,69 @@ class EsploraBackend(
 
     private class WatchAddr(val address: String, val spk: String, val branch: UInt, val index: UInt)
 
-    private var cachedWatchSet: List<Pair<WatchAddr, JSONArray>>? = null
+    /** Just what [history] needs from one `/txs` entry — not the raw JSON.
+     *  A real, heavily-automated wallet found live, 2026-09-15, kept several
+     *  hundred used addresses (still climbing past 300 when this was caught)
+     *  with many-input/many-output transactions; caching the *raw* `JSONArray`
+     *  per address (full scriptpubkey/witness hex for every vin and vout)
+     *  across that many addresses grew the heap fast enough to crash the app
+     *  with a genuine `OutOfMemoryError` mid-scan. Keeping only the txid, fee,
+     *  confirmation status, and each vin/vout's (address, value) pair cuts
+     *  the retained size by roughly the ratio of "a script hex + witness
+     *  stack" to "an address string" — the bulk of what made the raw JSON
+     *  big was never used for anything past this point anyway. */
+    private class TxSummary(
+        val txid: String,
+        val fee: Long,
+        val confirmed: Boolean,
+        val blockHeight: Long,
+        val blockTime: Long,
+        val vin: List<Pair<String?, Long>>,
+        val vout: List<Pair<String?, Long>>,
+    )
+
+    private fun summarize(tx: JSONObject): TxSummary {
+        val vin = ArrayList<Pair<String?, Long>>()
+        tx.getJSONArray("vin").let { arr ->
+            for (j in 0 until arr.length()) {
+                val po = arr.getJSONObject(j).optJSONObject("prevout")
+                vin += (po?.optString("scriptpubkey_address") to (po?.optLong("value") ?: 0L))
+            }
+        }
+        val vout = ArrayList<Pair<String?, Long>>()
+        tx.getJSONArray("vout").let { arr ->
+            for (j in 0 until arr.length()) {
+                val o = arr.getJSONObject(j)
+                vout += (o.optString("scriptpubkey_address") to o.optLong("value"))
+            }
+        }
+        val st = tx.optJSONObject("status")
+        return TxSummary(
+            txid = tx.getString("txid"),
+            fee = tx.optLong("fee"),
+            confirmed = st?.optBoolean("confirmed") == true,
+            blockHeight = st?.optLong("block_height") ?: 0L,
+            blockTime = st?.optLong("block_time") ?: 0L,
+            vin = vin,
+            vout = vout,
+        )
+    }
+
+    private var cachedWatchSet: List<Pair<WatchAddr, List<TxSummary>>>? = null
     private var watchSetAt = 0L
 
     /** Every address worth checking right now, each paired with its `/txs`
-     *  response (so [history] never re-fetches what this walk already has).
+     *  response — summarized, not raw (see [TxSummary]) — so [history] never
+     *  re-fetches what this walk already has.
      *
-     *  For each branch, walks forward from the stored next-index in [GAP]
-     *  -sized batches, extending the window whenever the batch just checked
-     *  had *any* address with transaction history — the standard BIP-44
-     *  gap-limit walk — instead of one fixed-size `[from, from+GAP)` pass.
-     *  That fixed pass is wrong for a freshly imported watch-only xpub: its
-     *  counters start at 0, so a real wallet with more than ~20 used receive
-     *  or change addresses had everything past index ~20 silently invisible —
-     *  wrong balance, missing history, forever (nothing about the bug is
-     *  self-correcting, since the window never had a reason to grow).
+     *  For each branch, walks forward from index 0 in [GAP]-sized batches,
+     *  extending the window whenever the batch just checked had *any* address
+     *  with transaction history — the standard BIP-44 gap-limit walk —
+     *  instead of one fixed-size `[0, GAP)` pass. That fixed pass is wrong for
+     *  a wallet with more than ~20 used receive or change addresses: had
+     *  everything past index ~20 silently invisible — wrong balance, missing
+     *  history, forever (nothing about the bug is self-correcting, since the
+     *  window never had a reason to grow).
      *
      *  "Used" here means *ever* appeared in a transaction (`/txs` non-empty),
      *  not "currently has an unspent output" (`/utxo` non-empty) — an address
@@ -94,41 +159,84 @@ class EsploraBackend(
      *  response but is still a real, used address. Deciding gap continuation
      *  on `/utxo` alone stops the walk right after a run of spent-through
      *  addresses, before it ever reaches a live balance sitting past them.
+     *
+     *  Each branch always walks from index 0, never from [counters]' stored
+     *  next-index. That counter exists purely to pick which address the UI
+     *  offers next for "Receive" — treating it as the scan floor too (as this
+     *  used to) drops every address below it from balance *and* history the
+     *  moment it advances, silently and permanently: found live on a
+     *  deep-history watch-only import, where the very first scan's own
+     *  gap-limit auto-advance (see WalletViewModel.refresh()) pushed
+     *  next-receive past dozens of addresses that were still holding real,
+     *  unspent balance. Nothing stops a later deposit landing on an address
+     *  below that counter either, hot wallet or watch-only, so there is no
+     *  index this can safely stop rechecking.
      */
-    private suspend fun watchSet(): List<Pair<WatchAddr, JSONArray>> {
+    private suspend fun watchSet(): List<Pair<WatchAddr, List<TxSummary>>> = coroutineScope {
         val now = System.currentTimeMillis()
-        cachedWatchSet?.let { if (now - watchSetAt < 10_000) return it }
-        val (nr, nc) = counters()
-        val out = ArrayList<Pair<WatchAddr, JSONArray>>()
-        for ((branch, from) in listOf(0 to nr, 1 to nc)) {
-            var next = from
-            var end = from + GAP
+        cachedWatchSet?.let { if (now - watchSetAt < 10_000) return@coroutineScope it }
+        val out = ArrayList<Pair<WatchAddr, List<TxSummary>>>()
+        var anySuccess = false
+        for (branch in 0..1) {
+            var next = 0
+            var end = GAP
             while (next < end && next < WATCH_SET_HARD_CAP) {
-                val derived = view.addressAt(branch.toUInt(), next.toUInt())
-                val a = WatchAddr(derived.address, derived.scriptPubkeyHex, branch.toUInt(), next.toUInt())
-                // A persistent failure here (upstream still 429ing after get()'s own
-                // retries) must not blow up the whole scan — stop extending *this*
-                // branch's window but keep every address already gathered, on this
-                // branch and the other. Silently treating it as "unused" would be
-                // wrong (we don't know), but wiping out an otherwise-good partial
-                // result is worse: it's exactly what turned "some data" into "no
-                // balance or history at all" for a deep wallet hitting a transient
-                // rate limit mid-walk.
-                val txs = try {
-                    JSONArray(get("/address/${a.address}/txs"))
-                } catch (e: Exception) {
-                    break
+                val batchEnd = minOf(end, next + CHUNK, WATCH_SET_HARD_CAP)
+                val batch = (next until batchEnd).map { i ->
+                    async {
+                        val derived = view.addressAt(branch.toUInt(), i.toUInt())
+                        val a = WatchAddr(derived.address, derived.scriptPubkeyHex, branch.toUInt(), i.toUInt())
+                        val txs = try {
+                            val raw = JSONArray(get("/address/${a.address}/txs"))
+                            List(raw.length()) { j -> summarize(raw.getJSONObject(j)) }
+                        } catch (e: Exception) {
+                            null
+                        }
+                        Triple(a, i, txs)
+                    }
+                }.awaitAll()
+                for ((a, i, txs) in batch) {
+                    if (txs == null) {
+                        // A persistent failure here (upstream still failing after get()'s
+                        // own retries) must never be treated as "confirmed unused" — doing
+                        // so is exactly the bug this whole rewrite exists to fix, just
+                        // triggered mid-walk instead of by a stale scan floor. Found live,
+                        // 2026-09-15: a spell of Maestro 403s (its metered credit budget
+                        // exhausted) used to stop extending here and silently capped a
+                        // real ~300-address wallet's walk at index ~19, undercounting its
+                        // balance by ~0.8 BTC with no error shown anywhere. Extend the
+                        // window defensively instead of shrinking the "consecutive
+                        // unused" runway — nothing here is cached on failure, so a later
+                        // refresh's fresh `get()` attempt gets another try at this exact
+                        // address. `anySuccess` staying false across an entire scan still
+                        // throws below, so a genuinely total outage is not silently
+                        // swallowed by this.
+                        end = maxOf(end, i + 1 + GAP)
+                    } else {
+                        anySuccess = true
+                        val used = txs.isNotEmpty()
+                        noteUsed(a, used)
+                        out += a to txs
+                        if (used) end = maxOf(end, i + 1 + GAP)
+                    }
                 }
-                val used = txs.length() > 0
-                noteUsed(a, used)
-                out += a to txs
-                if (used) end = next + 1 + GAP
-                next += 1
+                next = batchEnd
             }
         }
+        // Every single probe failed — this is "the upstream is unreachable right
+        // now", not "a freshly imported xpub with no history". Returning an empty
+        // list here would look identical to a genuinely empty wallet: balances()
+        // sums zero UTXOs and history() finds zero transactions, both perfectly
+        // confident results. Throwing instead lets refresh() do what it already
+        // does for a hard failure — fall back to the other backend, or leave the
+        // last-known-good balance on screen — rather than the wallet quietly
+        // reporting a wrong zero as fact. Confirmed live, 2026-09-15: the
+        // public-explorer fallback did exactly this after blockstream.info
+        // (the hosted edge's own upstream) started 429ing this machine outright.
+        if (!anySuccess) throw java.io.IOException("no address probe succeeded — upstream unreachable")
         cachedWatchSet = out
         watchSetAt = now
-        return out
+        out
     }
 
     /** A wallet scan is dozens of these back to back, and public explorers (the
@@ -176,40 +284,49 @@ class EsploraBackend(
 
     override suspend fun firstUnusedReceive(floor: Int): Int = maxOf(floor, usedReceiveMax + 1)
 
-    private suspend fun scan(force: Boolean = false): List<WalletUtxo> {
+    private suspend fun scan(force: Boolean = false): List<WalletUtxo> = coroutineScope {
         val now = System.currentTimeMillis()
-        if (!force && cachedUtxos != null && now - cachedAt < 10_000) return cachedUtxos!!
+        if (!force && cachedUtxos != null && now - cachedAt < 10_000) return@coroutineScope cachedUtxos!!
         val t = tip()
+        val set = watchSet()
         val out = ArrayList<WalletUtxo>()
-        for ((a, _) in watchSet()) {
-            // Same reasoning as watchSet()'s break above: one address that still
-            // fails after get()'s retries shouldn't cost the balance of every other
-            // address already known. Skip just this one.
-            val arr = try {
-                JSONArray(get("/address/${a.address}/utxo"))
-            } catch (e: Exception) {
-                continue
-            }
-            for (i in 0 until arr.length()) {
-                val u = arr.getJSONObject(i)
-                val st = u.optJSONObject("status")
-                val confirmed = st?.optBoolean("confirmed") == true
-                val h = st?.optLong("block_height") ?: 0L
-                val conf = if (confirmed) maxOf(1L, t.toLong() - h + 1) else 0L
-                out += WalletUtxo(
-                    txid = u.getString("txid"),
-                    vout = u.getInt("vout").toUInt(),
-                    valueSat = u.getLong("value").toULong(),
-                    scriptPubkeyHex = a.spk,
-                    confirmations = conf.toUInt(),
-                    derivationIndex = a.index,
-                    isChange = a.branch == 1u,
-                )
+        for (batchStart in set.indices step CHUNK) {
+            val batch = set.subList(batchStart, minOf(batchStart + CHUNK, set.size)).map { (a, _) ->
+                async {
+                    // Same reasoning as watchSet()'s failure handling: one address that
+                    // still fails after get()'s retries shouldn't cost the balance of
+                    // every other address already known. Skip just this one.
+                    val arr = try {
+                        JSONArray(get("/address/${a.address}/utxo"))
+                    } catch (e: Exception) {
+                        null
+                    }
+                    a to arr
+                }
+            }.awaitAll()
+            for ((a, arr) in batch) {
+                if (arr == null) continue
+                for (i in 0 until arr.length()) {
+                    val u = arr.getJSONObject(i)
+                    val st = u.optJSONObject("status")
+                    val confirmed = st?.optBoolean("confirmed") == true
+                    val h = st?.optLong("block_height") ?: 0L
+                    val conf = if (confirmed) maxOf(1L, t.toLong() - h + 1) else 0L
+                    out += WalletUtxo(
+                        txid = u.getString("txid"),
+                        vout = u.getInt("vout").toUInt(),
+                        valueSat = u.getLong("value").toULong(),
+                        scriptPubkeyHex = a.spk,
+                        confirmations = conf.toUInt(),
+                        derivationIndex = a.index,
+                        isChange = a.branch == 1u,
+                    )
+                }
             }
         }
         cachedUtxos = out
         cachedAt = now
-        return out
+        out
     }
 
     private suspend fun loadPricing() {
@@ -228,19 +345,25 @@ class EsploraBackend(
 
     private var lastPrewarm = 0L
 
-    /** Cheap, no-network guess at the watch set — the plain `[from, from+GAP)`
-     *  window, same shape [watchSet] used before it learned to expand. Good
-     *  enough to warm the edge's cache for the common case (a wallet whose
-     *  real gap doesn't exceed [GAP], which is every wallet the app itself has
-     *  been managing) without paying [watchSet]'s own per-address probing —
-     *  that would defeat the point of prewarming before the real scan. A
-     *  freshly imported deep-history xpub just gets a smaller head start;
-     *  [scan]/[history] still find everything via [watchSet]'s real walk. */
+    /** Cheap, no-network guess at the watch set: every address from 0 up to
+     *  [PREWARM_DEPTH] on each branch, handed to the edge's batch Haskoin
+     *  path so the real per-address walk that follows is served from cache
+     *  instead of the slow, paced, one-at-a-time route this exists to avoid.
+     *
+     *  Used to be just `[from, from+GAP)` near the persisted next-index —
+     *  cheap, but only ever covered a wallet with a handful of used
+     *  addresses. Found live, 2026-09-15: a real watch-only import with
+     *  several hundred used addresses barely benefited from prewarm at all,
+     *  since the guessed window covered a small fraction of what the walk
+     *  actually needed — almost the whole scan still paid the slow path.
+     *  Deriving addresses is a local, no-network computation regardless of
+     *  how many, so guessing wide costs nothing extra on this side; the
+     *  edge's own `/btc/prewarm` cap and chunked batch calls bound the real
+     *  cost of a guess this size. */
     private fun guessWatchAddresses(): List<String> {
-        val (nr, nc) = counters()
         val out = ArrayList<String>()
-        for ((branch, from) in listOf(0 to nr, 1 to nc)) {
-            for (i in from until from + GAP) out += view.addressAt(branch.toUInt(), i.toUInt()).address
+        for (branch in 0..1) {
+            for (i in 0 until PREWARM_DEPTH) out += view.addressAt(branch.toUInt(), i.toUInt()).address
         }
         return out
     }
@@ -315,39 +438,22 @@ class EsploraBackend(
         val mine = set.map { (a, _) -> a.address }.toHashSet()
         val tipH = tip().toLong()
         val seen = LinkedHashMap<String, HistoryEntry>()
-        for ((a, arr) in set) {
-            for (i in 0 until arr.length()) {
-                val tx = arr.getJSONObject(i)
-                val id = tx.getString("txid")
-                if (seen.containsKey(id)) continue
+        for ((_, txs) in set) {
+            for (tx in txs) {
+                if (seen.containsKey(tx.txid)) continue
                 var inOurs = 0L; var outOurs = 0L
-                tx.getJSONArray("vin").let { vin ->
-                    for (j in 0 until vin.length()) {
-                        val po = vin.getJSONObject(j).optJSONObject("prevout") ?: continue
-                        if (po.optString("scriptpubkey_address") in mine) inOurs += po.optLong("value")
-                    }
-                }
-                tx.getJSONArray("vout").let { vout ->
-                    for (j in 0 until vout.length()) {
-                        val o = vout.getJSONObject(j)
-                        if (o.optString("scriptpubkey_address") in mine) outOurs += o.optLong("value")
-                    }
-                }
+                for ((addr, value) in tx.vin) if (addr != null && addr in mine) inOurs += value
+                for ((addr, value) in tx.vout) if (addr != null && addr in mine) outOurs += value
                 val delta = outOurs - inOurs
                 val send = delta < 0
-                val fee = tx.optLong("fee")
-                val stTx = tx.optJSONObject("status")
-                val confirmed = stTx?.optBoolean("confirmed") == true
-                seen[id] = HistoryEntry(
-                    txid = id,
+                seen[tx.txid] = HistoryEntry(
+                    txid = tx.txid,
                     send = send,
-                    amountSat = if (send) delta + fee else delta,
-                    feeSat = if (send) fee else 0L,
-                    confirmations = if (confirmed) maxOf(1L, tipH - stTx.optLong("block_height") + 1) else 0L,
-                    // `optLong` yields 0 for a missing key (unconfirmed txs carry no
-                    // block_time); treat that as "now" so a pending tx sorts to the top.
-                    time = stTx?.optLong("block_time")?.takeIf { it > 0L }
-                        ?: (System.currentTimeMillis() / 1000),
+                    amountSat = if (send) delta + tx.fee else delta,
+                    feeSat = if (send) tx.fee else 0L,
+                    confirmations = if (tx.confirmed) maxOf(1L, tipH - tx.blockHeight + 1) else 0L,
+                    // 0 block_time (unconfirmed txs carry none) sorts a pending tx as "now".
+                    time = tx.blockTime.takeIf { it > 0L } ?: (System.currentTimeMillis() / 1000),
                 )
             }
         }

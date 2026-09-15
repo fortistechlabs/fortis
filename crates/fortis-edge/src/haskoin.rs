@@ -43,37 +43,47 @@ impl HaskoinStore {
         Ok(serde_json::from_str(&req.call()?.into_string()?)?)
     }
 
-    /// Two batch calls → each address's `(utxo, txs)` Esplora JSON.
+    /// Two batch calls per chunk → each address's `(utxo, txs)` Esplora JSON.
+    /// Chunked at [ADDRS_PER_CALL] addresses per HTTP call (a comma-joined
+    /// query param, not a request body — an unbounded single call risks
+    /// tripping a URL-length limit somewhere between here and Haskoin once a
+    /// caller's guess window gets genuinely wide) rather than one call for
+    /// the whole list, so `POST /btc/prewarm` can accept a wallet's *real*
+    /// full depth (hundreds of addresses for an actively-used wallet, not
+    /// just a guessed-small window) without that risk.
     pub fn warm(&self, addresses: &[String]) -> Result<HashMap<String, Warmed>> {
+        const ADDRS_PER_CALL: usize = 150;
         if addresses.is_empty() {
             return Ok(HashMap::new());
         }
-        let csv = addresses.join(",");
-        let unspent = self.get(&format!("address/unspent?addresses={csv}&limit=1000"))?;
-        let history = self.get(&format!("address/transactions/full?addresses={csv}&limit=100"))?;
-
         let want: HashSet<&str> = addresses.iter().map(String::as_str).collect();
-        let mut utxo_by: HashMap<&str, Vec<Value>> = HashMap::new();
-        let mut txs_by: HashMap<&str, Vec<Value>> = HashMap::new();
+        let mut utxo_by: HashMap<String, Vec<Value>> = HashMap::new();
+        let mut txs_by: HashMap<String, Vec<Value>> = HashMap::new();
 
-        for u in unspent.as_array().into_iter().flatten() {
-            if let Some(a) = u.get("address").and_then(Value::as_str).filter(|a| want.contains(a)) {
-                utxo_by.entry(a).or_default().push(esplora_utxo(u));
+        for chunk in addresses.chunks(ADDRS_PER_CALL) {
+            let csv = chunk.join(",");
+            let unspent = self.get(&format!("address/unspent?addresses={csv}&limit=1000"))?;
+            let history = self.get(&format!("address/transactions/full?addresses={csv}&limit=100"))?;
+
+            for u in unspent.as_array().into_iter().flatten() {
+                if let Some(a) = u.get("address").and_then(Value::as_str).filter(|a| want.contains(a)) {
+                    utxo_by.entry(a.to_string()).or_default().push(esplora_utxo(u));
+                }
             }
-        }
-        for t in history.as_array().into_iter().flatten() {
-            let touched: HashSet<&str> = ["inputs", "outputs"]
-                .iter()
-                .flat_map(|side| t.get(side).and_then(Value::as_array).into_iter().flatten())
-                .filter_map(|io| io.get("address").and_then(Value::as_str))
-                .filter(|a| want.contains(a))
-                .collect();
-            if touched.is_empty() {
-                continue;
-            }
-            let e = esplora_tx(t);
-            for a in touched {
-                txs_by.entry(a).or_default().push(e.clone());
+            for t in history.as_array().into_iter().flatten() {
+                let touched: HashSet<&str> = ["inputs", "outputs"]
+                    .iter()
+                    .flat_map(|side| t.get(side).and_then(Value::as_array).into_iter().flatten())
+                    .filter_map(|io| io.get("address").and_then(Value::as_str))
+                    .filter(|a| want.contains(a))
+                    .collect();
+                if touched.is_empty() {
+                    continue;
+                }
+                let e = esplora_tx(t);
+                for a in touched {
+                    txs_by.entry(a.to_string()).or_default().push(e.clone());
+                }
             }
         }
 
