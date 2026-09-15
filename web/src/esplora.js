@@ -4,6 +4,8 @@
 // `Session`) and this scans them with a gap limit. Same method surface as
 // `Gateway`, so `app.js` treats the two interchangeably.
 
+import { loadAddrTxs, saveAddrTxs } from './store.js';
+
 const GAP = 20; // stop scanning a branch after this many consecutive unused
 const CHUNK = 8; // parallel requests per batch
 // How deep _guessWatchAddresses()'s prewarm guess goes per branch. 500×2
@@ -262,6 +264,32 @@ export class EsploraBackend {
   async _watchSet() {
     const now = Date.now();
     if (this._watchSetCache && now - this._watchSetCacheAt < SNAP_TTL) return this._watchSetCache;
+
+    // Before ever doing a live walk (only reached once per instance, until
+    // the first resolution — cache-seeded or live — sets `_watchSetCache`),
+    // try painting from the permanent local cache instead: lets a cold page
+    // load / wallet switch show last-known balance/history with zero network
+    // calls. `_watchSetCacheAt` is deliberately left at 0 (not `now`) so the
+    // very next call is treated as stale and does a real walk, which both
+    // confirms the seed and persists anything new. Confirmed-tx history never
+    // changes, but "is there anything new" still needs a live check
+    // eventually — this only defers that, never skips it.
+    if (!this._watchSetCache) {
+      const persisted = await loadAddrTxs(this.session.chain).catch(() => ({}));
+      const seed = [];
+      for (const branch of [0, 1]) {
+        for (let i = 0; i < PREWARM_DEPTH; i++) {
+          const a = this.session.addressAt(branch, i);
+          const txs = persisted[a.address];
+          if (txs) seed.push({ address: a.address, spk: a.script_pubkey_hex, branch, index: i, txs, ok: true });
+        }
+      }
+      if (seed.length) {
+        this._watchSetCache = seed;
+        return seed;
+      }
+    }
+
     const out = [];
     let anySuccess = false;
     for (const branch of [0, 1]) {
@@ -291,6 +319,15 @@ export class EsploraBackend {
           // balance with no error shown anywhere — same bug as Android's
           // `break`, just via "confirmed empty" instead of "stop".
           if (entry.txs.length > 0 || !entry.ok) end = Math.max(end, entry.index + 1 + GAP);
+          // Write-through: persist this address's confirmed-only results
+          // (never pending — those can still change or vanish) so the *next*
+          // cold page load / wallet switch can paint from them instantly.
+          // Fire-and-forget — an IndexedDB write has no business slowing the
+          // scan down, and a failure here just means this address isn't
+          // cached yet, not that the walk itself failed.
+          if (entry.ok) {
+            saveAddrTxs(this.session.chain, entry.address, entry.txs.filter((t) => t.confirmed)).catch(() => {});
+          }
         }
         next = batchEnd;
       }

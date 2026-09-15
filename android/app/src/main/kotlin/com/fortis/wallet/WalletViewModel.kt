@@ -49,6 +49,7 @@ data class LockSetup(val mode: String, val secret: String, val appWrapped: Strin
 
 class WalletViewModel(app: Application) : AndroidViewModel(app) {
     private val store = Store(app)
+    private val txCache = TxCache(app)
     private fun str(id: Int, vararg args: Any) = getApplication<Application>().getString(id, *args)
     private val http = OkHttpClient.Builder()
         .proxy(Proxy.NO_PROXY) // ignore any Wi-Fi/Studio proxy — local hosts must be direct
@@ -208,6 +209,8 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
                             w.backendToken ?: "",
                             "$HOSTED_EDGE/pricing",
                             bulkPrewarm = w.chain == "btc",
+                            chain = w.chain,
+                            txCache = txCache,
                         ) {
                             val fresh = edgeRegister(http, HOSTED_EDGE)
                             updateConfig(id) { it.copy(backendToken = fresh) }
@@ -490,6 +493,8 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
             token,
             "$HOSTED_EDGE/pricing",
             bulkPrewarm = c.chain == "btc",
+            chain = c.chain,
+            txCache = txCache,
         ) {
             val fresh = edgeRegister(http, HOSTED_EDGE)
             updateConfig(id) { it.copy(backendToken = fresh) }
@@ -510,7 +515,10 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
         if (backend == null) backend = edgeBackend(c.backendToken ?: "")
         if (fallback == null) {
             val esplora = if (c.chain == "btc") PUBLIC_BTC_ESPLORA else PUBLIC_XBT_ESPLORA
-            fallback = EsploraBackend(http, esplora, view, { config!!.nextReceive to config!!.nextChange })
+            fallback = EsploraBackend(
+                http, esplora, view, { config!!.nextReceive to config!!.nextChange },
+                chain = c.chain, txCache = txCache,
+            )
         }
     }
 

@@ -37,6 +37,28 @@ private const val PREWARM_DEPTH = 500
  *  against a pathological xpub. */
 private const val WATCH_SET_HARD_CAP = 2_000
 
+/** Just what [EsploraBackend.history] needs from one `/txs` entry — not the raw
+ *  JSON. A real, heavily-automated wallet found live, 2026-09-15, kept several
+ *  hundred used addresses (still climbing past 300 when this was caught) with
+ *  many-input/many-output transactions; caching the *raw* `JSONArray` per
+ *  address (full scriptpubkey/witness hex for every vin and vout) across that
+ *  many addresses grew the heap fast enough to crash the app with a genuine
+ *  `OutOfMemoryError` mid-scan. Keeping only the txid, fee, confirmation
+ *  status, and each vin/vout's (address, value) pair cuts the retained size by
+ *  roughly the ratio of "a script hex + witness stack" to "an address string"
+ *  — the bulk of what made the raw JSON big was never used for anything past
+ *  this point anyway. Top-level (not private to [EsploraBackend]) so
+ *  [TxCache] can persist and reload it without a separate row shape. */
+class TxSummary(
+    val txid: String,
+    val fee: Long,
+    val confirmed: Boolean,
+    val blockHeight: Long,
+    val blockTime: Long,
+    val vin: List<Pair<String?, Long>>,
+    val vout: List<Pair<String?, Long>>,
+)
+
 /** Mint a per-install token at a fortis-edge base URL (`POST {base}/register`). */
 suspend fun edgeRegister(http: OkHttpClient, base: String): String = withContext(Dispatchers.IO) {
     val url = base.trimEnd('/') + "/register"
@@ -69,6 +91,15 @@ class EsploraBackend(
     /** POST the wallet's address set to `{base}/prewarm` before a scan so the
      *  edge batch-loads them (BTC via Haskoin). Only the hosted BTC backend. */
     private val bulkPrewarm: Boolean = false,
+    /** "btc" / "xbt" — keys [txCache]'s rows, since the same address string
+     *  can carry different confirmed history depending which chain it's on. */
+    private val chain: String = "btc",
+    /** Permanent local store of confirmed tx history, shared across every
+     *  `EsploraBackend` for this wallet (the in-view one and the separate
+     *  Home-screen overview instance both benefit from whatever either one
+     *  already found). Null → behaves exactly as before caching existed. */
+    private val txCache: TxCache? = null,
+    // Kept last: callers pass this as a trailing lambda.
     private val refresh: (suspend () -> String)? = null,
 ) : Backend {
     private val base = baseUrl.trimEnd('/')
@@ -88,27 +119,6 @@ class EsploraBackend(
     }
 
     private class WatchAddr(val address: String, val spk: String, val branch: UInt, val index: UInt)
-
-    /** Just what [history] needs from one `/txs` entry — not the raw JSON.
-     *  A real, heavily-automated wallet found live, 2026-09-15, kept several
-     *  hundred used addresses (still climbing past 300 when this was caught)
-     *  with many-input/many-output transactions; caching the *raw* `JSONArray`
-     *  per address (full scriptpubkey/witness hex for every vin and vout)
-     *  across that many addresses grew the heap fast enough to crash the app
-     *  with a genuine `OutOfMemoryError` mid-scan. Keeping only the txid, fee,
-     *  confirmation status, and each vin/vout's (address, value) pair cuts
-     *  the retained size by roughly the ratio of "a script hex + witness
-     *  stack" to "an address string" — the bulk of what made the raw JSON
-     *  big was never used for anything past this point anyway. */
-    private class TxSummary(
-        val txid: String,
-        val fee: Long,
-        val confirmed: Boolean,
-        val blockHeight: Long,
-        val blockTime: Long,
-        val vin: List<Pair<String?, Long>>,
-        val vout: List<Pair<String?, Long>>,
-    )
 
     private fun summarize(tx: JSONObject): TxSummary {
         val vin = ArrayList<Pair<String?, Long>>()
@@ -139,6 +149,24 @@ class EsploraBackend(
 
     private var cachedWatchSet: List<Pair<WatchAddr, List<TxSummary>>>? = null
     private var watchSetAt = 0L
+
+    /** Best-effort seed for [watchSet] from [txCache]: derive the same
+     *  guessed address window [prewarm] uses (cheap, local, no network), bulk
+     *  -load whichever of them have persisted confirmed history, and keep
+     *  only the ones that hit — an address absent from the cache is simply
+     *  unknown yet, not "confirmed unused" (that distinction still needs a
+     *  live check, same as any cache miss elsewhere in this class). */
+    private fun seedFromCache(): List<Pair<WatchAddr, List<TxSummary>>> {
+        val cache = txCache ?: return emptyList()
+        val guessed = (0..1).flatMap { branch ->
+            (0 until PREWARM_DEPTH).map { i ->
+                val d = view.addressAt(branch.toUInt(), i.toUInt())
+                WatchAddr(d.address, d.scriptPubkeyHex, branch.toUInt(), i.toUInt())
+            }
+        }
+        val loaded = cache.load(chain, guessed.map { it.address })
+        return guessed.mapNotNull { wa -> loaded[wa.address]?.let { wa to it } }
+    }
 
     /** Every address worth checking right now, each paired with its `/txs`
      *  response — summarized, not raw (see [TxSummary]) — so [history] never
@@ -175,6 +203,25 @@ class EsploraBackend(
     private suspend fun watchSet(): List<Pair<WatchAddr, List<TxSummary>>> = coroutineScope {
         val now = System.currentTimeMillis()
         cachedWatchSet?.let { if (now - watchSetAt < 10_000) return@coroutineScope it }
+
+        // Before ever doing a live walk (this instance's very first call —
+        // `cachedWatchSet` is only null until the first resolution, cache-seeded
+        // or live), try painting from the permanent local cache instead: lets a
+        // cold app start / wallet switch show last-known balance/history with
+        // zero network calls. `watchSetAt` is left at 0 (not `now`) so the very
+        // next call — the next 20s poll tick — treats this as stale and does a
+        // real walk, which both confirms the seed and persists anything new.
+        // Confirmed-tx history never changes, but "is there anything new" still
+        // needs a live check eventually; this only defers that, never skips it.
+        if (cachedWatchSet == null) {
+            val seed = seedFromCache()
+            if (seed.isNotEmpty()) {
+                for ((a, txs) in seed) noteUsed(a, txs.isNotEmpty())
+                cachedWatchSet = seed
+                return@coroutineScope seed
+            }
+        }
+
         val out = ArrayList<Pair<WatchAddr, List<TxSummary>>>()
         var anySuccess = false
         for (branch in 0..1) {
@@ -218,6 +265,20 @@ class EsploraBackend(
                         noteUsed(a, used)
                         out += a to txs
                         if (used) end = maxOf(end, i + 1 + GAP)
+                    }
+                }
+                // Write-through: persist this batch's confirmed-only results
+                // (never pending — those can still change or vanish) so the
+                // *next* cold start / wallet switch can paint from them
+                // instantly via [seedFromCache]. Off the calling dispatcher —
+                // this loop otherwise runs on whatever context called
+                // [watchSet] (viewModelScope defaults to Main), and disk I/O
+                // has no business blocking it.
+                if (txCache != null) {
+                    withContext(Dispatchers.IO) {
+                        for ((a, _, txs) in batch) {
+                            txs?.let { txCache.put(chain, a.address, it.filter { t -> t.confirmed }) }
+                        }
                     }
                 }
                 next = batchEnd

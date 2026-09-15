@@ -8,6 +8,7 @@
 //!
 //! TLS is expected from a reverse proxy (Caddy / nginx) in front.
 
+mod btc_history;
 mod cache;
 mod haskoin;
 mod limit;
@@ -28,6 +29,7 @@ use clap::Parser;
 use serde_json::json;
 use tiny_http::{Header, Method, Request, Response, Server};
 
+use btc_history::BtcHistory;
 use cache::Cache;
 use limit::{Pacer, RateLimiter};
 use metrics::Metrics;
@@ -208,6 +210,9 @@ struct State {
     crash_log: Option<PathBuf>,
     pricing: Option<pricing::Pricing>,
     cache: Cache,
+    /// Permanent, never-evicted confirmed-tx store for BTC — see
+    /// `btc_history`'s doc comment. `None` only if the db couldn't be opened.
+    btc_history: Option<BtcHistory>,
     metrics: Metrics,
 }
 
@@ -380,6 +385,7 @@ fn run() -> Result<()> {
         crash_log: args.crash_log.clone(),
         pricing: fee,
         cache: Cache::new(args.cache_entries, Some(&cache_db)),
+        btc_history: BtcHistory::new(&cache_db),
         metrics: Metrics::default(),
     });
 
@@ -408,6 +414,10 @@ fn run() -> Result<()> {
     eprintln!("  btc price      {}", args.btc_price_url.as_deref().unwrap_or("(via btc upstream)"));
     eprintln!("  xbt price    {}", xbt_price_url.as_deref().unwrap_or("(none)"));
     eprintln!("  cache db       {}", cache_db.display());
+    eprintln!(
+        "  btc history    {}",
+        if state.btc_history.is_some() { "permanent (same db)".to_string() } else { "(disabled)".to_string() }
+    );
     eprintln!(
         "  btc pacing     {}",
         if args.btc_upstream_rate > 0.0 {
@@ -835,6 +845,38 @@ fn proxy_chain(req: &mut Request, st: &State, method: &Method, path: &str, query
             if !bad(&fb_result) {
                 result = fb_result;
             }
+        }
+    }
+
+    // Confirmed BTC transactions never change, so remember them permanently
+    // (see `btc_history`'s doc comment) instead of only via the evictable,
+    // 6h-TTL response cache above. Merges in everything ever seen for this
+    // address (fuller than any single upstream page can be) on success, and
+    // falls back to permanent-only data on a total upstream failure — beyond
+    // even the 600s `stale()` grace window `cache.rs` gives every other path.
+    if chain == "btc" && method == &Method::Get && rest.ends_with("/txs") {
+        if let (Some(addr), Some(hist)) =
+            (rest.strip_prefix("address/").and_then(|r| r.strip_suffix("/txs")), &st.btc_history)
+        {
+            result = match result {
+                Ok(resp) if resp.status == 200 => match serde_json::from_slice::<Vec<serde_json::Value>>(&resp.body) {
+                    Ok(txs) => {
+                        let merged = hist.merge(addr, &txs);
+                        let body = serde_json::to_vec(&merged).unwrap_or(resp.body);
+                        Ok(proxy::UpstreamResponse { body, ..resp })
+                    }
+                    Err(_) => Ok(resp), // unexpected shape — pass through unmerged
+                },
+                other => {
+                    let known = hist.get(addr);
+                    if known.is_empty() {
+                        other
+                    } else {
+                        let body = serde_json::to_vec(&known).unwrap_or_default();
+                        Ok(proxy::UpstreamResponse { status: 200, content_type: "application/json".into(), body })
+                    }
+                }
+            };
         }
     }
 
