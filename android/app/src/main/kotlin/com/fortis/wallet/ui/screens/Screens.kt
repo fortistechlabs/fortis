@@ -754,7 +754,18 @@ private fun WalletTab(vm: WalletViewModel) {
                         ),
                         color = Fx.warn, fontFamily = FontFamily.Monospace, fontSize = 12.sp,
                     )
-                    val hint = vm.status?.let {
+                    // `status` resolves fast (just a tip-height + pricing call) but
+                    // `balances`/`history` come from the much slower address scan in
+                    // the same refresh() — for a deep watch-only BTC wallet (paced
+                    // through a rate-limited public explorer, unlike XBT's local
+                    // index) that can take minutes. Without gating on `b != null`
+                    // too, the dot went green and the hint said "Block N" the moment
+                    // status() landed, looking fully loaded while the balance/history
+                    // scan was still running underneath — indistinguishable from
+                    // "done" at a glance. Keep showing the "connecting…" state (already
+                    // translated everywhere, so reusing it needs no new string) until
+                    // the first balance actually arrives.
+                    val hint = vm.status?.takeIf { b != null }?.let {
                         val head = when {
                             it.scanningPct != null -> stringResource(R.string.wallet_rescanning, it.scanningPct)
                             it.synced -> stringResource(R.string.wallet_block, it.blocks.toString())
@@ -769,7 +780,8 @@ private fun WalletTab(vm: WalletViewModel) {
                     // status ("Connected · block N") was the only signal before this —
                     // easy to miss at a glance, especially on a watch-only wallet where
                     // there's no other activity on screen to suggest it's still loading.
-                    val dotColor = vm.status?.let { if (it.synced && it.scanningPct == null) Fx.good else Fx.warn } ?: Fx.warn
+                    val dotColor = vm.status?.takeIf { b != null }
+                        ?.let { if (it.synced && it.scanningPct == null) Fx.good else Fx.warn } ?: Fx.warn
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Box(Modifier.size(7.dp).clip(CircleShape).background(dotColor))
                         Spacer(Modifier.width(6.dp))

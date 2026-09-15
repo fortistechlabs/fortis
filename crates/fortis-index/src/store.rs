@@ -132,8 +132,15 @@ impl Store {
         let h = height as i64;
         let tx = self.conn.transaction()?;
         {
+            // OR IGNORE: pre-BIP34 mainnet has two known blocks (~91722/91842 and
+            // ~91812/91880) whose coinbase transaction collides with an earlier
+            // coinbase's txid — a real, valid duplicate in chain history (BIP30),
+            // not a bug in this indexer. Indexing from genesis (rather than the
+            // XBT fork height, safely after both) hits them; keeping the first
+            // row and ignoring the repeat is correct since the original coinbase
+            // must already be fully spent for the duplicate block to be valid.
             let mut ins_out = tx.prepare_cached(
-                "INSERT INTO outputs(txid,vout,spk,value,height) VALUES(?1,?2,?3,?4,?5)",
+                "INSERT OR IGNORE INTO outputs(txid,vout,spk,value,height) VALUES(?1,?2,?3,?4,?5)",
             )?;
             let mut spend = tx.prepare_cached(
                 "UPDATE outputs SET spent_height=?1, spent_txid=?2 WHERE txid=?3 AND vout=?4",
