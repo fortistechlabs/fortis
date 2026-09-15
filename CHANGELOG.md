@@ -2,6 +2,18 @@
 
 Fortis Wallet (Android). Versions are `versionName (versionCode)`.
 
+## 0.3.1 (6) — 2026-09-15
+
+- Fixed a watch-only wallet bug: importing an xpub with a lot of prior history
+  could show the wrong balance and be missing transactions. The address scan
+  now keeps looking as far as real activity goes, instead of stopping after a
+  fixed 20 addresses per branch. If you imported a watch-only wallet before
+  this update, reopen it (or pull to refresh) to pick up anything that was
+  missed.
+- Accepts `zpub`/`ypub` (and testnet `vpub`/`upub`) when importing a watch-only
+  xpub, not just the plain `xpub` form — what most wallets and hardware
+  devices actually show for a native SegWit account.
+
 ## 0.3.0 (5) — 2026-09-14
 
 - Watch-only wallets: import an account-level extended public key (xpub) to
