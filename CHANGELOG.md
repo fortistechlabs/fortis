@@ -2,6 +2,13 @@
 
 Fortis Wallet (Android). Versions are `versionName (versionCode)`.
 
+## 0.3.5 (10) — 2026-09-15
+
+- Reopening a wallet (or switching between them) now shows your last-known
+  balance and history immediately instead of waiting on a fresh scan every
+  time — confirmed transactions are remembered on-device, since they never
+  change. The app still quietly checks for anything new right after.
+
 ## 0.3.4 (9) — 2026-09-15
 
 - Fixed a watch-only wallet showing as fully connected (green dot, current
