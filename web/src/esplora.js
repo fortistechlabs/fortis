@@ -6,13 +6,18 @@
 
 const GAP = 20; // stop scanning a branch after this many consecutive unused
 const CHUNK = 8; // parallel requests per batch
-// The full gap-limit scan is unbounded — it re-fans-out to next_receive/change
-// + GAP addresses on every call with no cap on top of that, so a heavily-used
-// wallet on a public explorer (not the edge, which has its own prewarm path)
-// can generate a lot of parallel requests. 60s reuses one scan across several
-// poll ticks instead of re-running it every 15-25s; utxos() still forces a
-// fresh scan (see `_refresh(true)` below) since spend-planning can't work
-// from a stale UTXO set.
+// Absolute backstop on how far a single gap-limit walk will go per branch —
+// not a limit any real wallet should hit (the walk already stops itself after
+// GAP consecutive never-used addresses); just a bound on worst-case work
+// against a pathological xpub.
+const WATCH_SET_HARD_CAP = 2_000;
+// The gap-limit scan can run long on a heavily-used wallet against a public
+// explorer (not the edge, which has its own prewarm path) — it now genuinely
+// walks as far as real activity goes (see `_watchSet` below), which for a
+// freshly imported deep-history xpub can be a lot of requests. 60s reuses one
+// scan across several poll ticks instead of re-running it every 15-25s;
+// utxos() still forces a fresh scan (see `_refresh(true)` below) since
+// spend-planning can't work from a stale UTXO set.
 const SNAP_TTL = 60_000; // ms — reuse the UTXO scan within a poll burst
 const HIST_TTL = 60_000;
 
@@ -61,6 +66,8 @@ export class EsploraBackend {
     this._price = null; // last-known-good USD price, or null before any success
     this._priceAt = 0;
     this._lastPrewarm = 0;
+    this._watchSetCache = null;
+    this._watchSetCacheAt = 0;
   }
 
   /** One POST of the whole watch-set to `{base}/prewarm` — the hosted edge's
@@ -79,7 +86,7 @@ export class EsploraBackend {
     const now = Date.now();
     if (now - this._lastPrewarm < 45_000) return;
     try {
-      const addrs = this._watchSet().map((a) => a.address);
+      const addrs = this._guessWatchAddresses();
       const r = await this._fetch('/prewarm', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
@@ -165,17 +172,70 @@ export class EsploraBackend {
     return Promise.resolve({ imported: true });
   }
 
-  /** Addresses to watch: receive + change branches, each 0..counter+GAP. */
-  _watchSet() {
+  /** Cheap, no-network guess at the watch set — the plain `[from, from+GAP)`
+   *  window `_watchSet()` used to always use. Good enough to warm the edge's
+   *  cache for the common case (a wallet whose real gap doesn't exceed GAP,
+   *  which is every wallet the app itself has been managing) without paying
+   *  `_watchSet()`'s own per-address probing — that would defeat the point of
+   *  prewarming before the real scan. A freshly imported deep-history xpub
+   *  just gets a smaller head start; `_refresh()`/`history()` still find
+   *  everything via `_watchSet()`'s real walk. */
+  _guessWatchAddresses() {
     const { next_receive, next_change } = this.session.indices();
     const list = [];
-    for (const [branch, upto] of [[0, next_receive + GAP], [1, next_change + GAP]]) {
-      for (let i = 0; i < upto; i++) {
-        const a = this.session.addressAt(branch, i);
-        list.push({ address: a.address, spk: a.script_pubkey_hex, branch, index: i });
-      }
+    for (const [branch, from] of [[0, next_receive], [1, next_change]]) {
+      for (let i = from; i < from + GAP; i++) list.push(this.session.addressAt(branch, i).address);
     }
     return list;
+  }
+
+  /** Every address worth checking right now, each carrying its `/txs`
+   *  response (so `history()` never re-fetches what this walk already has).
+   *
+   *  For each branch, walks forward from the stored next-index in GAP-sized
+   *  batches (fetched CHUNK at a time, in parallel), extending the window
+   *  whenever the batch just checked had *any* address with transaction
+   *  history — the standard BIP-44 gap-limit walk — instead of one
+   *  fixed-size `[from, from+GAP)` pass. That fixed pass is wrong for a
+   *  freshly imported watch-only xpub: its counters start at 0, so a real
+   *  wallet with more than ~20 used receive or change addresses had
+   *  everything past index ~20 silently invisible — wrong balance, missing
+   *  history, forever (nothing about the bug is self-correcting, since the
+   *  window never had a reason to grow).
+   *
+   *  "Used" here means *ever* appeared in a transaction (`/txs` non-empty),
+   *  not "currently has an unspent output" (`/utxo` non-empty) — an address
+   *  that received funds and was later fully spent shows an *empty* `/utxo`
+   *  response but is still a real, used address. Deciding gap continuation
+   *  on `/utxo` alone stops the walk right after a run of spent-through
+   *  addresses, before it ever reaches a live balance sitting past them. */
+  async _watchSet() {
+    const now = Date.now();
+    if (this._watchSetCache && now - this._watchSetCacheAt < SNAP_TTL) return this._watchSetCache;
+    const { next_receive, next_change } = this.session.indices();
+    const out = [];
+    for (const [branch, from] of [[0, next_receive], [1, next_change]]) {
+      let next = from;
+      let end = from + GAP;
+      while (next < end && next < WATCH_SET_HARD_CAP) {
+        const batchEnd = Math.min(end, next + CHUNK, WATCH_SET_HARD_CAP);
+        const batch = await Promise.all(
+          Array.from({ length: batchEnd - next }, (_, k) => next + k).map(async (i) => {
+            const a = this.session.addressAt(branch, i);
+            const txs = await this.get(`/address/${a.address}/txs`).catch(() => []);
+            return { address: a.address, spk: a.script_pubkey_hex, branch, index: i, txs: Array.isArray(txs) ? txs : [] };
+          }),
+        );
+        for (const entry of batch) {
+          out.push(entry);
+          if (entry.txs.length > 0) end = Math.max(end, entry.index + 1 + GAP);
+        }
+        next = batchEnd;
+      }
+    }
+    this._watchSetCache = out;
+    this._watchSetCacheAt = now;
+    return out;
   }
 
   async _refresh(force = false) {
@@ -191,7 +251,7 @@ export class EsploraBackend {
     // one; `force` only skips the "cache is still fresh" shortcut above.
     if (this._refreshing) return this._refreshing;
     const run = (async () => {
-      const addrs = this._watchSet();
+      const addrs = await this._watchSet();
       const tip = Number(await this.get('/blocks/tip/height'));
       const perAddr = await chunked(addrs, CHUNK, async (a) => {
         const utxo = await this.get(`/address/${a.address}/utxo`).catch(() => []);
@@ -306,12 +366,9 @@ export class EsploraBackend {
     const snap = await this._refresh();
     if (!this._hist || Date.now() - this._histAt > HIST_TTL) {
       const mine = new Set(snap.addrs.map((a) => a.address));
-      const lists = await chunked(snap.addrs, CHUNK, (a) =>
-        this.get(`/address/${a.address}/txs`).catch(() => []),
-      );
       const byTxid = new Map();
-      for (const list of lists) {
-        for (const tx of list) {
+      for (const a of snap.addrs) {
+        for (const tx of a.txs) {
           if (byTxid.has(tx.txid)) continue;
           const inOurs = (tx.vin || []).reduce(
             (s, v) => s + (mine.has(v.prevout?.scriptpubkey_address) ? v.prevout.value : 0),
@@ -357,6 +414,7 @@ export class EsploraBackend {
     if (!/^[0-9a-fA-F]{64}$/.test(text)) throw new Error(text || 'unexpected broadcast response');
     this._snap = null; // reflect the spend on the next poll
     this._hist = null;
+    this._watchSetCache = null; // its cached /txs per address predates this broadcast
     return { txid: text.toLowerCase() };
   }
 }

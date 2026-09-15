@@ -13,6 +13,12 @@ import uniffi.wallet_ffi.WalletView
 
 private const val GAP = 20
 
+/** Absolute backstop on how far a single gap-limit walk will go per branch —
+ *  not a limit any real wallet should hit (the walk already stops itself after
+ *  [GAP] consecutive never-used addresses); just a bound on worst-case work
+ *  against a pathological xpub. */
+private const val WATCH_SET_HARD_CAP = 2_000
+
 /** Mint a per-install token at a fortis-edge base URL (`POST {base}/register`). */
 suspend fun edgeRegister(http: OkHttpClient, base: String): String = withContext(Dispatchers.IO) {
     val url = base.trimEnd('/') + "/register"
@@ -65,15 +71,50 @@ class EsploraBackend(
 
     private class WatchAddr(val address: String, val spk: String, val branch: UInt, val index: UInt)
 
-    private fun watchSet(): List<WatchAddr> {
+    private var cachedWatchSet: List<Pair<WatchAddr, JSONArray>>? = null
+    private var watchSetAt = 0L
+
+    /** Every address worth checking right now, each paired with its `/txs`
+     *  response (so [history] never re-fetches what this walk already has).
+     *
+     *  For each branch, walks forward from the stored next-index in [GAP]
+     *  -sized batches, extending the window whenever the batch just checked
+     *  had *any* address with transaction history — the standard BIP-44
+     *  gap-limit walk — instead of one fixed-size `[from, from+GAP)` pass.
+     *  That fixed pass is wrong for a freshly imported watch-only xpub: its
+     *  counters start at 0, so a real wallet with more than ~20 used receive
+     *  or change addresses had everything past index ~20 silently invisible —
+     *  wrong balance, missing history, forever (nothing about the bug is
+     *  self-correcting, since the window never had a reason to grow).
+     *
+     *  "Used" here means *ever* appeared in a transaction (`/txs` non-empty),
+     *  not "currently has an unspent output" (`/utxo` non-empty) — an address
+     *  that received funds and was later fully spent shows an *empty* `/utxo`
+     *  response but is still a real, used address. Deciding gap continuation
+     *  on `/utxo` alone stops the walk right after a run of spent-through
+     *  addresses, before it ever reaches a live balance sitting past them.
+     */
+    private suspend fun watchSet(): List<Pair<WatchAddr, JSONArray>> {
+        val now = System.currentTimeMillis()
+        cachedWatchSet?.let { if (now - watchSetAt < 10_000) return it }
         val (nr, nc) = counters()
-        val out = ArrayList<WatchAddr>()
-        for ((branch, upto) in listOf(0 to nr + GAP, 1 to nc + GAP)) {
-            for (i in 0 until upto) {
-                val a = view.addressAt(branch.toUInt(), i.toUInt())
-                out += WatchAddr(a.address, a.scriptPubkeyHex, branch.toUInt(), i.toUInt())
+        val out = ArrayList<Pair<WatchAddr, JSONArray>>()
+        for ((branch, from) in listOf(0 to nr, 1 to nc)) {
+            var next = from
+            var end = from + GAP
+            while (next < end && next < WATCH_SET_HARD_CAP) {
+                val derived = view.addressAt(branch.toUInt(), next.toUInt())
+                val a = WatchAddr(derived.address, derived.scriptPubkeyHex, branch.toUInt(), next.toUInt())
+                val txs = JSONArray(get("/address/${a.address}/txs"))
+                val used = txs.length() > 0
+                noteUsed(a, used)
+                out += a to txs
+                if (used) end = next + 1 + GAP
+                next += 1
             }
         }
+        cachedWatchSet = out
+        watchSetAt = now
         return out
     }
 
@@ -107,9 +148,8 @@ class EsploraBackend(
         if (!force && cachedUtxos != null && now - cachedAt < 10_000) return cachedUtxos!!
         val t = tip()
         val out = ArrayList<WalletUtxo>()
-        for (a in watchSet()) {
+        for ((a, _) in watchSet()) {
             val arr = JSONArray(get("/address/${a.address}/utxo"))
-            noteUsed(a, arr.length() > 0)
             for (i in 0 until arr.length()) {
                 val u = arr.getJSONObject(i)
                 val st = u.optJSONObject("status")
@@ -148,7 +188,24 @@ class EsploraBackend(
 
     private var lastPrewarm = 0L
 
-    /** One POST of the whole watch-set to `{base}/prewarm`; the edge fills its
+    /** Cheap, no-network guess at the watch set — the plain `[from, from+GAP)`
+     *  window, same shape [watchSet] used before it learned to expand. Good
+     *  enough to warm the edge's cache for the common case (a wallet whose
+     *  real gap doesn't exceed [GAP], which is every wallet the app itself has
+     *  been managing) without paying [watchSet]'s own per-address probing —
+     *  that would defeat the point of prewarming before the real scan. A
+     *  freshly imported deep-history xpub just gets a smaller head start;
+     *  [scan]/[history] still find everything via [watchSet]'s real walk. */
+    private fun guessWatchAddresses(): List<String> {
+        val (nr, nc) = counters()
+        val out = ArrayList<String>()
+        for ((branch, from) in listOf(0 to nr, 1 to nc)) {
+            for (i in from until from + GAP) out += view.addressAt(branch.toUInt(), i.toUInt()).address
+        }
+        return out
+    }
+
+    /** One POST of a watch-set guess to `{base}/prewarm`; the edge fills its
      *  address cache from a batch source so [scan]/[history] hit it. Throttled
      *  to sit just inside the edge's cache TTL. Best-effort — a failure just
      *  means the scan falls back to per-address fetches. */
@@ -156,7 +213,7 @@ class EsploraBackend(
         if (!bulkPrewarm) return
         val now = System.currentTimeMillis()
         if (now - lastPrewarm < 45_000) return
-        val body = JSONArray(watchSet().map { it.address }).toString()
+        val body = JSONArray(guessWatchAddresses()).toString()
         val ok = runCatching {
             withContext(Dispatchers.IO) {
                 send {
@@ -214,12 +271,11 @@ class EsploraBackend(
     } catch (e: Exception) { 1uL }
 
     override suspend fun history(count: Int): List<HistoryEntry> {
-        val mine = watchSet().map { it.address }.toHashSet()
+        val set = watchSet()
+        val mine = set.map { (a, _) -> a.address }.toHashSet()
         val tipH = tip().toLong()
         val seen = LinkedHashMap<String, HistoryEntry>()
-        for (a in watchSet()) {
-            val arr = JSONArray(get("/address/${a.address}/txs"))
-            noteUsed(a, arr.length() > 0)
+        for ((a, arr) in set) {
             for (i in 0 until arr.length()) {
                 val tx = arr.getJSONObject(i)
                 val id = tx.getString("txid")
