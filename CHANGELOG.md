@@ -2,6 +2,13 @@
 
 Fortis Wallet (Android). Versions are `versionName (versionCode)`.
 
+## 0.3.4 (9) — 2026-09-15
+
+- Fixed a watch-only wallet showing as fully connected (green dot, current
+  block height) while its balance and history were still loading in the
+  background — most noticeable on a deep BTC wallet, which can take a while
+  to scan. Now stays on "connecting…" until the balance actually arrives.
+
 ## 0.3.3 (8) — 2026-09-15
 
 - Fixed a crash: a watch-only wallet with hundreds of used addresses could
