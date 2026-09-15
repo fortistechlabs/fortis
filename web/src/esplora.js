@@ -157,11 +157,25 @@ export class EsploraBackend {
     return r;
   }
 
+  /** A wallet scan is dozens of these, CHUNK at a time — public explorers (the
+   *  no-auth fallback especially, straight to mempool.space/mempool.guide with
+   *  no server-side pacing) throw an occasional `429`/`5xx` under that
+   *  fan-out. Retry those a couple of times with backoff before giving up,
+   *  same shape as fortis-edge's own retry against its upstream, so a
+   *  transient blip resolves here instead of failing `_watchSet()`/`_refresh()`
+   *  outright — confirmed live: a plain sequential walk against mempool.space
+   *  started 429ing by request ~28 with zero retry. */
   async get(path) {
-    const r = await this._fetch(path);
-    const text = await r.text();
-    if (!r.ok) throw new Error(`explorer ${r.status} on ${path}: ${text.slice(0, 120)}`);
-    return text && text.trimStart()[0] !== '<' ? JSON.parse(text) : text;
+    let lastErr;
+    for (let attempt = 0; attempt <= 2; attempt++) {
+      if (attempt > 0) await new Promise((res) => setTimeout(res, 200 * attempt));
+      const r = await this._fetch(path);
+      const text = await r.text();
+      if (r.ok) return text && text.trimStart()[0] !== '<' ? JSON.parse(text) : text;
+      lastErr = new Error(`explorer ${r.status} on ${path}: ${text.slice(0, 120)}`);
+      if (attempt === 2 || (r.status !== 429 && (r.status < 500 || r.status > 599))) throw lastErr;
+    }
+    throw lastErr;
   }
 
   // Interface parity with Gateway

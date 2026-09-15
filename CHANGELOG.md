@@ -2,6 +2,17 @@
 
 Fortis Wallet (Android). Versions are `versionName (versionCode)`.
 
+## 0.3.2 (7) — 2026-09-15
+
+- Fixed a bug where a watch-only wallet with a lot of history could show
+  **no** balance or history at all, instead of just an incomplete one. The
+  deeper address scan added in 0.3.1 sends a lot more requests to check a
+  wallet's history, and a single rate-limited or slow reply partway through
+  used to abort the whole scan and leave the screen blank. It now keeps
+  whatever it already found and retries a couple of times before giving up
+  on any one address, so a transient hiccup no longer wipes out an
+  otherwise-good result.
+
 ## 0.3.1 (6) — 2026-09-15
 
 - Fixed a watch-only wallet bug: importing an xpub with a lot of prior history

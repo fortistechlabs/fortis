@@ -1,6 +1,7 @@
 package com.fortis.wallet.data
 
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.OkHttpClient
@@ -105,7 +106,19 @@ class EsploraBackend(
             while (next < end && next < WATCH_SET_HARD_CAP) {
                 val derived = view.addressAt(branch.toUInt(), next.toUInt())
                 val a = WatchAddr(derived.address, derived.scriptPubkeyHex, branch.toUInt(), next.toUInt())
-                val txs = JSONArray(get("/address/${a.address}/txs"))
+                // A persistent failure here (upstream still 429ing after get()'s own
+                // retries) must not blow up the whole scan — stop extending *this*
+                // branch's window but keep every address already gathered, on this
+                // branch and the other. Silently treating it as "unused" would be
+                // wrong (we don't know), but wiping out an otherwise-good partial
+                // result is worse: it's exactly what turned "some data" into "no
+                // balance or history at all" for a deep wallet hitting a transient
+                // rate limit mid-walk.
+                val txs = try {
+                    JSONArray(get("/address/${a.address}/txs"))
+                } catch (e: Exception) {
+                    break
+                }
                 val used = txs.length() > 0
                 noteUsed(a, used)
                 out += a to txs
@@ -118,12 +131,32 @@ class EsploraBackend(
         return out
     }
 
+    /** A wallet scan is dozens of these back to back, and public explorers (the
+     *  no-token fallback especially — straight to mempool.space/mempool.guide,
+     *  no pacing at all) throw an occasional `429`/`5xx` under that fan-out.
+     *  Retry those a couple of times with backoff before giving up, same shape
+     *  as fortis-edge's own retry against its upstream — so a transient blip
+     *  resolves here instead of surfacing as a failed probe to [watchSet] /
+     *  [scan], which would otherwise cut a deep scan short for no real reason. */
     private suspend fun get(path: String): String = withContext(Dispatchers.IO) {
-        send { Request.Builder().url(base + path) }.use { r ->
-            val body = r.body?.string().orEmpty()
-            check(r.isSuccessful) { "explorer ${r.code} on $path" }
-            body
+        var lastErr: Exception? = null
+        for (attempt in 0..2) {
+            if (attempt > 0) delay(200L * attempt)
+            try {
+                val (code, body) = send { Request.Builder().url(base + path) }.use { r ->
+                    r.code to r.body?.string().orEmpty()
+                }
+                if (code in 200..299) return@withContext body
+                if (attempt == 2 || (code != 429 && code !in 500..599)) {
+                    throw IllegalStateException("explorer $code on $path")
+                }
+                lastErr = IllegalStateException("explorer $code on $path")
+            } catch (e: java.io.IOException) {
+                if (attempt == 2) throw e
+                lastErr = e
+            }
         }
+        throw lastErr!!
     }
 
     private suspend fun tip(): ULong = get("/blocks/tip/height").trim().toULong()
@@ -149,7 +182,14 @@ class EsploraBackend(
         val t = tip()
         val out = ArrayList<WalletUtxo>()
         for ((a, _) in watchSet()) {
-            val arr = JSONArray(get("/address/${a.address}/utxo"))
+            // Same reasoning as watchSet()'s break above: one address that still
+            // fails after get()'s retries shouldn't cost the balance of every other
+            // address already known. Skip just this one.
+            val arr = try {
+                JSONArray(get("/address/${a.address}/utxo"))
+            } catch (e: Exception) {
+                continue
+            }
             for (i in 0 until arr.length()) {
                 val u = arr.getJSONObject(i)
                 val st = u.optJSONObject("status")
