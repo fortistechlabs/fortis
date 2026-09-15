@@ -11,7 +11,6 @@ use std::str::FromStr;
 use std::sync::Mutex;
 
 use wallet_core::bitcoin::address::NetworkUnchecked;
-use wallet_core::bitcoin::bip32::Xpub;
 use wallet_core::bitcoin::{consensus, Address, Amount, OutPoint, ScriptBuf, Transaction, TxOut, Txid};
 use wallet_core::crypto::{self, KdfParams};
 use wallet_core::{ChainParams, MasterKey};
@@ -319,7 +318,7 @@ impl WalletView {
         account_xpub: String,
     ) -> Result<std::sync::Arc<Self>> {
         let p = params(&chain, &network)?;
-        let xpub = Xpub::from_str(&account_xpub).map_err(|_| err("invalid account xpub"))?;
+        let xpub = wallet_core::parse_account_xpub(&account_xpub).map_err(err)?;
         Ok(std::sync::Arc::new(WalletView {
             net: p.network,
             inner: Mutex::new(wallet_core::WalletView::new(p, xpub)),

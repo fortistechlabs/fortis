@@ -36,6 +36,6 @@ pub use chain::{Chain, ChainParams};
 pub use entropy::mix_entropy;
 pub use error::{Result, WalletError};
 pub use htlc::HtlcContract;
-pub use keys::{bip39_wordlist, MasterKey};
+pub use keys::{bip39_wordlist, parse_account_xpub, MasterKey};
 pub use swap::{SwapEvent, SwapMachine, SwapParams, SwapRole, SwapState};
 pub use wallet::{op_return_output, FundingPlan, ServiceFee, Utxo, WalletView};

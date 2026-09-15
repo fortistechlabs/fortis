@@ -22,6 +22,59 @@ pub fn bip39_wordlist() -> &'static [&'static str; 2048] {
     bip39::Language::English.word_list()
 }
 
+/// SLIP-132 version-byte prefixes wallets/hardware devices use in place of the
+/// plain BIP-32 `xpub`/`tpub` to hint the intended script type. Same key
+/// material either way — only these 4 bytes differ — so rewriting them before
+/// `Xpub::decode` is an exact translation, not a guess.
+const SLIP132_MAINNET: [[u8; 4]; 5] = [
+    [0x04, 0x88, 0xB2, 0x1E], // xpub — BIP-44 (P2PKH)
+    [0x04, 0x9D, 0x7C, 0xB2], // ypub — BIP-49 (P2SH-P2WPKH)
+    [0x04, 0xB2, 0x47, 0x46], // zpub — BIP-84 (P2WPKH) — what most wallets show for this derivation
+    [0x02, 0x95, 0xB4, 0x3F], // Ypub — BIP-49 multisig
+    [0x02, 0xAA, 0x7E, 0xD3], // Zpub — BIP-84 multisig
+];
+const SLIP132_TESTNET: [[u8; 4]; 5] = [
+    [0x04, 0x35, 0x87, 0xCF], // tpub
+    [0x04, 0x4A, 0x52, 0x62], // upub
+    [0x04, 0x5F, 0x1C, 0xF6], // vpub
+    [0x02, 0x42, 0x89, 0xEF], // Upub
+    [0x02, 0x57, 0x54, 0x83], // Vpub
+];
+const XPUB_MAINNET: [u8; 4] = [0x04, 0x88, 0xB2, 0x1E];
+const XPUB_TESTNET: [u8; 4] = [0x04, 0x35, 0x87, 0xCF];
+
+/// Parse an account-level extended public key for watch-only import.
+///
+/// `bitcoin::bip32::Xpub`'s own parser only recognises the canonical
+/// `xpub`/`tpub` prefix — it rejects `zpub`/`ypub`/`vpub`/`upub` outright with
+/// "unknown version", even though they decode to the exact same key. Those are
+/// what most wallets and hardware devices actually print for a BIP-84 account
+/// (Electrum, Sparrow, Ledger, Trezor, …), so a watch-only import needs to
+/// accept them. This decodes the base58check payload once, rewrites a
+/// recognised SLIP-132 prefix to the plain `xpub`/`tpub` one, and decodes that.
+pub fn parse_account_xpub(input: &str) -> Result<Xpub> {
+    let input = input.trim();
+    // Every error branch below keeps the literal "invalid account xpub" —
+    // wallet-ffi and wallet-wasm previously always produced exactly that
+    // string (discarding the real reason), and both Kotlin and JS pattern-match
+    // it to show a friendly localized message instead of a raw Rust error.
+    let mut data = bitcoin::base58::decode_check(input)
+        .map_err(|e| WalletError::InvalidInput(format!("invalid account xpub: {e}")))?;
+    if data.len() != 78 {
+        return Err(WalletError::InvalidInput("invalid account xpub: wrong length".into()));
+    }
+    let version: [u8; 4] = data[0..4].try_into().expect("checked len == 78 above");
+    if SLIP132_MAINNET.contains(&version) {
+        data[0..4].copy_from_slice(&XPUB_MAINNET);
+    } else if SLIP132_TESTNET.contains(&version) {
+        data[0..4].copy_from_slice(&XPUB_TESTNET);
+    }
+    // else: already xpub/tpub, or an unrecognised prefix — let Xpub::decode below
+    // reject the latter with its own clear error rather than silently mangling it.
+    Xpub::decode(&data)
+        .map_err(|e| WalletError::InvalidInput(format!("invalid account xpub: {e}")))
+}
+
 impl MasterKey {
     /// Build a fresh 24-word mnemonic from 256 bits of platform entropy, plus the
     /// derived key. The caller shows the words to the user for backup.
@@ -330,5 +383,45 @@ mod tests {
         assert_eq!(w.len(), 2);
         assert_eq!(w.nth(1).unwrap().len(), 33); // pubkey
         assert_eq!(w.nth(0).unwrap().last(), Some(&0x01)); // SIGHASH_ALL byte
+    }
+
+    #[test]
+    fn parse_account_xpub_accepts_slip132_zpub_and_vpub() {
+        let (_m, key) = MasterKey::generate(&[9u8; 32]).unwrap();
+
+        // mainnet: a zpub (what wallets actually show for a BIP-84 account)
+        // round-trips to the exact same key as the canonical xpub.
+        let mainnet = key.account_xpub(&ChainParams::bitcoin(), 0).unwrap();
+        let mut bytes = mainnet.encode();
+        bytes[0..4].copy_from_slice(&[0x04, 0xB2, 0x47, 0x46]); // zpub
+        let zpub = bitcoin::base58::encode_check(&bytes);
+        assert!(zpub.starts_with("zpub"));
+        assert_eq!(parse_account_xpub(&zpub).unwrap(), mainnet);
+
+        // testnet/regtest: same, via vpub / the canonical tpub.
+        let testnet = key.account_xpub(&ChainParams::bitcoin_regtest(), 0).unwrap();
+        let mut bytes = testnet.encode();
+        bytes[0..4].copy_from_slice(&[0x04, 0x5F, 0x1C, 0xF6]); // vpub
+        let vpub = bitcoin::base58::encode_check(&bytes);
+        assert!(vpub.starts_with("vpub"));
+        assert_eq!(parse_account_xpub(&vpub).unwrap(), testnet);
+
+        // the plain xpub form (the unchanged path) still works.
+        assert_eq!(parse_account_xpub(&mainnet.to_string()).unwrap(), mainnet);
+        // leading/trailing whitespace (a common paste artifact) is tolerated.
+        assert_eq!(parse_account_xpub(&format!("  {zpub}\n")).unwrap(), mainnet);
+    }
+
+    #[test]
+    fn parse_account_xpub_rejects_bad_input() {
+        assert!(parse_account_xpub("not an xpub at all").is_err());
+
+        // valid base58check, valid length, but a version prefix nothing recognises.
+        let (_m, key) = MasterKey::generate(&[11u8; 32]).unwrap();
+        let mainnet = key.account_xpub(&ChainParams::bitcoin(), 0).unwrap();
+        let mut bytes = mainnet.encode();
+        bytes[0..4].copy_from_slice(&[0xDE, 0xAD, 0xBE, 0xEF]);
+        let bogus = bitcoin::base58::encode_check(&bytes);
+        assert!(parse_account_xpub(&bogus).is_err());
     }
 }

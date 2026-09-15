@@ -199,7 +199,8 @@ pub struct WalletView {
 impl WalletView {
     #[wasm_bindgen(constructor)]
     pub fn new(chain: &str, account_xpub: &str) -> Result<WalletView, JsError> {
-        let xpub = account_xpub.parse().map_err(|_| JsError::new("invalid account xpub"))?;
+        let xpub = wallet_core::parse_account_xpub(account_xpub)
+            .map_err(|e| JsError::new(&e.to_string()))?;
         Ok(WalletView {
             inner: wallet_core::WalletView::new(params(chain)?, xpub),
             chain: chain.to_string(),
