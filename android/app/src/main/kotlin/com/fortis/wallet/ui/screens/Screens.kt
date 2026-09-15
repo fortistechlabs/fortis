@@ -612,7 +612,7 @@ private fun SettingsTab(vm: WalletViewModel) {
                     }
                     if (!w.watchOnly) GhostButton(stringResource(R.string.action_recovery_phrase), dense = true) { revealWarn = w.id }
                     val hasOther = vm.wallets.any { it.name == w.name && it.chain == w.otherChain }
-                    if (!w.watchOnly && !hasOther && vm.canAddWallet) GhostButton(stringResource(R.string.also_add_on, w.otherChain.uppercase()), dense = true) {
+                    if (!hasOther && vm.canAddWallet) GhostButton(stringResource(R.string.also_add_on, w.otherChain.uppercase()), dense = true) {
                         vm.cloneToOtherChain(w.id)
                     }
                     GhostButton(stringResource(R.string.action_remove), tint = Fx.bad, dense = true) { removing = w.id }

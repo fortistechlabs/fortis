@@ -28,10 +28,15 @@ multi-tenant, since no public Esplora exists for the fork.
 
 ## Scope
 
-Indexes from `--start-height` forward — the BLAKE2b fork height (961640) by
-default, which covers every wallet created in the app. **Pre-fork coins are out
-of scope:** a restored old seed's historical UTXOs won't appear (claiming forked
-coins would need a full-history index or a one-off `scantxoutset`).
+Indexes from `--start-height` forward — **genesis (0) by default**, so a
+restored old seed's pre-fork Bitcoin history (inherited by the XBT chain at the
+hard fork) is included, not just activity since the fork. That means a full
+mainnet sync: the node needs the complete, unpruned pre-fork block history, and
+the initial catch-up is a real one-time cost (indexing every block since
+genesis, not just the ~1 block/10min since the fork). Pass
+`--start-height 961640` (the BLAKE2b fork height) to skip pre-fork blocks and
+index far faster when pre-fork coins don't matter (e.g. regtest, or a
+deployment that only ever expects post-fork wallets).
 
 ## Run
 

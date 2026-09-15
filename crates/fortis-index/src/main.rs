@@ -4,9 +4,12 @@
 //! the client derives its own addresses and scans them, so one instance serves
 //! any number of wallets.
 //!
-//! It indexes from `--start-height` forward (the BLAKE2b fork height by default),
-//! which covers every wallet created in the app. Pre-fork coins are out of scope
-//! for now — a restored old seed's historical UTXOs won't appear.
+//! It indexes from `--start-height` forward — genesis by default, so a wallet's
+//! pre-fork Bitcoin history (inherited by the XBT chain at the hard fork) is
+//! included, not just activity since the fork. Pass `--start-height 961640` (the
+//! BLAKE2b fork height) to skip pre-fork blocks and index far faster when
+//! pre-fork coins don't matter (e.g. regtest, or a wallet known to postdate the
+//! fork).
 
 mod api;
 mod mempool;
@@ -26,10 +29,6 @@ use fortis_node::Rpc;
 use mempool::Mempool;
 use store::Store;
 use sync::Syncer;
-
-/// BLAKE2b fork activation height on mainnet — the natural place to start
-/// indexing (every in-app wallet's activity is at or after it).
-const XBT_FORK_HEIGHT: u64 = 961_640;
 
 #[derive(Parser)]
 #[command(name = "fortis-index", version, about = "address index → Esplora REST (holds no keys)")]
@@ -57,7 +56,9 @@ struct Args {
     /// Address to bind the HTTP API to.
     #[arg(long, default_value = "127.0.0.1:8094")]
     bind: String,
-    /// First block to index. Default: the fork height on mainnet, 0 otherwise.
+    /// First block to index. Default: 0 (genesis), so pre-fork Bitcoin history
+    /// is included. Pass 961640 (the BLAKE2b fork height) to skip pre-fork
+    /// blocks and index much faster when pre-fork coins don't matter.
     #[arg(long)]
     start_height: Option<u64>,
     /// Seconds between catch-up passes.
@@ -102,7 +103,7 @@ fn run() -> Result<()> {
 
     let cs = fortis_node::chain_status(&rpc).context("reaching the node")?;
     let network = if regtest { bitcoin::Network::Regtest } else { bitcoin::Network::Bitcoin };
-    let start_height = args.start_height.unwrap_or(if regtest { 0 } else { XBT_FORK_HEIGHT });
+    let start_height = args.start_height.unwrap_or(0);
 
     eprintln!("fortis-index → {rpc_url}  ({}, chain {})", cs.subversion, cs.chain);
     eprintln!("             db {}  ·  indexing from height {start_height}", args.db);

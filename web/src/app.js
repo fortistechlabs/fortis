@@ -1164,7 +1164,7 @@ function renderSettingsTab() {
 
 function renderWalletCard(w) {
   const otherChain = w.chain === 'xbt' ? 'btc' : 'xbt';
-  const canClone = !w.watchOnly && state.wallets.length < MAX_WALLETS
+  const canClone = state.wallets.length < MAX_WALLETS
     && !state.wallets.some((x) => x.chain === otherChain && x.name === w.name);
   const connLabel = !w.backend ? '—'
     : w.backend.kind === 'edge' ? 'fortis'
@@ -1230,7 +1230,11 @@ function actionClone(id) {
     kind: 'confirm', title: `${t('also_add_on', UNIT[otherChain])}?`, confirmLabel: t('action_continue'),
     onConfirm: () => {
       const id2 = crypto.randomUUID();
-      state.wallets.push({
+      state.wallets.push(w.watchOnly ? {
+        id: id2, name: w.name, chain: otherChain, network: w.network, watchOnly: true, xpub: w.xpub,
+        next_receive: 0, next_change: 0,
+        backend: w.backend?.kind === 'edge' ? { ...w.backend } : null,
+      } : {
         id: id2, name: w.name, chain: otherChain, network: w.network, sealed: w.sealed, salt: w.salt,
         next_receive: 0, next_change: 0,
         backend: w.backend?.kind === 'edge' ? { ...w.backend } : null,

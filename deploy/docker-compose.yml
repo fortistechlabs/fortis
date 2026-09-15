@@ -19,7 +19,8 @@ services:
   index:
     <<: *image
     entrypoint: /usr/local/bin/fortis-index
-    # add `--start-height N` here to index from somewhere other than the fork height
+    # default indexes from genesis (pre-fork history included); add
+    # `--start-height 961640` here to start at the BLAKE2b fork instead
     command: >
       --network ${NETWORK:-mainnet}
       --rpc-url ${XBT_RPC_URL:-http://host.docker.internal:8332}
