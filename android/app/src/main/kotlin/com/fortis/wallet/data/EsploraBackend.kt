@@ -156,16 +156,22 @@ class EsploraBackend(
      *  only the ones that hit — an address absent from the cache is simply
      *  unknown yet, not "confirmed unused" (that distinction still needs a
      *  live check, same as any cache miss elsewhere in this class). */
-    private fun seedFromCache(): List<Pair<WatchAddr, List<TxSummary>>> {
+    private suspend fun seedFromCache(): List<Pair<WatchAddr, List<TxSummary>>> {
         val cache = txCache ?: return emptyList()
-        val guessed = (0..1).flatMap { branch ->
-            (0 until PREWARM_DEPTH).map { i ->
-                val d = view.addressAt(branch.toUInt(), i.toUInt())
-                WatchAddr(d.address, d.scriptPubkeyHex, branch.toUInt(), i.toUInt())
+        // Off the calling dispatcher (viewModelScope defaults to Main): up to
+        // 1000 real EC point derivations plus a chunked SQLite read have no
+        // business running synchronously on the UI thread, same reasoning as
+        // the write-through path a few dozen lines below already gets.
+        return withContext(Dispatchers.IO) {
+            val guessed = (0..1).flatMap { branch ->
+                (0 until PREWARM_DEPTH).map { i ->
+                    val d = view.addressAt(branch.toUInt(), i.toUInt())
+                    WatchAddr(d.address, d.scriptPubkeyHex, branch.toUInt(), i.toUInt())
+                }
             }
+            val loaded = cache.load(chain, guessed.map { it.address })
+            guessed.mapNotNull { wa -> loaded[wa.address]?.let { wa to it } }
         }
-        val loaded = cache.load(chain, guessed.map { it.address })
-        return guessed.mapNotNull { wa -> loaded[wa.address]?.let { wa to it } }
     }
 
     /** Every address worth checking right now, each paired with its `/txs`
@@ -277,7 +283,14 @@ class EsploraBackend(
                 if (txCache != null) {
                     withContext(Dispatchers.IO) {
                         for ((a, _, txs) in batch) {
-                            txs?.let { txCache.put(chain, a.address, it.filter { t -> t.confirmed }) }
+                            // Best-effort, like every other cache write in this
+                            // class — an unguarded throw here (disk full, a
+                            // corrupted local db) would propagate out of
+                            // watchSet() and be misread by refresh()'s
+                            // runCatching as the *edge* failing, silently
+                            // switching the wallet to the degraded public
+                            // fallback even though the live scan succeeded.
+                            txs?.let { runCatching { txCache.put(chain, a.address, it.filter { t -> t.confirmed }) } }
                         }
                     }
                 }

@@ -45,6 +45,15 @@ const overview = { balances: new Map(), usd: {} }; // walletId->sat, chain->usd 
 let overviewScanning = false;
 let detail = { status: null, balances: null, history: [], feerate: {}, usd: null, _shownBal: undefined };
 let detailScanning = false;
+
+/** Blank the wallet-detail view — call whenever `state.selected` changes.
+ *  Without this, the previously-open wallet's balance/history stay on
+ *  screen (this object is otherwise only reset on `onLock()`) until the
+ *  newly-selected wallet's own refresh() resolves, which for a slow chain
+ *  can take a while and looks like the wrong wallet's data. */
+function resetDetail() {
+  detail = { status: null, balances: null, history: [], feerate: {}, usd: null, _shownBal: undefined };
+}
 let detailPoll = null;
 let overviewPoll = null;
 
@@ -583,6 +592,7 @@ async function finishNewWallet(chain, network, mnemonic, passphrase, name) {
   await autoConnectBackend(wallet);
   state.wallets.push(wallet);
   state.selected = id;
+  resetDetail();
   await saveState(state);
   ui.addingWallet = false;
   ui.draftMnemonic = null;
@@ -835,7 +845,7 @@ function renderHomeTab() {
             const usd = usdPrice != null && sat != null ? fmtUsd((usdPrice * sat) / SAT) : null;
             return el('div', {
               class: 'walletrow',
-              onclick: () => { state.selected = w.id; saveState(state); ui.nav = 'wallet'; ui.tab = 'receive'; render(); },
+              onclick: () => { state.selected = w.id; resetDetail(); saveState(state); ui.nav = 'wallet'; ui.tab = 'receive'; render(); },
             },
               el('div', {},
                 el('div', { class: 'name' }, w.name),
@@ -1211,7 +1221,7 @@ function actionRemove(id) {
       backends.delete(id);
       overview.balances.delete(id);
       state.wallets = state.wallets.filter((x) => x.id !== id);
-      if (state.selected === id) state.selected = state.wallets[0]?.id || null;
+      if (state.selected === id) { state.selected = state.wallets[0]?.id || null; resetDetail(); }
       saveState(state);
       render();
     },
@@ -1240,6 +1250,7 @@ function actionClone(id) {
         backend: w.backend?.kind === 'edge' ? { ...w.backend } : null,
       });
       state.selected = id2;
+      resetDetail();
       saveState(state);
       render();
     },
@@ -1430,9 +1441,11 @@ async function refresh() {
   // waiting, accumulating in-flight requests for as long as the tab stays open.
   if (detailScanning) return;
   detailScanning = true;
+  let refreshingFor;
   try {
     const w = currentWallet();
     if (!w) return;
+    refreshingFor = w.id;
     const backend = ensureBackend(w);
     if (!backend) return;
     await backend.prewarm?.();
@@ -1442,6 +1455,15 @@ async function refresh() {
       backend.history(50).catch(() => []),
       backend.price ? backend.price().catch(() => null) : Promise.resolve(null),
     ]);
+    // The user may have switched wallets while the awaits above were
+    // in flight — `state.selected` would no longer be `refreshingFor`.
+    // Committing this call's results to the shared `detail` object at
+    // that point would show the *previous* wallet's data under the
+    // *new* one: found live, a slow BTC scan finishing after switching
+    // to an XBT wallet displayed the BTC balance/history there until
+    // the next poll tick corrected it. Discard silently instead — the
+    // new selection's own refresh() owns `detail` now.
+    if (state.selected !== refreshingFor) return;
     detail.status = status;
     if (balances) detail.balances = balances;
     detail.history = history || [];
@@ -1449,11 +1471,15 @@ async function refresh() {
     if (detail.balances) overview.balances.set(w.id, detail.balances.confirmed_sat);
     if (!Object.keys(detail.feerate).length) {
       for (const target of [1, 6, 144]) {
-        backend.feerate(target).then((r) => { detail.feerate[target] = r.sat_vb; renderShellIfIdle(); }).catch(() => {});
+        backend.feerate(target).then((r) => {
+          if (state.selected !== refreshingFor) return;
+          detail.feerate[target] = r.sat_vb;
+          renderShellIfIdle();
+        }).catch(() => {});
       }
     }
   } catch {
-    detail.status = null;
+    if (state.selected === refreshingFor) detail.status = null;
   } finally {
     detailScanning = false;
   }

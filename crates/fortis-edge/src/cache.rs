@@ -57,8 +57,17 @@ impl Cache {
                 }
             })
             .unwrap_or_else(|| Connection::open_in_memory().expect("in-memory sqlite"));
+        // WAL + a real busy_timeout: this file is shared with `BtcHistory`'s
+        // own connection (`btc_history.rs`, same `--cache-db` path), which
+        // already sets both. Without this on *this* connection too, a write
+        // here landing while that one holds the write lock gets SQLITE_BUSY
+        // immediately (the default timeout is 0) — silently swallowed by the
+        // `let _ = db.execute(...)` in `put()` below, so the entry just
+        // never persists, no error anywhere.
         conn.execute_batch(
-            "CREATE TABLE IF NOT EXISTS cache (
+            "PRAGMA journal_mode=WAL;
+             PRAGMA busy_timeout=10000;
+             CREATE TABLE IF NOT EXISTS cache (
                 key TEXT PRIMARY KEY,
                 status INTEGER NOT NULL,
                 content_type TEXT NOT NULL,

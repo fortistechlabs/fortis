@@ -16,7 +16,12 @@ multi-tenant, since no public Esplora exists for the fork.
   transaction's `hex` *is* parsed (tx format is unchanged by the fork) for exact
   amounts and scripts.
 - Stores `scriptPubKey → {outputs, spends, txids}` in a SQLite file (WAL mode:
-  the sync loop writes, the HTTP server reads).
+  the sync loop writes, the HTTP server reads) — **P2WPKH outputs only**. The
+  wallet derives exclusively BIP-84 P2WPKH addresses (`Address::p2wpkh`,
+  `wallet-core/src/wallet.rs`), so nothing else (OP_RETURN, legacy P2PKH,
+  P2SH, Taproot/inscriptions, bare multisig) can ever be a fortis wallet
+  address — storing it is pure waste. Same filter applies to the in-memory
+  mempool overlay below.
 - Reorg-safe: each block must extend our tip or the index unwinds one block and
   retries; a reorg back past `--start-height` clears and re-syncs.
 - Keeps an in-memory **mempool overlay**, refreshed each poll: unconfirmed
@@ -28,15 +33,18 @@ multi-tenant, since no public Esplora exists for the fork.
 
 ## Scope
 
-Indexes from `--start-height` forward — **genesis (0) by default**, so a
-restored old seed's pre-fork Bitcoin history (inherited by the XBT chain at the
-hard fork) is included, not just activity since the fork. That means a full
-mainnet sync: the node needs the complete, unpruned pre-fork block history, and
-the initial catch-up is a real one-time cost (indexing every block since
-genesis, not just the ~1 block/10min since the fork). Pass
-`--start-height 961640` (the BLAKE2b fork height) to skip pre-fork blocks and
-index far faster when pre-fork coins don't matter (e.g. regtest, or a
-deployment that only ever expects post-fork wallets).
+Indexes from `--start-height` forward — **SegWit activation, block 481824, by
+default** — so a restored old seed's pre-fork Bitcoin history (inherited by the
+XBT chain at the hard fork) is included, not just activity since the fork.
+Genesis-to-SegWit blocks are skipped on purpose, not just as a speed
+optimization: P2WPKH (the only address type this wallet ever derives) didn't
+exist before SegWit, so no fortis wallet address can possibly have history
+there — indexing that range can never find anything. The node still needs the
+complete, unpruned pre-fork block history from 481824 forward, and the initial
+catch-up is a real one-time cost. Pass `--start-height 961640` (the BLAKE2b
+fork height) to skip pre-fork blocks entirely and index even faster when
+pre-fork coins don't matter (e.g. regtest, or a deployment that only ever
+expects post-fork wallets).
 
 ## Run
 

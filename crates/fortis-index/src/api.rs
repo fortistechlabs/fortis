@@ -342,7 +342,7 @@ mod tests {
                 &[IndexedTx {
                     txid: "aa".into(),
                     inputs: vec![],
-                    outputs: vec![TxOut { spk_hex: P2WPKH_SPK.into(), value_sat: 500_000 }],
+                    outputs: vec![TxOut { vout: 0, spk_hex: P2WPKH_SPK.into(), value_sat: 500_000 }],
                 }],
             )
             .unwrap();

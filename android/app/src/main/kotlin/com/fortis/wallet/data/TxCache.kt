@@ -46,29 +46,39 @@ class TxCache(context: Context) : SQLiteOpenHelper(context.applicationContext, D
 
     /** Every persisted confirmed tx for `addresses`, keyed by address. An
      *  address missing from the result was simply never scanned before —
-     *  callers still need a live check for it, same as any cache miss. */
+     *  callers still need a live check for it, same as any cache miss.
+     *
+     *  Chunked well under any SQLite build's variable-count ceiling: a
+     *  watch-only backend's seed guess is up to 1000 addresses (`2 ×
+     *  PREWARM_DEPTH`), and binding all of them plus `chain` in one query
+     *  (1001 params) sits right at — or over, depending on the device's
+     *  SQLite build — the historical default limit of 999. A silent failure
+     *  here would hit exactly the deep watch-only wallets this cache exists
+     *  for. */
     fun load(chain: String, addresses: List<String>): Map<String, List<TxSummary>> {
         if (addresses.isEmpty()) return emptyMap()
         val out = HashMap<String, MutableList<TxSummary>>()
-        val placeholders = addresses.joinToString(",") { "?" }
-        val args = (listOf(chain) + addresses).toTypedArray()
-        readableDatabase.rawQuery(
-            "SELECT address, txid, fee, height, time, vin, vout FROM confirmed_txs " +
-                "WHERE chain = ? AND address IN ($placeholders)",
-            args,
-        ).use { c ->
-            while (c.moveToNext()) {
-                val address = c.getString(0)
-                val summary = TxSummary(
-                    txid = c.getString(1),
-                    fee = c.getLong(2),
-                    confirmed = true,
-                    blockHeight = c.getLong(3),
-                    blockTime = c.getLong(4),
-                    vin = decodePairs(c.getString(5)),
-                    vout = decodePairs(c.getString(6)),
-                )
-                out.getOrPut(address) { mutableListOf() } += summary
+        for (batch in addresses.chunked(200)) {
+            val placeholders = batch.joinToString(",") { "?" }
+            val args = (listOf(chain) + batch).toTypedArray()
+            readableDatabase.rawQuery(
+                "SELECT address, txid, fee, height, time, vin, vout FROM confirmed_txs " +
+                    "WHERE chain = ? AND address IN ($placeholders)",
+                args,
+            ).use { c ->
+                while (c.moveToNext()) {
+                    val address = c.getString(0)
+                    val summary = TxSummary(
+                        txid = c.getString(1),
+                        fee = c.getLong(2),
+                        confirmed = true,
+                        blockHeight = c.getLong(3),
+                        blockTime = c.getLong(4),
+                        vin = decodePairs(c.getString(5)),
+                        vout = decodePairs(c.getString(6)),
+                    )
+                    out.getOrPut(address) { mutableListOf() } += summary
+                }
             }
         }
         return out

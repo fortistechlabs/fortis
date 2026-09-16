@@ -539,21 +539,57 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
         if (refreshing) return@launch
         refreshing = true
         val edge = backend ?: run { refreshing = false; return@launch }
+        // The wallet this refresh() call is for — captured now because
+        // `selectedId`/`config` can change while the suspend calls below are
+        // in flight (a wallet switch runs freely at any suspension point).
+        val refreshingFor = selectedId
+        val refreshingChain = config?.chain
         suspend fun load(b: Backend, degraded: Boolean) {
-            runCatching { b.prewarm() }
-            status = b.status().copy(degraded = degraded)
+            // Fire-and-forget: prewarm() only ever speeds up a *live* gap-limit
+            // walk (it batch-primes the edge's own cache before the per-address
+            // fetches that follow). Awaiting it here used to block everything
+            // else in load() behind a full network POST — pointless, and
+            // actively defeating TxCache's whole point, on a reopen/wallet
+            // switch that already has a warm local cache: `EsploraBackend` is
+            // recreated on every such switch (see resetView()), so prewarm()'s
+            // own 45s throttle resets too and it fired on every single reopen
+            // regardless of whether a live walk was even about to happen.
+            viewModelScope.launch { runCatching { b.prewarm() } }
+            val newStatus = b.status().copy(degraded = degraded)
+            // history() only needs watchSet() (cache-seeded, fast on a warm
+            // reopen) — balances() additionally needs a live per-address UTXO
+            // fetch, which is never cached (see EsploraBackend.scan()). Doing
+            // history first means it can paint before that live round finishes,
+            // instead of waiting behind it for no reason.
+            val newHistory = b.history(50)
+            val newBalances = b.balances()
+            val newUsd = refreshingChain?.let { ch -> runCatching { b.price() }.getOrNull()?.let { ch to it } }
+            val newFeerates =
+                if (feerates.isEmpty()) listOf(1, 6, 144).associateWith { b.feerateSatVb(it).toLong() } else null
+            val cur = wallets.firstOrNull { it.id == refreshingFor }?.nextReceive ?: 0
+            val freshReceive = runCatching { b.firstUnusedReceive(cur) }.getOrDefault(cur)
+
+            // The user may have switched wallets while the suspend calls above
+            // were awaiting a network response — `resetView()`/`ensureBackend()`
+            // would have replaced `backend`/`fallback` with a new wallet's by
+            // now. Committing this call's results to the shared status/
+            // balances/history fields at that point would show the *previous*
+            // wallet's data under the *new* one: found live, a slow BTC scan
+            // finishing after switching to an XBT wallet displayed the BTC
+            // balance/history there until the next XBT poll tick corrected it.
+            // Discard silently instead — the new selection's own refresh()
+            // owns the UI now.
+            if (backend !== b && fallback !== b) return
+
+            status = newStatus
             usingFallback = degraded
-            balances = b.balances()
-            selectedId?.let { id -> balances?.let { setWalletBalance(id, it.confirmedSat) } }
-            config?.chain?.let { ch -> runCatching { b.price() }.getOrNull()?.let { setCoinUsd(ch, it) } }
-            history = b.history(50)
-            if (feerates.isEmpty()) feerates = listOf(1, 6, 144).associateWith { b.feerateSatVb(it).toLong() }
-            // Gap-limit auto-advance: skip the receive address past any that the
-            // scan just found already used, so "Receive" always shows a fresh one.
-            selectedId?.let { id ->
-                val cur = wallets.firstOrNull { it.id == id }?.nextReceive ?: 0
-                val fresh = runCatching { b.firstUnusedReceive(cur) }.getOrDefault(cur)
-                if (fresh > cur) updateConfig(id) { it.copy(nextReceive = fresh) }
+            history = newHistory
+            balances = newBalances
+            refreshingFor?.let { id -> setWalletBalance(id, newBalances.confirmedSat) }
+            newUsd?.let { (ch, usd) -> setCoinUsd(ch, usd) }
+            newFeerates?.let { feerates = it }
+            if (refreshingFor != null && freshReceive > cur) {
+                updateConfig(refreshingFor) { it.copy(nextReceive = freshReceive) }
             }
         }
         try {

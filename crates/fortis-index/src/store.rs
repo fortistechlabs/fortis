@@ -39,8 +39,13 @@ CREATE INDEX IF NOT EXISTS history_spk    ON history(spk, height);
 CREATE INDEX IF NOT EXISTS history_height ON history(height);
 ";
 
-/// One output as the index stores it.
+/// One output as the index stores it. `vout` is this output's true position
+/// in its transaction — `block_txs` (`sync.rs`) filters most outputs out
+/// before they ever reach here (see its doc comment), so the surviving ones
+/// are no longer contiguous from 0 and can't be re-derived by enumerating
+/// this list.
 pub struct TxOut {
+    pub vout: u32,
     pub spk_hex: String,
     pub value_sat: u64,
 }
@@ -127,9 +132,27 @@ impl Store {
         Ok(())
     }
 
-    /// Apply one connected block as a single transaction.
+    /// Apply one connected block as a single transaction. Test-only: the
+    /// sync loop calls `apply_blocks` directly to batch a whole fetched
+    /// round into one transaction, but single-block fixtures read better in
+    /// tests than always building a one-element batch by hand.
+    #[cfg(test)]
     pub fn apply_block(&mut self, height: u64, hash: &str, txs: &[IndexedTx]) -> Result<()> {
-        let h = height as i64;
+        self.apply_blocks(&[(height, hash, txs)])
+    }
+
+    /// Apply several already-validated, connected-in-order blocks as **one**
+    /// transaction — the sync loop fetches a batch of blocks in parallel
+    /// (see `sync.rs`) but must still apply them in height order; batching
+    /// the apply step too means one commit (one WAL flush) for the whole
+    /// batch instead of one per block, which is most of what made a from-
+    /// SegWit-activation sync slow. Every commit still leaves the store at a
+    /// consistent height — a crash mid-batch loses at most the not-yet-
+    /// committed blocks in it, same as losing one block did before.
+    pub fn apply_blocks(&mut self, blocks: &[(u64, &str, &[IndexedTx])]) -> Result<()> {
+        if blocks.is_empty() {
+            return Ok(());
+        }
         let tx = self.conn.transaction()?;
         {
             // OR IGNORE: pre-BIP34 mainnet has two known blocks (~91722/91842 and
@@ -150,23 +173,27 @@ impl Store {
             let mut ins_hist = tx.prepare_cached(
                 "INSERT OR IGNORE INTO history(spk,txid,height) VALUES(?1,?2,?3)",
             )?;
+            let mut ins_block = tx.prepare_cached("INSERT INTO blocks(height,hash) VALUES(?1,?2)")?;
 
-            for t in txs {
-                for (vout, o) in t.outputs.iter().enumerate() {
-                    ins_out.execute(params![t.txid, vout as i64, o.spk_hex, o.value_sat as i64, h])?;
-                    ins_hist.execute(params![o.spk_hex, t.txid, h])?;
-                }
-                for inp in &t.inputs {
-                    spend.execute(params![h, t.txid, inp.txid, inp.vout as i64])?;
-                    let spk: Option<String> = spk_of
-                        .query_row(params![inp.txid, inp.vout as i64], |r| r.get(0))
-                        .optional()?;
-                    if let Some(spk) = spk {
-                        ins_hist.execute(params![spk, t.txid, h])?;
+            for (height, hash, txs) in blocks {
+                let h = *height as i64;
+                for t in *txs {
+                    for o in &t.outputs {
+                        ins_out.execute(params![t.txid, o.vout as i64, o.spk_hex, o.value_sat as i64, h])?;
+                        ins_hist.execute(params![o.spk_hex, t.txid, h])?;
+                    }
+                    for inp in &t.inputs {
+                        spend.execute(params![h, t.txid, inp.txid, inp.vout as i64])?;
+                        let spk: Option<String> = spk_of
+                            .query_row(params![inp.txid, inp.vout as i64], |r| r.get(0))
+                            .optional()?;
+                        if let Some(spk) = spk {
+                            ins_hist.execute(params![spk, t.txid, h])?;
+                        }
                     }
                 }
+                ins_block.execute(params![h, hash])?;
             }
-            tx.execute("INSERT INTO blocks(height,hash) VALUES(?1,?2)", params![h, hash])?;
         }
         tx.commit()?;
         Ok(())

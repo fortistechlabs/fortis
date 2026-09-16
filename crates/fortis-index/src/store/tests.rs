@@ -8,7 +8,11 @@ fn tx(txid: &str, ins: &[(&str, u32)], outs: &[(&str, u64)]) -> IndexedTx {
     IndexedTx {
         txid: txid.into(),
         inputs: ins.iter().map(|(t, v)| TxIn { txid: (*t).into(), vout: *v }).collect(),
-        outputs: outs.iter().map(|(s, v)| TxOut { spk_hex: (*s).into(), value_sat: *v }).collect(),
+        outputs: outs
+            .iter()
+            .enumerate()
+            .map(|(i, (s, v))| TxOut { vout: i as u32, spk_hex: (*s).into(), value_sat: *v })
+            .collect(),
     }
 }
 
@@ -36,6 +40,40 @@ fn spending_an_output_removes_it_from_the_utxo_set_and_records_sender_history() 
     let h = s.history_for("spkA", 10).unwrap();
     let ids: Vec<_> = h.iter().map(|x| x.txid.as_str()).collect();
     assert!(ids.contains(&"aa") && ids.contains(&"bb"));
+}
+
+#[test]
+fn apply_blocks_batches_several_blocks_in_one_transaction() {
+    // The sync loop's actual production path: a whole fetched round applied
+    // as one call, including a spend (block 101) of an output created
+    // earlier in the *same* batch (block 100) — exercises spk_of's lookup
+    // working across blocks that haven't been through separate apply_block
+    // transactions, unlike every other test here.
+    let mut s = store();
+    let b100 = tx("aa", &[], &[("spkA", 500)]);
+    let b101 = tx("bb", &[("aa", 0)], &[("spkC", 480)]);
+    let b102 = tx("cc", &[], &[("spkD", 10)]);
+    s.apply_blocks(&[
+        (100, "h100", std::slice::from_ref(&b100)),
+        (101, "h101", std::slice::from_ref(&b101)),
+        (102, "h102", std::slice::from_ref(&b102)),
+    ])
+    .unwrap();
+
+    assert_eq!(s.tip().unwrap(), Some((102, "h102".into())));
+    assert!(s.utxos_for("spkA").unwrap().is_empty()); // spent within the same batch
+    assert_eq!(s.utxos_for("spkC").unwrap().len(), 1);
+    assert_eq!(s.utxos_for("spkD").unwrap().len(), 1);
+    let h = s.history_for("spkA", 10).unwrap();
+    let ids: Vec<_> = h.iter().map(|x| x.txid.as_str()).collect();
+    assert!(ids.contains(&"aa") && ids.contains(&"bb"));
+}
+
+#[test]
+fn apply_blocks_with_an_empty_slice_is_a_harmless_no_op() {
+    let mut s = store();
+    s.apply_blocks(&[]).unwrap();
+    assert_eq!(s.tip().unwrap(), None);
 }
 
 #[test]

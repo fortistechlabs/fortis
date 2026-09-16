@@ -35,10 +35,11 @@ cargo build --release -p fortis-index -p fortis-edge
   --network mainnet --rpc-url http://127.0.0.1:8332 \
   --rpc-auth fortis:YOURPASS \
   --db fortis-index.sqlite --bind 127.0.0.1:8094
-# first run indexes from genesis — a full mainnet sync, hours to days
-# depending on the node's disk/CPU; needs an unpruned node. Pass
-# --start-height 961640 instead to skip pre-fork blocks (minutes) if
-# pre-fork coin history doesn't matter for this deployment.
+# first run indexes from SegWit activation (block 481824, the earliest any
+# fortis wallet address can possibly have history) — a real one-time sync,
+# needs an unpruned node. Pass --start-height 961640 instead to skip
+# pre-fork blocks entirely (minutes) if pre-fork coin history doesn't
+# matter for this deployment.
 
 # terminal 2 — the edge
 ./target/release/fortis-edge \

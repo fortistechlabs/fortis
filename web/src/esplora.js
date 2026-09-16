@@ -511,6 +511,15 @@ export class EsploraBackend {
     this._snap = null; // reflect the spend on the next poll
     this._hist = null;
     this._watchSetCache = null; // its cached /txs per address predates this broadcast
+    // Must go with it: _watchSet()'s cache-seed path (re-seeding from
+    // IndexedDB when _watchSetCache is null) never touches this timestamp,
+    // relying on it starting at the constructor's 0 for a genuinely fresh
+    // instance. Left at its old (pre-send, still-recent) value here, the
+    // very next _watchSet() call would re-seed from stale pre-send data and
+    // then have that stale seed immediately pass the top-of-function
+    // "still within SNAP_TTL" check as if it were freshly verified —
+    // defeating this whole invalidation for up to the rest of that window.
+    this._watchSetCacheAt = 0;
     return { txid: text.toLowerCase() };
   }
 }

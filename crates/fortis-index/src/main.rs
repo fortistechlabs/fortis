@@ -4,12 +4,17 @@
 //! the client derives its own addresses and scans them, so one instance serves
 //! any number of wallets.
 //!
-//! It indexes from `--start-height` forward — genesis by default, so a wallet's
-//! pre-fork Bitcoin history (inherited by the XBT chain at the hard fork) is
-//! included, not just activity since the fork. Pass `--start-height 961640` (the
-//! BLAKE2b fork height) to skip pre-fork blocks and index far faster when
-//! pre-fork coins don't matter (e.g. regtest, or a wallet known to postdate the
-//! fork).
+//! It indexes from `--start-height` forward — SegWit activation (block 481824)
+//! by default, so a wallet's pre-fork Bitcoin history (inherited by the XBT
+//! chain at the hard fork) is included, not just activity since the fork.
+//! Genesis-to-SegWit blocks are skipped, not just as an optimization: this
+//! wallet derives exclusively BIP-84 P2WPKH addresses, and P2WPKH didn't
+//! exist before SegWit, so no fortis wallet address can have history in that
+//! range — indexing it can never find anything. (`block_txs` in `sync.rs`
+//! also only stores P2WPKH outputs for the same reason, for every height.)
+//! Pass `--start-height 961640` (the BLAKE2b fork height) to skip pre-fork
+//! blocks entirely and index even faster when pre-fork coins don't matter
+//! (e.g. regtest, or a wallet known to postdate the fork).
 
 mod api;
 mod mempool;
@@ -29,6 +34,12 @@ use fortis_node::Rpc;
 use mempool::Mempool;
 use store::Store;
 use sync::Syncer;
+
+/// Mainnet SegWit (BIP141) activation — the earliest block that can contain a
+/// P2WPKH output, which is the only address type any fortis wallet ever
+/// derives (`Address::p2wpkh`, `wallet-core/src/wallet.rs`). Nothing before
+/// this height can possibly be a fortis wallet's history.
+const SEGWIT_ACTIVATION_HEIGHT: u64 = 481_824;
 
 #[derive(Parser)]
 #[command(name = "fortis-index", version, about = "address index → Esplora REST (holds no keys)")]
@@ -56,9 +67,12 @@ struct Args {
     /// Address to bind the HTTP API to.
     #[arg(long, default_value = "127.0.0.1:8094")]
     bind: String,
-    /// First block to index. Default: 0 (genesis), so pre-fork Bitcoin history
-    /// is included. Pass 961640 (the BLAKE2b fork height) to skip pre-fork
-    /// blocks and index much faster when pre-fork coins don't matter.
+    /// First block to index. Default: 481824 (SegWit activation) — the
+    /// earliest height any fortis wallet address (P2WPKH-only) could
+    /// possibly have history, so pre-fork Bitcoin history is still fully
+    /// covered without wasting time on blocks that provably can't contain
+    /// any. Pass 961640 (the BLAKE2b fork height) to skip pre-fork blocks
+    /// entirely and index even faster when pre-fork coins don't matter.
     #[arg(long)]
     start_height: Option<u64>,
     /// Seconds between catch-up passes.
@@ -103,7 +117,10 @@ fn run() -> Result<()> {
 
     let cs = fortis_node::chain_status(&rpc).context("reaching the node")?;
     let network = if regtest { bitcoin::Network::Regtest } else { bitcoin::Network::Bitcoin };
-    let start_height = args.start_height.unwrap_or(0);
+    // Regtest has its own genesis and activates SegWit from block 0 (chain
+    // params, not a real mainnet-style activation height), so mainnet's
+    // SegWit-activation floor doesn't apply there — keep 0.
+    let start_height = args.start_height.unwrap_or(if regtest { 0 } else { SEGWIT_ACTIVATION_HEIGHT });
 
     eprintln!("fortis-index → {rpc_url}  ({}, chain {})", cs.subversion, cs.chain);
     eprintln!("             db {}  ·  indexing from height {start_height}", args.db);

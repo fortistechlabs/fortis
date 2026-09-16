@@ -3,6 +3,7 @@
 //! Only what the wallet needs: cookie/basic auth, top-level calls, and
 //! wallet-scoped calls (`/wallet/<name>` in the path).
 
+use std::io::Read;
 use std::path::PathBuf;
 use std::time::Duration;
 
@@ -66,7 +67,21 @@ impl Rpc {
             .set("Content-Type", "application/json")
             .send_json(payload)
         {
-            Ok(resp) => resp.into_string().context("reading RPC response body")?,
+            // Not `resp.into_string()`: ureq hard-caps that at 10MB and
+            // errors with "response too big for into_string" past it — found
+            // live indexing fortis-index into modern (2019+) blocks, whose
+            // full-verbosity `getblock <hash> 2` JSON (every tx, every
+            // input's prevout) routinely exceeds that on a busy block,
+            // silently stalling the sync on the exact same block forever.
+            // This is a trusted local node's response, not an untrusted
+            // third party's — read it unbounded instead.
+            Ok(resp) => {
+                let mut body = String::new();
+                resp.into_reader()
+                    .read_to_string(&mut body)
+                    .context("reading RPC response body")?;
+                body
+            }
             Err(ureq::Error::Status(code, resp)) => {
                 let text = resp.into_string().unwrap_or_default();
                 if text.trim_start().starts_with('{') {

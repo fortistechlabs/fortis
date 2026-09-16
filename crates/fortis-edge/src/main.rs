@@ -695,12 +695,29 @@ fn proxy_chain(req: &mut Request, st: &State, method: &Method, path: &str, query
         return match hs.warm(&addrs) {
             Ok(warmed) => {
                 for (a, w) in &warmed {
+                    // Merge into the permanent store here too, same as the
+                    // per-address GET path (`proxy_chain`'s `/txs` handling
+                    // below) — without this, a hosted BTC wallet (the default
+                    // has `bulkPrewarm = true`) re-primes this endpoint's own
+                    // cache every ~45s while open, so its per-address `/txs`
+                    // GETs almost always hit that still-warm cache and never
+                    // reach the merge logic at all: the permanent store would
+                    // barely ever populate for the most common real-world
+                    // case. Replace the cached body with the merged one so a
+                    // cache hit later serves the same permanently-backed
+                    // answer a live fetch would.
+                    let txs_body = st
+                        .btc_history
+                        .as_ref()
+                        .and_then(|h| serde_json::from_slice::<Vec<serde_json::Value>>(&w.txs).ok().map(|txs| (h, txs)))
+                        .map(|(h, txs)| serde_json::to_vec(&h.merge(a, &txs)).unwrap_or_else(|_| w.txs.clone()))
+                        .unwrap_or_else(|| w.txs.clone());
                     // `/txs` earns the same long TTL as the regular per-address
                     // path once nothing in it is pending — see `cache::ttl_for`.
                     // `/utxo` keeps the short default (it can genuinely change).
                     for (suffix, body, path) in [
                         ("utxo", &w.utxo, format!("/btc/address/{a}/utxo")),
-                        ("txs", &w.txs, format!("/btc/address/{a}/txs")),
+                        ("txs", &txs_body, format!("/btc/address/{a}/txs")),
                     ] {
                         let Some(ttl) = cache::ttl_for(&path, Some(body)) else { continue };
                         st.cache.put(
@@ -854,6 +871,10 @@ fn proxy_chain(req: &mut Request, st: &State, method: &Method, path: &str, query
     // address (fuller than any single upstream page can be) on success, and
     // falls back to permanent-only data on a total upstream failure — beyond
     // even the 600s `stale()` grace window `cache.rs` gives every other path.
+    // `true` when `result` below is a synthetic 200 built from the permanent
+    // store, not a genuine fresh upstream response — see the cache-write
+    // guard a few lines down for why that distinction matters.
+    let mut served_from_permanent_fallback = false;
     if chain == "btc" && method == &Method::Get && rest.ends_with("/txs") {
         if let (Some(addr), Some(hist)) =
             (rest.strip_prefix("address/").and_then(|r| r.strip_suffix("/txs")), &st.btc_history)
@@ -872,6 +893,7 @@ fn proxy_chain(req: &mut Request, st: &State, method: &Method, path: &str, query
                     if known.is_empty() {
                         other
                     } else {
+                        served_from_permanent_fallback = true;
                         let body = serde_json::to_vec(&known).unwrap_or_default();
                         Ok(proxy::UpstreamResponse { status: 200, content_type: "application/json".into(), body })
                     }
@@ -885,16 +907,26 @@ fn proxy_chain(req: &mut Request, st: &State, method: &Method, path: &str, query
             // Recomputed with the body in hand: a `/txs` response with nothing
             // pending earns the long TTL here, even though the pre-fetch check
             // above (no body yet) only knew the short one.
-            if let Some(ttl) = if ttl.is_some() { cache::ttl_for(path, Some(&resp.body)) } else { None } {
-                st.cache.put(
-                    &cache_key,
-                    ttl,
-                    cache::Cached {
-                        status: 200,
-                        content_type: resp.content_type.clone(),
-                        body: resp.body.clone(),
-                    },
-                );
+            //
+            // Skip the write entirely when this 200 is the permanent-store
+            // fallback: it's whatever confirmed history we had *before*
+            // upstream started failing, not a verified-fresh answer. Caching
+            // it here would give it a full fresh TTL (up to 6h) — worse than
+            // the plain `stale()` grace path below, which serves once and
+            // lets the very next request retry upstream, this would instead
+            // paper over new activity for hours even after upstream recovers.
+            if !served_from_permanent_fallback {
+                if let Some(ttl) = if ttl.is_some() { cache::ttl_for(path, Some(&resp.body)) } else { None } {
+                    st.cache.put(
+                        &cache_key,
+                        ttl,
+                        cache::Cached {
+                            status: 200,
+                            content_type: resp.content_type.clone(),
+                            body: resp.body.clone(),
+                        },
+                    );
+                }
             }
             Reply::Raw(200, resp.content_type, resp.body)
         }
