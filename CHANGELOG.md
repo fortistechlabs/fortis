@@ -2,6 +2,13 @@
 
 Fortis Wallet (Android). Versions are `versionName (versionCode)`.
 
+## 0.3.6 (11) — 2026-09-16
+
+- Fixed a bug where switching wallets while a slow scan was still finishing
+  could briefly show the *previous* wallet's balance and history under the
+  new one, before correcting itself a few seconds later. Switching wallets
+  now always shows the new wallet's own state.
+
 ## 0.3.5 (10) — 2026-09-15
 
 - Reopening a wallet (or switching between them) now shows your last-known
