@@ -19,4 +19,5 @@ hex = { workspace = true }
 serde_json = { workspace = true }
 clap = { version = "4", features = ["derive"] }
 rusqlite = { version = "0.32", features = ["bundled"] }
+rocksdb = "0.22"
 tiny_http = "0.12"

@@ -349,6 +349,33 @@ fn run() -> Result<()> {
             (chain.into_iter().next(), rest)
         }
     };
+    // Same chain as `build_btc_chain`, minus Maestro: the tip height changes
+    // roughly every 10 minutes on mainnet, and this cache polls every 20s
+    // regardless of success, so there's no latency case for spending a paid,
+    // per-key-metered provider's quota on it. Live-measured on Maestro's own
+    // dashboard, 2026-09-17: this one endpoint was 61% of this key's total
+    // query volume at a 34% success rate, well above what the address/tx/utxo
+    // lookups Maestro is actually valuable for were getting through. Falls
+    // back to `--btc-upstream-fallback` same as the real per-request chain if
+    // configured, so it's still a real chain, just without the paid tier.
+    let build_btc_tip_chain = || -> Vec<Upstream> {
+        let mut chain = Vec::new();
+        if let Some(primary) = &args.btc_upstream {
+            let has_more = args.btc_upstream_fallback.iter().any(|u| {
+                let u = u.trim();
+                !u.is_empty() && Some(u) != args.btc_upstream.as_deref()
+            });
+            chain.push(if has_more { Upstream::fallback(primary, None) } else { Upstream::new(primary) });
+        }
+        chain.extend(
+            args.btc_upstream_fallback
+                .iter()
+                .map(|u| u.trim())
+                .filter(|u| !u.is_empty() && Some(*u) != args.btc_upstream.as_deref())
+                .map(|u| Upstream::fallback(u, None)),
+        );
+        chain
+    };
 
     let state = Arc::new(State {
         secret,
@@ -360,11 +387,11 @@ fn run() -> Result<()> {
         btc_fallbacks,
         // XBT's tip comes from fortis-index (local, fast — no hang risk seen
         // there); only BTC's public-explorer proxy needs the background
-        // cache. Uses the *whole* chain, same order as `btc`/`btc_fallbacks`
-        // — see `TipCache::spawn`'s doc for why a primary-only tip cache is
-        // exactly the outage this caused live.
+        // cache. Deliberately *not* `build_btc_chain()` — see
+        // `build_btc_tip_chain`'s doc for why Maestro is excluded here even
+        // though it's the real per-request chain's primary.
         btc_tip: {
-            let chain = build_btc_chain();
+            let chain = build_btc_tip_chain();
             (!chain.is_empty()).then(|| proxy::TipCache::spawn(chain, std::time::Duration::from_secs(20)))
         },
         btc_broadcast,

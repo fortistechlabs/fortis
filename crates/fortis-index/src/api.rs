@@ -325,6 +325,26 @@ mod tests {
     const P2WPKH_SPK: &str = "0014751e76e8199196d454941c45d1b3a323f1433bd6";
     const P2WPKH_ADDR: &str = "bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4";
 
+    static NEXT_TEST_ID: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+    fn test_store_path() -> String {
+        std::env::temp_dir()
+            .join(format!(
+                "fortis-index-api-test-{}-{}",
+                std::process::id(),
+                NEXT_TEST_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+            ))
+            .to_str()
+            .unwrap()
+            .to_string()
+    }
+
+    // Padded out to a real txid's length (32 bytes / 64 hex chars) -- still
+    // valid hex since the seed itself only uses hex digits.
+    fn txid(seed: &str) -> String {
+        format!("{seed:0>64}")
+    }
+
     #[test]
     fn spk_hex_to_address_round_trips_a_p2wpkh() {
         assert_eq!(spk_hex_to_address(P2WPKH_SPK, Network::Bitcoin).as_deref(), Some(P2WPKH_ADDR));
@@ -334,13 +354,13 @@ mod tests {
 
     #[test]
     fn backfill_fills_a_null_mempool_prevout_from_the_confirmed_index() {
-        let mut store = Store::open(":memory:").unwrap();
+        let mut store = Store::open(&test_store_path()).unwrap();
         store
             .apply_block(
                 100,
-                "h100",
+                &txid("100"),
                 &[IndexedTx {
-                    txid: "aa".into(),
+                    txid: txid("aa"),
                     inputs: vec![],
                     outputs: vec![TxOut { vout: 0, spk_hex: P2WPKH_SPK.into(), value_sat: 500_000 }],
                 }],
@@ -350,8 +370,8 @@ mod tests {
 
         // a mempool tx spending aa:0 that the node reported with no prevout
         let pending = json!({
-            "txid": "bb",
-            "vin": [{ "txid": "aa", "vout": 0 }],
+            "txid": txid("bb"),
+            "vin": [{ "txid": txid("aa"), "vout": 0 }],
             "vout": [{ "value": 0.004, "scriptPubKey": { "address": "bc1qdest" } }],
         });
         let filled = backfill_prevouts(&pending, &store, &mp, Network::Bitcoin);
@@ -364,12 +384,12 @@ mod tests {
 
     #[test]
     fn backfill_leaves_a_prevout_the_node_already_gave_us_untouched() {
-        let store = Store::open(":memory:").unwrap();
+        let store = Store::open(&test_store_path()).unwrap();
         let mp = Mempool::default();
         let tx = json!({
-            "txid": "bb",
+            "txid": txid("bb"),
             "vin": [{
-                "txid": "aa", "vout": 0,
+                "txid": txid("aa"), "vout": 0,
                 "prevout": { "scriptPubKey": { "address": "bc1qkeep" }, "value": 0.001 }
             }],
             "vout": [],

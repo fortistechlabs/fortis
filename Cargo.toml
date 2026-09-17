@@ -31,3 +31,9 @@ uniffi = "0.29"
 
 [profile.release]
 lto = "thin"
+
+# A debug build of RocksDB itself (librocksdb-sys) is unusably slow at
+# runtime otherwise -- doesn't affect [profile.release], which already
+# builds everything optimized.
+[profile.dev.package.librocksdb-sys]
+opt-level = 3

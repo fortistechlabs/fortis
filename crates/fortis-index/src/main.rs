@@ -18,7 +18,7 @@
 
 mod api;
 mod mempool;
-mod spend_filter;
+mod migrate;
 mod store;
 mod sync;
 
@@ -62,9 +62,16 @@ struct Args {
     /// Node network: mainnet | regtest.
     #[arg(long, default_value = "mainnet")]
     network: String,
-    /// SQLite index file.
-    #[arg(long, default_value = "fortis-index.sqlite")]
+    /// RocksDB index directory (created if missing).
+    #[arg(long, default_value = "fortis-index-rocksdb")]
     db: String,
+    /// One-time migration: read an existing SQLite index (the pre-RocksDB
+    /// format) at this path, write its contents into `--db`, then exit --
+    /// does not start syncing or serving. The source file is only ever
+    /// opened read-only; nothing about it is modified. Run this once, then
+    /// start normally (without this flag) against the same `--db`.
+    #[arg(long, value_name = "SQLITE PATH")]
+    migrate_from: Option<String>,
     /// Address to bind the HTTP API to.
     #[arg(long, default_value = "127.0.0.1:8094")]
     bind: String,
@@ -93,6 +100,19 @@ fn main() -> ExitCode {
 
 fn run() -> Result<()> {
     let args = Args::parse();
+
+    if let Some(sqlite_path) = &args.migrate_from {
+        eprintln!("fortis-index migrate: {sqlite_path} -> {}", args.db);
+        let store = Store::open(&args.db)?;
+        let stats = migrate::migrate(sqlite_path, &store)?;
+        eprintln!(
+            "migrate: complete -- {} blocks, {} outputs ({} unspent), {} history rows. \
+             Start normally (without --migrate-from) against --db {} to resume syncing.",
+            stats.blocks, stats.outputs, stats.unspent, stats.history, args.db
+        );
+        return Ok(());
+    }
+
     let regtest = args.network.starts_with("regtest");
 
     let rpc_url = args
@@ -126,7 +146,8 @@ fn run() -> Result<()> {
     eprintln!("fortis-index → {rpc_url}  ({}, chain {})", cs.subversion, cs.chain);
     eprintln!("             db {}  ·  indexing from height {start_height}", args.db);
 
-    // Ensure the file + schema exist before the reader opens it.
+    // Opens (creating if needed) the shared DB handle the reader below
+    // clones -- must happen first, see `store::open_shared_db`.
     let writer = Store::open(&args.db)?;
     let mempool = Arc::new(RwLock::new(Mempool::default()));
 
