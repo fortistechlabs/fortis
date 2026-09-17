@@ -8,6 +8,8 @@
 use anyhow::{Context, Result};
 use rusqlite::{params, Connection, OpenFlags, OptionalExtension};
 
+use crate::spend_filter::SpendFilter;
+
 #[cfg(test)]
 mod tests;
 
@@ -79,6 +81,9 @@ pub struct HistTx {
 
 pub struct Store {
     conn: Connection,
+    // `None` on a read-only Store (the HTTP server's connection) -- only
+    // `apply_blocks` (the writer) ever needs it.
+    spend_filter: Option<SpendFilter>,
 }
 
 impl Store {
@@ -91,7 +96,32 @@ impl Store {
              PRAGMA busy_timeout=10000;",
         )?;
         conn.execute_batch(SCHEMA)?;
-        Ok(Self { conn })
+        let spend_filter = Self::build_spend_filter(&conn)?;
+        Ok(Self { conn, spend_filter: Some(spend_filter) })
+    }
+
+    /// Every transaction input in every block gets checked against `outputs`
+    /// -- not just ones that turn out to spend a tracked coin -- because
+    /// there's no way to know which, up front, without checking. Measured
+    /// live on this index's real ~115GB table: that per-input UPDATE+SELECT
+    /// pair was 96% of total sync time (71.7s of a 74.3s batch). A Bloom
+    /// filter built once here from the table's existing contents lets
+    /// definite misses skip the database entirely -- live-measured at this
+    /// point in the chain, that's roughly two-thirds of inputs (P2WPKH turns
+    /// out to be in wide use here, not a rare case, so the remaining third
+    /// are genuine hits paying real, unavoidable work). See `spend_filter`'s
+    /// doc comment for why this can never cause a missed spend, only an
+    /// occasional unnecessary check.
+    fn build_spend_filter(conn: &Connection) -> Result<SpendFilter> {
+        let count: i64 = conn.query_row("SELECT COUNT(*) FROM outputs", [], |r| r.get(0))?;
+        let mut filter = SpendFilter::new(count.max(0) as u64);
+        let mut stmt = conn.prepare("SELECT txid, vout FROM outputs")?;
+        let rows = stmt.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?)))?;
+        for row in rows {
+            let (txid, vout) = row?;
+            filter.insert(&txid, vout as u32);
+        }
+        Ok(filter)
     }
 
     /// Open a read-only connection (the file must already exist).
@@ -102,7 +132,7 @@ impl Store {
         )
         .with_context(|| format!("opening {path} read-only"))?;
         conn.execute_batch("PRAGMA busy_timeout=10000;")?;
-        Ok(Self { conn })
+        Ok(Self { conn, spend_filter: None })
     }
 
     pub fn tip(&self) -> Result<Option<(u64, String)>> {
@@ -153,6 +183,9 @@ impl Store {
         if blocks.is_empty() {
             return Ok(());
         }
+        // Disjoint field borrows: `self.conn.transaction()` only borrows
+        // `conn`, so this can stay live alongside it.
+        let filter = self.spend_filter.as_mut().expect("apply_blocks is writer-only");
         let tx = self.conn.transaction()?;
         {
             // OR IGNORE: pre-BIP34 mainnet has two known blocks (~91722/91842 and
@@ -165,11 +198,12 @@ impl Store {
             let mut ins_out = tx.prepare_cached(
                 "INSERT OR IGNORE INTO outputs(txid,vout,spk,value,height) VALUES(?1,?2,?3,?4,?5)",
             )?;
+            // Single round-trip instead of an UPDATE + a separate SELECT:
+            // RETURNING hands back the row's spk (for history) as part of
+            // the same statement, when the input actually matches something.
             let mut spend = tx.prepare_cached(
-                "UPDATE outputs SET spent_height=?1, spent_txid=?2 WHERE txid=?3 AND vout=?4",
+                "UPDATE outputs SET spent_height=?1, spent_txid=?2 WHERE txid=?3 AND vout=?4 RETURNING spk",
             )?;
-            let mut spk_of =
-                tx.prepare_cached("SELECT spk FROM outputs WHERE txid=?1 AND vout=?2")?;
             let mut ins_hist = tx.prepare_cached(
                 "INSERT OR IGNORE INTO history(spk,txid,height) VALUES(?1,?2,?3)",
             )?;
@@ -181,11 +215,21 @@ impl Store {
                     for o in &t.outputs {
                         ins_out.execute(params![t.txid, o.vout as i64, o.spk_hex, o.value_sat as i64, h])?;
                         ins_hist.execute(params![o.spk_hex, t.txid, h])?;
+                        filter.insert(&t.txid, o.vout);
                     }
                     for inp in &t.inputs {
-                        spend.execute(params![h, t.txid, inp.txid, inp.vout as i64])?;
-                        let spk: Option<String> = spk_of
-                            .query_row(params![inp.txid, inp.vout as i64], |r| r.get(0))
+                        // Live-measured: about a third of inputs at this
+                        // point in the chain are genuine hits (P2WPKH is
+                        // widely used, not a rare case), so this only skips
+                        // the majority-but-not-overwhelming fraction of
+                        // inputs that are definitely not one of ours -- real
+                        // hits still pay a real UPDATE, which is unavoidable
+                        // work, not overhead.
+                        if !filter.might_contain(&inp.txid, inp.vout) {
+                            continue;
+                        }
+                        let spk: Option<String> = spend
+                            .query_row(params![h, t.txid, inp.txid, inp.vout as i64], |r| r.get(0))
                             .optional()?;
                         if let Some(spk) = spk {
                             ins_hist.execute(params![spk, t.txid, h])?;

@@ -26,6 +26,16 @@ const FETCH_BATCH: usize = 32;
 /// (much bigger blocks than the pre-SegWit era) instead of dropping with
 /// block size, meaning RPC/write overhead, not raw block-fetch time, was
 /// the bottleneck this actually targets.
+///
+/// Tried bumping this 8 -> 24 (with FETCH_BATCH 32 -> 48 alongside it) after
+/// live measurement showed ~0% CPU / low disk queue depth during sync,
+/// suggesting headroom. It made no measurable difference to throughput
+/// (~0.53 blocks/sec either way) AND caused a silent hang within minutes
+/// (process alive, node fully responsive, tip frozen, zero log output) —
+/// reverted back to 8. Do not raise this again without reproducing and
+/// understanding that hang first (suspect ureq's shared `Agent` connection
+/// pool under this many concurrent callers, not the node — the node
+/// answered `getblockcount` instantly while the hang was happening).
 const FETCH_WORKERS: usize = 8;
 
 pub struct Syncer<'a> {
@@ -124,15 +134,19 @@ fn validate_batch(
     fetched: Vec<(String, Value)>,
     mut prev_hash: Option<String>,
 ) -> (Vec<(u64, String, Vec<IndexedTx>)>, Option<anyhow::Error>) {
+    // Parse every block's txs up front, in parallel, before the sequential
+    // reorg-chain walk below — see `parse_blocks`'s doc comment for why this
+    // (not RPC fetch concurrency) is where the real per-block cost is.
+    let parsed = parse_blocks(&fetched);
     let mut owned = Vec::with_capacity(heights.len());
-    for (height, (hash, block)) in heights.iter().zip(fetched) {
+    for ((height, (hash, block)), txs_result) in heights.iter().zip(fetched).zip(parsed) {
         let prev = block["previousblockhash"].as_str().unwrap_or("").to_string();
         if let Some(ph) = &prev_hash {
             if *ph != prev {
                 break;
             }
         }
-        let txs = match block_txs(&block) {
+        let txs = match txs_result {
             Ok(txs) => txs,
             Err(e) => return (owned, Some(e.context(format!("block {height} ({hash})")))),
         };
@@ -140,6 +154,49 @@ fn validate_batch(
         owned.push((*height, hash, txs));
     }
     (owned, None)
+}
+
+/// Parse every fetched block's transactions in parallel — hex-decoding and
+/// fully deserializing each tx (via the `bitcoin` crate) before the P2WPKH
+/// filter runs is pure, stateless CPU work with no shared state and no I/O,
+/// unlike `fetch_blocks`'s network round trips. It was previously done one
+/// block at a time in `validate_batch`'s sequential walk, which pegged
+/// `fortis-index` at 60-100%+ of a single core (measured live) while the
+/// other 15 on this machine sat idle — meanwhile a direct RPC timing test
+/// showed the node answering `getblock` for cold, never-touched blocks in
+/// well under a second even 8-way concurrent, ruling out the node/network as
+/// the bottleneck. Raising `FETCH_WORKERS` (RPC concurrency) therefore did
+/// nothing: fetching was never what was slow.
+///
+/// A block here is parsed even if it later turns out to be past a reorg
+/// break point or a parse failure ends the batch early in the walk below —
+/// both are rare, so that small amount of wasted work is a good trade for
+/// keeping every block's parse fully independent and parallel on the
+/// overwhelmingly common clean-forward-sync path.
+fn parse_blocks(fetched: &[(String, Value)]) -> Vec<Result<Vec<IndexedTx>>> {
+    let workers = std::thread::available_parallelism()
+        .map(|n| n.get())
+        .unwrap_or(1)
+        .min(fetched.len().max(1));
+    let chunk_size = fetched.len().div_ceil(workers).max(1);
+    let mut results: Vec<Option<Result<Vec<IndexedTx>>>> = (0..fetched.len()).map(|_| None).collect();
+    std::thread::scope(|scope| {
+        let handles: Vec<_> = fetched
+            .chunks(chunk_size)
+            .enumerate()
+            .map(|(ci, chunk)| {
+                let base = ci * chunk_size;
+                (base, scope.spawn(move || chunk.iter().map(|(_, block)| block_txs(block)).collect::<Vec<_>>()))
+            })
+            .collect();
+        for (base, handle) in handles {
+            let chunk_results = handle.join().expect("block-parse worker panicked");
+            for (i, r) in chunk_results.into_iter().enumerate() {
+                results[base + i] = Some(r);
+            }
+        }
+    });
+    results.into_iter().map(|o| o.expect("every block was assigned to a worker")).collect()
 }
 
 /// Fetch `getblockhash` + `getblock <hash> 2` for every height in `heights`,

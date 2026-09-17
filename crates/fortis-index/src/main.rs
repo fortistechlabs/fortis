@@ -18,6 +18,7 @@
 
 mod api;
 mod mempool;
+mod spend_filter;
 mod store;
 mod sync;
 
