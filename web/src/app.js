@@ -1449,10 +1449,26 @@ async function refresh() {
     const backend = ensureBackend(w);
     if (!backend) return;
     await backend.prewarm?.();
-    const [status, balances, history, usd] = await Promise.all([
+
+    // status/history first, committed and painted immediately — history()
+    // only needs the cache-seeded watch-set (fast on a warm reopen);
+    // balances() additionally needs a live per-address UTXO fetch that's
+    // never cached (see esplora.js). Splitting this from the balances
+    // stage below means a warm reopen's history actually shows as soon
+    // as it's ready instead of sitting fetched-but-unseen behind the
+    // slow live balance scan — same reasoning, same fix shape, as the
+    // Android port of this class.
+    const [status, history] = await Promise.all([
       backend.status(),
-      backend.balances().catch(() => null),
       backend.history(50).catch(() => []),
+    ]);
+    if (state.selected !== refreshingFor) return;
+    detail.status = status;
+    detail.history = history || [];
+    renderShellIfIdle();
+
+    const [balances, usd] = await Promise.all([
+      backend.balances().catch(() => null),
       backend.price ? backend.price().catch(() => null) : Promise.resolve(null),
     ]);
     // The user may have switched wallets while the awaits above were
@@ -1464,9 +1480,7 @@ async function refresh() {
     // the next poll tick corrected it. Discard silently instead — the
     // new selection's own refresh() owns `detail` now.
     if (state.selected !== refreshingFor) return;
-    detail.status = status;
     if (balances) detail.balances = balances;
-    detail.history = history || [];
     if (usd != null) { detail.usd = usd; overview.usd[w.chain] = usd; }
     if (detail.balances) overview.balances.set(w.id, detail.balances.confirmed_sat);
     if (!Object.keys(detail.feerate).length) {

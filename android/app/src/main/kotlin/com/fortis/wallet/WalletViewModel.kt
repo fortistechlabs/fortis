@@ -15,6 +15,7 @@ import com.fortis.wallet.wallet.unsealSeed
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import okhttp3.Dispatcher
 import okhttp3.OkHttpClient
 import uniffi.wallet_ffi.FundingPlan
 import java.net.Proxy
@@ -63,6 +64,20 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
         // that same worst case to well under a minute.
         .connectTimeout(6, TimeUnit.SECONDS)
         .readTimeout(8, TimeUnit.SECONDS)
+        // OkHttp's own default `Dispatcher` caps concurrent requests at 5 per
+        // host — silently below `EsploraBackend`'s `CHUNK` (8), which both
+        // `watchSet()`'s gap-limit walk and `scan()`'s balance fetch batch by.
+        // Every "batch of 8" was really only running 5 at a time, with 3
+        // queued behind them, on top of the live-network cost `scan()`
+        // already can't avoid (its UTXO fetch is deliberately never cached
+        // beyond 10s, for spend safety — see `scan()`'s doc comment). Found
+        // live, 2026-09-18: a deep watch-only wallet (100+ used addresses)
+        // felt slow to reopen even well past any warm-cache window. Raised
+        // past `CHUNK` so a full batch actually dispatches at once; all
+        // traffic here goes to one host at a time (the hosted edge, or a
+        // public-explorer fallback), so `maxRequestsPerHost` is the limit
+        // that actually matters, not the (already-sufficient) global cap.
+        .dispatcher(Dispatcher().apply { maxRequestsPerHost = 16 })
         .build()
 
     var phase by mutableStateOf(Phase.Loading); private set
@@ -558,10 +573,23 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
             val newStatus = b.status().copy(degraded = degraded)
             // history() only needs watchSet() (cache-seeded, fast on a warm
             // reopen) — balances() additionally needs a live per-address UTXO
-            // fetch, which is never cached (see EsploraBackend.scan()). Doing
-            // history first means it can paint before that live round finishes,
-            // instead of waiting behind it for no reason.
+            // fetch, which is never cached (see EsploraBackend.scan()).
+            // Committed on its own right below, separately from balances,
+            // so a warm reopen's history actually paints as soon as it's
+            // ready instead of sitting computed-but-unseen behind the slow
+            // live balance scan. Found live, 2026-09-18: an earlier version
+            // fetched history first for exactly this reason but committed
+            // every field together at the very end regardless, so the UI
+            // never actually saw the earlier win — that single combined
+            // commit was added for the staleness guard below, not to
+            // re-couple these two, so give it its own guard instead of
+            // reusing the one further down.
             val newHistory = b.history(50)
+            if (backend !== b && fallback !== b) return
+            status = newStatus
+            usingFallback = degraded
+            history = newHistory
+
             val newBalances = b.balances()
             val newUsd = refreshingChain?.let { ch -> runCatching { b.price() }.getOrNull()?.let { ch to it } }
             val newFeerates =
@@ -581,9 +609,6 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
             // owns the UI now.
             if (backend !== b && fallback !== b) return
 
-            status = newStatus
-            usingFallback = degraded
-            history = newHistory
             balances = newBalances
             refreshingFor?.let { id -> setWalletBalance(id, newBalances.confirmedSat) }
             newUsd?.let { (ch, usd) -> setCoinUsd(ch, usd) }
