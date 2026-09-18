@@ -7,7 +7,7 @@ import android.database.sqlite.SQLiteOpenHelper
 import org.json.JSONArray
 
 private const val DB_NAME = "fortis-tx-cache.sqlite"
-private const val DB_VERSION = 1
+private const val DB_VERSION = 2
 
 /** Permanent, on-device store of confirmed transaction history, keyed by
  *  (chain, address) — confirmed transactions never change, so once seen here
@@ -41,7 +41,20 @@ class TxCache(context: Context) : SQLiteOpenHelper(context.applicationContext, D
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
-        // No prior schema versions yet — nothing to migrate.
+        // v2: unconditionally wipe and recreate this table. A server-side
+        // edge caching bug (fixed 2026-09-18) could have had this device
+        // persist a wrongly-empty confirmed-tx list for an address that
+        // actually had real history — and since this table's whole premise
+        // is "confirmed history never changes," nothing else here would
+        // ever overwrite that stale-but-plausible-looking empty entry on
+        // its own. Dropping the table forces every address to be genuinely
+        // re-walked against the now-fixed server on next load. This is a
+        // dedicated database file (not shared with wallet config), so
+        // nothing else on-device is affected.
+        if (oldVersion < 2) {
+            db.execSQL("DROP TABLE IF EXISTS confirmed_txs")
+            onCreate(db)
+        }
     }
 
     /** Every persisted confirmed tx for `addresses`, keyed by address. An

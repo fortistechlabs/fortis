@@ -23,10 +23,22 @@ export const MAX_WALLETS = 10;
 
 function open() {
   return new Promise((resolve, reject) => {
-    const r = indexedDB.open(DB, 2);
-    r.onupgradeneeded = () => {
+    const r = indexedDB.open(DB, 3);
+    r.onupgradeneeded = (ev) => {
       const db = r.result;
       if (!db.objectStoreNames.contains(STORE)) db.createObjectStore(STORE);
+      // v3: unconditionally wipe and recreate ADDR_STORE on any upgrade
+      // crossing this version. A server-side edge caching bug (fixed
+      // 2026-09-18) could have had this client persist a wrongly-empty
+      // confirmed-tx list for an address that actually had real history —
+      // and since this store's whole premise is "confirmed history never
+      // changes," nothing else here would ever overwrite that stale-but-
+      // plausible-looking empty entry on its own. Dropping the store
+      // forces every address to be genuinely re-walked against the now-
+      // fixed server on next load. Wallet config (STORE) is untouched.
+      if (ev.oldVersion < 3 && db.objectStoreNames.contains(ADDR_STORE)) {
+        db.deleteObjectStore(ADDR_STORE);
+      }
       if (!db.objectStoreNames.contains(ADDR_STORE)) db.createObjectStore(ADDR_STORE);
     };
     r.onsuccess = () => resolve(r.result);

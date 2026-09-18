@@ -2,6 +2,15 @@
 
 Fortis Wallet (Android). Versions are `versionName (versionCode)`.
 
+## 0.3.7 (12) — 2026-09-18
+
+- Fixed a watch-only wallet (BTC and XBT) undercounting its balance and
+  missing transactions: a backend caching bug could remember an address as
+  having no history when it actually did, and the on-device cache had no
+  way to know that answer was wrong. The backend bug is already fixed;
+  this release also clears any previously-cached incorrect data on-device
+  so it can't keep showing stale results after updating.
+
 ## 0.3.6 (11) — 2026-09-16
 
 - Fixed a bug where switching wallets while a slow scan was still finishing
