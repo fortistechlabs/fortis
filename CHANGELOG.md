@@ -2,6 +2,14 @@
 
 Fortis Wallet (Android). Versions are `versionName (versionCode)`.
 
+## 0.3.8 (13) — 2026-09-18
+
+- A deep watch-only wallet (100+ used addresses) could feel slow to open,
+  even after the balance had already loaded once. History now shows as
+  soon as it's ready instead of waiting on the balance check that follows
+  it, and network requests during a scan now actually run at the
+  concurrency the app intends instead of being silently throttled.
+
 ## 0.3.7 (12) — 2026-09-18
 
 - Fixed a watch-only wallet (BTC and XBT) undercounting its balance and
