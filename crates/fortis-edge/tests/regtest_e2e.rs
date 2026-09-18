@@ -251,6 +251,11 @@ fn wallet_flow_through_the_edge() {
             "--require-token",
             "--rate-per-min", "6000",
             "--rate-burst", "100",
+            // RocksDB takes an exclusive lock per directory (unlike SQLite,
+            // which tolerated this and a second edge process sharing one
+            // default path) -- each spawned edge needs its own.
+            "--cache-dir", node.datadir.join("edge-cache").to_str().unwrap(),
+            "--btc-history-dir", node.datadir.join("edge-btc-history").to_str().unwrap(),
         ],
     );
 
@@ -339,6 +344,8 @@ fn wallet_flow_through_the_edge() {
                 "--network", "regtest",
                 "--service-fee-address", &fee_addr,
                 "--service-fee-floor-sat", "200",
+                "--cache-dir", node.datadir.join("edge2-cache").to_str().unwrap(),
+                "--btc-history-dir", node.datadir.join("edge2-btc-history").to_str().unwrap(),
             ],
         );
         wait_up(&a, &format!("http://127.0.0.1:{fee_port}/"));

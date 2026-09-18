@@ -59,7 +59,7 @@ fn decode(bytes: &[u8]) -> Option<(u64, Cached)> {
     let until = u64::from_be_bytes(bytes[0..8].try_into().ok()?);
     let status = u16::from_be_bytes(bytes[8..10].try_into().ok()?);
     let ct_len = u32::from_be_bytes(bytes[10..14].try_into().ok()?) as usize;
-    let ct_start = 14;
+    let ct_start: usize = 14;
     let ct_end = ct_start.checked_add(ct_len)?;
     if bytes.len() < ct_end {
         return None;

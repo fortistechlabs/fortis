@@ -152,11 +152,17 @@ struct Args {
     /// it has no such cap).
     #[arg(long, default_value_t = 4096)]
     cache_entries: usize,
-    /// SQLite file the response cache persists to, so a restart doesn't throw
-    /// away already-fetched (and, for confirmed transaction history,
-    /// unchanging) data. Default: <home>/fortis-edge-cache.sqlite.
+    /// RocksDB directory the response cache persists to, so a restart doesn't
+    /// throw away already-fetched (and, for confirmed transaction history,
+    /// unchanging) data. Default: <home>/fortis-edge-cache-rocksdb.
     #[arg(long)]
-    cache_db: Option<PathBuf>,
+    cache_dir: Option<PathBuf>,
+    /// RocksDB directory the permanent confirmed-BTC-history store persists
+    /// to. Separate from `--cache-dir` (different lifetime/eviction policy —
+    /// see `btc_history`'s doc comment). Default:
+    /// <home>/fortis-edge-btc-history-rocksdb.
+    #[arg(long)]
+    btc_history_dir: Option<PathBuf>,
     /// HTTP worker threads.
     #[arg(long, default_value_t = 4)]
     workers: usize,
@@ -247,8 +253,12 @@ fn run() -> Result<()> {
         .clone()
         .unwrap_or_else(|| default_home().join("fortis-edge.secret"));
     let secret = token::load_or_create_secret(&secret_file)?;
-    let cache_db =
-        args.cache_db.clone().unwrap_or_else(|| default_home().join("fortis-edge-cache.sqlite"));
+    let cache_dir =
+        args.cache_dir.clone().unwrap_or_else(|| default_home().join("fortis-edge-cache-rocksdb"));
+    let btc_history_dir = args
+        .btc_history_dir
+        .clone()
+        .unwrap_or_else(|| default_home().join("fortis-edge-btc-history-rocksdb"));
 
     // `--xbt-price-url` wins; `--xbt-price-upstream <base>` is the old form
     // that pointed at a mempool base and implied `/v1/prices`.
@@ -411,8 +421,8 @@ fn run() -> Result<()> {
         crash_limiter: RateLimiter::new(2, 8),
         crash_log: args.crash_log.clone(),
         pricing: fee,
-        cache: Cache::new(args.cache_entries, Some(&cache_db)),
-        btc_history: BtcHistory::new(&cache_db),
+        cache: Cache::new(args.cache_entries, &cache_dir),
+        btc_history: BtcHistory::new(&btc_history_dir),
         metrics: Metrics::default(),
     });
 
@@ -440,10 +450,14 @@ fn run() -> Result<()> {
     eprintln!("  btc broadcast  {}", args.btc_rpc_url.as_deref().unwrap_or("(via btc upstream)"));
     eprintln!("  btc price      {}", args.btc_price_url.as_deref().unwrap_or("(via btc upstream)"));
     eprintln!("  xbt price    {}", xbt_price_url.as_deref().unwrap_or("(none)"));
-    eprintln!("  cache db       {}", cache_db.display());
+    eprintln!("  cache dir      {}", cache_dir.display());
     eprintln!(
         "  btc history    {}",
-        if state.btc_history.is_some() { "permanent (same db)".to_string() } else { "(disabled)".to_string() }
+        if state.btc_history.is_some() {
+            format!("permanent ({})", btc_history_dir.display())
+        } else {
+            "(disabled)".to_string()
+        }
     );
     eprintln!(
         "  btc pacing     {}",
