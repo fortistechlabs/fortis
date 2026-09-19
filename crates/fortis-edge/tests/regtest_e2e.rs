@@ -232,7 +232,7 @@ fn wallet_flow_through_the_edge() {
             "--network", "regtest",
             "--rpc-url", &rpc_url,
             "--cookie-file", cookie_file.to_str().unwrap(),
-            "--db", node.datadir.join("idx.sqlite").to_str().unwrap(),
+            "--db", node.datadir.join("idx-rocksdb").to_str().unwrap(),
             "--start-height", "0",
             "--bind", &format!("127.0.0.1:{idx_port}"),
             "--poll", "1",
@@ -380,6 +380,38 @@ fn wallet_flow_through_the_edge() {
         (first["status"]["confirmed"] == serde_json::Value::Bool(true)).then_some(v)
     });
     assert!(confirmed[0]["value"].as_u64().unwrap() > 250_000_000, "change ~3 XBT expected");
+
+    // --- POST /xbt/scan: the whole wallet (balance + history) in ONE request ---
+    let unused = view.address_at(0, 5).unwrap();
+    let scan_body = serde_json::json!({
+        "addresses": [recv0.to_string(), change_addr.to_string(), unused.to_string()],
+        "history": 10,
+    })
+    .to_string();
+    let scan_url = format!("{edge}/xbt/scan");
+    assert_eq!(req(&a, "POST", &scan_url, None, Some(&scan_body)).0, 401, "scan needs a token too");
+    assert_eq!(req(&a, "POST", &scan_url, Some(&token), Some("not json")).0, 400, "malformed scan body");
+    let (s, b) = req(&a, "POST", &scan_url, Some(&token), Some(&scan_body));
+    assert_eq!(s, 200, "scan failed: {b}");
+    let scan: serde_json::Value = serde_json::from_str(&b).unwrap();
+    assert!(scan["tip"].as_u64().unwrap() >= 111, "tip: {}", scan["tip"]);
+    assert_eq!(scan["failed"], serde_json::json!([]), "a complete scan reports nothing failed");
+    let used: Vec<&str> = scan["used"].as_array().unwrap().iter().filter_map(|v| v.as_str()).collect();
+    assert_eq!(used, vec![recv0.to_string(), change_addr.to_string()], "the never-touched address must not be 'used'");
+    // recv0's 4 XBT coin was spent; the only unspent coin is the ~3 XBT change, tagged with its address.
+    let coins = scan["utxos"].as_array().unwrap();
+    assert_eq!(coins.len(), 1, "utxos: {coins:?}");
+    assert_eq!(coins[0]["address"], change_addr.to_string());
+    assert_eq!(coins[0]["status"]["confirmed"], serde_json::Value::Bool(true));
+    assert!(coins[0]["value"].as_u64().unwrap() > 250_000_000);
+    // history: the funding tx and the spend, each once, newest first, with the prevouts the client needs
+    let txs = scan["txs"].as_array().unwrap();
+    let ids: Vec<&str> = txs.iter().map(|t| t["txid"].as_str().unwrap()).collect();
+    assert_eq!(ids.len(), 2, "funding + spend, each once: {ids:?}");
+    let heights: Vec<u64> = txs.iter().map(|t| t["status"]["block_height"].as_u64().unwrap()).collect();
+    assert!(heights[0] >= heights[1], "newest first: {heights:?}");
+    let spend_tx = txs.iter().find(|t| t["vin"][0]["prevout"]["value"].is_u64()).expect("spend with prevout");
+    assert!(spend_tx["fee"].as_u64().unwrap() > 0);
 
     // node's own view: the destination received 1 XBT
     let got: f64 = node.wallet("miner", &["getreceivedbyaddress", &dest]).parse().unwrap();

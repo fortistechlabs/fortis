@@ -24,7 +24,19 @@ const WATCH_SET_HARD_CAP = 2_000;
 // utxos() still forces a fresh scan (see `_refresh(true)` below) since
 // spend-planning can't work from a stale UTXO set.
 const SNAP_TTL = 60_000; // ms — reuse the UTXO scan within a poll burst
-const HIST_TTL = 60_000;
+// A batched scan (one `POST /scan`) is cheap enough to refresh often; the long
+// TTL above exists only because the per-address walk is not.
+const BATCH_TTL = 10_000;
+// Batched scan: how many addresses per branch the first request asks about.
+// Deriving is local and free and the edge answers hundreds in one round trip,
+// so start wide enough that an ordinary wallet is a single request; a deeper
+// one grows the window (see `_batchScan`).
+const BATCH_MIN_WINDOW = 100;
+const BATCH_MAX_ADDRESSES = 1_000; // the edge refuses more per /scan
+const SCAN_HISTORY = 50; // confirmed txs asked back per /scan
+
+/** The backend has no `/scan` route (an older deployment, or a public explorer). */
+class ScanUnsupported extends Error {}
 
 /** Just what `history()` needs from one `/txs` entry — not the raw object.
  *  A real, heavily-automated wallet found live, 2026-09-15, kept several
@@ -86,7 +98,6 @@ export class EsploraBackend {
     this._snapAt = 0;
     this._refreshing = null; // in-flight _refresh() promise, so concurrent callers share it
     this._hist = null;
-    this._histAt = 0;
     this._fees = null;
     this._feesLoading = null;
     this._price = null; // last-known-good USD price, or null before any success
@@ -94,6 +105,13 @@ export class EsploraBackend {
     this._lastPrewarm = 0;
     this._watchSetCache = null;
     this._watchSetCacheAt = 0;
+    // Only the hosted edge has `/scan`. Flips to false for good if it turns out
+    // this deployment doesn't serve it, reverting to the per-address walk.
+    this._batchOn = this.kind === 'edge';
+    // Per-branch window an earlier scan already proved big enough, so a refresh
+    // after the first is one request instead of re-growing from BATCH_MIN_WINDOW.
+    this._knownEnd = [0, 0];
+    this._histFor = null; // the snapshot `_hist` was computed from
   }
 
   /** One POST of the whole watch-set to `{base}/prewarm` — the hosted edge's
@@ -108,7 +126,8 @@ export class EsploraBackend {
    *  as it did before this existed. Throttled to sit just inside the edge's
    *  own 60s cache TTL, mirroring the Android client's `prewarm()`. */
   async prewarm() {
-    if (this.kind !== 'edge' || this.session.chain !== 'btc') return;
+    // A batched scan makes the per-address prewarm pointless.
+    if (this.kind !== 'edge' || this.session.chain !== 'btc' || this._batchOn) return;
     const now = Date.now();
     if (now - this._lastPrewarm < 45_000) return;
     try {
@@ -155,8 +174,9 @@ export class EsploraBackend {
   }
 
   async _fetch(path, init = {}) {
+    const { timeoutMs = 10_000, ...fetchInit } = init;
     const withAuth = () => ({
-      ...init,
+      ...fetchInit,
       // Every call here — balances, history, fees, broadcast, the address-gap
       // scan — went out with no bound on how long it could hang. A stalled
       // upstream (this class's whole reason to exist is talking to
@@ -167,8 +187,8 @@ export class EsploraBackend {
       // no such guard at all, so it piles up a fresh hung request every
       // interval instead. This is the same failure shape that took down
       // fortis-edge's own price fetch in production — same fix.
-      signal: AbortSignal.timeout(10_000),
-      headers: { ...(init.headers || {}), ...(this.auth?.token ? { authorization: 'Bearer ' + this.auth.token } : {}) },
+      signal: AbortSignal.timeout(timeoutMs),
+      headers: { ...(fetchInit.headers || {}), ...(this.auth?.token ? { authorization: 'Bearer ' + this.auth.token } : {}) },
     });
     let r;
     try {
@@ -343,8 +363,105 @@ export class EsploraBackend {
     return out;
   }
 
+  /** One `POST {base}/scan` for `addresses`. Retried on 429/5xx like `get()`; a
+   *  404/405 means this backend doesn't serve `/scan` at all (`ScanUnsupported`).
+   *  An answer that reports addresses it couldn't check is an error, never a
+   *  partial result: a balance summed from a scan that skipped addresses looks
+   *  exactly like a correct one. */
+  async _postScan(addresses) {
+    let lastErr;
+    for (let attempt = 0; attempt <= 2; attempt++) {
+      if (attempt > 0) await new Promise((res) => setTimeout(res, 300 * attempt));
+      const r = await this._fetch('/scan', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ addresses, history: SCAN_HISTORY }),
+        timeoutMs: 20_000, // the edge does the whole wallet's work in this one call
+      });
+      const text = await r.text();
+      if (r.ok) {
+        const o = JSON.parse(text);
+        if (o.failed?.length) throw new Error(`scan incomplete: ${o.failed.length} addresses could not be checked`);
+        return o;
+      }
+      if (r.status === 404 || r.status === 405) throw new ScanUnsupported();
+      lastErr = new Error(`scan ${r.status}: ${text.slice(0, 120)}`);
+      if (attempt === 2 || (r.status !== 429 && (r.status < 500 || r.status > 599))) throw lastErr;
+    }
+    throw lastErr;
+  }
+
+  /** The whole wallet in as few requests as it takes — normally one.
+   *
+   *  Derive a window of addresses per branch (local, free), send them in one
+   *  `POST /scan`, and get back which are used, their unspent outputs, and the
+   *  newest transactions. Only when a used address lands within GAP of a
+   *  window's end (the standard BIP-44 gap-limit rule) is the window grown and
+   *  the *new* addresses asked about, so a deep wallet costs a few round trips
+   *  the first time and one after — not a request per address. */
+  async _batchScan() {
+    const want = [Math.max(BATCH_MIN_WINDOW, this._knownEnd[0]), Math.max(BATCH_MIN_WINDOW, this._knownEnd[1])];
+    const asked = [0, 0]; // addresses [0, asked[b]) of each branch already sent
+    const byAddr = new Map();
+    const used = new Set();
+    const unspent = [];
+    const txs = new Map();
+    let tip = 0;
+
+    for (let round = 0; round < 16; round++) { // far more than any real wallet needs; a runaway backstop
+      const fresh = [];
+      for (const branch of [0, 1]) {
+        const end = Math.min(want[branch], WATCH_SET_HARD_CAP);
+        for (let index = asked[branch]; index < end; index++) {
+          const a = this.session.addressAt(branch, index);
+          fresh.push({ address: a.address, spk: a.script_pubkey_hex, branch, index });
+        }
+        asked[branch] = Math.max(asked[branch], end);
+      }
+      if (!fresh.length) break;
+      for (const a of fresh) byAddr.set(a.address, a);
+
+      for (let i = 0; i < fresh.length; i += BATCH_MAX_ADDRESSES) {
+        const r = await this._postScan(fresh.slice(i, i + BATCH_MAX_ADDRESSES).map((a) => a.address));
+        tip = Math.max(tip, Number(r.tip));
+        for (const a of r.used) used.add(a);
+        unspent.push(...r.utxos);
+        for (const t of r.txs) if (!txs.has(t.txid)) txs.set(t.txid, summarizeTx(t));
+      }
+
+      // Grow a branch's window when a used address reaches into its last GAP.
+      for (const branch of [0, 1]) {
+        let maxUsed = -1;
+        for (const a of used) {
+          const e = byAddr.get(a);
+          if (e && e.branch === branch && e.index > maxUsed) maxUsed = e.index;
+        }
+        const needed = maxUsed + 1 + GAP;
+        if (needed > want[branch]) want[branch] = Math.max(needed, Math.min(want[branch] * 2, WATCH_SET_HARD_CAP));
+      }
+    }
+    this._knownEnd = asked;
+
+    const utxos = unspent.map((u) => {
+      const a = byAddr.get(u.address);
+      if (!a) throw new Error('scan returned a coin for an address that was not asked about');
+      return {
+        txid: u.txid,
+        vout: u.vout,
+        value_sat: u.value,
+        script_pubkey_hex: a.spk,
+        confirmations: u.status?.confirmed ? Math.max(1, tip - u.status.block_height + 1) : 0,
+        is_change: a.branch === 1,
+        derivation_index: a.index,
+      };
+    });
+    // `txs` / `mine` stand in for the per-address `addrs[].txs` the walk produces.
+    return { tip, utxos, addrs: [], txs: [...txs.values()], mine: new Set(byAddr.keys()) };
+  }
+
   async _refresh(force = false) {
-    if (!force && this._snap && Date.now() - this._snapAt < SNAP_TTL) return this._snap;
+    const ttl = this._batchOn ? BATCH_TTL : SNAP_TTL;
+    if (!force && this._snap && Date.now() - this._snapAt < ttl) return this._snap;
     // status()/balances()/history() all call this via the same Promise.all in
     // app.js's refresh() — without this, each one independently sees no cache
     // yet and kicks off its own full tip+address-gap scan at the same instant,
@@ -356,6 +473,16 @@ export class EsploraBackend {
     // one; `force` only skips the "cache is still fresh" shortcut above.
     if (this._refreshing) return this._refreshing;
     const run = (async () => {
+      if (this._batchOn) {
+        try {
+          this._snap = await this._batchScan();
+          this._snapAt = Date.now();
+          return this._snap;
+        } catch (e) {
+          if (!(e instanceof ScanUnsupported)) throw e;
+          this._batchOn = false; // this backend doesn't serve /scan — use the per-address walk below
+        }
+      }
       const addrs = await this._watchSet();
       const tip = Number(await this.get('/blocks/tip/height'));
       const perAddr = await chunked(addrs, CHUNK, async (a) => {
@@ -469,10 +596,12 @@ export class EsploraBackend {
 
   async history(count = 50) {
     const snap = await this._refresh();
-    if (!this._hist || Date.now() - this._histAt > HIST_TTL) {
-      const mine = new Set(snap.addrs.map((a) => a.address));
+    // Recomputed whenever the snapshot it was derived from is replaced.
+    if (!this._hist || this._histFor !== snap) {
+      const mine = snap.mine || new Set(snap.addrs.map((a) => a.address));
       const byTxid = new Map();
-      for (const a of snap.addrs) {
+      const perAddress = snap.txs ? [{ txs: snap.txs }] : snap.addrs;
+      for (const a of perAddress) {
         for (const tx of a.txs) {
           if (byTxid.has(tx.txid)) continue;
           const inOurs = tx.vin.reduce((s, [addr, value]) => s + (addr && mine.has(addr) ? value : 0), 0);
@@ -494,7 +623,7 @@ export class EsploraBackend {
         }
       }
       this._hist = [...byTxid.values()].sort((a, b) => b.time - a.time);
-      this._histAt = Date.now();
+      this._histFor = snap;
     }
     return this._hist.slice(0, count);
   }

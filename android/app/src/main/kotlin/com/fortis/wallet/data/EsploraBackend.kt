@@ -37,6 +37,24 @@ private const val PREWARM_DEPTH = 500
  *  against a pathological xpub. */
 private const val WATCH_SET_HARD_CAP = 2_000
 
+/** Batched scan (`POST {edge}/scan`): how many addresses per branch the first
+ *  request asks about. Deriving addresses is local and free, and the edge
+ *  answers hundreds in one round trip, so start wide enough that an ordinary
+ *  wallet is one request; a deeper one grows the window (see
+ *  [EsploraBackend.batchSnapshot]). */
+private const val BATCH_MIN_WINDOW = 100
+
+/** The edge refuses more than this many addresses in one `/scan`. */
+private const val BATCH_MAX_ADDRESSES = 1_000
+
+/** Confirmed transactions asked back per `/scan` — what the history view shows. */
+private const val SCAN_HISTORY = 50
+
+private val JSON_MEDIA = "application/json".toMediaTypeOrNull()
+
+/** The edge has no `/scan` route (an older backend, or a public explorer). */
+private class ScanUnsupported : Exception()
+
 /** Just what [EsploraBackend.history] needs from one `/txs` entry — not the raw
  *  JSON. A real, heavily-automated wallet found live, 2026-09-15, kept several
  *  hundred used addresses (still climbing past 300 when this was caught) with
@@ -99,21 +117,32 @@ class EsploraBackend(
      *  Home-screen overview instance both benefit from whatever either one
      *  already found). Null → behaves exactly as before caching existed. */
     private val txCache: TxCache? = null,
+    /** Ask the backend for the whole wallet in one `POST {base}/scan` instead of
+     *  walking addresses one request at a time. True only for the hosted
+     *  fortis-edge; a public explorer has no such route. If the edge turns out
+     *  not to serve it (an older deployment) this quietly reverts to the
+     *  per-address walk. */
+    batchScan: Boolean = false,
     // Kept last: callers pass this as a trailing lambda.
     private val refresh: (suspend () -> String)? = null,
 ) : Backend {
     private val base = baseUrl.trimEnd('/')
     override val label: String = Regex("https?://([^/]+)").find(base)?.groupValues?.get(1) ?: base
     private var pricing: ServicePricing? = null
+    private var batchOn = batchScan
+
+    /** A batched scan can legitimately take longer than one address lookup
+     *  (the edge does the whole wallet's work in that one call). */
+    private val scanHttp by lazy { http.newBuilder().readTimeout(20, java.util.concurrent.TimeUnit.SECONDS).build() }
 
     /** Execute `build()`, adding the bearer token; on 401 re-register once and retry. */
-    private suspend fun send(build: () -> Request.Builder): okhttp3.Response {
+    private suspend fun send(client: OkHttpClient = http, build: () -> Request.Builder): okhttp3.Response {
         fun withAuth() = build().apply { token?.let { header("Authorization", "Bearer $it") } }.build()
-        var resp = http.newCall(withAuth()).execute()
+        var resp = client.newCall(withAuth()).execute()
         if (resp.code == 401 && refresh != null) {
             resp.close()
             token = refresh.invoke()
-            resp = http.newCall(withAuth()).execute()
+            resp = client.newCall(withAuth()).execute()
         }
         return resp
     }
@@ -145,6 +174,151 @@ class EsploraBackend(
             vin = vin,
             vout = vout,
         )
+    }
+
+    /** Everything one batched scan found, already reduced to what the rest of
+     *  this class needs. */
+    private class Snapshot(
+        val utxos: List<WalletUtxo>,
+        val txs: List<TxSummary>,
+        /** Every address the scan asked about — what "is this vin/vout ours" is checked against. */
+        val mine: Set<String>,
+        val tip: Long,
+    )
+
+    private var snapshot: Snapshot? = null
+    private var snapshotAt = 0L
+
+    /** Per-branch window ([receive, change]) an earlier scan by this instance
+     *  already proved big enough, so a refresh after the first is one request
+     *  instead of re-growing the window from [BATCH_MIN_WINDOW]. */
+    private val knownEnd = intArrayOf(0, 0)
+
+    /** The whole wallet in as few requests as it takes — normally one.
+     *
+     *  Derive a window of addresses per branch (local, free), send them in one
+     *  `POST {base}/scan`, and get back which are used, their unspent outputs,
+     *  and the newest transactions. Only when a used address lands within [GAP]
+     *  of a window's end (the standard BIP-44 gap-limit rule) is the window
+     *  grown and the *new* addresses asked about, so a deep wallet costs a few
+     *  round trips the first time and one after — not a request per address.
+     *
+     *  Any failure — HTTP error, malformed reply, or the edge reporting
+     *  addresses it couldn't check — throws. A balance summed from a scan that
+     *  skipped addresses looks exactly like a correct one, so this never
+     *  returns a partial answer.
+     *
+     *  Cached ~10s, like the per-address scan it replaces; [force] (used when
+     *  building a payment) always goes to the network, since spend selection
+     *  must never run on stale coins. */
+    private suspend fun batchSnapshot(force: Boolean): Snapshot {
+        val startedAt = System.currentTimeMillis()
+        snapshot?.let { if (!force && startedAt - snapshotAt < 10_000) return it }
+
+        val (nextReceive, nextChange) = counters()
+        val want = intArrayOf(
+            maxOf(BATCH_MIN_WINDOW, nextReceive + GAP, knownEnd[0]),
+            maxOf(BATCH_MIN_WINDOW, nextChange + GAP, knownEnd[1]),
+        )
+        val asked = intArrayOf(0, 0) // addresses [0, asked[b]) of each branch already sent
+        val addrs = HashMap<String, WatchAddr>()
+        val used = HashSet<String>()
+        val unspent = ArrayList<JSONObject>()
+        val txs = LinkedHashMap<String, TxSummary>()
+        var tip = 0L
+
+        repeat(16) { // far more rounds than any real wallet needs; just a runaway backstop
+            val fresh = withContext(Dispatchers.Default) {
+                (0..1).flatMap { b ->
+                    val end = minOf(want[b], WATCH_SET_HARD_CAP)
+                    val from = asked[b]
+                    asked[b] = maxOf(from, end)
+                    (from until end).map { i ->
+                        val d = view.addressAt(b.toUInt(), i.toUInt())
+                        WatchAddr(d.address, d.scriptPubkeyHex, b.toUInt(), i.toUInt())
+                    }
+                }
+            }
+            if (fresh.isEmpty()) return@repeat
+            fresh.forEach { addrs[it.address] = it }
+
+            for (part in fresh.chunked(BATCH_MAX_ADDRESSES)) {
+                val r = postScan(part.map { it.address })
+                tip = maxOf(tip, r.getLong("tip"))
+                r.getJSONArray("used").let { a -> for (i in 0 until a.length()) used += a.getString(i) }
+                r.getJSONArray("utxos").let { a -> for (i in 0 until a.length()) unspent += a.getJSONObject(i) }
+                r.getJSONArray("txs").let { a ->
+                    for (i in 0 until a.length()) {
+                        val t = summarize(a.getJSONObject(i))
+                        txs.putIfAbsent(t.txid, t)
+                    }
+                }
+            }
+
+            // Grow a branch's window when a used address reaches into its last GAP.
+            for (b in 0..1) {
+                val maxUsed = used.mapNotNull { addrs[it] }
+                    .filter { it.branch == b.toUInt() }
+                    .maxOfOrNull { it.index.toInt() } ?: -1
+                val needed = maxUsed + 1 + GAP
+                if (needed > want[b]) want[b] = maxOf(needed, minOf(want[b] * 2, WATCH_SET_HARD_CAP))
+            }
+        }
+        knownEnd[0] = asked[0]; knownEnd[1] = asked[1]
+
+        for (a in used) addrs[a]?.let { noteUsed(it, true) }
+        val coins = unspent.map { u ->
+            val a = addrs[u.getString("address")]
+                ?: throw java.io.IOException("scan returned a coin for an address that wasn't asked about")
+            val st = u.optJSONObject("status")
+            val confirmed = st?.optBoolean("confirmed") == true
+            val h = st?.optLong("block_height") ?: 0L
+            WalletUtxo(
+                txid = u.getString("txid"),
+                vout = u.getInt("vout").toUInt(),
+                valueSat = u.getLong("value").toULong(),
+                scriptPubkeyHex = a.spk,
+                confirmations = (if (confirmed) maxOf(1L, tip - h + 1) else 0L).toUInt(),
+                derivationIndex = a.index,
+                isChange = a.branch == 1u,
+            )
+        }
+        return Snapshot(coins, txs.values.toList(), addrs.keys.toHashSet(), tip).also {
+            snapshot = it
+            snapshotAt = startedAt
+        }
+    }
+
+    /** One `POST {base}/scan` for `addresses`. Retried on 429/5xx like [get]; a
+     *  404/405 means this edge doesn't serve `/scan` at all ([ScanUnsupported]). */
+    private suspend fun postScan(addresses: List<String>): JSONObject = withContext(Dispatchers.IO) {
+        val body = JSONObject().put("addresses", JSONArray(addresses)).put("history", SCAN_HISTORY).toString()
+        var lastErr: Exception? = null
+        for (attempt in 0..2) {
+            if (attempt > 0) delay(300L * attempt)
+            try {
+                val (code, text) = send(scanHttp) {
+                    Request.Builder().url("$base/scan").post(body.toRequestBody(JSON_MEDIA))
+                }.use { r -> r.code to r.body?.string().orEmpty() }
+                if (code in 200..299) {
+                    val o = JSONObject(text)
+                    val failed = o.optJSONArray("failed")
+                    if (failed != null && failed.length() > 0) {
+                        throw java.io.IOException("scan incomplete: ${failed.length()} addresses could not be checked")
+                    }
+                    return@withContext o
+                }
+                if (code == 404 || code == 405) throw ScanUnsupported()
+                if (attempt == 2 || (code != 429 && code !in 500..599)) {
+                    throw IllegalStateException("scan $code")
+                }
+                lastErr = IllegalStateException("scan $code")
+            } catch (e: java.io.IOException) {
+                if (attempt == 2) throw e
+                lastErr = e
+            }
+        }
+        throw lastErr!!
     }
 
     private var cachedWatchSet: List<Pair<WatchAddr, List<TxSummary>>>? = null
@@ -359,6 +533,13 @@ class EsploraBackend(
     override suspend fun firstUnusedReceive(floor: Int): Int = maxOf(floor, usedReceiveMax + 1)
 
     private suspend fun scan(force: Boolean = false): List<WalletUtxo> = coroutineScope {
+        if (batchOn) {
+            try {
+                return@coroutineScope batchSnapshot(force).utxos
+            } catch (e: ScanUnsupported) {
+                batchOn = false // this backend doesn't serve /scan — use the per-address walk below
+            }
+        }
         val now = System.currentTimeMillis()
         if (!force && cachedUtxos != null && now - cachedAt < 10_000) return@coroutineScope cachedUtxos!!
         val t = tip()
@@ -447,7 +628,7 @@ class EsploraBackend(
      *  to sit just inside the edge's cache TTL. Best-effort — a failure just
      *  means the scan falls back to per-address fetches. */
     override suspend fun prewarm() {
-        if (!bulkPrewarm) return
+        if (!bulkPrewarm || batchOn) return // a batched scan makes the per-address prewarm pointless
         val now = System.currentTimeMillis()
         if (now - lastPrewarm < 45_000) return
         val body = JSONArray(guessWatchAddresses()).toString()
@@ -508,28 +689,40 @@ class EsploraBackend(
     } catch (e: Exception) { 1uL }
 
     override suspend fun history(count: Int): List<HistoryEntry> {
+        if (batchOn) {
+            try {
+                val s = batchSnapshot(false)
+                return historyFrom(s.txs, s.mine, s.tip, count)
+            } catch (e: ScanUnsupported) {
+                batchOn = false // fall through to the per-address walk
+            }
+        }
         val set = watchSet()
         val mine = set.map { (a, _) -> a.address }.toHashSet()
         val tipH = tip().toLong()
+        return historyFrom(set.flatMap { (_, txs) -> txs }, mine, tipH, count)
+    }
+
+    /** `txs` may repeat a transaction (one that touches several of the wallet's
+     *  addresses); each is counted once. */
+    private fun historyFrom(txs: Iterable<TxSummary>, mine: Set<String>, tipH: Long, count: Int): List<HistoryEntry> {
         val seen = LinkedHashMap<String, HistoryEntry>()
-        for ((_, txs) in set) {
-            for (tx in txs) {
-                if (seen.containsKey(tx.txid)) continue
-                var inOurs = 0L; var outOurs = 0L
-                for ((addr, value) in tx.vin) if (addr != null && addr in mine) inOurs += value
-                for ((addr, value) in tx.vout) if (addr != null && addr in mine) outOurs += value
-                val delta = outOurs - inOurs
-                val send = delta < 0
-                seen[tx.txid] = HistoryEntry(
-                    txid = tx.txid,
-                    send = send,
-                    amountSat = if (send) delta + tx.fee else delta,
-                    feeSat = if (send) tx.fee else 0L,
-                    confirmations = if (tx.confirmed) maxOf(1L, tipH - tx.blockHeight + 1) else 0L,
-                    // 0 block_time (unconfirmed txs carry none) sorts a pending tx as "now".
-                    time = tx.blockTime.takeIf { it > 0L } ?: (System.currentTimeMillis() / 1000),
-                )
-            }
+        for (tx in txs) {
+            if (seen.containsKey(tx.txid)) continue
+            var inOurs = 0L; var outOurs = 0L
+            for ((addr, value) in tx.vin) if (addr != null && addr in mine) inOurs += value
+            for ((addr, value) in tx.vout) if (addr != null && addr in mine) outOurs += value
+            val delta = outOurs - inOurs
+            val send = delta < 0
+            seen[tx.txid] = HistoryEntry(
+                txid = tx.txid,
+                send = send,
+                amountSat = if (send) delta + tx.fee else delta,
+                feeSat = if (send) tx.fee else 0L,
+                confirmations = if (tx.confirmed) maxOf(1L, tipH - tx.blockHeight + 1) else 0L,
+                // 0 block_time (unconfirmed txs carry none) sorts a pending tx as "now".
+                time = tx.blockTime.takeIf { it > 0L } ?: (System.currentTimeMillis() / 1000),
+            )
         }
         return seen.values.sortedByDescending { it.time }.take(count)
     }
@@ -542,6 +735,7 @@ class EsploraBackend(
             val body = r.body?.string()?.trim().orEmpty()
             check(r.isSuccessful) { body.ifBlank { "explorer rejected the transaction (${r.code})" } }
             cachedUtxos = null
+            snapshot = null
             body
         }
     }

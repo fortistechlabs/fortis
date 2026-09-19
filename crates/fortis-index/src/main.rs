@@ -18,7 +18,6 @@
 
 mod api;
 mod mempool;
-mod migrate;
 mod store;
 mod sync;
 
@@ -65,13 +64,6 @@ struct Args {
     /// RocksDB index directory (created if missing).
     #[arg(long, default_value = "fortis-index-rocksdb")]
     db: String,
-    /// One-time migration: read an existing SQLite index (the pre-RocksDB
-    /// format) at this path, write its contents into `--db`, then exit --
-    /// does not start syncing or serving. The source file is only ever
-    /// opened read-only; nothing about it is modified. Run this once, then
-    /// start normally (without this flag) against the same `--db`.
-    #[arg(long, value_name = "SQLITE PATH")]
-    migrate_from: Option<String>,
     /// Address to bind the HTTP API to.
     #[arg(long, default_value = "127.0.0.1:8094")]
     bind: String,
@@ -100,18 +92,6 @@ fn main() -> ExitCode {
 
 fn run() -> Result<()> {
     let args = Args::parse();
-
-    if let Some(sqlite_path) = &args.migrate_from {
-        eprintln!("fortis-index migrate: {sqlite_path} -> {}", args.db);
-        let store = Store::open(&args.db)?;
-        let stats = migrate::migrate(sqlite_path, &store)?;
-        eprintln!(
-            "migrate: complete -- {} blocks, {} outputs ({} unspent), {} history rows. \
-             Start normally (without --migrate-from) against --db {} to resume syncing.",
-            stats.blocks, stats.outputs, stats.unspent, stats.history, args.db
-        );
-        return Ok(());
-    }
 
     let regtest = args.network.starts_with("regtest");
 

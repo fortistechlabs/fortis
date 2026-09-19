@@ -226,6 +226,7 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
                             bulkPrewarm = w.chain == "btc",
                             chain = w.chain,
                             txCache = txCache,
+                            batchScan = true,
                         ) {
                             val fresh = edgeRegister(http, HOSTED_EDGE)
                             updateConfig(id) { it.copy(backendToken = fresh) }
@@ -510,6 +511,7 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
             bulkPrewarm = c.chain == "btc",
             chain = c.chain,
             txCache = txCache,
+            batchScan = true,
         ) {
             val fresh = edgeRegister(http, HOSTED_EDGE)
             updateConfig(id) { it.copy(backendToken = fresh) }

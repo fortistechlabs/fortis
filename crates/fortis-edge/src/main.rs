@@ -16,6 +16,7 @@ mod metrics;
 mod price;
 mod pricing;
 mod proxy;
+mod scan;
 mod token;
 
 use std::io::{Read, Write};
@@ -136,9 +137,10 @@ struct Args {
     /// CORS `Access-Control-Allow-Origin`.
     #[arg(long, default_value = "*")]
     allow_origin: String,
-    /// Sustained requests per minute, per token (or per IP if untokened). One
-    /// wallet sync fans out to ~1 + 2·(addresses within the gap limit) requests,
-    /// and repeats on every refresh, so this is generous per install.
+    /// Sustained requests per minute, per token (or per IP if untokened). A
+    /// wallet refresh is one `POST /{chain}/scan` however many addresses it
+    /// covers; the per-address routes (public-explorer-style clients) cost
+    /// ~2 requests per address and repeat on every refresh.
     #[arg(long, default_value_t = 600)]
     rate_per_min: u32,
     /// Rate-limit bucket capacity (burst). Must cover a whole gap-limit scan
@@ -148,8 +150,8 @@ struct Args {
     /// `POST /register` calls allowed per hour, per client IP.
     #[arg(long, default_value_t = 10)]
     register_per_hour: u32,
-    /// Max cached responses (the fast in-memory layer; the SQLite file backing
-    /// it has no such cap).
+    /// Max cached responses (the fast in-memory layer; the RocksDB directory
+    /// backing it has no such cap).
     #[arg(long, default_value_t = 4096)]
     cache_entries: usize,
     /// RocksDB directory the response cache persists to, so a restart doesn't
@@ -747,19 +749,25 @@ fn proxy_chain(req: &mut Request, st: &State, method: &Method, path: &str, query
                     // case. Replace the cached body with the merged one so a
                     // cache hit later serves the same permanently-backed
                     // answer a live fetch would.
-                    let txs_body = st
-                        .btc_history
-                        .as_ref()
-                        .and_then(|h| serde_json::from_slice::<Vec<serde_json::Value>>(&w.txs).ok().map(|txs| (h, txs)))
-                        .map(|(h, txs)| serde_json::to_vec(&h.merge(a, &txs)).unwrap_or_else(|_| w.txs.clone()))
-                        .unwrap_or_else(|| w.txs.clone());
+                    // `None` = Haskoin's batch reply may have been cut off for
+                    // this address (its limit is set-wide, not per address) —
+                    // leave it uncached so the per-address fetch fills it in
+                    // correctly rather than serving a truncated list as whole.
+                    let txs_body = w.txs.as_ref().map(|raw| {
+                        st.btc_history
+                            .as_ref()
+                            .and_then(|h| serde_json::from_slice::<Vec<serde_json::Value>>(raw).ok().map(|txs| (h, txs)))
+                            .map(|(h, txs)| serde_json::to_vec(&h.merge(a, &txs)).unwrap_or_else(|_| raw.clone()))
+                            .unwrap_or_else(|| raw.clone())
+                    });
                     // `/txs` earns the same long TTL as the regular per-address
                     // path once nothing in it is pending — see `cache::ttl_for`.
                     // `/utxo` keeps the short default (it can genuinely change).
                     for (suffix, body, path) in [
-                        ("utxo", &w.utxo, format!("/btc/address/{a}/utxo")),
-                        ("txs", &txs_body, format!("/btc/address/{a}/txs")),
+                        ("utxo", w.utxo.as_ref(), format!("/btc/address/{a}/utxo")),
+                        ("txs", txs_body.as_ref(), format!("/btc/address/{a}/txs")),
                     ] {
+                        let Some(body) = body else { continue };
                         let Some(ttl) = cache::ttl_for(&path, Some(body)) else { continue };
                         st.cache.put(
                             &format!("btc/address/{a}/{suffix}?"),
@@ -779,6 +787,12 @@ fn proxy_chain(req: &mut Request, st: &State, method: &Method, path: &str, query
                 err(502, &format!("haskoin: {e}"))
             }
         };
+    }
+
+    // `POST /{chain}/scan` — a whole wallet's balance + history in one request.
+    if method == &Method::Post && rest == "scan" {
+        let authed = token_ok();
+        return scan_chain(req, st, chain, tok.as_deref(), authed);
     }
 
     let upstream = match chain {
@@ -881,7 +895,7 @@ fn proxy_chain(req: &mut Request, st: &State, method: &Method, path: &str, query
     // this a credits-exhausted primary silently passes that error straight
     // through to every client instead of failing over.
     let bad = |r: &std::result::Result<proxy::UpstreamResponse, anyhow::Error>| match r {
-        Ok(resp) => resp.status == 429 || resp.status == 403 || (500..=599).contains(&resp.status),
+        Ok(resp) => is_bad_upstream(resp.status, method, rest),
         Err(_) => true,
     };
     let mut result = upstream.forward(method, rest, query, &body);
@@ -993,6 +1007,85 @@ fn proxy_chain(req: &mut Request, st: &State, method: &Method, path: &str, query
     }
 }
 
+/// Whether an upstream's answer means "try the next provider" rather than
+/// "that's the answer".
+///
+/// 429 (rate limit), 403 (quota — Maestro once its metered credits ran out)
+/// and 5xx are always a reason to move on. So is a 404 on a route every
+/// Esplora serves for *any* valid address or for the chain tip: the real
+/// thing never 404s there (an unused address is `200 []`), so a 404 means
+/// the provider isn't routing the request at all. Found live, 2026-09-19:
+/// Maestro started answering every Esplora call with a gateway
+/// `404 {"message":"no Route matched with those values"}`, which used to pass
+/// straight through as if it were the answer — a funded address read as
+/// empty, silently undercounting a BTC wallet by ~0.8 BTC.
+fn is_bad_upstream(status: u16, method: &Method, rest: &str) -> bool {
+    if status == 429 || status == 403 || (500..=599).contains(&status) {
+        return true;
+    }
+    status == 404
+        && method == &Method::Get
+        && (rest.starts_with("address/") || rest == "blocks/tip/height" || rest.starts_with("v1/fees"))
+}
+
+/// `POST /{chain}/scan` — see `scan.rs`. One rate-limit token for the whole
+/// call, however many addresses it names.
+fn scan_chain(req: &mut Request, st: &State, chain: &str, tok: Option<&str>, authed: bool) -> Reply {
+    let served = match chain {
+        "xbt" => st.xbt.is_some(),
+        "btc" => st.btc.is_some(),
+        _ => false,
+    };
+    if !served {
+        return err(404, "that chain is not served here");
+    }
+    if st.require_token && !authed {
+        Metrics::inc(&st.metrics.unauthorized);
+        return err(401, "missing or invalid token — POST /register first");
+    }
+
+    // 1000 addresses is ~50 KB; the cap only has to stop a bogus Content-Length.
+    let mut raw = Vec::new();
+    let _ = req.as_reader().take(256 * 1024).read_to_end(&mut raw);
+    let parsed = match scan::ScanRequest::parse(&raw) {
+        Ok(p) => p,
+        Err(msg) => return err(400, &msg),
+    };
+
+    let rl_key = tok.map(str::to_string).unwrap_or_else(|| format!("ip:{}", client_ip(req, st.trust_forwarded_for)));
+    if !st.limiter.check(&rl_key) {
+        Metrics::inc(&st.metrics.rate_limited);
+        return err(429, "rate limit exceeded");
+    }
+
+    if chain == "xbt" {
+        // fortis-index answers this natively, straight from its address index.
+        let Some(up) = st.xbt.as_ref() else { return err(404, "that chain is not served here") };
+        return match up.forward(&Method::Post, "scan", "", &parsed.to_body()) {
+            Ok(r) => Reply::Raw(r.status, r.content_type, r.body),
+            Err(e) => {
+                Metrics::inc(&st.metrics.upstream_errors);
+                err(502, &format!("upstream xbt: {e}"))
+            }
+        };
+    }
+
+    let (Some(hs), Some(tip)) = (st.btc_haskoin.as_ref(), st.btc_tip.as_ref()) else {
+        return err(404, "btc scan is not enabled");
+    };
+    let Some(tip) = tip.current() else {
+        Metrics::inc(&st.metrics.upstream_errors);
+        return err(503, "btc tip height: not yet available");
+    };
+    match hs.scan(&parsed.addresses, parsed.history) {
+        Ok(s) => Reply::Json(200, scan::response(tip, s.used, s.utxos, s.txs)),
+        Err(e) => {
+            Metrics::inc(&st.metrics.upstream_errors);
+            err(502, &format!("haskoin: {e}"))
+        }
+    }
+}
+
 fn respond(req: Request, reply: Reply, allow_origin: &str) -> std::io::Result<()> {
     let (status, ctype, data): (u16, String, Vec<u8>) = match reply {
         Reply::Empty(s) => (s, "text/plain".into(), Vec::new()),
@@ -1011,4 +1104,26 @@ fn respond(req: Request, reply: Reply, allow_origin: &str) -> std::io::Result<()
         }
     }
     req.respond(resp)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_gateway_404_on_an_address_or_tip_route_means_try_the_next_provider() {
+        let get = Method::Get;
+        // Maestro's "no Route matched" 404 must fail over, not pass through as an empty answer.
+        assert!(is_bad_upstream(404, &get, "address/bc1qabc/utxo"));
+        assert!(is_bad_upstream(404, &get, "address/bc1qabc/txs"));
+        assert!(is_bad_upstream(404, &get, "blocks/tip/height"));
+        // the existing failure classes still fail over
+        for s in [429, 403, 500, 502, 503] {
+            assert!(is_bad_upstream(s, &get, "address/bc1qabc/txs"), "{s}");
+        }
+        // a genuine "not found" (unknown tx) is an answer, and 200 obviously is
+        assert!(!is_bad_upstream(404, &get, "tx/deadbeef"));
+        assert!(!is_bad_upstream(200, &get, "address/bc1qabc/utxo"));
+        assert!(!is_bad_upstream(404, &Method::Post, "address/bc1qabc/utxo"));
+    }
 }

@@ -1,8 +1,11 @@
 //! The Esplora-shaped REST surface the fortis wallet's `EsploraBackend` calls:
 //! `/blocks/tip/height`, `/address/:a/utxo`, `/address/:a/txs`,
-//! `/v1/fees/recommended`, and `POST /tx`. Public chain data only — no auth; bind
-//! to localhost or a trusted network, or front it with a TLS/rate-limiting proxy.
+//! `/v1/fees/recommended`, and `POST /tx` — plus `POST /scan`, which answers a
+//! whole wallet's balance + history for many addresses in one call (see
+//! [`scan_route`]). Public chain data only — no auth; bind to localhost or a
+//! trusted network, or front it with a TLS/rate-limiting proxy.
 
+use std::collections::HashSet;
 use std::io::Read;
 use std::sync::{Arc, RwLock};
 
@@ -15,7 +18,7 @@ use tiny_http::{Header, Method, Request, Response, Server};
 use fortis_node::Rpc;
 
 use crate::mempool::Mempool;
-use crate::store::Store;
+use crate::store::{HistTx, Store, SPK_LEN};
 
 enum Reply {
     Json(u16, Value),
@@ -77,6 +80,7 @@ fn route(
             Ok(txid) => Reply::Text(200, txid.to_string()),
             Err(e) => Reply::Text(400, format!("{e:#}")),
         },
+        (Method::Post, "/scan") => scan_route(body, store, rpc, mp, network),
         (Method::Get, p) if p.starts_with("/address/") => {
             address_route(p, store, rpc, mp, network)
         }
@@ -166,6 +170,148 @@ fn address_txs(
         txs.push(esplora_tx(&t, Some(h.height)));
     }
     Ok(Value::Array(txs))
+}
+
+/// Most addresses one `POST /scan` may name. This server answers one request at
+/// a time, so this bounds how long a single call can hold every other one up.
+const SCAN_MAX_ADDRESSES: usize = 1000;
+const SCAN_DEFAULT_HISTORY: usize = 50;
+const SCAN_MAX_HISTORY: usize = 100;
+
+/// `POST /scan` — body `{"addresses": [...], "history": 50}`. Everything a
+/// wallet needs to show its balance and recent activity for a whole address
+/// set at once, instead of two round trips per address:
+///
+/// ```text
+/// { "tip":    972801,
+///   "used":   ["bc1q…", …],            // appeared in any tx, pending included
+///   "utxos":  [{ "address", "txid", "vout", "value", "status" }, …],
+///   "txs":    [ <Esplora tx>, … ],     // pending first, then newest confirmed; each tx once
+///   "failed": [] }                     // addresses that couldn't be checked
+/// ```
+///
+/// `failed` is always empty here (one local database — the answer is all or
+/// nothing); it exists so every backend that serves `/scan` (the edge's BTC
+/// path can partially fail) speaks one shape, and a client can refuse to show
+/// a balance built from an incomplete scan.
+fn scan_route(body: &str, store: &Store, rpc: &Rpc, mp: &Mempool, network: Network) -> Reply {
+    let req: Value = match serde_json::from_str(body) {
+        Ok(v) => v,
+        Err(e) => return err(400, format!("body must be JSON: {e}")),
+    };
+    let Some(list) = req["addresses"].as_array() else {
+        return err(400, "expected {\"addresses\": [...]}");
+    };
+    if list.is_empty() || list.len() > SCAN_MAX_ADDRESSES {
+        return err(400, format!("addresses: expected 1 to {SCAN_MAX_ADDRESSES}"));
+    }
+    let history =
+        req["history"].as_u64().map_or(SCAN_DEFAULT_HISTORY, |n| n as usize).min(SCAN_MAX_HISTORY);
+
+    let mut seen = HashSet::new();
+    let mut targets = Vec::with_capacity(list.len());
+    for v in list {
+        let Some(addr) = v.as_str() else { return err(400, "addresses must be strings") };
+        if !seen.insert(addr) {
+            continue;
+        }
+        match address_spk(addr, network) {
+            // The index only stores P2WPKH outputs — anything else would look
+            // "unused" here, which is a wrong answer, not an empty one.
+            Ok(spk) if spk.len() == SPK_LEN * 2 => targets.push((addr.to_string(), spk)),
+            Ok(_) => return err(400, format!("address {addr}: only P2WPKH addresses are indexed")),
+            Err(e) => return err(400, e),
+        }
+    }
+
+    let plan = match scan_plan(&targets, history, store, mp, network) {
+        Ok(p) => p,
+        Err(e) => return err(500, e),
+    };
+    match scan_finish(plan, store, rpc) {
+        Ok(v) => Reply::Json(200, v),
+        Err(e) => err(502, e),
+    }
+}
+
+/// Everything `POST /scan` can answer from the index and mempool alone — no
+/// node RPC. Split from [`scan_finish`] so it's testable without a node.
+struct ScanPlan {
+    used: Vec<String>,
+    utxos: Vec<Value>,
+    /// Mempool txs, already Esplora-shaped.
+    pending: Vec<Value>,
+    /// Newest-first, each txid once, already capped to the requested history.
+    confirmed: Vec<HistTx>,
+}
+
+fn scan_plan(
+    targets: &[(String, String)],
+    history: usize,
+    store: &Store,
+    mp: &Mempool,
+    network: Network,
+) -> Result<ScanPlan> {
+    let mut used = Vec::new();
+    let mut utxos = Vec::new();
+    let mut pending = Vec::new();
+    let mut pending_ids: HashSet<String> = HashSet::new();
+    let mut confirmed: Vec<HistTx> = Vec::new();
+    let mut confirmed_ids: HashSet<String> = HashSet::new();
+
+    for (addr, spk) in targets {
+        let rows = store.history_for(spk, history)?;
+        let mem = mp.txs_for(spk);
+        if !rows.is_empty() || !mem.is_empty() {
+            used.push(addr.clone());
+        }
+
+        if let Value::Array(unspent) = address_utxo(spk, store, mp)? {
+            for mut u in unspent {
+                u["address"] = json!(addr);
+                utxos.push(u);
+            }
+        }
+        for t in mem {
+            let id = t["txid"].as_str().unwrap_or_default().to_string();
+            if pending_ids.insert(id) {
+                pending.push(esplora_tx(&backfill_prevouts(t, store, mp, network), None));
+            }
+        }
+        for h in rows {
+            if confirmed_ids.insert(h.txid.clone()) {
+                confirmed.push(h);
+            }
+        }
+    }
+
+    // A block may just have landed that the mempool snapshot still lists.
+    confirmed.retain(|h| !pending_ids.contains(&h.txid));
+    // The newest `history` overall are within the newest `history` of each
+    // address, so the per-address cap above lost nothing.
+    confirmed.sort_by(|a, b| b.height.cmp(&a.height).then_with(|| a.txid.cmp(&b.txid)));
+    confirmed.truncate(history);
+    Ok(ScanPlan { used, utxos, pending, confirmed })
+}
+
+/// Fetch full detail for the (at most `history`) confirmed txs the plan kept —
+/// the only per-tx node RPC a scan pays, instead of one per tx per address.
+fn scan_finish(plan: ScanPlan, store: &Store, rpc: &Rpc) -> Result<Value> {
+    let tip = store.tip()?.map_or(0, |(h, _)| h);
+    let mut txs = plan.pending;
+    for h in &plan.confirmed {
+        let t = rpc
+            .call("getrawtransaction", json!([h.txid, 2, h.block_hash]))
+            .with_context(|| format!("getrawtransaction {}", h.txid))?;
+        txs.push(esplora_tx(&t, Some(h.height)));
+    }
+    Ok(json!({
+        "tip": tip,
+        "used": plan.used,
+        "utxos": plan.utxos,
+        "txs": txs,
+        "failed": Vec::<String>::new(),
+    }))
 }
 
 /// Some Knots/BLAKE2b nodes omit `vin[].prevout` for a *mempool* transaction's
@@ -319,7 +465,7 @@ fn respond(req: Request, reply: Reply) -> std::io::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::store::{IndexedTx, Store, TxOut};
+    use crate::store::{IndexedTx, Store, TxIn, TxOut};
 
     // BIP-173 P2WPKH example program.
     const P2WPKH_SPK: &str = "0014751e76e8199196d454941c45d1b3a323f1433bd6";
@@ -396,5 +542,101 @@ mod tests {
         });
         let filled = backfill_prevouts(&tx, &store, &mp, Network::Bitcoin);
         assert_eq!(filled["vin"][0]["prevout"]["scriptPubKey"]["address"], "bc1qkeep");
+    }
+
+    /// A P2WPKH spk with a recognisable 20-byte program, and its address.
+    fn p2wpkh(seed: &str) -> (String, String) {
+        let spk = format!("0014{seed:0>40}");
+        let addr = spk_hex_to_address(&spk, Network::Bitcoin).unwrap();
+        (spk, addr)
+    }
+
+    fn out(vout: u32, spk: &str, value_sat: u64) -> TxOut {
+        TxOut { vout, spk_hex: spk.into(), value_sat }
+    }
+
+    /// Three blocks over two of the wallet's addresses (`a`, `b`) plus one
+    /// it doesn't own (`z`), and a third wallet address (`n`) never used:
+    ///   100  aa   pays a:500, b:300
+    ///   101  bb   pays a:200 and b:100 in ONE tx (a tx touching two of our addresses)
+    ///   102  cc   spends aa:0 (a's 500) to z:480
+    fn scan_fixture() -> (Store, Vec<(String, String)>) {
+        let mut s = Store::open(&test_store_path()).unwrap();
+        let (a, b, z) = (p2wpkh("a1").0, p2wpkh("b1").0, p2wpkh("f1").0);
+        s.apply_block(100, &txid("100"), &[IndexedTx {
+            txid: txid("aa"), inputs: vec![], outputs: vec![out(0, &a, 500), out(1, &b, 300)],
+        }]).unwrap();
+        s.apply_block(101, &txid("101"), &[IndexedTx {
+            txid: txid("bb"), inputs: vec![], outputs: vec![out(0, &a, 200), out(1, &b, 100)],
+        }]).unwrap();
+        s.apply_block(102, &txid("102"), &[IndexedTx {
+            txid: txid("cc"), inputs: vec![TxIn { txid: txid("aa"), vout: 0 }], outputs: vec![out(0, &z, 480)],
+        }]).unwrap();
+        let targets = ["a1", "b1", "d1"].map(|seed| {
+            let (spk, addr) = p2wpkh(seed);
+            (addr, spk)
+        });
+        (s, targets.to_vec())
+    }
+
+    #[test]
+    fn scan_reports_used_addresses_and_only_unspent_outputs() {
+        let (store, targets) = scan_fixture();
+        let plan = scan_plan(&targets, 50, &store, &Mempool::default(), Network::Bitcoin).unwrap();
+
+        // a and b appear in history; d never does.
+        assert_eq!(plan.used, vec![targets[0].0.clone(), targets[1].0.clone()]);
+
+        // a's aa:0 was spent by cc; everything else is still unspent.
+        let mut got: Vec<(String, String, u64)> = plan
+            .utxos
+            .iter()
+            .map(|u| (u["address"].as_str().unwrap().into(), u["txid"].as_str().unwrap().into(), u["value"].as_u64().unwrap()))
+            .collect();
+        got.sort();
+        let mut want = vec![
+            (targets[0].0.clone(), txid("bb"), 200),
+            (targets[1].0.clone(), txid("aa"), 300),
+            (targets[1].0.clone(), txid("bb"), 100),
+        ];
+        want.sort();
+        assert_eq!(got, want);
+        assert!(plan.utxos.iter().all(|u| u["status"]["confirmed"] == true));
+    }
+
+    #[test]
+    fn scan_lists_each_tx_once_newest_first_even_when_it_touches_two_addresses() {
+        let (store, targets) = scan_fixture();
+        let plan = scan_plan(&targets, 50, &store, &Mempool::default(), Network::Bitcoin).unwrap();
+        let ids: Vec<&str> = plan.confirmed.iter().map(|h| h.txid.as_str()).collect();
+        // bb pays both a and b (listed once); cc is a's spend (sender-side history).
+        assert_eq!(ids, vec![txid("cc"), txid("bb"), txid("aa")]);
+        assert_eq!(plan.confirmed.iter().map(|h| h.height).collect::<Vec<_>>(), vec![102, 101, 100]);
+    }
+
+    #[test]
+    fn scan_caps_history_to_the_newest_n_overall() {
+        let (store, targets) = scan_fixture();
+        let plan = scan_plan(&targets, 2, &store, &Mempool::default(), Network::Bitcoin).unwrap();
+        let ids: Vec<&str> = plan.confirmed.iter().map(|h| h.txid.as_str()).collect();
+        assert_eq!(ids, vec![txid("cc"), txid("bb")]);
+    }
+
+    #[test]
+    fn scan_route_rejects_bad_input_before_touching_the_index() {
+        let store = Store::open(&test_store_path()).unwrap();
+        let mp = Mempool::default();
+        let rpc = Rpc::new("http://127.0.0.1:1", "u:p");
+        let status = |body: &str| match scan_route(body, &store, &rpc, &mp, Network::Bitcoin) {
+            Reply::Json(s, _) => s,
+            _ => panic!("expected a JSON reply"),
+        };
+        assert_eq!(status("not json"), 400);
+        assert_eq!(status(r#"{"nope":1}"#), 400);
+        assert_eq!(status(r#"{"addresses":[]}"#), 400);
+        assert_eq!(status(r#"{"addresses":[7]}"#), 400);
+        assert_eq!(status(r#"{"addresses":["not-an-address"]}"#), 400);
+        // valid mainnet P2PKH: real address, but not something this index stores
+        assert_eq!(status(r#"{"addresses":["1BvBMSEYstWetqTFn5Au4m4GFg7xJaNVN2"]}"#), 400);
     }
 }
