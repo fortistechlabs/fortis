@@ -5,9 +5,9 @@
 //! [`scan_route`]). Public chain data only — no auth; bind to localhost or a
 //! trusted network, or front it with a TLS/rate-limiting proxy.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::io::Read;
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, Mutex, RwLock};
 
 use anyhow::{anyhow, Context, Result};
 use bitcoin::address::NetworkUnchecked;
@@ -35,14 +35,87 @@ pub fn serve(
 ) -> Result<()> {
     let server = Server::http(bind).map_err(|e| anyhow!("cannot bind {bind}: {e}"))?;
     eprintln!("fortis-index listening on  http://{bind}");
+    let tx_cache = TxCache::default();
     for mut req in server.incoming_requests() {
         let body = read_body(&mut req);
         let mp = mempool.read().unwrap();
-        let reply = route(&req, &store, &rpc, &mp, network, &body);
+        let reply = route(&req, &store, &rpc, &mp, network, &body, &tx_cache);
         drop(mp);
         let _ = respond(req, reply);
     }
     Ok(())
+}
+
+/// Mined-transaction detail (Esplora-shaped), keyed by `(txid, block hash)`.
+///
+/// The node RPC that produces it (`getrawtransaction … 2`) costs ~12 ms per
+/// transaction and the answer never changes once mined, yet every wallet
+/// refresh used to pay it again for the same ~50 transactions — that alone was
+/// ~600 ms of a `/scan` and nearly all of a cold `/txs`. The block hash is part
+/// of the key so a reorg that re-mines a tx in a different block misses
+/// instead of serving the old block's height. Bounded by clearing when full:
+/// one wallet's working set is ~50 entries, so this only ever thrashes past a
+/// couple of hundred concurrently-active wallets, and a miss is merely slow.
+#[derive(Default)]
+struct TxCache(Mutex<HashMap<(String, String), Value>>);
+
+const TX_CACHE_MAX: usize = 20_000;
+/// Concurrent node RPCs for a batch of cache misses — comfortably under the
+/// node's default RPC work queue so the sync thread's own calls are never starved.
+const RPC_PARALLEL: usize = 8;
+
+impl TxCache {
+    fn get(&self, key: &(String, String)) -> Option<Value> {
+        self.0.lock().unwrap().get(key).cloned()
+    }
+
+    fn insert(&self, key: (String, String), tx: Value) {
+        let mut m = self.0.lock().unwrap();
+        if m.len() >= TX_CACHE_MAX {
+            m.clear();
+        }
+        m.insert(key, tx);
+    }
+}
+
+/// The Esplora tx for every row, in order: from `cache` when present, else via
+/// `fetch` — misses run up to [`RPC_PARALLEL`] at a time and are cached.
+fn confirmed_txs<F>(rows: &[HistTx], cache: &TxCache, fetch: F) -> Result<Vec<Value>>
+where
+    F: Fn(&HistTx) -> Result<Value> + Sync,
+{
+    let key = |h: &HistTx| (h.txid.clone(), h.block_hash.clone());
+    let mut out: Vec<Option<Value>> = rows.iter().map(|h| cache.get(&key(h))).collect();
+    let misses: Vec<usize> = (0..rows.len()).filter(|&i| out[i].is_none()).collect();
+    for group in misses.chunks(RPC_PARALLEL) {
+        let fetched: Vec<Result<Value>> = std::thread::scope(|s| {
+            let handles: Vec<_> = group
+                .iter()
+                .map(|&i| {
+                    let fetch = &fetch;
+                    s.spawn(move || fetch(&rows[i]))
+                })
+                .collect();
+            handles
+                .into_iter()
+                .map(|h| h.join().unwrap_or_else(|_| Err(anyhow!("node RPC worker panicked"))))
+                .collect()
+        });
+        for (&i, r) in group.iter().zip(fetched) {
+            let tx = r?;
+            cache.insert(key(&rows[i]), tx.clone());
+            out[i] = Some(tx);
+        }
+    }
+    Ok(out.into_iter().map(|v| v.expect("every row filled or an error returned")).collect())
+}
+
+/// One mined transaction's Esplora shape, straight from the node.
+fn fetch_confirmed(rpc: &Rpc, h: &HistTx) -> Result<Value> {
+    let t = rpc
+        .call("getrawtransaction", json!([h.txid, 2, h.block_hash]))
+        .with_context(|| format!("getrawtransaction {}", h.txid))?;
+    Ok(esplora_tx(&t, Some(h.height)))
 }
 
 fn route(
@@ -52,6 +125,7 @@ fn route(
     mp: &Mempool,
     network: Network,
     body: &str,
+    tx_cache: &TxCache,
 ) -> Reply {
     let method = req.method().clone();
     let url = req.url().to_string();
@@ -80,15 +154,22 @@ fn route(
             Ok(txid) => Reply::Text(200, txid.to_string()),
             Err(e) => Reply::Text(400, format!("{e:#}")),
         },
-        (Method::Post, "/scan") => scan_route(body, store, rpc, mp, network),
+        (Method::Post, "/scan") => scan_route(body, store, rpc, mp, network, tx_cache),
         (Method::Get, p) if p.starts_with("/address/") => {
-            address_route(p, store, rpc, mp, network)
+            address_route(p, store, rpc, mp, network, tx_cache)
         }
         _ => err(404, "no such route"),
     }
 }
 
-fn address_route(path: &str, store: &Store, rpc: &Rpc, mp: &Mempool, network: Network) -> Reply {
+fn address_route(
+    path: &str,
+    store: &Store,
+    rpc: &Rpc,
+    mp: &Mempool,
+    network: Network,
+    tx_cache: &TxCache,
+) -> Reply {
     // /address/<addr>/utxo  or  /address/<addr>/txs
     let rest = &path["/address/".len()..];
     let (addr, tail) = match rest.split_once('/') {
@@ -105,7 +186,7 @@ fn address_route(path: &str, store: &Store, rpc: &Rpc, mp: &Mempool, network: Ne
             Ok(v) => Reply::Json(200, v),
             Err(e) => err(500, e),
         },
-        "txs" => match address_txs(&spk, store, rpc, mp, network) {
+        "txs" => match address_txs(&spk, store, rpc, mp, network, tx_cache) {
             Ok(v) => Reply::Json(200, v),
             Err(e) => err(502, e),
         },
@@ -151,6 +232,7 @@ fn address_txs(
     rpc: &Rpc,
     mp: &Mempool,
     network: Network,
+    tx_cache: &TxCache,
 ) -> Result<Value> {
     let mut txs: Vec<Value> = mp
         .txs_for(spk)
@@ -160,15 +242,10 @@ fn address_txs(
     let pending: std::collections::HashSet<String> =
         txs.iter().filter_map(|t| t["txid"].as_str().map(str::to_string)).collect();
 
-    for h in store.history_for(spk, 100)? {
-        if pending.contains(&h.txid) {
-            continue; // a block just landed that the mempool snapshot still lists
-        }
-        let t = rpc
-            .call("getrawtransaction", json!([h.txid, 2, h.block_hash]))
-            .with_context(|| format!("getrawtransaction {}", h.txid))?;
-        txs.push(esplora_tx(&t, Some(h.height)));
-    }
+    // A block may just have landed that the mempool snapshot still lists.
+    let rows: Vec<HistTx> =
+        store.history_for(spk, 100)?.into_iter().filter(|h| !pending.contains(&h.txid)).collect();
+    txs.extend(confirmed_txs(&rows, tx_cache, |h| fetch_confirmed(rpc, h))?);
     Ok(Value::Array(txs))
 }
 
@@ -194,7 +271,14 @@ const SCAN_MAX_HISTORY: usize = 100;
 /// nothing); it exists so every backend that serves `/scan` (the edge's BTC
 /// path can partially fail) speaks one shape, and a client can refuse to show
 /// a balance built from an incomplete scan.
-fn scan_route(body: &str, store: &Store, rpc: &Rpc, mp: &Mempool, network: Network) -> Reply {
+fn scan_route(
+    body: &str,
+    store: &Store,
+    rpc: &Rpc,
+    mp: &Mempool,
+    network: Network,
+    tx_cache: &TxCache,
+) -> Reply {
     let req: Value = match serde_json::from_str(body) {
         Ok(v) => v,
         Err(e) => return err(400, format!("body must be JSON: {e}")),
@@ -228,7 +312,7 @@ fn scan_route(body: &str, store: &Store, rpc: &Rpc, mp: &Mempool, network: Netwo
         Ok(p) => p,
         Err(e) => return err(500, e),
     };
-    match scan_finish(plan, store, rpc) {
+    match scan_finish(plan, store, rpc, tx_cache) {
         Ok(v) => Reply::Json(200, v),
         Err(e) => err(502, e),
     }
@@ -295,16 +379,12 @@ fn scan_plan(
 }
 
 /// Fetch full detail for the (at most `history`) confirmed txs the plan kept —
-/// the only per-tx node RPC a scan pays, instead of one per tx per address.
-fn scan_finish(plan: ScanPlan, store: &Store, rpc: &Rpc) -> Result<Value> {
+/// the only per-tx node RPC a scan pays (instead of one per tx per address),
+/// and none at all for a transaction already seen (see [`TxCache`]).
+fn scan_finish(plan: ScanPlan, store: &Store, rpc: &Rpc, tx_cache: &TxCache) -> Result<Value> {
     let tip = store.tip()?.map_or(0, |(h, _)| h);
     let mut txs = plan.pending;
-    for h in &plan.confirmed {
-        let t = rpc
-            .call("getrawtransaction", json!([h.txid, 2, h.block_hash]))
-            .with_context(|| format!("getrawtransaction {}", h.txid))?;
-        txs.push(esplora_tx(&t, Some(h.height)));
-    }
+    txs.extend(confirmed_txs(&plan.confirmed, tx_cache, |h| fetch_confirmed(rpc, h))?);
     Ok(json!({
         "tip": tip,
         "used": plan.used,
@@ -622,12 +702,72 @@ mod tests {
         assert_eq!(ids, vec![txid("cc"), txid("bb")]);
     }
 
+    fn row(txid: &str, height: u64, block: &str) -> HistTx {
+        HistTx { txid: txid.into(), height, block_hash: block.into() }
+    }
+
+    /// A fake node: counts calls, and returns a tx that records which row it was for.
+    fn counting_fetch(calls: &std::sync::atomic::AtomicUsize) -> impl Fn(&HistTx) -> Result<Value> + Sync + '_ {
+        move |h| {
+            calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            Ok(json!({ "txid": h.txid, "status": { "block_height": h.height } }))
+        }
+    }
+
+    #[test]
+    fn confirmed_txs_fetches_each_miss_once_keeps_order_and_then_serves_from_cache() {
+        use std::sync::atomic::{AtomicUsize, Ordering::SeqCst};
+        let cache = TxCache::default();
+        let calls = AtomicUsize::new(0);
+        // more rows than RPC_PARALLEL, so several groups run
+        let rows: Vec<HistTx> = (0..20).map(|i| row(&format!("t{i}"), 100 + i, "blk")).collect();
+
+        let first = confirmed_txs(&rows, &cache, counting_fetch(&calls)).unwrap();
+        assert_eq!(calls.load(SeqCst), 20);
+        let ids: Vec<&str> = first.iter().map(|t| t["txid"].as_str().unwrap()).collect();
+        assert_eq!(ids, rows.iter().map(|r| r.txid.as_str()).collect::<Vec<_>>(), "order preserved");
+
+        let second = confirmed_txs(&rows, &cache, counting_fetch(&calls)).unwrap();
+        assert_eq!(calls.load(SeqCst), 20, "a repeat refresh makes no node RPCs");
+        assert_eq!(first, second);
+    }
+
+    #[test]
+    fn a_tx_re_mined_in_another_block_is_a_cache_miss_not_stale_data() {
+        use std::sync::atomic::{AtomicUsize, Ordering::SeqCst};
+        let cache = TxCache::default();
+        let calls = AtomicUsize::new(0);
+        confirmed_txs(&[row("t1", 100, "blockA")], &cache, counting_fetch(&calls)).unwrap();
+        // a reorg re-mines t1 at another height in another block
+        let after = confirmed_txs(&[row("t1", 101, "blockB")], &cache, counting_fetch(&calls)).unwrap();
+        assert_eq!(calls.load(SeqCst), 2);
+        assert_eq!(after[0]["status"]["block_height"], 101);
+    }
+
+    #[test]
+    fn a_failed_fetch_fails_the_whole_call_and_caches_nothing_for_the_failed_row() {
+        let cache = TxCache::default();
+        let err = confirmed_txs(&[row("bad", 1, "b")], &cache, |_| Err(anyhow!("node down")));
+        assert!(err.is_err());
+        assert!(cache.get(&("bad".into(), "b".into())).is_none());
+    }
+
+    #[test]
+    fn the_cache_is_bounded() {
+        let cache = TxCache::default();
+        for i in 0..=TX_CACHE_MAX {
+            cache.insert((format!("t{i}"), "b".into()), json!(i));
+        }
+        assert!(cache.0.lock().unwrap().len() <= TX_CACHE_MAX);
+    }
+
     #[test]
     fn scan_route_rejects_bad_input_before_touching_the_index() {
         let store = Store::open(&test_store_path()).unwrap();
         let mp = Mempool::default();
         let rpc = Rpc::new("http://127.0.0.1:1", "u:p");
-        let status = |body: &str| match scan_route(body, &store, &rpc, &mp, Network::Bitcoin) {
+        let cache = TxCache::default();
+        let status = |body: &str| match scan_route(body, &store, &rpc, &mp, Network::Bitcoin, &cache) {
             Reply::Json(s, _) => s,
             _ => panic!("expected a JSON reply"),
         };
