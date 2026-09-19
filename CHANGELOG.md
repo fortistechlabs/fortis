@@ -2,6 +2,19 @@
 
 Fortis Wallet (Android). Versions are `versionName (versionCode)`.
 
+## 0.4.0 (14) — 2026-09-19
+
+- Wallets with a lot of history now load in about a second instead of tens of
+  seconds. The app used to ask the backend about each address one at a time
+  (hundreds of requests per refresh, which the backend then rate-limited); it
+  now sends the wallet's addresses in a single request and gets the balance,
+  coins and recent history back together. Older backends and public explorers
+  still work — the app falls back to the old address-by-address scan.
+- A scan that couldn't check every address now reports an error instead of
+  quietly showing a smaller balance. Previously an address the backend rate-
+  limited mid-scan was skipped without any sign, which could understate a
+  wallet's balance.
+
 ## 0.3.8 (13) — 2026-09-18
 
 - A deep watch-only wallet (100+ used addresses) could feel slow to open,
