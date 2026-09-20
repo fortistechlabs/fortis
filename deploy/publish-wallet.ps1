@@ -87,9 +87,10 @@ Build it first:
 if ($Preview -and $Branch -eq 'main') { $Branch = 'preview' }
 $isProd = $Branch -eq 'main'
 
-$sha   = (& git -C $repo rev-parse --short HEAD    2>$null)
-$msg   = (& git -C $repo log -1 --pretty=format:%s 2>$null)
-$dirty = if (& git -C $repo status --porcelain 2>$null) { 'true' } else { 'false' }
+$sha     = (& git -C $repo rev-parse --short HEAD  2>$null)
+$shaFull = (& git -C $repo rev-parse HEAD          2>$null)
+$msg     = (& git -C $repo log -1 --pretty=format:%s 2>$null)
+$dirty   = if (& git -C $repo status --porcelain 2>$null) { 'true' } else { 'false' }
 
 Write-Host ''
 Write-Host "  project : $Project"
@@ -99,10 +100,21 @@ Write-Host ("  target  : {0}" -f $(if ($isProd) { 'production (app.fortistechlab
 Write-Host ("  commit  : {0} {1}{2}" -f $sha, $msg, $(if ($dirty -eq 'true') { '   [+ uncommitted changes]' }))
 Write-Host ''
 
+# --- stage a copy of web/, then hash every file + add SRI + write
+#     build-info.json into the STAGED copy — never the tracked source. See
+#     deploy\build-web-stage.mjs and the "Verify this build" Settings card.
+$stage = Join-Path $env:TEMP "fortis-wallet-stage-$PID"
+if (Test-Path $stage) { Remove-Item -Recurse -Force $stage }
+Write-Host "  staging : $stage"
+Copy-Item -Path $dir -Destination $stage -Recurse -Force
+& node (Join-Path $repo 'deploy\build-web-stage.mjs') $stage $sha $shaFull $dirty
+if ($LASTEXITCODE -ne 0) { Remove-Item -Recurse -Force $stage -ErrorAction SilentlyContinue; throw "build-web-stage.mjs failed ($LASTEXITCODE)" }
+Write-Host ''
+
 $wr = @('--yes', 'wrangler@4')
 
 $deploy = @(
-    'pages', 'deploy', $dir,
+    'pages', 'deploy', $stage,
     '--project-name', $Project,
     '--branch',       $Branch,
     '--commit-dirty', $dirty
@@ -121,7 +133,10 @@ try {
     & npx @wr @deploy
     $rc = $LASTEXITCODE
 }
-finally { Pop-Location }
+finally {
+    Pop-Location
+    Remove-Item -Recurse -Force $stage -ErrorAction SilentlyContinue
+}
 
 if ($rc -ne 0) {
     Write-Host ''

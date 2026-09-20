@@ -12,6 +12,7 @@ Thumbs.db
 crates/wallet-wasm/pkg/
 crates/wallet-ffi/out/
 web/pkg/
+web/build-info.json
 
 # fortisd / fortis local state
 *.token

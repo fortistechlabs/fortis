@@ -1156,6 +1156,7 @@ function renderSettingsTab() {
           ? el('button', { class: 'ghost wide', onclick: actionEnableQuickUnlock }, t('action_enable_quick_unlock'))
           : el('div', { class: 'hint' }, t('prf_not_supported')),
       el('button', { class: 'ghost wide', onclick: () => { ui.dialog = { kind: 'change-password' }; renderDialogSheet(); } }, t('action_change_password'))) : null,
+    renderVerifyCard(),
     el('div', { class: 'card stack' },
       el('h2', {}, t('settings_language')),
       el('button', { class: 'ghost wide', onclick: () => { ui.dialog = { kind: 'locale' }; renderDialogSheet(); } },
@@ -1170,6 +1171,42 @@ function renderSettingsTab() {
           }, label)))),
     state.lock ? el('div', { class: 'card stack' },
       el('button', { class: 'ghost wide danger', onclick: onLock }, t('action_lock_app'))) : null);
+}
+
+/** Fetches `build-info.json` once (git commit + a SHA-256 hash per served
+ *  file, written by deploy/build-web-stage.mjs at publish time — see
+ *  renderVerifyCard()) and re-renders when it resolves. Absent on a local
+ *  checkout that never ran the publish script, or a build from before this
+ *  existed — treated as "not available", not an error: `ui.buildInfo` ends
+ *  up `false` either way, distinct from `null` (still loading) and
+ *  `undefined` (never asked). */
+function loadBuildInfo() {
+  if (ui.buildInfo !== undefined) return;
+  ui.buildInfo = null;
+  fetch('./build-info.json')
+    .then((r) => (r.ok ? r.json() : null))
+    .catch(() => null)
+    .then((info) => { ui.buildInfo = info || false; render(); });
+}
+
+/** "Verify this build": answers the fair criticism that a website, unlike
+ *  the signed Android APK, has no code-signing a user can check — this is
+ *  as close as a static site can get, plus the one mitigation nothing here
+ *  can provide (a hostile browser extension), stated plainly instead of
+ *  pretended away. */
+function renderVerifyCard() {
+  loadBuildInfo();
+  const info = ui.buildInfo;
+  return el('div', { class: 'card stack' },
+    el('h2', {}, t('settings_verify_title')),
+    el('div', { class: 'hint' }, t('settings_verify_body')),
+    info
+      ? el('div', { class: 'stack' },
+          el('div', { class: 'hint' },
+            t('settings_verify_commit', info.commit) + (info.dirty ? ` ${t('settings_verify_dirty')}` : '')),
+          el('a', { href: './build-info.json', target: '_blank', rel: 'noopener' }, t('settings_verify_link')))
+      : el('div', { class: 'hint' }, t('settings_verify_unavailable')),
+    el('div', { class: 'hint' }, t('settings_dedicated_profile')));
 }
 
 function renderWalletCard(w) {
