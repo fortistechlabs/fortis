@@ -1170,7 +1170,14 @@ function renderSettingsTab() {
             onclick: () => { setTheme(id); render(); },
           }, label)))),
     state.lock ? el('div', { class: 'card stack' },
-      el('button', { class: 'ghost wide danger', onclick: onLock }, t('action_lock_app'))) : null);
+      el('button', { class: 'ghost wide danger', onclick: onLock }, t('action_lock_app'))) : null,
+    // Same key + format Android's Settings footer uses ("fortis 0.4.0") — this
+    // build has no equivalent semantic version (no build step to stamp one
+    // in), so the git commit build-info.json already carries stands in for
+    // it here. Omitted until that fetch resolves rather than shown blank.
+    ui.buildInfo?.commit
+      ? el('div', { class: 'hint', style: 'text-align:center' }, t('settings_version', ui.buildInfo.commit))
+      : null);
 }
 
 /** Fetches `build-info.json` once (git commit + a SHA-256 hash per served

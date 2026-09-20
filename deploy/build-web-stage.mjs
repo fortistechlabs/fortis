@@ -41,6 +41,26 @@ const hex = (buf) => sha256(buf).toString('hex');
 const sri = (buf) => `sha256-${sha256(buf).toString('base64')}`;
 const reEscape = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
+// Give sw.js's own cache name the current commit, so its bytes reliably
+// change on every deploy. Browsers detect a new service worker by
+// byte-diffing sw.js itself — app.js's "PWA updates" section (offerUpdate())
+// depends on that to tell an already-open tab a new deploy exists, but a
+// hand-set name (the old 'fortis-shell-v3') only changes when someone
+// remembers to bump it, so an ordinary content-only deploy never triggered
+// it. Deriving it from the commit removes that human step; sw.js's own
+// 'activate' handler already deletes any Cache Storage bucket whose name
+// isn't the current one, so a new bucket per deploy is exactly what it
+// already expects — this changes nothing about how requests are served
+// (still network-first), only the name of the bucket it opportunistically
+// caches into.
+const swPath = path.join(dir, 'sw.js');
+if (fs.existsSync(swPath)) {
+  const sw = fs.readFileSync(swPath, 'utf8');
+  const next = sw.replace(/const CACHE = '[^']*';/, `const CACHE = 'fortis-shell-${commit}';`);
+  if (next === sw) throw new Error("sw.js has no `const CACHE = '...';` line to version");
+  fs.writeFileSync(swPath, next);
+}
+
 // Only these are *directly* loaded via a <script src>/<link href> in
 // index.html, which is all the platform's integrity attribute can check —
 // everything app.js further imports as an ES module (wallet.js, esplora.js,
