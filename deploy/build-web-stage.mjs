@@ -45,11 +45,24 @@ const reEscape = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 // index.html, which is all the platform's integrity attribute can check —
 // everything app.js further imports as an ES module (wallet.js, esplora.js,
 // store.js, wallet_wasm.js, ...) has no browser-enforced integrity hook of
-// its own. Still worth doing for what it does cover: a compromised CDN edge
-// or cache serving a tampered copy of one of these specific files while
-// index.html itself is untouched. build-info.json's per-file hashes below
-// cover every file, including the ones SRI can't reach.
-const SRI_TARGETS = ['src/preinit.js', 'vendor/qrcode.js', 'src/app.js', 'style.css'];
+// its own.
+//
+// DISABLED 2026-09-20, first production deploy: broke the site outright.
+// Cloudflare caches these four files at `max-age=14400` (4h) per edge node,
+// ignoring `_headers`' `Cache-Control: no-cache` for them — confirmed live,
+// different edge nodes were still serving genuinely different cached bytes
+// of src/app.js hours apart. index.html revalidates fast and consistently,
+// so its embedded SRI hash pins one exact version of app.js; any edge still
+// serving an older cached copy then hard-fails the integrity check instead
+// of just running slightly-stale JS (which was harmless before this
+// existed). Re-enable only after confirming (via response headers post-
+// deploy, not assumption) that these four files actually get a Cache-
+// Control that revalidates as fast as index.html does — otherwise every
+// future deploy that changes one of them risks the same outage for
+// whichever edge nodes haven't caught up yet. build-info.json's per-file
+// hashes below still cover every file and carry none of this risk, since
+// nothing enforces them.
+const SRI_TARGETS = [];
 
 const relFiles = walk(dir).filter((f) => f !== 'index.html' && f !== 'build-info.json');
 const hashes = {};
