@@ -1171,12 +1171,16 @@ function renderSettingsTab() {
           }, label)))),
     state.lock ? el('div', { class: 'card stack' },
       el('button', { class: 'ghost wide danger', onclick: onLock }, t('action_lock_app'))) : null,
-    // Same key + format Android's Settings footer uses ("fortis 0.4.0") — this
-    // build has no equivalent semantic version (no build step to stamp one
-    // in), so the git commit build-info.json already carries stands in for
-    // it here. Omitted until that fetch resolves rather than shown blank.
+    // Same key + format Android's Settings footer uses ("fortis 0.4.0"). The
+    // human-maintained web/VERSION (bumped by hand, see RELEASING.md-style
+    // discipline) is the friendly number; the commit alongside it is what's
+    // actually authoritative, since VERSION can go stale if forgotten to bump
+    // and the commit never can. Falls back to the commit alone against an
+    // older build-info.json (from before VERSION existed) that has no
+    // `version` field. Omitted entirely until the fetch resolves.
     ui.buildInfo?.commit
-      ? el('div', { class: 'hint', style: 'text-align:center' }, t('settings_version', ui.buildInfo.commit))
+      ? el('div', { class: 'hint', style: 'text-align:center' },
+          t('settings_version', ui.buildInfo.version ? `${ui.buildInfo.version} (${ui.buildInfo.commit})` : ui.buildInfo.commit))
       : null);
 }
 

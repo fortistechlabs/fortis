@@ -84,6 +84,14 @@ if (fs.existsSync(swPath)) {
 // nothing enforces them.
 const SRI_TARGETS = [];
 
+// Human-maintained, like Android's versionName (see RELEASING.md) — bumped
+// by hand when a change is worth calling a release, not on every commit.
+// Unlike the commit hash, this can't be derived automatically, so it's the
+// one piece of version identity that can go stale if forgotten; the commit
+// alongside it is what's actually authoritative for "is this the same code."
+const versionFile = path.join(dir, 'VERSION');
+const version = fs.existsSync(versionFile) ? fs.readFileSync(versionFile, 'utf8').trim() : null;
+
 const relFiles = walk(dir).filter((f) => f !== 'index.html' && f !== 'build-info.json');
 const hashes = {};
 const sriHashes = {};
@@ -109,6 +117,7 @@ fs.writeFileSync(path.join(dir, 'index.html'), html);
 hashes['index.html'] = hex(Buffer.from(html, 'utf8'));
 
 const manifest = {
+  version,
   commit,
   commitFull: commitFull || commit,
   dirty: dirtyArg === 'true',
@@ -120,5 +129,5 @@ fs.writeFileSync(path.join(dir, 'build-info.json'), JSON.stringify(manifest, nul
 
 console.log(
   `build-web-stage: ${relFiles.length + 1} files hashed, SRI added to ${SRI_TARGETS.length} tags, ` +
-    `commit ${commit}${manifest.dirty ? ' [+ uncommitted changes]' : ''}`,
+    `version ${version ?? '(none)'}, commit ${commit}${manifest.dirty ? ' [+ uncommitted changes]' : ''}`,
 );
