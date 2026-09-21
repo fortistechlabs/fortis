@@ -27,7 +27,13 @@
 #   blockstream.info — swapped from mempool.space 2026-09-13: identical Rust
 #   client code reliably timed out reading mempool.space's response while
 #   blockstream.info answered in under 1s, and a user separately reported
-#   mempool.space itself being unreachable in-browser around the same time).
+#   mempool.space itself being unreachable in-browser around the same time),
+#   plus http://127.0.0.1:8178 and ws://127.0.0.1:8178 for BitBoxBridge — the
+#   local relay a BitBox02 hardware wallet talks through when WebHID isn't
+#   available (confirmed exact origins by reading bitbox-api's own
+#   transport-bridge.js/constants.js: HTTP discovery at /api/v1, the actual
+#   channel over a WebSocket at /api/v1/socket/{path}). WebHID itself needs no
+#   CSP entry — connect-src doesn't govern it.
 #   NOTE: this deliberately does not allow arbitrary hosts,
 #   so a wallet still holding a pre-existing self-hosted `fortisd` gateway
 #   backend (from before the backend picker was removed) would have its
@@ -37,4 +43,4 @@
 #   img-src needs data: for style.css's inline SVG noise-texture background.
 /*
   Cache-Control: no-cache
-  Content-Security-Policy: default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; connect-src 'self' https://api.fortistechlabs.com https://mempool.guide https://blockstream.info; img-src 'self' data:; style-src 'self' 'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; object-src 'none'
+  Content-Security-Policy: default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; connect-src 'self' https://api.fortistechlabs.com https://mempool.guide https://blockstream.info http://127.0.0.1:8178 ws://127.0.0.1:8178; img-src 'self' data:; style-src 'self' 'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; object-src 'none'

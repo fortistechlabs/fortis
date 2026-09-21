@@ -14,6 +14,11 @@ crates/wallet-ffi/out/
 web/pkg/
 web/build-info.json
 
+# deploy/ build tooling (npm) - deploy/package.json + package-lock.json are
+# source; node_modules and the bundle it produces are not
+deploy/node_modules/
+web/vendor/bitbox-api.bundle.js
+
 # fortisd / fortis local state
 *.token
 

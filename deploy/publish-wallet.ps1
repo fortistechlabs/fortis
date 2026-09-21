@@ -84,6 +84,18 @@ Build it first:
 "@
 }
 
+# --- guard: the vendored BitBox02 bundle must actually be built -------------
+$bitbox = Join-Path $dir 'vendor\bitbox-api.bundle.js'
+if (-not (Test-Path $bitbox)) {
+    throw @"
+$bitbox is missing - web\vendor\bitbox-api.bundle.js is git-ignored build
+output, not source. Build it first:
+  cd deploy
+  npm ci
+  node build-bitbox-bundle.mjs
+"@
+}
+
 if ($Preview -and $Branch -eq 'main') { $Branch = 'preview' }
 $isProd = $Branch -eq 'main'
 

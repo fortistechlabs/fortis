@@ -10,6 +10,7 @@ import init, {
   unsealMnemonic,
   sealMnemonicWithPassword,
   unsealMnemonicWithPassword,
+  finalizeHardwareSignedPsbt as wasmFinalizeHardwareSignedPsbt,
 } from '../pkg/wallet_wasm.js';
 
 let ready;
@@ -60,6 +61,16 @@ export function unseal(sealed, saltHex, password) {
   const json = unsealMnemonicWithPassword(sealed, password, fromHex(saltHex));
   const { m, p } = JSON.parse(json);
   return { mnemonic: m, passphrase: p || '' };
+}
+
+/** Finalize a PSBT that already carries a hardware signer's signature (e.g. a
+ *  BitBox02's `btcSignPSBT` response — BIP-174 `partial_sigs`, not final
+ *  witness data) into broadcast-ready hex. No signing session/seed needed —
+ *  every signature is re-verified against the PSBT's own witness_utxo, never
+ *  trusted just because it's present. Throws for any chain other than "btc"
+ *  (see wallet-core's psbt module doc for why). */
+export function finalizeHardwareSignedPsbt(chain, psbtBase64) {
+  return wasmFinalizeHardwareSignedPsbt(chain, psbtBase64);
 }
 
 /** A fresh random 32-byte app secret — the one thing that, combined with a

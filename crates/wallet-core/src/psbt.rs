@@ -1,14 +1,17 @@
-//! PSBT (BIP-174) support for air-gapped signing: a watch-only session builds
-//! an unsigned PSBT from a [`FundingPlan`] it already has (no new coin
-//! selection), a genuinely offline session reviews and signs it.
+//! PSBT (BIP-174) support for two related flows that both center on a
+//! [`FundingPlan`] a watch-only session already built:
 //!
-//! This is a thin encode/decode/attribute layer over machinery that already
-//! exists and is already exercised by every live send — [`build_unsigned_psbt`]
-//! populates exactly the fields `MasterKey::sign_p2wpkh_tx` needs to re-derive
-//! each input's key, and [`sign_and_finalize_psbt`] calls that same function
-//! unchanged. No new signing primitive, no second "finalize" step: P2WPKH has
-//! no multi-party finalization, so a produced signature *is* the final
-//! witness.
+//! - **Air-gapped signing**: a genuinely offline `Session` reviews and signs
+//!   it. [`build_unsigned_psbt`] populates exactly the fields
+//!   `MasterKey::sign_p2wpkh_tx` needs to re-derive each input's key, and
+//!   [`sign_and_finalize_psbt`] calls that same function unchanged — no new
+//!   signing primitive.
+//! - **Hardware-wallet signing**: an external signer (e.g. a BitBox02) is
+//!   handed the same unsigned PSBT and returns it with signatures attached
+//!   but not finalized (BIP-174 `partial_sigs`, not final witness data).
+//!   [`finalize_externally_signed_psbt`] is the one new primitive this needs
+//!   — no private key involved, only re-verification and repackaging of a
+//!   signature that already exists.
 //!
 //! Performs no I/O — this crate has no networking dependency at all, so
 //! nothing here can make a network call even by mistake.
@@ -17,12 +20,13 @@ use std::collections::BTreeMap;
 
 use bitcoin::bip32::{ChildNumber, Fingerprint, KeySource, Xpub};
 use bitcoin::psbt::Psbt;
-use bitcoin::secp256k1::{PublicKey, Secp256k1};
+use bitcoin::secp256k1::{Message, PublicKey, Secp256k1};
 use bitcoin::{Amount, CompressedPublicKey, ScriptBuf, Transaction, TxOut};
 
 use crate::chain::ChainParams;
 use crate::error::{Result, WalletError};
 use crate::keys::{parse_path, MasterKey};
+use crate::sighash::{sighash_all, SighashVariant};
 use crate::wallet::{FundingPlan, Utxo};
 
 fn psbt_err(e: impl std::fmt::Display) -> WalletError {
@@ -264,6 +268,88 @@ pub fn sign_and_finalize_psbt(
     Ok(tx)
 }
 
+/// Finalize a PSBT that already carries one valid signature per input (as
+/// returned by a hardware signer — e.g. a BitBox02's `btcSignPSBT` inserts
+/// BIP-174 `partial_sigs`, not final witness data) into a broadcast-ready
+/// transaction.
+///
+/// Unlike [`sign_and_finalize_psbt`], this takes no `MasterKey` and touches
+/// no private key at all — it only repackages a signature that already
+/// exists. It still verifies every signature cryptographically before
+/// trusting it: a hardware signer's firmware is a separate, unaudited-by-us
+/// codebase, and broadcasting on faith would turn a firmware bug into a
+/// mystifying "node rejected tx" instead of a clear local error — the same
+/// "never trust what's embedded, always re-derive it" posture
+/// [`attribute_one`] already applies on the review side.
+///
+/// P2WPKH-only, matching this wallet's whole signing surface: each input
+/// must carry exactly one `partial_sigs` entry. Rejects outright, before
+/// inspecting any signature, if `params.require_unified_sighash` — no
+/// off-the-shelf hardware signer's firmware computes the BLAKE2b chain's
+/// `SIGHASH_UNIFIED` message (see `crate::sighash`'s module doc: it's a
+/// structurally different tagged hash, not BIP-143 with a different flag
+/// byte), so a signature from one is never valid there and must never be
+/// accepted as if it were.
+pub fn finalize_externally_signed_psbt(params: &ChainParams, psbt_base64: &str) -> Result<Transaction> {
+    if params.require_unified_sighash {
+        return Err(WalletError::InvalidInput(
+            "hardware-wallet signing is only supported on Bitcoin, not this chain".into(),
+        ));
+    }
+    let psbt: Psbt = psbt_base64.trim().parse().map_err(psbt_err)?;
+    let mut tx = psbt.unsigned_tx.clone();
+    if psbt.inputs.len() != tx.input.len() {
+        return Err(WalletError::InvalidInput("psbt input count does not match its unsigned_tx".into()));
+    }
+
+    let prevouts: Vec<TxOut> = psbt
+        .inputs
+        .iter()
+        .enumerate()
+        .map(|(i, input)| {
+            input
+                .witness_utxo
+                .clone()
+                .ok_or_else(|| WalletError::InvalidInput(format!("input {i}: no witness_utxo")))
+        })
+        .collect::<Result<_>>()?;
+
+    let secp = Secp256k1::verification_only();
+    let mut witnesses = Vec::with_capacity(tx.input.len());
+    for (i, input) in psbt.inputs.iter().enumerate() {
+        if input.partial_sigs.len() != 1 {
+            return Err(WalletError::InvalidInput(format!(
+                "input {i}: expected exactly one signature (single-sig P2WPKH only), got {}",
+                input.partial_sigs.len()
+            )));
+        }
+        let (pubkey, sig) = input.partial_sigs.iter().next().expect("checked len == 1 above");
+        let compressed = CompressedPublicKey::try_from(*pubkey)
+            .map_err(|_| WalletError::InvalidInput(format!("input {i}: signing key is not compressed")))?;
+        let expected_spk = ScriptBuf::new_p2wpkh(&compressed.wpubkey_hash());
+        if expected_spk != prevouts[i].script_pubkey {
+            return Err(WalletError::InvalidInput(format!(
+                "input {i}: signature's public key does not match this input's spend script"
+            )));
+        }
+        // BIP-143 scriptCode for a P2WPKH input is the implied P2PKH script —
+        // the same construction MasterKey::sign_p2wpkh_tx uses when it signs.
+        let script_code = ScriptBuf::new_p2pkh(&pubkey.pubkey_hash());
+        let sh = sighash_all(&tx, &prevouts, i, &script_code, SighashVariant::SegwitV0)?;
+        secp.verify_ecdsa(&Message::from_digest(sh.message), &sig.signature, &pubkey.inner)
+            .map_err(|_| WalletError::InvalidInput(format!("input {i}: signature does not verify")))?;
+
+        let mut w = bitcoin::Witness::new();
+        w.push(sig.serialize()); // DER + sighash-type byte, same shape sign_p2wpkh_tx produces
+        w.push(pubkey.inner.serialize());
+        witnesses.push(w);
+    }
+    for (input, witness) in tx.input.iter_mut().zip(witnesses) {
+        input.witness = witness;
+    }
+    Ok(tx)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -454,5 +540,99 @@ mod tests {
             .map(|o| o.value.to_sat())
             .sum::<u64>();
         assert_eq!(total_dest, plan_dest_total);
+    }
+
+    /// Builds a PSBT + a standalone signed copy of the same plan, then lifts
+    /// `(pubkey, signature)` out of the signed copy's witness — standing in
+    /// for what a hardware signer's `partial_sigs` response contains, without
+    /// needing a real device.
+    fn psbt_with_external_signature(key: &MasterKey, params: &ChainParams, view: &mut WalletView) -> (Psbt, Transaction) {
+        let u = utxo_at(view, 0, 0, 500_000, 0x42);
+        let out = TxOut { value: Amount::from_sat(400_000), script_pubkey: dest() };
+        let plan = view.plan_payment(&[u], vec![out], 5, 1, None, false).unwrap();
+        let mut psbt = build_unsigned_psbt(params, view.xpub(), 0, key.master_fingerprint(), &plan).unwrap();
+
+        let mut direct = plan.tx.clone();
+        let prevouts =
+            vec![TxOut { value: plan.selected[0].value, script_pubkey: plan.selected[0].script_pubkey.clone() }];
+        key.sign_p2wpkh_tx(params, 0, &mut direct, &prevouts, &[(false, 0)]).unwrap();
+        let witness = direct.input[0].witness.to_vec();
+        let sig = bitcoin::ecdsa::Signature::from_slice(&witness[0]).unwrap();
+        let pubkey = bitcoin::PublicKey::from_slice(&witness[1]).unwrap();
+        psbt.inputs[0].partial_sigs.insert(pubkey, sig);
+        (psbt, direct)
+    }
+
+    #[test]
+    fn finalize_externally_signed_psbt_matches_direct_signing_exactly() {
+        let (key, params) = seeded(10);
+        let mut view = funded_view(&key, &params);
+        let (psbt, direct) = psbt_with_external_signature(&key, &params, &mut view);
+
+        let finalized = finalize_externally_signed_psbt(&params, &psbt.to_string()).unwrap();
+        assert_eq!(
+            bitcoin::consensus::encode::serialize(&finalized),
+            bitcoin::consensus::encode::serialize(&direct),
+        );
+    }
+
+    #[test]
+    fn finalize_externally_signed_psbt_rejects_a_tampered_signature() {
+        let (key, params) = seeded(11);
+        let mut view = funded_view(&key, &params);
+        let (mut psbt, _direct) = psbt_with_external_signature(&key, &params, &mut view);
+
+        let (pubkey, mut sig) = psbt.inputs[0].partial_sigs.iter().next().map(|(k, v)| (*k, *v)).unwrap();
+        // Corrupt the DER bytes so the signature no longer verifies against
+        // the sighash it's supposed to cover — a stand-in for a tampered or
+        // wrong-transaction response from a compromised/buggy signer.
+        let mut der = sig.signature.serialize_der().to_vec();
+        der[10] ^= 0xFF;
+        sig.signature = bitcoin::secp256k1::ecdsa::Signature::from_der(&der)
+            .unwrap_or_else(|_| sig.signature); // if corruption made it unparsable, the original still won't verify below
+        psbt.inputs[0].partial_sigs.insert(pubkey, sig);
+
+        assert!(finalize_externally_signed_psbt(&params, &psbt.to_string()).is_err());
+    }
+
+    #[test]
+    fn finalize_externally_signed_psbt_rejects_zero_or_multiple_partial_sigs() {
+        let (key, params) = seeded(12);
+        let mut view = funded_view(&key, &params);
+        let (mut psbt, _direct) = psbt_with_external_signature(&key, &params, &mut view);
+
+        let (pubkey, sig) = psbt.inputs[0].partial_sigs.iter().next().map(|(k, v)| (*k, *v)).unwrap();
+
+        // Zero signatures.
+        psbt.inputs[0].partial_sigs.clear();
+        assert!(finalize_externally_signed_psbt(&params, &psbt.to_string()).is_err());
+
+        // Two signatures on the same input (a different pubkey, arbitrary — the
+        // second entry alone is enough to trip the "exactly one" check before
+        // either is even inspected).
+        psbt.inputs[0].partial_sigs.insert(pubkey, sig);
+        let (key2, _) = seeded(13);
+        let other_pubkey = bitcoin::PublicKey::new(key2.account_xpub(&params, 0).unwrap().public_key);
+        psbt.inputs[0].partial_sigs.insert(other_pubkey, sig);
+        assert!(finalize_externally_signed_psbt(&params, &psbt.to_string()).is_err());
+    }
+
+    #[test]
+    fn finalize_externally_signed_psbt_refuses_the_blake2b_chain() {
+        // No signature needed: finalize_externally_signed_psbt checks
+        // require_unified_sighash before it ever parses a signature, so an
+        // unsigned PSBT is enough to exercise the rejection. (A real
+        // partial_sig can't even be constructed here the normal way: this
+        // chain's witness signatures carry a non-standard trailing sighash
+        // byte that bitcoin::ecdsa::Signature::from_slice won't parse.)
+        let (key, _btc) = seeded(14);
+        let xbt = ChainParams::blake2b();
+        let mut view = funded_view(&key, &xbt);
+        let u = utxo_at(&view, 0, 0, 500_000, 0x42);
+        let out = TxOut { value: Amount::from_sat(400_000), script_pubkey: dest() };
+        let plan = view.plan_payment(&[u], vec![out], 5, 1, None, false).unwrap();
+        let psbt = build_unsigned_psbt(&xbt, view.xpub(), 0, key.master_fingerprint(), &plan).unwrap();
+        let err = finalize_externally_signed_psbt(&xbt, &psbt.to_string()).unwrap_err();
+        assert!(err.to_string().contains("Bitcoin"), "unexpected error: {err}");
     }
 }

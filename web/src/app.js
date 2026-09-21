@@ -12,7 +12,9 @@ import {
   newAppSecret, sealWithAppSecret, unsealWithAppSecret,
   wrapAppSecretWithPassword, unwrapAppSecretWithPassword,
   wrapAppSecretWithKey, unwrapAppSecretWithKey,
+  finalizeHardwareSignedPsbt,
 } from './wallet.js';
+import * as bitbox from './bitbox.js';
 import { EntropyPool } from './entropy.js';
 import { registerPrf, unlockPrf, prfPossible } from './webauthn.js';
 import { storedTheme, setTheme, initThemeWatcher } from './theme.js';
@@ -92,6 +94,14 @@ function currentWallet() {
 function nextWalletName() {
   const n = (state?.wallets?.length || 0) + 1;
   return n === 1 ? 'Wallet' : `Wallet ${n}`;
+}
+
+/** The wallet-type suffix shown next to a wallet's name — the Home list, the
+ *  wallet-detail topbar, and its Settings card all show one, so this is the
+ *  single place a new wallet kind's badge gets defined, rather than three
+ *  separate ternaries that can (and did, for hwType) drift out of sync. */
+function walletBadgeText(w) {
+  return w.hwType ? t('hw_badge') : w.watchOnly ? t('watch_badge') : '';
 }
 
 /** Trims and checks a user-entered wallet name against the same 1..29 char
@@ -206,6 +216,7 @@ function renderOnboard() {
   if (ui.screen === 'create') return renderCreate();
   if (ui.screen === 'restore') return renderRestore();
   if (ui.screen === 'watch') return renderWatchImport();
+  if (ui.screen === 'bitbox') return renderBitboxConnect();
   if (ui.screen === 'lock-setup') return renderLockSetup();
   mount(el('div', { class: 'screen' },
     el('div', { class: 'spacer' }),
@@ -214,8 +225,15 @@ function renderOnboard() {
     el('button', { class: 'primary wide', onclick: () => go('gen') }, t('onboard_create')),
     el('button', { class: 'ghost wide', onclick: () => go('restore') }, t('onboard_restore')),
     el('button', { class: 'ghost wide', onclick: () => go('watch') }, t('onboard_watch')),
+    el('button', { class: 'ghost wide', onclick: goBitbox }, t('onboard_connect_bitbox')),
     ui.addingWallet ? el('button', { class: 'ghost wide', onclick: onCancelAddWallet }, t('action_cancel')) : null,
     el('div', { class: 'spacer' })));
+}
+function goBitbox() {
+  ui.bitboxErr = '';
+  ui.bitboxBusy = false;
+  ui.bitboxName = null;
+  go('bitbox');
 }
 function onCancelAddWallet() {
   ui.addingWallet = false;
@@ -523,6 +541,98 @@ async function finishWatchWallet(chain, name, xpub, fingerprint) {
   ui.screen = 'main';
   ui.nav = 'wallet';
   ui.tab = 'receive';
+  render();
+}
+
+function renderBitboxConnect() {
+  bitbox.preload(); // warm the ~345KB bundle now, so the click below still
+                     // carries the "user activation" WebHID needs to show a
+                     // device picker — see connectAndFetchAccount's doc.
+  const busy = !!ui.bitboxBusy;
+  mount(el('div', { class: 'screen' },
+    el('h2', {}, t('bitbox_connect_title')),
+    el('p', {}, t('bitbox_connect_body')),
+    el('label', {}, t('field_wallet_name')),
+    el('input', { id: 'name', value: ui.bitboxName ?? nextWalletName(), maxlength: MAX_WALLET_NAME_LEN,
+      autocomplete: 'off', disabled: busy }),
+    el('div', { id: 'err', class: 'err' }, ui.bitboxErr || ''),
+    el('div', { class: 'row' },
+      el('button', { id: 'backBtn', class: 'ghost', disabled: busy, onclick: () => go('main') }, t('action_back')),
+      busy
+        ? el('button', { class: 'primary', disabled: true }, el('span', { class: 'spinner' }), ' ' + t('bitbox_connecting'))
+        : el('button', { id: 'connectBtn', class: 'primary', onclick: onBitboxConnect }, t('onboard_connect_bitbox')))));
+}
+
+async function onBitboxConnect() {
+  const err = document.getElementById('err');
+  let name;
+  try {
+    name = readWalletName('name');
+  } catch (e) {
+    return (err.textContent = e.message);
+  }
+  ui.bitboxName = name;
+  ui.bitboxErr = '';
+  ui.bitboxBusy = true;
+  renderBitboxConnect();
+  try {
+    const account = await bitbox.connectAndFetchAccount(showBitboxPairingCode);
+    // Have the user visually confirm, on the device screen they trust, that
+    // it derived the same account this app is about to add — independent of
+    // anything the browser/app reports back (see bitbox.js's doc on why).
+    await bitbox.confirmFirstAddress(showBitboxPairingCode);
+    ui.dialog = null;
+    await finishHwWallet(name, account);
+  } catch (e) {
+    ui.bitboxBusy = false;
+    ui.dialog = null;
+    ui.bitboxErr = await bitboxErrorMessage(e);
+    renderBitboxConnect();
+  }
+}
+
+function showBitboxPairingCode(code) {
+  const restore = ui.pendingPlan ? renderConfirm : renderBitboxConnect;
+  ui.dialog = { kind: 'bitbox-pairing', code, restore };
+  renderDialogSheet();
+}
+
+/** Shared by every BitBox02 device round trip: translate a thrown error into
+ *  copy this app shows, distinguishing "the human said no" (quiet, no
+ *  alarm — a device-picker cancel, a declined pairing code, or a declined
+ *  on-device operation) and "no device found" (WebHID found nothing, or
+ *  BitBoxBridge isn't running/reachable — the library's own message already
+ *  names which) from everything else, whose message is already
+ *  human-written by the library. */
+async function bitboxErrorMessage(e) {
+  if (await bitbox.isUserDeclined(e)) return t('error_bitbox_cancelled');
+  if (bitbox.isNotFound(e)) return t('error_bitbox_not_found');
+  return String(e.message || e);
+}
+
+/** Finishes a BitBox02 connect the same way finishWatchWallet() finishes a
+ *  manual xpub import — this app models a BitBox02 wallet as exactly a
+ *  watch-only wallet (xpub + fingerprint) plus `hwType`, so ensureSession()
+ *  and every planning/PSBT code path already treat it identically; only
+ *  this file's UI ever looks at hwType. BTC only — no chain picker, see
+ *  bitbox.js's module doc for why. */
+async function finishHwWallet(name, account) {
+  const wallet = {
+    id: crypto.randomUUID(), name, chain: 'btc', network: 'mainnet', watchOnly: true,
+    xpub: account.xpub, fingerprint: account.fingerprint, hwType: 'bitbox02', hwProduct: account.product,
+    next_receive: 0, next_change: 0, backend: null,
+  };
+  await autoConnectBackend(wallet);
+  state = state
+    ? { ...state, wallets: [...state.wallets, wallet], selected: wallet.id }
+    : { v: 2, wallets: [wallet], selected: wallet.id, lock: null };
+  await saveState(state);
+  ui.addingWallet = false;
+  ui.screen = 'main';
+  ui.nav = 'wallet';
+  ui.tab = 'receive';
+  ui.bitboxBusy = false;
+  ui.bitboxName = null;
   render();
 }
 
@@ -859,7 +969,7 @@ function renderHomeTab() {
             },
               el('div', {},
                 el('div', { class: 'name' }, w.name),
-                el('div', { class: 'chain' }, `${UNIT[w.chain]}${w.network === 'regtest' ? ' · regtest' : ''}${w.watchOnly ? ` · ${t('watch_badge')}` : ''}  ·  ${t('home_tap_to_open')}`)),
+                el('div', { class: 'chain' }, `${UNIT[w.chain]}${w.network === 'regtest' ? ' · regtest' : ''}${walletBadgeText(w) ? ` · ${walletBadgeText(w)}` : ''}  ·  ${t('home_tap_to_open')}`)),
               el('div', { style: 'text-align:right' },
                 el('div', { class: 'amt' }, sat != null ? `${fmt(sat)} ${UNIT[w.chain]}` : '…'),
                 usd ? el('div', { class: 'hint' }, usd) : null));
@@ -903,7 +1013,7 @@ function renderWalletTab() {
 
   const top = el('div', { class: 'topbar' },
     el('div', {},
-      el('div', { class: 'name' }, w.name + (w.watchOnly ? `  ·  ${t('watch_badge')}` : '')),
+      el('div', { class: 'name' }, w.name + (walletBadgeText(w) ? `  ·  ${walletBadgeText(w)}` : '')),
       el('div', { class: 'bal' },
         el('span', { class: 'num' }, b ? fmt(b.confirmed_sat) : '—'), ' ',
         el('span', { class: 'unit' }, unit)),
@@ -1048,7 +1158,7 @@ async function onReview(w) {
 }
 
 function renderConfirm() {
-  const { plan, feerate, to, sweep, walletId } = ui.pendingPlan;
+  const { plan, feerate, to, sweep, walletId, err: pendingErr, busy } = ui.pendingPlan;
   const w = state.wallets.find((x) => x.id === walletId);
   const noFingerprint = w.watchOnly && !plan.psbt_base64;
   const unit = UNIT[w.chain];
@@ -1058,7 +1168,11 @@ function renderConfirm() {
   const totalOut = outAmount + Number(plan.fee_sat) + svcFee;
   const usdAmount = detail.usd != null ? fmtUsd((detail.usd * outAmount) / SAT) : null;
   const usdTotal = detail.usd != null ? fmtUsd((detail.usd * totalOut) / SAT) : null;
-  const cancel = () => { ui.pendingPlan = null; render(); };
+  // Cancel is disabled while a hardware sign is in flight: there's no way to
+  // actually abort a BitBox02 mid-operation (only declining on the device
+  // itself does), so letting the sheet close here would just null out
+  // ui.pendingPlan under a still-running promise — see onHardwareSign().
+  const cancel = () => { if (!busy) { ui.pendingPlan = null; render(); } };
 
   mount(el('div', { class: 'sheet-wrap' },
     el('div', { class: 'scrim', onclick: cancel }),
@@ -1076,13 +1190,16 @@ function renderConfirm() {
         ui.pendingPlan.replayProtect ? row(t('confirm_replay'), t('confirm_replay_value')) : null,
         row(t('confirm_total'), el('b', {}, usdTotal ? t('value_with_fiat', fmt(totalOut), unit, usdTotal) : `${fmt(totalOut)} ${unit}`))),
       noFingerprint ? el('p', { class: 'hint' }, t('error_no_fingerprint_on_file')) : null,
-      el('div', { id: 'err', class: 'err' }),
+      el('div', { id: 'err', class: 'err' }, pendingErr || ''),
       el('div', { class: 'row' },
-        el('button', { class: 'ghost', onclick: cancel }, t('action_cancel')),
-        w.watchOnly
-          ? el('button', { class: 'primary', id: 'send', disabled: noFingerprint, onclick: onExportOffline },
-              t('action_export_offline'))
-          : el('button', { class: 'primary', id: 'send', onclick: onSend }, t('action_sign_send'))))));
+        el('button', { class: 'ghost', disabled: busy, onclick: cancel }, t('action_cancel')),
+        w.hwType === 'bitbox02'
+          ? el('button', { class: 'primary', id: 'send', disabled: busy, onclick: onHardwareSign },
+              busy ? el('span', { class: 'spinner' }) : null, busy ? ' ' + t('bitbox_signing') : t('action_sign_on_device'))
+          : w.watchOnly
+            ? el('button', { class: 'primary', id: 'send', disabled: noFingerprint, onclick: onExportOffline },
+                t('action_export_offline'))
+            : el('button', { class: 'primary', id: 'send', onclick: onSend }, t('action_sign_send'))))));
 }
 const row = (k, v) => el('div', { class: 'kv' }, el('span', {}, k), v?.nodeType ? v : el('span', {}, v));
 
@@ -1111,6 +1228,47 @@ async function onSend() {
   } catch (e) {
     btn.disabled = false;
     err.textContent = String(e.message || e).replace(/^.*?: /, '');
+  }
+}
+
+/** onSend()'s equivalent for a BitBox02 wallet: no local key, so the device
+ *  signs the same unsigned PSBT an air-gapped watch-only wallet would export
+ *  (plan.psbt_base64), returning it with a signature attached but not
+ *  finalized — finalizeHardwareSignedPsbt re-verifies and finalizes it into
+ *  the same broadcast-ready hex onSend() produces. busy/err live on
+ *  ui.pendingPlan rather than as local DOM mutations (contrast onSend()'s
+ *  `btn.disabled = true`) because the pairing-code sheet fully remounts
+ *  #app while it's shown (see showBitboxPairingCode) — this sheet has to be
+ *  rebuildable from state afterward, not just have a stale button reference
+ *  poked at. */
+async function onHardwareSign() {
+  ui.pendingPlan.err = '';
+  ui.pendingPlan.busy = true;
+  renderConfirm();
+  try {
+    const { plan, walletId } = ui.pendingPlan;
+    const w = state.wallets.find((x) => x.id === walletId);
+    const signedPsbt = await bitbox.signPsbt(plan.psbt_base64, showBitboxPairingCode);
+    ui.dialog = null;
+    const signedHex = finalizeHardwareSignedPsbt(w.chain, signedPsbt);
+    const session = ensureSession(w);
+    const backend = ensureBackend(w);
+    const { txid } = await backend.broadcast(signedHex);
+    const { next_change } = session.indices();
+    w.next_change = Math.max(w.next_change, next_change ?? 0);
+    await saveState(state);
+    ui.pendingPlan = null;
+    ui.draft = null;
+    ui.tab = 'history';
+    toast(`${t('sent_title')} · ${shortTxid(txid)}`);
+    await refresh();
+    render();
+    pollForTxid(w.id, txid);
+  } catch (e) {
+    ui.pendingPlan.busy = false;
+    ui.dialog = null;
+    ui.pendingPlan.err = await bitboxErrorMessage(e);
+    renderConfirm();
   }
 }
 
@@ -1276,7 +1434,10 @@ function renderVerifyCard() {
 
 function renderWalletCard(w) {
   const otherChain = w.chain === 'xbt' ? 'btc' : 'xbt';
-  const canClone = state.wallets.length < MAX_WALLETS
+  // A BitBox02 (or any generic hardware wallet) can never sign for the XBT
+  // chain — see wallet-core's psbt.rs module doc — so cloning across chains
+  // is never offered for one, unlike an ordinary watch-only/seed wallet.
+  const canClone = state.wallets.length < MAX_WALLETS && !w.hwType
     && !state.wallets.some((x) => x.chain === otherChain && x.name === w.name);
   const connLabel = !w.backend ? '—'
     : w.backend.kind === 'edge' ? 'fortis'
@@ -1285,8 +1446,9 @@ function renderWalletCard(w) {
   return el('div', { class: 'card stack wallet-card' },
     el('div', { class: 'row', style: 'align-items:center' },
       el('b', {}, w.name), el('span', { class: 'badge' }, UNIT[w.chain]),
-      w.watchOnly ? el('span', { class: 'badge' }, t('watch_badge')) : null),
+      walletBadgeText(w) ? el('span', { class: 'badge' }, walletBadgeText(w)) : null),
     el('div', { class: 'hint' }, `${t('settings_connection')}: ${connLabel}`),
+    w.hwType ? el('div', { class: 'hint' }, t('error_bitbox_xbt_unsupported')) : null,
     el('div', { class: 'actions-wrap' },
       el('button', { onclick: () => actionRename(w.id) }, t('action_rename')),
       el('button', { onclick: () => actionCopyXpub(w.id) }, t('action_copy_xpub')),
@@ -1447,6 +1609,31 @@ function renderDialogSheet() {
   if (ui.dialog.kind === 'import-signed') return renderImportSignedSheet();
   if (ui.dialog.kind === 'psbt-paste') return renderPsbtPasteSheet();
   if (ui.dialog.kind === 'psbt-review') return renderPsbtReviewSheet();
+  if (ui.dialog.kind === 'bitbox-pairing') return renderBitboxPairingSheet();
+}
+
+/** Shown mid-connect/mid-sign whenever the device needs a fresh pairing
+ *  confirmation (a previously-trusted device skips straight past this — see
+ *  bitbox.js). Dismissing this sheet only hides the code; it does *not*
+ *  cancel the connect/sign still running underneath — there's no way to
+ *  abort a BitBox02 operation from here, only declining on the device
+ *  itself does that — so "Hide" is labeled honestly rather than "Cancel",
+ *  and the dismiss handler restores whatever screen was interrupted
+ *  (`restore`, set by showBitboxPairingCode) instead of the generic
+ *  closeDialog(), which would otherwise drop back to the wallet shell out
+ *  from under a still-running onBitboxConnect()/onHardwareSign(). */
+function renderBitboxPairingSheet() {
+  const { code, restore } = ui.dialog;
+  const hide = () => { ui.dialog = null; restore(); };
+  mount(el('div', { class: 'sheet-wrap' },
+    el('div', { class: 'scrim', onclick: hide }),
+    el('div', { class: 'sheet' },
+      el('div', { class: 'grabber' }),
+      el('h2', {}, t('bitbox_pairing_title')),
+      el('p', { class: 'hint' }, t('bitbox_pairing_body')),
+      el('div', { class: 'addr-box mono center', style: 'font-size:1.3rem;letter-spacing:.08em;white-space:pre-line' }, code),
+      el('div', { class: 'row' },
+        el('button', { class: 'primary wide', onclick: hide }, t('bitbox_pairing_hide'))))));
 }
 
 /** Generic yes/no sheet — replaces native confirm() so it matches the rest of

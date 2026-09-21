@@ -1,0 +1,9 @@
+{
+  "name": "fortis-deploy-tools",
+  "private": true,
+  "description": "Build-time tooling only (bundles vendored third-party JS for web/vendor/). Nothing here ships to the browser directly — build-bitbox-bundle.mjs's output does, but esbuild and @bitboxswiss/bitbox-api themselves never run in the browser.",
+  "devDependencies": {
+    "esbuild": "0.28.2",
+    "@bitboxswiss/bitbox-api": "0.4.0"
+  }
+}

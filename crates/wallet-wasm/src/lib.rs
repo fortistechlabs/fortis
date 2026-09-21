@@ -211,6 +211,19 @@ impl Wallet {
     }
 }
 
+/// Finalize a PSBT that already carries a hardware signer's signature (e.g. a
+/// BitBox02's `btcSignPSBT` response — BIP-174 `partial_sigs`, not final
+/// witness data) into a broadcast-ready transaction (hex). No `Wallet`/seed
+/// involved: every signature is re-verified cryptographically against the
+/// PSBT's own `witness_utxo`, never trusted just because it's present. Rejects
+/// outright for any chain that doesn't use plain BIP-143 signing — see
+/// `wallet_core::psbt::finalize_externally_signed_psbt`'s doc.
+#[wasm_bindgen(js_name = finalizeHardwareSignedPsbt)]
+pub fn finalize_hardware_signed_psbt(chain: &str, psbt_base64: &str) -> Result<String, JsError> {
+    let tx = wallet_core::psbt::finalize_externally_signed_psbt(&params(chain)?, psbt_base64).map_err(js)?;
+    Ok(tx_to_hex(&tx))
+}
+
 /// Watch-only per-chain view: address derivation and coin selection. No secrets.
 #[wasm_bindgen]
 pub struct WalletView {
