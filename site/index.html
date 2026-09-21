@@ -160,11 +160,30 @@
           <li>Up to 10 named wallets — any mix of XBT and BTC — from the one phrase</li>
           <li>Optional quick-unlock via your device's fingerprint, face, or screen lock (WebAuthn), password always works as a fallback</li>
           <li>Installable as a Progressive Web App — an icon on your home screen, works offline once loaded</li>
+          <li>Optional air-gapped signing — watch a wallet on one device, sign transactions on a separate one that never touches the network</li>
           <li>Same open-source Rust core as the Android app — the signing code isn't reimplemented per platform</li>
         </ul>
         <div class="dl">
           <a class="primary" href="https://app.fortistechlabs.com/" target="_blank" rel="noopener">Open Fortis Wallet</a>
         </div>
+        <details class="install">
+          <summary>How to sign fully offline (air-gapped)</summary>
+          <div class="body">
+            <p class="sub" style="margin-top:0">
+              Split one wallet across two browsers or devices: a watch-only copy for everyday use, and a signing copy you keep off the network entirely. No second app — it's built into Fortis Wallet.
+            </p>
+            <ol>
+              <li>On the device holding the seed, open <strong>Settings</strong> and tap <strong>Copy&nbsp;fingerprint</strong>.</li>
+              <li>On the other device, add a wallet with <strong>Watch an address</strong>, pasting that same account's xpub plus the fingerprint into <strong>Master fingerprint</strong>.</li>
+              <li>To send: on the watch-only wallet, fill in <strong>Send</strong> as usual, tap <strong>Review</strong>, then <strong>Export for offline signing</strong> — a QR code and a text block, neither carrying any key material.</li>
+              <li>On the signing device — disconnected from the network — open <strong>Settings → Import &amp; sign offline transaction</strong> and paste or scan it in. The destination, amount, and fee shown are read from the transaction itself, not just repeated from the other device, so check them there. Tap <strong>Sign</strong>.</li>
+              <li>Bring the signed result back to the watch-only wallet's <strong>Send → Import signed transaction</strong> and tap <strong>Broadcast</strong>.</li>
+            </ol>
+            <p class="sub">
+              Building, reviewing, and signing on the offline device all work from the transaction data alone — it never needs a connection for any of it.
+            </p>
+          </div>
+        </details>
       </div>
       <div class="shots">
         <img src="/img/web-onboard.jpg" alt="Fortis Wallet web onboarding" loading="lazy">
