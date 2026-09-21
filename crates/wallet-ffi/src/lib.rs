@@ -11,9 +11,15 @@ use std::str::FromStr;
 use std::sync::Mutex;
 
 use wallet_core::bitcoin::address::NetworkUnchecked;
+use wallet_core::bitcoin::bip32::Fingerprint;
 use wallet_core::bitcoin::{consensus, Address, Amount, OutPoint, ScriptBuf, Transaction, TxOut, Txid};
 use wallet_core::crypto::{self, KdfParams};
 use wallet_core::{ChainParams, MasterKey};
+
+/// Every wallet in this app uses account 0 — `WalletView` has no account
+/// parameter of its own (unlike `Wallet`, which signs for an explicitly-chosen
+/// account), so this is the account any PSBT it builds is always relative to.
+const ACCOUNT: u32 = 0;
 
 // `flat_error`: the binding carries just the `Display` string, so Kotlin/Swift
 // `exception.message` is the message itself — not uniffi's `v1=…` field dump.
@@ -131,6 +137,11 @@ pub struct FundingPlan {
     pub change_sat: Option<u64>,
     pub service_fee_sat: Option<u64>,
     pub selected: Vec<SelectedInput>,
+    /// This plan as a PSBT, base64 — set only when this session recorded a
+    /// master fingerprint (`WalletView::set_master_fingerprint`); a build
+    /// failure is swallowed into `None` rather than failing the whole plan —
+    /// a watch-only wallet's only path to sending must never be blocked by it.
+    pub psbt_base64: Option<String>,
 }
 
 impl FundingPlan {
@@ -141,6 +152,59 @@ impl FundingPlan {
             change_sat: p.change.map(|c| c.to_sat()),
             service_fee_sat: p.service_fee.map(|c| c.to_sat()),
             selected: p
+                .selected
+                .iter()
+                .map(|u| SelectedInput {
+                    txid: u.outpoint.txid.to_string(),
+                    vout: u.outpoint.vout,
+                    value_sat: u.value.to_sat(),
+                    script_pubkey_hex: hex::encode(u.script_pubkey.as_bytes()),
+                    derivation_index: u.derivation_index,
+                    is_change: u.is_change,
+                })
+                .collect(),
+            psbt_base64: None,
+        }
+    }
+}
+
+#[derive(uniffi::Record)]
+pub struct PsbtDestination {
+    pub script_pubkey_hex: String,
+    /// `None` only for a script this wallet doesn't know how to render as an
+    /// address — never expected in practice (this wallet only ever builds
+    /// standard P2WPKH/OP_RETURN outputs).
+    pub address: Option<String>,
+    pub amount_sat: u64,
+}
+
+/// Everything an offline signer's confirm screen needs, reviewing an imported
+/// unsigned PSBT — deliberately the same shape as `FundingPlan`.
+#[derive(uniffi::Record)]
+pub struct PsbtReview {
+    pub fee_sat: u64,
+    pub change_sat: Option<u64>,
+    pub destinations: Vec<PsbtDestination>,
+    pub op_return_hex: Option<String>,
+    pub selected: Vec<SelectedInput>,
+}
+
+impl PsbtReview {
+    fn from_core(r: &wallet_core::PsbtReview, network: wallet_core::bitcoin::Network) -> Self {
+        PsbtReview {
+            fee_sat: r.fee.to_sat(),
+            change_sat: r.change.map(|c| c.to_sat()),
+            destinations: r
+                .destinations
+                .iter()
+                .map(|d| PsbtDestination {
+                    script_pubkey_hex: hex::encode(d.script_pubkey.as_bytes()),
+                    address: Address::from_script(&d.script_pubkey, network).ok().map(|a| a.to_string()),
+                    amount_sat: d.value.to_sat(),
+                })
+                .collect(),
+            op_return_hex: r.op_return.as_ref().map(hex::encode),
+            selected: r
                 .selected
                 .iter()
                 .map(|u| SelectedInput {
@@ -297,6 +361,25 @@ impl Wallet {
         self.key.sign_p2wpkh_tx(&p, account, &mut tx, &prevouts, &paths)?;
         Ok(hex::encode(consensus::serialize(&tx)))
     }
+
+    /// Review an unsigned PSBT (base64) imported for offline signing — confirms
+    /// every input belongs to this wallet and reports the destinations, fee,
+    /// and change exactly as the confirm screen shows a live send. 100% local
+    /// — no node/network access, safe to call while genuinely offline.
+    pub fn review_psbt(&self, chain: String, account: u32, psbt_base64: String) -> Result<PsbtReview> {
+        let p = params(&chain, &self.network)?;
+        let review = wallet_core::psbt::review_unsigned_psbt(&p, &self.key, account, &psbt_base64)?;
+        Ok(PsbtReview::from_core(&review, p.network))
+    }
+
+    /// Sign every input of an imported unsigned PSBT and return the finalized,
+    /// broadcast-ready transaction (hex) — for the *online* watch-only wallet
+    /// to hand to its backend unchanged, same as `sign_funding_tx`'s output.
+    pub fn sign_psbt(&self, chain: String, account: u32, psbt_base64: String) -> Result<String> {
+        let p = params(&chain, &self.network)?;
+        let tx = wallet_core::psbt::sign_and_finalize_psbt(&p, &self.key, account, &psbt_base64)?;
+        Ok(hex::encode(consensus::serialize(&tx)))
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -306,7 +389,14 @@ impl Wallet {
 #[derive(uniffi::Object)]
 pub struct WalletView {
     inner: Mutex<wallet_core::WalletView>,
+    params: ChainParams,
     net: wallet_core::bitcoin::Network,
+    /// Set only when this view's watch-only import recorded the signing
+    /// wallet's master fingerprint alongside its xpub — without it there's no
+    /// way to populate a PSBT's `bip32_derivation`, so a plan built here just
+    /// never gets a `psbt_base64` (never a hard error; see
+    /// `FundingPlan::psbt_base64`'s doc).
+    fingerprint: Mutex<Option<Fingerprint>>,
 }
 
 #[uniffi::export]
@@ -321,8 +411,20 @@ impl WalletView {
         let xpub = wallet_core::parse_account_xpub(&account_xpub).map_err(err)?;
         Ok(std::sync::Arc::new(WalletView {
             net: p.network,
-            inner: Mutex::new(wallet_core::WalletView::new(p, xpub)),
+            inner: Mutex::new(wallet_core::WalletView::new(p.clone(), xpub)),
+            params: p,
+            fingerprint: Mutex::new(None),
         }))
+    }
+
+    /// Record the signing wallet's master fingerprint (hex, from
+    /// `Wallet::master_fingerprint`) alongside this view's xpub — lets
+    /// `plan_payment`/`plan_sweep` also return a `psbt_base64` a paired
+    /// offline signing session can import. `None` clears it.
+    pub fn set_master_fingerprint(&self, fingerprint_hex: Option<String>) -> Result<()> {
+        let fp = fingerprint_hex.map(|h| h.parse::<Fingerprint>()).transpose().map_err(err)?;
+        *self.fingerprint.lock().unwrap() = fp;
+        Ok(())
     }
 
     pub fn set_next_indices(&self, next_receive: u32, next_change: u32) {
@@ -393,7 +495,9 @@ impl WalletView {
             sf.as_ref(),
             fee_from_amount,
         )?;
-        Ok(FundingPlan::from_core(&plan))
+        let mut fp = FundingPlan::from_core(&plan);
+        fp.psbt_base64 = self.try_build_psbt(&plan);
+        Ok(fp)
     }
 
     /// `service_fee` (optional) carves the hosted backend's fee out of the swept amount.
@@ -415,7 +519,23 @@ impl WalletView {
             min_confirmations,
             sf.as_ref(),
         )?;
-        Ok(FundingPlan::from_core(&plan))
+        let mut fp = FundingPlan::from_core(&plan);
+        fp.psbt_base64 = self.try_build_psbt(&plan);
+        Ok(fp)
+    }
+}
+
+impl WalletView {
+    /// `Some(base64)` iff a master fingerprint is on file — a build failure is
+    /// swallowed into `None` rather than erroring the whole plan: this is a
+    /// watch-only wallet's only path to sending, and a PSBT-export bug must
+    /// never block that.
+    fn try_build_psbt(&self, plan: &wallet_core::FundingPlan) -> Option<String> {
+        let fp = (*self.fingerprint.lock().unwrap())?;
+        let xpub = *self.inner.lock().unwrap().xpub();
+        wallet_core::psbt::build_unsigned_psbt(&self.params, &xpub, ACCOUNT, fp, plan)
+            .ok()
+            .map(|psbt| psbt.to_string())
     }
 }
 

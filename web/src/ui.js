@@ -56,6 +56,20 @@ export function qrCode(text, size = 176) {
   });
 }
 
+/** Same as `qrCode`, but for payloads that might not fit in one QR frame (an
+ *  unsigned/signed transaction, unlike a short address) — `null` instead of
+ *  throwing once `vendor/qrcode.js` runs past its largest version (empirically
+ *  confirmed: it throws "code length overflow" past ~2.3KB, not something to
+ *  assume). Callers always show the always-present copy box alongside this,
+ *  so a `null` here is a normal, expected case, not a degraded one. */
+export function qrCodeOrNull(text, size = 220) {
+  try {
+    return qrCode(text, size);
+  } catch {
+    return null;
+  }
+}
+
 /** Approximate USD value, device-locale grouping/punctuation, USD currency
  *  pinned regardless of locale. `< $0.01` floor for tiny nonzero values,
  *  matching the Android app's `fmtUsd`. `null`/`undefined` -> null (omit). */

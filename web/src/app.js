@@ -20,7 +20,8 @@ import {
   init as i18nInit, t, tPlural, setLocale, overrideTag, localeLabel, SUPPORTED_LOCALES,
 } from './i18n.js';
 import {
-  el, mount, toast, copy, fmt, fmtUsd, qrCode, parseAmount, shortTxid, timeAgo, countUp, initParallax, SAT,
+  el, mount, toast, copy, fmt, fmtUsd, qrCode, qrCodeOrNull, parseAmount, shortTxid, timeAgo, countUp,
+  initParallax, SAT,
 } from './ui.js';
 
 const UNIT = { xbt: 'XBT', btc: 'BTC' };
@@ -112,7 +113,7 @@ function ensureSession(wallet) {
   let session = sessions.get(wallet.id);
   if (!session) {
     if (wallet.watchOnly) {
-      session = Session.watchOnly(wallet.chain, wallet.network, wallet.xpub);
+      session = Session.watchOnly(wallet.chain, wallet.network, wallet.xpub, wallet.fingerprint);
     } else {
       const { mnemonic, passphrase } = unsealWithAppSecret(wallet.sealed, wallet.salt, appSecret);
       session = new Session(wallet.chain, wallet.network, mnemonic, passphrase);
@@ -432,6 +433,9 @@ function renderWatchImport() {
     el('label', {}, t('field_wallet_name')),
     el('input', { id: 'name', value: nextWalletName(), maxlength: MAX_WALLET_NAME_LEN, autocomplete: 'off' }),
     el('label', {}, t('field_chain')), chainPicker(),
+    el('label', {}, t('field_master_fingerprint')),
+    el('input', { id: 'fingerprint', autocapitalize: 'none', autocomplete: 'off', spellcheck: 'false',
+      placeholder: t('watch_fingerprint_hint') }),
     el('div', { id: 'err', class: 'err' }),
     el('div', { class: 'row' },
       el('button', { id: 'backBtn', class: 'ghost', onclick: () => go('main') }, t('action_back')),
@@ -474,8 +478,10 @@ async function onWatchImport() {
   const err = document.getElementById('err');
   const xpub = val('xpub');
   const chain = val('chain');
+  const fingerprint = val('fingerprint').trim().toLowerCase();
   if (!xpub) return (err.textContent = t('error_enter_xpub'));
   if (xpubDepth(xpub) === 0) return (err.textContent = t('error_xpub_is_master_key'));
+  if (fingerprint && !/^[0-9a-f]{8}$/.test(fingerprint)) return (err.textContent = t('error_invalid_fingerprint'));
   let name;
   try {
     name = readWalletName('name');
@@ -490,7 +496,7 @@ async function onWatchImport() {
   }
   setBusy(btn, document.getElementById('backBtn'), t('action_creating'));
   try {
-    await finishWatchWallet(chain, name, xpub);
+    await finishWatchWallet(chain, name, xpub, fingerprint || null);
   } catch (e) {
     err.textContent = String(e.message || e);
     clearBusy(btn, document.getElementById('backBtn'), t('action_watch'));
@@ -498,10 +504,14 @@ async function onWatchImport() {
 }
 
 /** A watch-only wallet has nothing to seal — no mnemonic, no app-lock
- *  interaction at all, even as a device's very first wallet. */
-async function finishWatchWallet(chain, name, xpub) {
+ *  interaction at all, even as a device's very first wallet. `fingerprint`
+ *  (optional): the signing wallet's master fingerprint, from its Settings
+ *  "Copy fingerprint" action — without it, this wallet can still watch a
+ *  balance/history but can never export a transaction for offline signing
+ *  (see wallet-core's `FundingPlan::psbt_base64` doc). */
+async function finishWatchWallet(chain, name, xpub, fingerprint) {
   const wallet = {
-    id: crypto.randomUUID(), name, chain, network: 'mainnet', watchOnly: true, xpub,
+    id: crypto.randomUUID(), name, chain, network: 'mainnet', watchOnly: true, xpub, fingerprint,
     next_receive: 0, next_change: 0, backend: null,
   };
   await autoConnectBackend(wallet);
@@ -902,7 +912,9 @@ function renderWalletTab() {
         el('span', { class: `dot ${dot}` }), ' ', hint, `  ·  ${via}`,
         b && b.pending_sat ? `  ·  ${t('wallet_pending', fmt(b.pending_sat), unit)}` : '')));
 
-  const tabIds = w.watchOnly ? ['receive', 'history'] : ['receive', 'send', 'history'];
+  // Building (not signing) a transaction needs no key, so a watch-only
+  // wallet keeps Send too — for air-gapped signing, see paneSend().
+  const tabIds = ['receive', 'send', 'history'];
   if (!tabIds.includes(ui.tab)) ui.tab = 'receive'; // e.g. stale 'send' on a watch-only wallet
   const tabs = el('div', { class: 'tabs card' },
     tabIds.map((tid) =>
@@ -982,7 +994,18 @@ function paneSend(w) {
       ? el('div', { class: 'hint' }, t('send_service_fee', (detail.status.pricing.bps / 100).toFixed(2), detail.status.pricing.floor_sat))
       : null,
     el('div', { id: 'err', class: 'err' }),
-    el('button', { class: 'primary wide', onclick: () => onReview(w) }, t('action_review')));
+    el('button', { class: 'primary wide', onclick: () => onReview(w) }, t('action_review')),
+    // No key here to sign with — "Review" above still builds an unsigned
+    // plan/PSBT to export. This is the other half of that round trip:
+    // bringing back whatever the offline device produced. Independent of
+    // having just exported in this same session — covers closing the tab
+    // and returning later with the signed result.
+    w.watchOnly
+      ? el('button', { class: 'ghost wide', onclick: () => {
+          ui.dialog = { kind: 'import-signed', walletId: w.id };
+          renderDialogSheet();
+        } }, t('action_import_signed'))
+      : null);
 }
 
 async function onReview(w) {
@@ -1027,6 +1050,7 @@ async function onReview(w) {
 function renderConfirm() {
   const { plan, feerate, to, sweep, walletId } = ui.pendingPlan;
   const w = state.wallets.find((x) => x.id === walletId);
+  const noFingerprint = w.watchOnly && !plan.psbt_base64;
   const unit = UNIT[w.chain];
   const inTotal = plan.selected.reduce((s, u) => s + Number(u.value_sat), 0);
   const svcFee = Number(plan.service_fee_sat || 0);
@@ -1051,10 +1075,14 @@ function renderConfirm() {
         row(t('confirm_inputs'), tPlural('confirm_inputs_value', plan.selected.length)),
         ui.pendingPlan.replayProtect ? row(t('confirm_replay'), t('confirm_replay_value')) : null,
         row(t('confirm_total'), el('b', {}, usdTotal ? t('value_with_fiat', fmt(totalOut), unit, usdTotal) : `${fmt(totalOut)} ${unit}`))),
+      noFingerprint ? el('p', { class: 'hint' }, t('error_no_fingerprint_on_file')) : null,
       el('div', { id: 'err', class: 'err' }),
       el('div', { class: 'row' },
         el('button', { class: 'ghost', onclick: cancel }, t('action_cancel')),
-        el('button', { class: 'primary', id: 'send', onclick: onSend }, t('action_sign_send'))))));
+        w.watchOnly
+          ? el('button', { class: 'primary', id: 'send', disabled: noFingerprint, onclick: onExportOffline },
+              t('action_export_offline'))
+          : el('button', { class: 'primary', id: 'send', onclick: onSend }, t('action_sign_send'))))));
 }
 const row = (k, v) => el('div', { class: 'kv' }, el('span', {}, k), v?.nodeType ? v : el('span', {}, v));
 
@@ -1084,6 +1112,32 @@ async function onSend() {
     btn.disabled = false;
     err.textContent = String(e.message || e).replace(/^.*?: /, '');
   }
+}
+
+/** A watch-only wallet's equivalent of onSend() — there's no key here to sign
+ *  with, so this exports the plan's PSBT (QR + always-present copy box)
+ *  instead of broadcasting. The change index plan_payment()/plan_sweep()
+ *  already consumed is persisted right away, same as onSend()'s tail,
+ *  because the gap until a signed transaction comes back from the offline
+ *  device is unbounded — waiting to persist it "until it's really sent"
+ *  would let the very next plan on this wallet reuse the same change
+ *  address. */
+function onExportOffline() {
+  const { plan, walletId } = ui.pendingPlan;
+  const w = state.wallets.find((x) => x.id === walletId);
+  const session = ensureSession(w);
+  const { next_change } = session.indices();
+  w.next_change = Math.max(w.next_change, next_change ?? 0);
+  saveState(state);
+  ui.pendingPlan = null;
+  ui.draft = null;
+  ui.dialog = {
+    kind: 'export-blob',
+    title: t('export_psbt_title'),
+    body: t('export_psbt_body'),
+    text: plan.psbt_base64,
+  };
+  renderDialogSheet();
 }
 
 /** A backend's own mempool view can lag a broadcast by up to one of its own
@@ -1236,7 +1290,9 @@ function renderWalletCard(w) {
     el('div', { class: 'actions-wrap' },
       el('button', { onclick: () => actionRename(w.id) }, t('action_rename')),
       el('button', { onclick: () => actionCopyXpub(w.id) }, t('action_copy_xpub')),
+      w.watchOnly ? null : el('button', { onclick: () => actionCopyFingerprint(w.id) }, t('action_copy_fingerprint')),
       w.watchOnly ? null : el('button', { onclick: () => actionReveal(w.id) }, t('action_recovery_phrase')),
+      w.watchOnly ? null : el('button', { onclick: () => actionImportSignOffline(w.id) }, t('action_import_sign_offline')),
       el('button', { onclick: () => actionChangeBackend(w.id) }, t('action_reconnect')),
       canClone ? el('button', { onclick: () => actionClone(w.id) }, t('also_add_on', UNIT[otherChain])) : null,
       el('button', { class: 'danger', onclick: () => actionRemove(w.id) }, t('action_remove'))));
@@ -1290,6 +1346,7 @@ function actionClone(id) {
       const id2 = crypto.randomUUID();
       state.wallets.push(w.watchOnly ? {
         id: id2, name: w.name, chain: otherChain, network: w.network, watchOnly: true, xpub: w.xpub,
+        fingerprint: w.fingerprint || null,
         next_receive: 0, next_change: 0,
         backend: w.backend?.kind === 'edge' ? { ...w.backend } : null,
       } : {
@@ -1322,6 +1379,23 @@ function actionCopyXpub(id) {
   } catch {
     toast(t('xpub_loading'));
   }
+}
+
+/** Master fingerprint (8 hex chars) — what a watch-only import needs, in
+ *  addition to the xpub, to later export a transaction for this wallet to
+ *  sign offline. */
+function actionCopyFingerprint(id) {
+  const w = state.wallets.find((x) => x.id === id);
+  try {
+    copy(ensureSession(w).fingerprint);
+  } catch {
+    toast(t('xpub_loading'));
+  }
+}
+
+function actionImportSignOffline(id) {
+  ui.dialog = { kind: 'psbt-paste', walletId: id };
+  renderDialogSheet();
 }
 
 function actionReveal(id) {
@@ -1369,6 +1443,10 @@ function renderDialogSheet() {
   if (ui.dialog.kind === 'locale') return renderLocaleSheet();
   if (ui.dialog.kind === 'confirm') return renderConfirmSheet();
   if (ui.dialog.kind === 'prompt') return renderPromptSheet();
+  if (ui.dialog.kind === 'export-blob') return renderExportBlobSheet();
+  if (ui.dialog.kind === 'import-signed') return renderImportSignedSheet();
+  if (ui.dialog.kind === 'psbt-paste') return renderPsbtPasteSheet();
+  if (ui.dialog.kind === 'psbt-review') return renderPsbtReviewSheet();
 }
 
 /** Generic yes/no sheet — replaces native confirm() so it matches the rest of
@@ -1426,6 +1504,151 @@ function renderRevealSheet() {
       el('div', { class: 'addr-box mono' }, passphrase || t('reveal_no_passphrase')),
       el('div', { class: 'row' },
         el('button', { class: 'primary wide', onclick: closeDialog }, t('action_done'))))));
+}
+
+/** Shared by both legs of an air-gapped signing round trip — an unsigned
+ *  PSBT (watch-only side, exporting) and a finalized signed transaction
+ *  (signing side, exporting back) are both just "here's a blob, get it to
+ *  the other device": QR when it fits one frame, and — always, regardless of
+ *  size — the same `.addr-box.mono` copy-box pattern the recovery-phrase
+ *  reveal screen already uses, so this never depends on the QR working. */
+function renderExportBlobSheet() {
+  const { title, body, text } = ui.dialog;
+  const qr = qrCodeOrNull(text);
+  mount(el('div', { class: 'sheet-wrap' },
+    el('div', { class: 'scrim', onclick: closeDialog }),
+    el('div', { class: 'sheet' },
+      el('div', { class: 'grabber' }),
+      el('h2', {}, title),
+      body ? el('p', { class: 'hint' }, body) : null,
+      qr || el('p', { class: 'hint' }, t('export_psbt_too_large_for_qr')),
+      el('div', { class: 'addr-box mono', style: 'word-break:break-all;max-height:9rem;overflow:auto' }, text),
+      el('div', { class: 'row' },
+        el('button', { onclick: () => copy(text) }, t('action_copy')),
+        el('button', { class: 'primary', onclick: closeDialog }, t('action_done'))))));
+}
+
+/** The watch-only side's other half of the round trip: paste back whatever
+ *  the offline device produced and broadcast it through the normal pipeline
+ *  — the offline side already finalized it, so this is exactly the same
+ *  hex onSend() broadcasts, just arriving by hand instead of from sign(). */
+function renderImportSignedSheet() {
+  const { walletId } = ui.dialog;
+  const submit = async () => {
+    const err = document.getElementById('err');
+    const btn = document.getElementById('broadcastBtn');
+    const hex = val('signed-hex').trim();
+    if (!hex) { err.textContent = t('error_paste_signed_tx'); return; }
+    btn.disabled = true;
+    err.textContent = '…';
+    try {
+      const w = state.wallets.find((x) => x.id === walletId);
+      const backend = ensureBackend(w);
+      const { txid } = await backend.broadcast(hex);
+      closeDialog();
+      ui.tab = 'history';
+      toast(`${t('sent_title')} · ${shortTxid(txid)}`);
+      await refresh();
+      render();
+      pollForTxid(w.id, txid);
+    } catch (e) {
+      btn.disabled = false;
+      err.textContent = String(e.message || e).replace(/^.*?: /, '');
+    }
+  };
+  mount(el('div', { class: 'sheet-wrap' },
+    el('div', { class: 'scrim', onclick: closeDialog }),
+    el('div', { class: 'sheet' },
+      el('div', { class: 'grabber' }),
+      el('h2', {}, t('import_signed_title')),
+      el('p', { class: 'hint' }, t('import_signed_body')),
+      el('textarea', { id: 'signed-hex', rows: 4, autocapitalize: 'none', autocomplete: 'off', spellcheck: 'false' }),
+      el('div', { id: 'err', class: 'err' }),
+      el('div', { class: 'row' },
+        el('button', { class: 'ghost', onclick: closeDialog }, t('action_cancel')),
+        el('button', { class: 'primary', id: 'broadcastBtn', onclick: submit }, t('action_broadcast'))))));
+}
+
+/** The signing side's entry point: paste an unsigned PSBT built by the
+ *  watch-only side and review it — 100% local (see
+ *  wallet-core::psbt::review_unsigned_psbt's doc), safe while genuinely
+ *  offline. `navigator.onLine` is deliberately *not* checked anywhere in
+ *  this flow — it's spoofable/unreliable, so the advisory below just says
+ *  so plainly instead of pretending to enforce it. */
+function renderPsbtPasteSheet() {
+  const { walletId } = ui.dialog;
+  const submit = () => {
+    const err = document.getElementById('err');
+    const text = val('psbt-input').trim();
+    if (!text) { err.textContent = t('error_paste_psbt'); return; }
+    err.textContent = '…';
+    try {
+      const w = state.wallets.find((x) => x.id === walletId);
+      const session = ensureSession(w);
+      const review = session.reviewImportedPsbt(text);
+      ui.dialog = { kind: 'psbt-review', review, psbtText: text, walletId };
+      renderDialogSheet();
+    } catch (e) {
+      err.textContent = String(e.message || e).replace(/^.*?: /, '');
+    }
+  };
+  mount(el('div', { class: 'sheet-wrap' },
+    el('div', { class: 'scrim', onclick: closeDialog }),
+    el('div', { class: 'sheet' },
+      el('div', { class: 'grabber' }),
+      el('h2', {}, t('psbt_paste_title')),
+      el('p', { class: 'hint' }, t('psbt_paste_body')),
+      el('p', { class: 'hint' }, t('offline_advisory_note')),
+      el('textarea', { id: 'psbt-input', rows: 4, autocapitalize: 'none', autocomplete: 'off', spellcheck: 'false' }),
+      el('div', { id: 'err', class: 'err' }),
+      el('div', { class: 'row' },
+        el('button', { class: 'ghost', onclick: closeDialog }, t('action_cancel')),
+        el('button', { class: 'primary', onclick: submit }, t('action_review'))))));
+}
+
+/** Everything shown here comes from `PsbtReview` — built entirely from what's
+ *  embedded in the PSBT itself (wallet-core's `attribute()`), never from
+ *  anything the online side merely claims. Same `.kvs`/`.kv` row shape as
+ *  the live confirm screen. */
+function renderPsbtReviewSheet() {
+  const { review, psbtText, walletId } = ui.dialog;
+  const w = state.wallets.find((x) => x.id === walletId);
+  const unit = UNIT[w.chain];
+  const totalOut = review.destinations.reduce((s, d) => s + Number(d.amount_sat), 0);
+  const doSign = () => {
+    const err = document.getElementById('err');
+    try {
+      const session = ensureSession(w);
+      const signedHex = session.signImportedPsbt(psbtText);
+      ui.dialog = {
+        kind: 'export-blob',
+        title: t('signed_export_title'),
+        body: t('signed_export_body'),
+        text: signedHex,
+      };
+      renderDialogSheet();
+    } catch (e) {
+      err.textContent = String(e.message || e).replace(/^.*?: /, '');
+    }
+  };
+  mount(el('div', { class: 'sheet-wrap' },
+    el('div', { class: 'scrim', onclick: closeDialog }),
+    el('div', { class: 'sheet' },
+      el('div', { class: 'grabber' }),
+      el('h2', {}, t('psbt_review_signing_for', `${unit} · ${w.name}`)),
+      el('div', { class: 'kvs' },
+        ...review.destinations.map((d) =>
+          row(el('span', { class: 'mono', style: 'word-break:break-all' }, d.address || d.script_pubkey_hex),
+            `${fmt(d.amount_sat)} ${unit}`)),
+        row(t('confirm_network_fee'), `${fmt(review.fee_sat)} ${unit}`),
+        review.change_sat != null ? row(t('confirm_change'), `${fmt(review.change_sat)} ${unit}`) : null,
+        row(t('confirm_inputs'), tPlural('confirm_inputs_value', review.selected.length)),
+        review.op_return_hex ? row(t('confirm_replay'), t('confirm_replay_value')) : null,
+        row(t('confirm_total'), el('b', {}, `${fmt(totalOut)} ${unit}`))),
+      el('div', { id: 'err', class: 'err' }),
+      el('div', { class: 'row' },
+        el('button', { class: 'ghost', onclick: closeDialog }, t('action_cancel')),
+        el('button', { class: 'primary', onclick: doSign }, t('action_sign'))))));
 }
 
 function renderChangePasswordSheet() {

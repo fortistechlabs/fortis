@@ -2,8 +2,8 @@
 //! doesn't depend on rust-bitcoin's serde representations.
 
 use serde::{Deserialize, Serialize};
-use wallet_core::bitcoin::{Amount, OutPoint, ScriptBuf};
-use wallet_core::{FundingPlan, Utxo};
+use wallet_core::bitcoin::{Address, Amount, Network, OutPoint, ScriptBuf};
+use wallet_core::{FundingPlan, PsbtReview, Utxo};
 
 #[derive(Deserialize)]
 pub struct JsUtxo {
@@ -53,6 +53,12 @@ pub struct JsFundingPlan {
     pub change_sat: Option<u64>,
     pub service_fee_sat: Option<u64>,
     pub selected: Vec<JsSelectedInput>,
+    /// This plan as a PSBT, base64 — set by the caller (`lib.rs`'s
+    /// `plan_payment`/`plan_sweep`) only when a master fingerprint is on file
+    /// for this session, never by `from_core` itself. `None` either way must
+    /// never fail the surrounding call — see the field's doc on
+    /// `wallet_core::FundingPlan`.
+    pub psbt_base64: Option<String>,
 }
 
 impl JsFundingPlan {
@@ -63,6 +69,57 @@ impl JsFundingPlan {
             change_sat: p.change.map(|c| c.to_sat()),
             service_fee_sat: p.service_fee.map(|c| c.to_sat()),
             selected: p
+                .selected
+                .iter()
+                .map(|u| JsSelectedInput {
+                    txid: u.outpoint.txid.to_string(),
+                    vout: u.outpoint.vout,
+                    value_sat: u.value.to_sat(),
+                    script_pubkey_hex: hex::encode(u.script_pubkey.as_bytes()),
+                    derivation_index: u.derivation_index,
+                    is_change: u.is_change,
+                })
+                .collect(),
+            psbt_base64: None,
+        }
+    }
+}
+
+#[derive(Serialize)]
+pub struct JsPsbtDestination {
+    pub script_pubkey_hex: String,
+    /// `None` only for a script this wallet doesn't know how to render as an
+    /// address (never expected in practice — this wallet only ever builds
+    /// standard P2WPKH/OP_RETURN outputs) — the client falls back to the hex.
+    pub address: Option<String>,
+    pub amount_sat: u64,
+}
+
+#[derive(Serialize)]
+pub struct JsPsbtReview {
+    pub fee_sat: u64,
+    pub change_sat: Option<u64>,
+    pub destinations: Vec<JsPsbtDestination>,
+    pub op_return_hex: Option<String>,
+    pub selected: Vec<JsSelectedInput>,
+}
+
+impl JsPsbtReview {
+    pub fn from_core(r: &PsbtReview, network: Network) -> Self {
+        Self {
+            fee_sat: r.fee.to_sat(),
+            change_sat: r.change.map(|c| c.to_sat()),
+            destinations: r
+                .destinations
+                .iter()
+                .map(|d| JsPsbtDestination {
+                    script_pubkey_hex: hex::encode(d.script_pubkey.as_bytes()),
+                    address: Address::from_script(&d.script_pubkey, network).ok().map(|a| a.to_string()),
+                    amount_sat: d.value.to_sat(),
+                })
+                .collect(),
+            op_return_hex: r.op_return.as_ref().map(hex::encode),
+            selected: r
                 .selected
                 .iter()
                 .map(|u| JsSelectedInput {

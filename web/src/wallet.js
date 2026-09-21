@@ -108,21 +108,31 @@ export class Session {
     this.xpub = this.wallet.accountXpub(chain, 0);
     this.fingerprint = this.wallet.masterFingerprint();
     this.view = new WalletView(chain, this.xpub);
+    // Lets planPayment()/planSweep() also return a PSBT a paired offline
+    // signing session (this same wallet's seed, on a device that never
+    // touches the network) can import, review, and sign.
+    this.view.setMasterFingerprint(this.fingerprint);
   }
 
   /** A read-only session from just an xpub — no `Wallet`, no private key,
    *  ever. `wallet_core::WalletView` (what this wraps) stores only a public
    *  `Xpub` and derives addresses via secp256k1's verification-only context
    *  — there is no signing method anywhere on the type, so this is
-   *  incapable of signing by construction, not just by convention. */
-  static watchOnly(chain, network, xpub) {
+   *  incapable of signing by construction, not just by convention.
+   *
+   *  `fingerprint` (optional): the signing wallet's master fingerprint, if
+   *  this watch-only import captured one — without it, planPayment()/
+   *  planSweep() simply never get a psbt_base64 (see wallet-core's
+   *  `FundingPlan::psbt_base64` doc), not an error. */
+  static watchOnly(chain, network, xpub, fingerprint) {
     const s = Object.create(Session.prototype);
     setNetwork(network);
     s.chain = chain;
     s.wallet = null;
     s.xpub = xpub;
-    s.fingerprint = null;
+    s.fingerprint = fingerprint || null;
     s.view = new WalletView(chain, xpub);
+    if (s.fingerprint) s.view.setMasterFingerprint(s.fingerprint);
     return s;
   }
 
@@ -158,6 +168,22 @@ export class Session {
   sign(planTxHex, selected) {
     if (!this.wallet) throw new Error('watch-only — cannot sign');
     return this.wallet.signFundingTx(this.chain, 0, planTxHex, selected);
+  }
+  /** Review an unsigned PSBT (base64) imported for offline signing — same
+   *  shape as a live planPayment()/planSweep() result (fee_sat, change_sat,
+   *  destinations, selected), reviewed entirely from what's embedded in the
+   *  PSBT itself, no network call. Only a signing session (one holding the
+   *  seed) can call this — same guard as sign(). */
+  reviewImportedPsbt(psbtBase64) {
+    if (!this.wallet) throw new Error('watch-only — cannot sign');
+    return this.wallet.reviewPsbt(this.chain, 0, psbtBase64);
+  }
+  /** Sign every input of an imported unsigned PSBT and return the finalized,
+   *  broadcast-ready transaction hex — hand this straight to a *watch-only*
+   *  session's backend.broadcast(), unchanged. */
+  signImportedPsbt(psbtBase64) {
+    if (!this.wallet) throw new Error('watch-only — cannot sign');
+    return this.wallet.signPsbt(this.chain, 0, psbtBase64);
   }
   free() {
     try {

@@ -4,6 +4,7 @@
 use wasm_bindgen::prelude::*;
 
 use wallet_core::bitcoin::address::NetworkUnchecked;
+use wallet_core::bitcoin::bip32::Fingerprint;
 use wallet_core::bitcoin::hashes::{sha256, Hash};
 use wallet_core::bitcoin::secp256k1::PublicKey;
 use wallet_core::bitcoin::{
@@ -186,6 +187,28 @@ impl Wallet {
             .map_err(js)?;
         Ok(tx_to_hex(&tx))
     }
+
+    /// Review an unsigned PSBT (base64) imported for offline signing — confirms
+    /// every input belongs to this wallet and reports the destinations, fee,
+    /// and change exactly as the confirm screen shows a live send. 100% local
+    /// — no node/network access, safe to call while genuinely offline.
+    #[wasm_bindgen(js_name = reviewPsbt)]
+    pub fn review_psbt(&self, chain: &str, account: u32, psbt_base64: &str) -> Result<JsValue, JsError> {
+        let p = params(chain)?;
+        let review = wallet_core::psbt::review_unsigned_psbt(&p, &self.key, account, psbt_base64)
+            .map_err(js)?;
+        serde_wasm_bindgen::to_value(&dto::JsPsbtReview::from_core(&review, p.network)).map_err(js)
+    }
+
+    /// Sign every input of an imported unsigned PSBT and return the finalized,
+    /// broadcast-ready transaction (hex) — for the *online* watch-only wallet
+    /// to hand to its backend unchanged, same as `signFundingTx`'s output.
+    #[wasm_bindgen(js_name = signPsbt)]
+    pub fn sign_psbt(&self, chain: &str, account: u32, psbt_base64: &str) -> Result<String, JsError> {
+        let tx = wallet_core::psbt::sign_and_finalize_psbt(&params(chain)?, &self.key, account, psbt_base64)
+            .map_err(js)?;
+        Ok(tx_to_hex(&tx))
+    }
 }
 
 /// Watch-only per-chain view: address derivation and coin selection. No secrets.
@@ -193,6 +216,12 @@ impl Wallet {
 pub struct WalletView {
     inner: wallet_core::WalletView,
     chain: String,
+    /// Set only when this view's watch-only import recorded the signing
+    /// wallet's master fingerprint alongside its xpub — without it there's no
+    /// way to populate a PSBT's `bip32_derivation`, so a plan built here just
+    /// never gets a `psbt_base64` (never a hard error; see
+    /// `wallet_core::FundingPlan::psbt_base64`'s doc).
+    master_fingerprint: Option<Fingerprint>,
 }
 
 #[wasm_bindgen]
@@ -204,7 +233,20 @@ impl WalletView {
         Ok(WalletView {
             inner: wallet_core::WalletView::new(params(chain)?, xpub),
             chain: chain.to_string(),
+            master_fingerprint: None,
         })
+    }
+
+    /// Record the signing wallet's master fingerprint (hex, from
+    /// `Wallet.masterFingerprint()`) alongside this view's xpub — lets
+    /// `planPayment`/`planSweep` also return a `psbt_base64` a paired offline
+    /// signing session can import. `None`/omitted clears it (a legacy
+    /// watch-only import that never captured one, or a public-explorer
+    /// fallback session where this simply isn't available).
+    #[wasm_bindgen(js_name = setMasterFingerprint)]
+    pub fn set_master_fingerprint(&mut self, fingerprint_hex: Option<String>) -> Result<(), JsError> {
+        self.master_fingerprint = fingerprint_hex.map(|h| h.parse()).transpose().map_err(js)?;
+        Ok(())
     }
 
     /// Resume derivation counters after a reload so the next address is not one
@@ -334,7 +376,9 @@ impl WalletView {
             .inner
             .plan_payment(&utxos, outs, feerate_sat_vb, min_confirmations, sf.as_ref(), fee_from_amount)
             .map_err(js)?;
-        serde_wasm_bindgen::to_value(&dto::JsFundingPlan::from_core(&plan)).map_err(js)
+        let mut js_plan = dto::JsFundingPlan::from_core(&plan);
+        js_plan.psbt_base64 = self.try_build_psbt(&plan);
+        serde_wasm_bindgen::to_value(&js_plan).map_err(js)
     }
 
     /// Send the whole confirmed balance to `destAddress` (fee deducted, no change).
@@ -358,9 +402,30 @@ impl WalletView {
             .inner
             .plan_sweep(&utxos, dest, feerate_sat_vb, min_confirmations, sf.as_ref())
             .map_err(js)?;
-        serde_wasm_bindgen::to_value(&dto::JsFundingPlan::from_core(&plan)).map_err(js)
+        let mut js_plan = dto::JsFundingPlan::from_core(&plan);
+        js_plan.psbt_base64 = self.try_build_psbt(&plan);
+        serde_wasm_bindgen::to_value(&js_plan).map_err(js)
+    }
+
+    /// `Some(base64)` iff a master fingerprint is on file — a build failure is
+    /// swallowed into `None` rather than erroring the whole plan: this is a
+    /// watch-only wallet's only path to sending, and a PSBT-export bug must
+    /// never block that. Every account in this app is 0 (see `ACCOUNT`) — the
+    /// same constant every other call site already hardcodes.
+    fn try_build_psbt(&self, plan: &wallet_core::FundingPlan) -> Option<String> {
+        let fp = self.master_fingerprint?;
+        let p = params(&self.chain).ok()?;
+        wallet_core::psbt::build_unsigned_psbt(&p, self.inner.xpub(), ACCOUNT, fp, plan)
+            .ok()
+            .map(|psbt| psbt.to_string())
     }
 }
+
+/// Every wallet in this app uses account 0 — `WalletView` (wasm) has no
+/// account parameter of its own (unlike `Wallet`, which signs for an
+/// explicitly-chosen account), so this is the account the PSBT it builds is
+/// always relative to.
+const ACCOUNT: u32 = 0;
 
 fn parse_address(addr: &str, net: wallet_core::bitcoin::Network) -> Result<Address, JsError> {
     // Trim first: a stray newline/space makes rust-bitcoin report a misleading

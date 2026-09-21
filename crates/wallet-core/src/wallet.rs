@@ -90,6 +90,18 @@ pub struct FundingPlan {
     pub change: Option<Amount>,
     /// The service fee (if any), also present as an output in `tx`.
     pub service_fee: Option<Amount>,
+    /// This plan's PSBT form, base64 (BIP-174) — only ever set by the wasm/ffi
+    /// binding layer (which knows the master fingerprint), never by
+    /// `assemble()` itself. `None` means either no fingerprint was on file for
+    /// this session (a watch-only import from before that was tracked) or the
+    /// PSBT build failed — either way, a watch-only wallet's only path to
+    /// sending must never be blocked by this.
+    pub psbt_base64: Option<String>,
+    /// The change output's `m/84'/.../1/<index>` index, when this plan created
+    /// one — `assemble()` doesn't know it (only `plan_payment` /
+    /// `plan_payment_fee_inclusive` do, at the point they derive the change
+    /// address), so it's set by the caller right after `assemble()` returns.
+    pub change_derivation_index: Option<u32>,
 }
 
 // Rough vsize model. P2WPKH spends, segwit tx. Estimates run 1–2 vB high per input
@@ -179,6 +191,13 @@ impl WalletView {
     /// change index that a payment consumed.
     pub fn next_indices(&self) -> (u32, u32) {
         (self.next_receive, self.next_change)
+    }
+
+    /// This view's account xpub — the binding layer needs it (alongside a
+    /// master fingerprint it separately holds) to populate a PSBT's
+    /// `bip32_derivation` fields when exporting a plan for offline signing.
+    pub fn xpub(&self) -> &Xpub {
+        &self.xpub
     }
 
     pub fn balance(&self, utxos: &[Utxo]) -> Amount {
@@ -291,8 +310,13 @@ impl WalletView {
                 if change.to_sat() >= CHANGE_DUST_SAT {
                     let mut outs = outputs.clone();
                     outs.push(TxOut { value: change, script_pubkey: change_spk });
+                    // Captured before the increment: this is the index `change_spk`
+                    // above was actually derived at (self.next_change, pre-bump).
+                    let change_idx = self.next_change;
                     self.next_change += 1;
-                    return Ok(assemble(selected, outs, fee_with_change, Some(change), service_fee_sat));
+                    let mut plan = assemble(selected, outs, fee_with_change, Some(change), service_fee_sat);
+                    plan.change_derivation_index = Some(change_idx);
+                    return Ok(plan);
                 }
             }
             if acc >= checked_sum([target, fee_no_change])? {
@@ -403,14 +427,19 @@ impl WalletView {
                     outs.push(o.clone());
                 }
                 outs.push(TxOut { value: surplus, script_pubkey: change_spk });
+                // Captured before the increment — see the same-shaped comment in
+                // plan_payment().
+                let change_idx = self.next_change;
                 self.next_change += 1;
-                return Ok(assemble(
+                let mut plan = assemble(
                     selected,
                     outs,
                     net_fee,
                     Some(surplus),
                     sf_out.as_ref().map(|o| o.value),
-                ));
+                );
+                plan.change_derivation_index = Some(change_idx);
+                return Ok(plan);
             }
             // No change: the sub-dust surplus goes to the miner fee; the recipient
             // still gets exactly `budget − fees`.
@@ -511,7 +540,7 @@ fn assemble(
         input,
         output: outputs,
     };
-    FundingPlan { tx, selected, fee, change, service_fee }
+    FundingPlan { tx, selected, fee, change, service_fee, psbt_base64: None, change_derivation_index: None }
 }
 
 #[cfg(test)]

@@ -276,7 +276,7 @@ fn swap_path(coin_type: u32, account: u32, swap_index: u32) -> Result<Derivation
     parse_path(&format!("m/84h/{coin_type}h/{account}h/2h/{swap_index}h"))
 }
 
-fn parse_path(s: &str) -> Result<DerivationPath> {
+pub(crate) fn parse_path(s: &str) -> Result<DerivationPath> {
     s.parse()
         .map_err(|e: bitcoin::bip32::Error| WalletError::Derivation(e.to_string()))
 }
