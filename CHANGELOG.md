@@ -2,6 +2,23 @@
 
 Fortis Wallet (Android). Versions are `versionName (versionCode)`.
 
+## 0.4.1 (15) — 2026-09-28
+
+- A Bitcoin (BTC) wallet with a lot of history could still take several
+  requests to fully load, even after 0.4.0's single-request scan: the app
+  would send a small guess first and grow it in several follow-up round
+  trips whenever a wallet's real usage went deeper than the guess. It now
+  sends one properly-sized request every time, so opening or refreshing a
+  BTC wallet is a single round trip regardless of how much history it has.
+- The backend no longer re-fetches an address's full transaction history on
+  every single refresh — it now remembers what it already knows and only
+  asks upstream about addresses that could actually have something new,
+  which is most of why repeat loads of the same wallet are now fast.
+- Fixed a bug where a BTC wallet could show a "pending" transaction that
+  wasn't real — a stale entry from an upstream data source that had never
+  actually reached the Bitcoin network. Pending transactions are now
+  double-checked against the real network before being shown.
+
 ## 0.4.0 (14) — 2026-09-19
 
 - Wallets with a lot of history now load in about a second instead of tens of
