@@ -16,6 +16,7 @@ mod metrics;
 mod price;
 mod pricing;
 mod proxy;
+mod reconcile;
 mod scan;
 mod token;
 
@@ -1078,7 +1079,19 @@ fn scan_chain(req: &mut Request, st: &State, chain: &str, tok: Option<&str>, aut
         return err(503, "btc tip height: not yet available");
     };
     match hs.scan(&parsed.addresses, parsed.history) {
-        Ok(s) => Reply::Json(200, scan::response(tip, s.used, s.utxos, s.txs)),
+        Ok(mut s) => {
+            // Haskoin is the only BTC source here that isn't backed by a
+            // full node this project runs (it exists purely for its batch-
+            // address query — see haskoin.rs's module doc), so its idea of
+            // what's still pending isn't guaranteed to match reality. Any
+            // entry it calls pending gets one independent check against the
+            // real upstream chain before a user ever sees it — see
+            // reconcile.rs for why and what was found live.
+            if let Some(primary) = st.btc.as_ref() {
+                reconcile::drop_dead_pending(primary, &st.btc_fallbacks, &mut s.txs, &mut s.utxos);
+            }
+            Reply::Json(200, scan::response(tip, s.used, s.utxos, s.txs))
+        }
         Err(e) => {
             Metrics::inc(&st.metrics.upstream_errors);
             err(502, &format!("haskoin: {e}"))
