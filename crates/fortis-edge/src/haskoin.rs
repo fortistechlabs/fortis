@@ -135,32 +135,69 @@ impl HaskoinStore {
             .collect())
     }
 
+    /// Runs one GET per [`ADDRS_PER_CALL`]-sized chunk of `addresses`, all at
+    /// once rather than one after another — confirmed live, 2026-09-28: a
+    /// single wide one-shot scan (the client now sends its whole watch-set
+    /// in one request, up to 1000 addresses) turned into up to 7 sequential
+    /// `address/balances` calls alone, taking ~1.9s total even though
+    /// Haskoin answers each in ~0.2-0.3s and has no trouble with several at
+    /// the same time. `path_for` builds the full `address/...` path+query
+    /// for one chunk's comma-joined address list; results come back in the
+    /// same order as `addresses.chunks(ADDRS_PER_CALL)`.
+    fn get_chunked(&self, addresses: &[String], path_for: impl Fn(&str) -> String + Sync) -> Result<Vec<Value>> {
+        std::thread::scope(|scope| {
+            let handles: Vec<_> = addresses
+                .chunks(ADDRS_PER_CALL)
+                .map(|chunk| {
+                    let path = path_for(&chunk.join(","));
+                    scope.spawn(move || self.get(&path))
+                })
+                .collect();
+            handles
+                .into_iter()
+                .map(|h| h.join().unwrap_or_else(|_| Err(anyhow!("haskoin request thread panicked"))))
+                .collect()
+        })
+    }
+
     /// `(address, signature)` for every requested address, in request order.
     /// Errors if any requested address has no row: treating a missing row as
     /// "unused" would understate a wallet with no sign anything was wrong.
     pub fn balances(&self, addresses: &[String]) -> Result<Vec<(String, Signature)>> {
-        let mut out = Vec::with_capacity(addresses.len());
-        for chunk in addresses.chunks(ADDRS_PER_CALL) {
-            let reply = self.get(&format!("address/balances?addresses={}", chunk.join(",")))?;
+        let replies = self.get_chunked(addresses, |csv| format!("address/balances?addresses={csv}"))?;
+        let mut by_addr: HashMap<&str, &Value> = HashMap::new();
+        for reply in &replies {
             let rows = reply.as_array().ok_or_else(|| anyhow!("haskoin balances: expected an array"))?;
-            let by_addr: HashMap<&str, &Value> =
-                rows.iter().filter_map(|r| Some((r.get("address")?.as_str()?, r))).collect();
-            for a in chunk {
-                let r = by_addr.get(a.as_str()).ok_or_else(|| anyhow!("haskoin returned no balance row for {a}"))?;
-                let n = |k: &str| r.get(k).and_then(Value::as_i64).unwrap_or(0);
-                out.push((a.clone(), Signature { txs: n("txs"), utxo: n("utxo"), unconfirmed: n("unconfirmed") }));
-            }
+            by_addr.extend(rows.iter().filter_map(|r| Some((r.get("address")?.as_str()?, r))));
+        }
+        let mut out = Vec::with_capacity(addresses.len());
+        for a in addresses {
+            let r = by_addr.get(a.as_str()).ok_or_else(|| anyhow!("haskoin returned no balance row for {a}"))?;
+            let n = |k: &str| r.get(k).and_then(Value::as_i64).unwrap_or(0);
+            out.push((a.clone(), Signature { txs: n("txs"), utxo: n("utxo"), unconfirmed: n("unconfirmed") }));
         }
         Ok(out)
     }
 
     /// `address/unspent`, paginated, for exactly the addresses passed in
-    /// (the caller narrows this to funded addresses).
+    /// (the caller narrows this to funded addresses). Chunks run at once,
+    /// same as [`Self::balances`]; pagination *within* a chunk stays
+    /// sequential — each page's size decides whether there's a next one, so
+    /// it can't be parallelized the same way, but a chunk needing more than
+    /// [`UNSPENT_PAGE`] UTXOs at once is not the common case this optimizes.
     pub fn unspent(&self, addresses: &[String]) -> Result<Vec<Value>> {
-        let mut utxos = Vec::new();
-        for chunk in addresses.chunks(ADDRS_PER_CALL) {
+        let pages = self.get_chunked(addresses, |csv| {
+            format!("address/unspent?addresses={csv}&limit={UNSPENT_PAGE}&offset=0")
+        })?;
+        let mut utxos: Vec<Value> = Vec::new();
+        for (chunk, first_page) in addresses.chunks(ADDRS_PER_CALL).zip(pages) {
+            let rows = first_page.as_array().ok_or_else(|| anyhow!("haskoin unspent: expected an array"))?;
+            utxos.extend(rows.iter().map(esplora_utxo_for_address));
+            if rows.len() < UNSPENT_PAGE {
+                continue;
+            }
             let csv = chunk.join(",");
-            let mut offset = 0;
+            let mut offset = UNSPENT_PAGE;
             loop {
                 let reply =
                     self.get(&format!("address/unspent?addresses={csv}&limit={UNSPENT_PAGE}&offset={offset}"))?;
@@ -182,10 +219,10 @@ impl HaskoinStore {
     /// fresh look (see [`Self::scan`]) rather than a prewarm's whole set.
     fn transactions_by_address(&self, addresses: &[String], history: usize) -> Result<HashMap<String, Vec<Value>>> {
         let want: HashSet<&str> = addresses.iter().map(String::as_str).collect();
+        let replies = self
+            .get_chunked(addresses, |csv| format!("address/transactions/full?addresses={csv}&limit={history}"))?;
         let mut by_addr: HashMap<String, Vec<Value>> = HashMap::new();
-        for chunk in addresses.chunks(ADDRS_PER_CALL) {
-            let reply = self
-                .get(&format!("address/transactions/full?addresses={}&limit={history}", chunk.join(",")))?;
+        for reply in &replies {
             let rows = reply.as_array().ok_or_else(|| anyhow!("haskoin transactions: expected an array"))?;
             for t in rows {
                 let touched: HashSet<&str> = ["inputs", "outputs"]
@@ -342,7 +379,7 @@ fn esplora_tx(t: &Value) -> Value {
 
 #[cfg(test)]
 mod tests {
-    use super::{esplora_tx, esplora_utxo, esplora_utxo_for_address, merge_history, HaskoinStore};
+    use super::{esplora_tx, esplora_utxo, esplora_utxo_for_address, merge_history, HaskoinStore, UNSPENT_PAGE};
     use crate::btc_history::BtcHistory;
     use crate::scan_cache::ScanCache;
     use serde_json::{json, Value};
@@ -369,6 +406,71 @@ mod tests {
         let (store, _server) = stub(vec![bal("a", 1, 0, 0)], vec![], vec![]);
         let asked = vec!["a".to_string(), "b".to_string()];
         assert!(store.balances(&asked).is_err());
+    }
+
+    /// A stub that echoes back a real row for whatever addresses each
+    /// individual request actually asked about (via its own `addresses=`
+    /// query param), rather than one fixed canned response for every call —
+    /// needed to prove multi-chunk results are correctly merged per-address,
+    /// not just that *a* response came back.
+    fn per_address_stub() -> (HaskoinStore, std::sync::Arc<AtomicUsize>) {
+        let server = tiny_http::Server::http("127.0.0.1:0").unwrap();
+        let addr = server.server_addr().to_ip().unwrap();
+        let calls = std::sync::Arc::new(AtomicUsize::new(0));
+        let calls2 = calls.clone();
+        std::thread::spawn(move || {
+            for req in server.incoming_requests() {
+                calls2.fetch_add(1, Ordering::SeqCst);
+                let url = req.url().to_string();
+                let addrs_param = url.split("addresses=").nth(1).unwrap_or("").split('&').next().unwrap_or("");
+                let rows: Vec<Value> = addrs_param.split(',').filter(|a| !a.is_empty()).map(|a| bal(a, 1, 0, 0)).collect();
+                let _ = req.respond(tiny_http::Response::from_string(json!(rows).to_string()));
+            }
+        });
+        (HaskoinStore::new(&format!("http://{addr}"), None), calls)
+    }
+
+    #[test]
+    fn balances_across_multiple_chunks_are_all_present_and_correctly_merged() {
+        let (store, calls) = per_address_stub();
+        // More than ADDRS_PER_CALL (150) so this genuinely spans 2 chunks —
+        // 2 parallel requests, not a re-run of the single-chunk path.
+        let addrs: Vec<String> = (0..200).map(|i| format!("addr{i}")).collect();
+        let rows = store.balances(&addrs).unwrap();
+        assert_eq!(calls.load(Ordering::SeqCst), 2, "200 addresses at 150/call must be exactly 2 chunks");
+        assert_eq!(rows.len(), 200);
+        // Every requested address got its own real row back, none dropped,
+        // none duplicated, regardless of which of the 2 concurrent chunk
+        // requests actually answered for it.
+        let got: std::collections::HashSet<&str> = rows.iter().map(|(a, _)| a.as_str()).collect();
+        for a in &addrs {
+            assert!(got.contains(a.as_str()), "missing {a} from a multi-chunk balances() result");
+        }
+    }
+
+    #[test]
+    fn unspent_still_pages_past_the_first_full_page() {
+        // The parallel-chunk rewrite only fetches offset=0 concurrently;
+        // this pins that a chunk whose first page comes back completely
+        // full still walks the remaining pages sequentially afterward,
+        // exactly as before.
+        let server = tiny_http::Server::http("127.0.0.1:0").unwrap();
+        let addr = server.server_addr().to_ip().unwrap();
+        std::thread::spawn(move || {
+            for req in server.incoming_requests() {
+                let url = req.url().to_string();
+                let offset: usize = url.split("offset=").nth(1).unwrap_or("0").parse().unwrap_or(0);
+                let rows: Vec<Value> = if offset == 0 {
+                    (0..UNSPENT_PAGE).map(|i| json!({"address": "a", "txid": format!("t{i}"), "index": 0, "value": 1})).collect()
+                } else {
+                    vec![json!({"address": "a", "txid": "last", "index": 0, "value": 1})]
+                };
+                let _ = req.respond(tiny_http::Response::from_string(json!(rows).to_string()));
+            }
+        });
+        let store = HaskoinStore::new(&format!("http://{addr}"), None);
+        let utxos = store.unspent(&["a".to_string()]).unwrap();
+        assert_eq!(utxos.len(), UNSPENT_PAGE + 1, "must have followed the second page, not stopped at the first");
     }
 
     // ---- stub Haskoin server + scan()-level integration tests --------------
