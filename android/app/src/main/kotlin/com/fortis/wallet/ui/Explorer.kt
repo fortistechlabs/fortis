@@ -11,7 +11,11 @@ import android.widget.Toast
 fun explorerTxUrl(chain: String, network: String, txid: String): String? {
     if (network != "mainnet") return null
     val base = when (chain) {
-        "btc" -> "https://mempool.space"
+        // mempool.space itself is unreachable from at least this project's
+        // home network -- DNS resolves, the TCP connection times out,
+        // confirmed repeatedly, 2026-09-28. mempool.emzy.de runs the same
+        // open-source backend and is confirmed reliable from here.
+        "btc" -> "https://mempool.emzy.de"
         "xbt" -> "https://mempool.guide"
         else -> return null
     }

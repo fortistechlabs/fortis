@@ -36,8 +36,13 @@ const val MAX_WALLET_NAME = 30
 /** The one backend the mobile app talks to. Not user-configurable, not shown. */
 const val HOSTED_EDGE = "https://api.fortistechlabs.com"
 
-/** Public Esplora fallbacks, used when [HOSTED_EDGE] is unreachable. */
-const val PUBLIC_BTC_ESPLORA = "https://mempool.space/api"
+/** Public Esplora fallbacks, used when [HOSTED_EDGE] is unreachable.
+ *  mempool.space itself is unreachable from at least this project's home
+ *  network (DNS resolves, TCP times out, confirmed repeatedly 2026-09-28);
+ *  mempool.emzy.de runs the same open-source backend and is confirmed
+ *  reliable from here — see fortis-edge's own --btc-upstream for the
+ *  server-side twin of this same fix. */
+const val PUBLIC_BTC_ESPLORA = "https://mempool.emzy.de/api"
 const val PUBLIC_XBT_ESPLORA = "https://mempool.guide/api"
 
 data class PlanPreview(
@@ -618,20 +623,30 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
             if (backend !== b && fallback !== b) return
             status = newStatus
             usingFallback = degraded
+            // History is always safe to show as-is, even from a degraded
+            // answer — every entry in it is a real, permanently-confirmed
+            // transaction (see fortis-edge's btc_history doc), just possibly
+            // an incomplete list. Balance is not: a degraded answer's
+            // `utxos` is deliberately empty (see scan_chain's fallback), and
+            // committing that to the screen — even for one refresh cycle —
+            // means a wallet whose real balance we already know flashes to
+            // 0 before the next successful poll corrects it. Found live,
+            // 2026-09-28: fixed the *persistence* of a degraded 0 as "last
+            // known" earlier the same day, but missed that the live display
+            // had the identical problem one line up from it — keep
+            // whatever's already showing (a real balance from this session,
+            // or the seeded last-known one) instead of overwriting it with
+            // data the server itself said not to trust.
             history = newHistory
-            balances = newBalances
-            refreshingFor?.let { id -> setWalletBalance(id, newBalances.confirmedSat) }
+            if (!newBalances.serverDegraded) {
+                balances = newBalances
+                refreshingFor?.let { id -> setWalletBalance(id, newBalances.confirmedSat) }
+            }
             // Only when this landed via the primary backend (not the old
             // public-explorer fallback, `degraded`) *and* the edge itself
-            // didn't flag the data as its own degraded answer
-            // (`newBalances.serverDegraded`, set when the edge's Haskoin
-            // batch source is down and it's serving confirmed-history-only
-            // from its permanent store — see fortis-edge's scan_chain and
-            // scan::response_ex). Checking both closes the gap an earlier
-            // version of this guard left open: found live, 2026-09-28, a
-            // safe-but-empty degraded answer from the edge looked identical
-            // to a healthy one from here, and got remembered as "last known"
-            // over a real balance from moments before.
+            // didn't flag the data as its own degraded answer — same
+            // reasoning as the display guard just above, applied to what
+            // gets remembered as "last known" for next time.
             if (!degraded && !newBalances.serverDegraded) {
                 refreshingFor?.let { id ->
                     // Skip the write entirely when unchanged — this runs on

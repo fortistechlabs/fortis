@@ -2,6 +2,16 @@
 
 Fortis Wallet (Android). Versions are `versionName (versionCode)`.
 
+## 0.4.3 (17) — 2026-09-28
+
+- Fixed a BTC watch-only wallet briefly showing 0 BTC before showing its
+  real balance, whenever the backend's batch data source had a momentary
+  hiccup. It now keeps showing the last known balance through a hiccup like
+  that instead of flashing to zero.
+- Fixed the "view on block explorer" link for BTC transactions, which had
+  stopped working (the explorer it pointed at became unreachable from some
+  networks).
+
 ## 0.4.2 (16) — 2026-09-28
 
 - Fixed a case where a BTC wallet could get stuck showing "Connecting…"
