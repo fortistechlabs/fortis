@@ -12,6 +12,9 @@ use std::collections::{HashMap, HashSet};
 use anyhow::{anyhow, Result};
 use serde_json::{json, Value};
 
+use crate::btc_history::BtcHistory;
+use crate::scan_cache::{ScanCache, Signature};
+
 /// Addresses per Haskoin call — a comma-joined query param, so an unbounded
 /// list would trip a URL-length limit (`414`) somewhere on the way.
 const ADDRS_PER_CALL: usize = 150;
@@ -132,27 +135,30 @@ impl HaskoinStore {
             .collect())
     }
 
-    /// Balance and recent history for a whole address set: `address/balances`
-    /// says which addresses are used and which hold coins (one call per
-    /// [`ADDRS_PER_CALL`]), `address/unspent` is then asked only about the ones
-    /// that do, and `address/transactions/full` for the newest `history` txs
-    /// across the used ones. Nothing here is per-address, so a several-hundred
-    /// address wallet is a handful of calls, and nothing is silently cut off:
-    /// a missing balance row or a malformed reply is an error, never an
-    /// address quietly treated as empty.
-    pub fn scan(&self, addresses: &[String], history: usize) -> Result<Scanned> {
-        let mut used = Vec::new();
-        let mut funded = Vec::new();
+    /// `(address, signature)` for every requested address, in request order.
+    /// Errors if any requested address has no row: treating a missing row as
+    /// "unused" would understate a wallet with no sign anything was wrong.
+    pub fn balances(&self, addresses: &[String]) -> Result<Vec<(String, Signature)>> {
+        let mut out = Vec::with_capacity(addresses.len());
         for chunk in addresses.chunks(ADDRS_PER_CALL) {
             let reply = self.get(&format!("address/balances?addresses={}", chunk.join(",")))?;
             let rows = reply.as_array().ok_or_else(|| anyhow!("haskoin balances: expected an array"))?;
-            let (u, f) = classify_balances(chunk, rows)?;
-            used.extend(u);
-            funded.extend(f);
+            let by_addr: HashMap<&str, &Value> =
+                rows.iter().filter_map(|r| Some((r.get("address")?.as_str()?, r))).collect();
+            for a in chunk {
+                let r = by_addr.get(a.as_str()).ok_or_else(|| anyhow!("haskoin returned no balance row for {a}"))?;
+                let n = |k: &str| r.get(k).and_then(Value::as_i64).unwrap_or(0);
+                out.push((a.clone(), Signature { txs: n("txs"), utxo: n("utxo"), unconfirmed: n("unconfirmed") }));
+            }
         }
+        Ok(out)
+    }
 
+    /// `address/unspent`, paginated, for exactly the addresses passed in
+    /// (the caller narrows this to funded addresses).
+    pub fn unspent(&self, addresses: &[String]) -> Result<Vec<Value>> {
         let mut utxos = Vec::new();
-        for chunk in funded.chunks(ADDRS_PER_CALL) {
+        for chunk in addresses.chunks(ADDRS_PER_CALL) {
             let csv = chunk.join(",");
             let mut offset = 0;
             loop {
@@ -166,37 +172,109 @@ impl HaskoinStore {
                 offset += UNSPENT_PAGE;
             }
         }
+        Ok(utxos)
+    }
 
-        let mut txs = Vec::new();
-        for chunk in used.chunks(ADDRS_PER_CALL) {
+    /// Each of `addresses`' own esplora-shaped transactions (pending and
+    /// confirmed alike) — the same "which of the requested addresses does
+    /// this tx touch" association [`Self::warm`] already uses for its own
+    /// per-address split, keyed here for whichever addresses actually need a
+    /// fresh look (see [`Self::scan`]) rather than a prewarm's whole set.
+    fn transactions_by_address(&self, addresses: &[String], history: usize) -> Result<HashMap<String, Vec<Value>>> {
+        let want: HashSet<&str> = addresses.iter().map(String::as_str).collect();
+        let mut by_addr: HashMap<String, Vec<Value>> = HashMap::new();
+        for chunk in addresses.chunks(ADDRS_PER_CALL) {
             let reply = self
                 .get(&format!("address/transactions/full?addresses={}&limit={history}", chunk.join(",")))?;
             let rows = reply.as_array().ok_or_else(|| anyhow!("haskoin transactions: expected an array"))?;
-            txs.extend(rows.iter().map(esplora_tx));
+            for t in rows {
+                let touched: HashSet<&str> = ["inputs", "outputs"]
+                    .iter()
+                    .flat_map(|side| t.get(side).and_then(Value::as_array).into_iter().flatten())
+                    .filter_map(|io| io.get("address").and_then(Value::as_str))
+                    .filter(|a| want.contains(a))
+                    .collect();
+                let e = esplora_tx(t);
+                for a in touched {
+                    by_addr.entry(a.to_string()).or_default().push(e.clone());
+                }
+            }
+        }
+        Ok(by_addr)
+    }
+
+    /// Balance and recent history for a whole address set. `address/balances`
+    /// (one call per [`ADDRS_PER_CALL`]) says which addresses are used/funded
+    /// and gives each a [`Signature`]; `address/unspent` is asked only about
+    /// the funded ones.
+    ///
+    /// For transaction history, `btc_history`/`scan_cache` (when configured
+    /// — always in production, optional so tests and a degraded deploy still
+    /// work) turn this from "re-fetch every used address's full history on
+    /// every single poll" into "re-fetch only the addresses whose signature
+    /// actually changed since last time": an address whose `Signature`
+    /// matches what was stored after its last real fetch cannot have
+    /// anything new (Haskoin's own tx count / utxo count / unconfirmed
+    /// balance are unchanged), so its confirmed history is served from
+    /// `btc_history`'s permanent store and its pending list from
+    /// `scan_cache`'s last snapshot — no network call at all for that
+    /// address this round. A fresh fetch, when needed, writes its confirmed
+    /// entries into `btc_history` (forever) and its pending ones plus the
+    /// signature it was fetched under into `scan_cache`, so the *next* poll
+    /// can skip it too if still nothing changed.
+    ///
+    /// Nothing here is per-address in the sense of one HTTP call each, so a
+    /// several-hundred-address wallet on a cold cache is still a handful of
+    /// calls, and on a warm one is often none beyond the cheap balances
+    /// check; a missing balance row or a malformed reply is an error, never
+    /// an address quietly treated as empty.
+    pub fn scan(
+        &self,
+        addresses: &[String],
+        history: usize,
+        btc_history: Option<&BtcHistory>,
+        scan_cache: Option<&ScanCache>,
+    ) -> Result<Scanned> {
+        let signatures = self.balances(addresses)?;
+        let is_used = |s: &Signature| s.txs > 0 || s.utxo > 0 || s.unconfirmed != 0;
+        let is_funded = |s: &Signature| s.utxo > 0 || s.unconfirmed != 0;
+        let sig_by_addr: HashMap<&str, Signature> = signatures.iter().map(|(a, s)| (a.as_str(), *s)).collect();
+        let used: Vec<String> = signatures.iter().filter(|(_, s)| is_used(s)).map(|(a, _)| a.clone()).collect();
+        let funded: Vec<String> = signatures.iter().filter(|(_, s)| is_funded(s)).map(|(a, _)| a.clone()).collect();
+
+        let utxos = self.unspent(&funded)?;
+
+        let mut needs_fetch: Vec<String> = Vec::new();
+        let mut txs: Vec<Value> = Vec::new();
+        for addr in &used {
+            let sig = sig_by_addr[addr.as_str()];
+            match scan_cache.and_then(|c| c.signature(addr)) {
+                Some(known) if known == sig => txs.extend(scan_cache.unwrap().pending(addr)),
+                _ => needs_fetch.push(addr.clone()),
+            }
+        }
+
+        if !needs_fetch.is_empty() {
+            let fresh = self.transactions_by_address(&needs_fetch, history)?;
+            for addr in &needs_fetch {
+                let addr_txs = fresh.get(addr).cloned().unwrap_or_default();
+                let (confirmed, pending): (Vec<Value>, Vec<Value>) =
+                    addr_txs.into_iter().partition(|t| t["status"]["confirmed"] == true);
+                if let Some(bh) = btc_history {
+                    bh.merge(addr, &confirmed);
+                }
+                if let Some(sc) = scan_cache {
+                    sc.update(addr, sig_by_addr[addr.as_str()], &pending);
+                }
+                txs.extend(confirmed);
+                txs.extend(pending);
+            }
+        }
+        if let Some(bh) = btc_history {
+            txs.extend(used.iter().flat_map(|a| bh.get(a)));
         }
         Ok(Scanned { used, utxos, txs: merge_history(txs, history) })
     }
-}
-
-/// `(used, funded)` from an `address/balances` reply, in `requested` order.
-/// Errors if any requested address has no row: treating a missing row as
-/// "unused" would understate a wallet with no sign anything was wrong.
-fn classify_balances(requested: &[String], rows: &[Value]) -> Result<(Vec<String>, Vec<String>)> {
-    let by_addr: HashMap<&str, &Value> =
-        rows.iter().filter_map(|r| Some((r.get("address")?.as_str()?, r))).collect();
-    let (mut used, mut funded) = (Vec::new(), Vec::new());
-    for a in requested {
-        let r = by_addr.get(a.as_str()).ok_or_else(|| anyhow!("haskoin returned no balance row for {a}"))?;
-        let n = |k: &str| r.get(k).and_then(Value::as_i64).unwrap_or(0);
-        let has_coins = n("utxo") > 0 || n("unconfirmed") != 0;
-        if n("txs") > 0 || has_coins {
-            used.push(a.clone());
-        }
-        if has_coins {
-            funded.push(a.clone());
-        }
-    }
-    Ok((used, funded))
 }
 
 /// Each tx once; unconfirmed first, then confirmed newest-first, the confirmed
@@ -264,26 +342,185 @@ fn esplora_tx(t: &Value) -> Value {
 
 #[cfg(test)]
 mod tests {
-    use super::{classify_balances, esplora_tx, esplora_utxo, esplora_utxo_for_address, merge_history};
+    use super::{esplora_tx, esplora_utxo, esplora_utxo_for_address, merge_history, HaskoinStore};
+    use crate::btc_history::BtcHistory;
+    use crate::scan_cache::ScanCache;
     use serde_json::{json, Value};
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::Arc;
 
     fn bal(addr: &str, txs: i64, utxo: i64, unconfirmed: i64) -> Value {
         json!({ "address": addr, "txs": txs, "utxo": utxo, "unconfirmed": unconfirmed, "confirmed": 0, "received": 0 })
     }
 
     #[test]
-    fn balances_classify_used_and_funded() {
+    fn balances_classify_used_and_funded_via_a_real_fetch() {
+        let (store, _server) = stub(vec![bal("a", 0, 0, 0), bal("b", 3, 0, 0), bal("c", 2, 1, 0), bal("d", 0, 0, 500)], vec![], vec![]);
         let asked: Vec<String> = ["a", "b", "c", "d"].iter().map(|s| s.to_string()).collect();
-        let rows = [bal("a", 0, 0, 0), bal("b", 3, 0, 0), bal("c", 2, 1, 0), bal("d", 0, 0, 500)];
-        let (used, funded) = classify_balances(&asked, &rows).unwrap();
+        let rows = store.balances(&asked).unwrap();
+        let used: Vec<&str> = rows.iter().filter(|(_, s)| s.txs > 0 || s.utxo > 0 || s.unconfirmed != 0).map(|(a, _)| a.as_str()).collect();
+        let funded: Vec<&str> = rows.iter().filter(|(_, s)| s.utxo > 0 || s.unconfirmed != 0).map(|(a, _)| a.as_str()).collect();
         assert_eq!(used, vec!["b", "c", "d"]); // a: never seen; d: only a pending deposit
         assert_eq!(funded, vec!["c", "d"]);
     }
 
     #[test]
     fn a_missing_balance_row_is_an_error_not_an_unused_address() {
+        let (store, _server) = stub(vec![bal("a", 1, 0, 0)], vec![], vec![]);
         let asked = vec!["a".to_string(), "b".to_string()];
-        assert!(classify_balances(&asked, &[bal("a", 1, 0, 0)]).is_err());
+        assert!(store.balances(&asked).is_err());
+    }
+
+    // ---- stub Haskoin server + scan()-level integration tests --------------
+
+    /// A tiny local HTTP stub standing in for api.haskoin.com: serves fixed
+    /// `balances`/`unspent`/`transactions/full` JSON regardless of exactly
+    /// which addresses were asked (fine for these tests, which only care
+    /// about *whether* a given endpoint was hit, not per-address routing),
+    /// and counts hits per endpoint so a test can assert a fetch was
+    /// skipped.
+    struct Stub {
+        hits: HitCounts,
+    }
+    #[derive(Clone, Default)]
+    struct HitCounts {
+        balances: Arc<AtomicUsize>,
+        unspent: Arc<AtomicUsize>,
+        transactions: Arc<AtomicUsize>,
+    }
+    fn stub(balances: Vec<Value>, unspent: Vec<Value>, transactions: Vec<Value>) -> (HaskoinStore, Stub) {
+        let server = tiny_http::Server::http("127.0.0.1:0").unwrap();
+        let addr = server.server_addr().to_ip().unwrap();
+        let hits = HitCounts::default();
+        let hits2 = hits.clone();
+        std::thread::spawn(move || {
+            for req in server.incoming_requests() {
+                let url = req.url().to_string();
+                let body = if url.contains("balances") {
+                    hits2.balances.fetch_add(1, Ordering::SeqCst);
+                    json!(balances)
+                } else if url.contains("unspent") {
+                    hits2.unspent.fetch_add(1, Ordering::SeqCst);
+                    json!(unspent)
+                } else if url.contains("transactions/full") {
+                    hits2.transactions.fetch_add(1, Ordering::SeqCst);
+                    json!(transactions)
+                } else {
+                    json!([])
+                };
+                let resp = tiny_http::Response::from_string(body.to_string());
+                let _ = req.respond(resp);
+            }
+        });
+        (HaskoinStore::new(&format!("http://{addr}"), None), Stub { hits })
+    }
+
+    fn temp_dir(label: &str) -> std::path::PathBuf {
+        static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+        std::env::temp_dir().join(format!(
+            "fortis-edge-haskoin-scan-test-{label}-{}-{}",
+            std::process::id(),
+            NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+        ))
+    }
+
+    fn haskoin_tx(txid: &str, addr: &str, confirmed: bool, height: i64) -> Value {
+        json!({
+            "txid": txid, "fee": 100,
+            "inputs": [{ "coinbase": false, "address": addr, "value": 1000 }],
+            "outputs": [{ "address": addr, "value": 900 }],
+            "block": if confirmed { json!({ "height": height }) } else { json!({ "mempool": 1 }) },
+        })
+    }
+
+    #[test]
+    fn a_cold_scan_fetches_everything_and_populates_both_caches() {
+        let bh = BtcHistory::new(&temp_dir("cold-bh")).unwrap();
+        let sc = ScanCache::new(&temp_dir("cold-sc")).unwrap();
+        let (store, stub) = stub(
+            vec![bal("addr1", 1, 0, 0)],
+            vec![],
+            vec![haskoin_tx("t1", "addr1", true, 100)],
+        );
+        let result = store.scan(&["addr1".into()], 50, Some(&bh), Some(&sc)).unwrap();
+        assert_eq!(result.txs.len(), 1);
+        assert_eq!(stub.hits.transactions.load(Ordering::SeqCst), 1);
+        // Confirmed history is now permanently known, and the scan cache
+        // has the signature this address was fetched under.
+        assert_eq!(bh.get("addr1").len(), 1);
+        assert!(sc.signature("addr1").is_some());
+    }
+
+    #[test]
+    fn an_unchanged_signature_skips_the_transactions_fetch_entirely() {
+        let bh = BtcHistory::new(&temp_dir("warm-bh")).unwrap();
+        let sc = ScanCache::new(&temp_dir("warm-sc")).unwrap();
+        let (store, stub) = stub(
+            vec![bal("addr1", 1, 0, 0)],
+            vec![],
+            vec![haskoin_tx("t1", "addr1", true, 100)],
+        );
+        store.scan(&["addr1".into()], 50, Some(&bh), Some(&sc)).unwrap();
+        assert_eq!(stub.hits.transactions.load(Ordering::SeqCst), 1);
+
+        // Same balances signature on the second call — must not re-fetch.
+        let second = store.scan(&["addr1".into()], 50, Some(&bh), Some(&sc)).unwrap();
+        assert_eq!(stub.hits.transactions.load(Ordering::SeqCst), 1, "unchanged address must not be re-fetched");
+        assert_eq!(second.txs.len(), 1, "confirmed history must still come back, served from the cache");
+        assert_eq!(second.txs[0]["txid"], "t1");
+    }
+
+    #[test]
+    fn a_changed_signature_triggers_a_fresh_fetch_for_just_that_address() {
+        let bh = BtcHistory::new(&temp_dir("changed-bh")).unwrap();
+        let sc = ScanCache::new(&temp_dir("changed-sc")).unwrap();
+        sc.update("addr1", crate::scan_cache::Signature { txs: 1, utxo: 0, unconfirmed: 0 }, &[]);
+        bh.merge("addr1", &[haskoin_tx("t1", "addr1", true, 100)]);
+
+        // Haskoin now reports a *different* signature (txs: 2) — a new tx arrived.
+        let (store, stub) = stub(
+            vec![bal("addr1", 2, 0, 0)],
+            vec![],
+            vec![haskoin_tx("t1", "addr1", true, 100), haskoin_tx("t2", "addr1", true, 101)],
+        );
+        let result = store.scan(&["addr1".into()], 50, Some(&bh), Some(&sc)).unwrap();
+        assert_eq!(stub.hits.transactions.load(Ordering::SeqCst), 1, "a changed signature must trigger a fresh fetch");
+        let ids: std::collections::HashSet<&str> = result.txs.iter().map(|t| t["txid"].as_str().unwrap()).collect();
+        assert!(ids.contains("t1") && ids.contains("t2"));
+    }
+
+    #[test]
+    fn a_pending_entry_is_cached_and_reused_while_unchanged() {
+        let bh = BtcHistory::new(&temp_dir("pending-bh")).unwrap();
+        let sc = ScanCache::new(&temp_dir("pending-sc")).unwrap();
+        let (store, stub) = stub(
+            vec![bal("addr1", 0, 0, 500)],
+            vec![],
+            vec![haskoin_tx("p1", "addr1", false, 0)],
+        );
+        let first = store.scan(&["addr1".into()], 50, Some(&bh), Some(&sc)).unwrap();
+        assert_eq!(first.txs[0]["status"]["confirmed"], false);
+        assert_eq!(stub.hits.transactions.load(Ordering::SeqCst), 1);
+
+        let second = store.scan(&["addr1".into()], 50, Some(&bh), Some(&sc)).unwrap();
+        assert_eq!(stub.hits.transactions.load(Ordering::SeqCst), 1, "unchanged pending state must not be re-fetched");
+        assert_eq!(second.txs.len(), 1);
+        assert_eq!(second.txs[0]["txid"], "p1");
+    }
+
+    #[test]
+    fn scan_still_works_with_no_caches_configured_at_all() {
+        let (store, stub) = stub(
+            vec![bal("addr1", 1, 0, 0)],
+            vec![],
+            vec![haskoin_tx("t1", "addr1", true, 100)],
+        );
+        let result = store.scan(&["addr1".into()], 50, None, None).unwrap();
+        assert_eq!(result.txs.len(), 1);
+        // With no cache, every call re-fetches — no regression versus the
+        // pre-caching behavior when the caches aren't configured.
+        store.scan(&["addr1".into()], 50, None, None).unwrap();
+        assert_eq!(stub.hits.transactions.load(Ordering::SeqCst), 2);
     }
 
     fn etx(txid: &str, confirmed: bool, height: i64) -> Value {

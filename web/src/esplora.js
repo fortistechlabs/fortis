@@ -27,11 +27,6 @@ const SNAP_TTL = 60_000; // ms — reuse the UTXO scan within a poll burst
 // A batched scan (one `POST /scan`) is cheap enough to refresh often; the long
 // TTL above exists only because the per-address walk is not.
 const BATCH_TTL = 10_000;
-// Batched scan: how many addresses per branch the first request asks about.
-// Deriving is local and free and the edge answers hundreds in one round trip,
-// so start wide enough that an ordinary wallet is a single request; a deeper
-// one grows the window (see `_batchScan`).
-const BATCH_MIN_WINDOW = 100;
 const BATCH_MAX_ADDRESSES = 1_000; // the edge refuses more per /scan
 const SCAN_HISTORY = 50; // confirmed txs asked back per /scan
 
@@ -108,9 +103,6 @@ export class EsploraBackend {
     // Only the hosted edge has `/scan`. Flips to false for good if it turns out
     // this deployment doesn't serve it, reverting to the per-address walk.
     this._batchOn = this.kind === 'edge';
-    // Per-branch window an earlier scan already proved big enough, so a refresh
-    // after the first is one request instead of re-growing from BATCH_MIN_WINDOW.
-    this._knownEnd = [0, 0];
     this._histFor = null; // the snapshot `_hist` was computed from
   }
 
@@ -391,56 +383,43 @@ export class EsploraBackend {
     throw lastErr;
   }
 
-  /** The whole wallet in as few requests as it takes — normally one.
+  /** The whole wallet in exactly one request.
    *
-   *  Derive a window of addresses per branch (local, free), send them in one
-   *  `POST /scan`, and get back which are used, their unspent outputs, and the
-   *  newest transactions. Only when a used address lands within GAP of a
-   *  window's end (the standard BIP-44 gap-limit rule) is the window grown and
-   *  the *new* addresses asked about, so a deep wallet costs a few round trips
-   *  the first time and one after — not a request per address. */
+   *  Derive a window of addresses per branch (local, free — PREWARM_DEPTH
+   *  each, 1000 combined, matching the edge's own per-request address cap
+   *  exactly) and send them all in one `POST /scan`, getting back which are
+   *  used, their unspent outputs, and the newest transactions. The edge is
+   *  responsible for doing this cheaply on repeat calls (see fortis-edge's
+   *  scan_cache) — this just asks once, plainly, for exactly the data it
+   *  needs. */
   async _batchScan() {
-    const want = [Math.max(BATCH_MIN_WINDOW, this._knownEnd[0]), Math.max(BATCH_MIN_WINDOW, this._knownEnd[1])];
-    const asked = [0, 0]; // addresses [0, asked[b]) of each branch already sent
+    const want = [PREWARM_DEPTH, PREWARM_DEPTH];
     const byAddr = new Map();
     const used = new Set();
     const unspent = [];
     const txs = new Map();
     let tip = 0;
 
-    for (let round = 0; round < 16; round++) { // far more than any real wallet needs; a runaway backstop
-      const fresh = [];
-      for (const branch of [0, 1]) {
-        const end = Math.min(want[branch], WATCH_SET_HARD_CAP);
-        for (let index = asked[branch]; index < end; index++) {
-          const a = this.session.addressAt(branch, index);
-          fresh.push({ address: a.address, spk: a.script_pubkey_hex, branch, index });
-        }
-        asked[branch] = Math.max(asked[branch], end);
-      }
-      if (!fresh.length) break;
-      for (const a of fresh) byAddr.set(a.address, a);
-
-      for (let i = 0; i < fresh.length; i += BATCH_MAX_ADDRESSES) {
-        const r = await this._postScan(fresh.slice(i, i + BATCH_MAX_ADDRESSES).map((a) => a.address));
-        tip = Math.max(tip, Number(r.tip));
-        for (const a of r.used) used.add(a);
-        unspent.push(...r.utxos);
-        for (const t of r.txs) if (!txs.has(t.txid)) txs.set(t.txid, summarizeTx(t));
-      }
-
-      // Grow a branch's window when a used address reaches into its last GAP.
-      for (const branch of [0, 1]) {
-        let maxUsed = -1;
-        for (const a of used) {
-          const e = byAddr.get(a);
-          if (e && e.branch === branch && e.index > maxUsed) maxUsed = e.index;
-        }
-        const needed = maxUsed + 1 + GAP;
-        if (needed > want[branch]) want[branch] = Math.max(needed, Math.min(want[branch] * 2, WATCH_SET_HARD_CAP));
+    const fresh = [];
+    for (const branch of [0, 1]) {
+      const end = Math.min(want[branch], WATCH_SET_HARD_CAP);
+      for (let index = 0; index < end; index++) {
+        const a = this.session.addressAt(branch, index);
+        fresh.push({ address: a.address, spk: a.script_pubkey_hex, branch, index });
       }
     }
-    this._knownEnd = asked;
+    for (const a of fresh) byAddr.set(a.address, a);
+
+    // One request for the overwhelmingly common case (fresh.length <= the
+    // edge's cap); this only ever splits for a wallet whose own window alone
+    // already exceeds that, which a single call would otherwise be rejected for.
+    for (let i = 0; i < fresh.length; i += BATCH_MAX_ADDRESSES) {
+      const r = await this._postScan(fresh.slice(i, i + BATCH_MAX_ADDRESSES).map((a) => a.address));
+      tip = Math.max(tip, Number(r.tip));
+      for (const a of r.used) used.add(a);
+      unspent.push(...r.utxos);
+      for (const t of r.txs) if (!txs.has(t.txid)) txs.set(t.txid, summarizeTx(t));
+    }
 
     const utxos = unspent.map((u) => {
       const a = byAddr.get(u.address);

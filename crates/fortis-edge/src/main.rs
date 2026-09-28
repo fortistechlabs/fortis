@@ -18,6 +18,7 @@ mod pricing;
 mod proxy;
 mod reconcile;
 mod scan;
+mod scan_cache;
 mod token;
 
 use std::io::{Read, Write};
@@ -166,6 +167,13 @@ struct Args {
     /// <home>/fortis-edge-btc-history-rocksdb.
     #[arg(long)]
     btc_history_dir: Option<PathBuf>,
+    /// RocksDB directory the BTC batch-scan skip-cache persists to — lets
+    /// `POST /btc/scan` skip re-fetching an address's full transaction
+    /// history from Haskoin when nothing about it has changed since the
+    /// last scan (see `scan_cache`'s doc comment). Default:
+    /// <home>/fortis-edge-btc-scancache-rocksdb.
+    #[arg(long)]
+    btc_scan_cache_dir: Option<PathBuf>,
     /// HTTP worker threads.
     #[arg(long, default_value_t = 4)]
     workers: usize,
@@ -222,6 +230,10 @@ struct State {
     /// Permanent, never-evicted confirmed-tx store for BTC — see
     /// `btc_history`'s doc comment. `None` only if the db couldn't be opened.
     btc_history: Option<BtcHistory>,
+    /// Lets a BTC batch scan skip re-fetching an address's full history when
+    /// nothing about it has changed since last time — see `scan_cache`'s doc
+    /// comment. `None` only if the db couldn't be opened.
+    btc_scan_cache: Option<scan_cache::ScanCache>,
     metrics: Metrics,
 }
 
@@ -262,6 +274,10 @@ fn run() -> Result<()> {
         .btc_history_dir
         .clone()
         .unwrap_or_else(|| default_home().join("fortis-edge-btc-history-rocksdb"));
+    let btc_scan_cache_dir = args
+        .btc_scan_cache_dir
+        .clone()
+        .unwrap_or_else(|| default_home().join("fortis-edge-btc-scancache-rocksdb"));
 
     // `--xbt-price-url` wins; `--xbt-price-upstream <base>` is the old form
     // that pointed at a mempool base and implied `/v1/prices`.
@@ -426,6 +442,7 @@ fn run() -> Result<()> {
         pricing: fee,
         cache: Cache::new(args.cache_entries, &cache_dir),
         btc_history: BtcHistory::new(&btc_history_dir),
+        btc_scan_cache: scan_cache::ScanCache::new(&btc_scan_cache_dir),
         metrics: Metrics::default(),
     });
 
@@ -458,6 +475,14 @@ fn run() -> Result<()> {
         "  btc history    {}",
         if state.btc_history.is_some() {
             format!("permanent ({})", btc_history_dir.display())
+        } else {
+            "(disabled)".to_string()
+        }
+    );
+    eprintln!(
+        "  btc scan cache {}",
+        if state.btc_scan_cache.is_some() {
+            format!("enabled ({})", btc_scan_cache_dir.display())
         } else {
             "(disabled)".to_string()
         }
@@ -1078,7 +1103,7 @@ fn scan_chain(req: &mut Request, st: &State, chain: &str, tok: Option<&str>, aut
         Metrics::inc(&st.metrics.upstream_errors);
         return err(503, "btc tip height: not yet available");
     };
-    match hs.scan(&parsed.addresses, parsed.history) {
+    match hs.scan(&parsed.addresses, parsed.history, st.btc_history.as_ref(), st.btc_scan_cache.as_ref()) {
         Ok(mut s) => {
             // Haskoin is the only BTC source here that isn't backed by a
             // full node this project runs (it exists purely for its batch-

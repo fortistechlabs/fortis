@@ -37,13 +37,6 @@ private const val PREWARM_DEPTH = 500
  *  against a pathological xpub. */
 private const val WATCH_SET_HARD_CAP = 2_000
 
-/** Batched scan (`POST {edge}/scan`): how many addresses per branch the first
- *  request asks about. Deriving addresses is local and free, and the edge
- *  answers hundreds in one round trip, so start wide enough that an ordinary
- *  wallet is one request; a deeper one grows the window (see
- *  [EsploraBackend.batchSnapshot]). */
-private const val BATCH_MIN_WINDOW = 100
-
 /** The edge refuses more than this many addresses in one `/scan`. */
 private const val BATCH_MAX_ADDRESSES = 1_000
 
@@ -189,82 +182,63 @@ class EsploraBackend(
     private var snapshot: Snapshot? = null
     private var snapshotAt = 0L
 
-    /** Per-branch window ([receive, change]) an earlier scan by this instance
-     *  already proved big enough, so a refresh after the first is one request
-     *  instead of re-growing the window from [BATCH_MIN_WINDOW]. */
-    private val knownEnd = intArrayOf(0, 0)
-
-    /** The whole wallet in as few requests as it takes — normally one.
+    /** The whole wallet in exactly one request.
      *
-     *  Derive a window of addresses per branch (local, free), send them in one
-     *  `POST {base}/scan`, and get back which are used, their unspent outputs,
-     *  and the newest transactions. Only when a used address lands within [GAP]
-     *  of a window's end (the standard BIP-44 gap-limit rule) is the window
-     *  grown and the *new* addresses asked about, so a deep wallet costs a few
-     *  round trips the first time and one after — not a request per address.
+     *  Derive a window of addresses per branch (local, free — [PREWARM_DEPTH]
+     *  each, 1000 combined, matching the edge's own per-request address cap
+     *  exactly, unless this app instance's own issued index runs deeper than
+     *  that) and send them all in one `POST {base}/scan`, getting back which
+     *  are used, their unspent outputs, and the newest transactions. The edge
+     *  is responsible for doing this cheaply on repeat calls (see
+     *  `fortis-edge`'s `scan_cache`) — this client just asks once, plainly,
+     *  for exactly the data it needs.
      *
      *  Any failure — HTTP error, malformed reply, or the edge reporting
      *  addresses it couldn't check — throws. A balance summed from a scan that
      *  skipped addresses looks exactly like a correct one, so this never
      *  returns a partial answer.
      *
-     *  Cached ~10s, like the per-address scan it replaces; [force] (used when
-     *  building a payment) always goes to the network, since spend selection
-     *  must never run on stale coins. */
+     *  Cached ~10s; [force] (used when building a payment) always goes to the
+     *  network, since spend selection must never run on stale coins. */
     private suspend fun batchSnapshot(force: Boolean): Snapshot {
         val startedAt = System.currentTimeMillis()
         snapshot?.let { if (!force && startedAt - snapshotAt < 10_000) return it }
 
         val (nextReceive, nextChange) = counters()
         val want = intArrayOf(
-            maxOf(BATCH_MIN_WINDOW, nextReceive + GAP, knownEnd[0]),
-            maxOf(BATCH_MIN_WINDOW, nextChange + GAP, knownEnd[1]),
+            minOf(maxOf(PREWARM_DEPTH, nextReceive + GAP), WATCH_SET_HARD_CAP),
+            minOf(maxOf(PREWARM_DEPTH, nextChange + GAP), WATCH_SET_HARD_CAP),
         )
-        val asked = intArrayOf(0, 0) // addresses [0, asked[b]) of each branch already sent
-        val addrs = HashMap<String, WatchAddr>()
+        val addrs = withContext(Dispatchers.Default) {
+            (0..1).flatMap { b ->
+                (0 until want[b]).map { i ->
+                    val d = view.addressAt(b.toUInt(), i.toUInt())
+                    WatchAddr(d.address, d.scriptPubkeyHex, b.toUInt(), i.toUInt())
+                }
+            }
+        }.associateBy { it.address }
+
         val used = HashSet<String>()
         val unspent = ArrayList<JSONObject>()
         val txs = LinkedHashMap<String, TxSummary>()
         var tip = 0L
 
-        repeat(16) { // far more rounds than any real wallet needs; just a runaway backstop
-            val fresh = withContext(Dispatchers.Default) {
-                (0..1).flatMap { b ->
-                    val end = minOf(want[b], WATCH_SET_HARD_CAP)
-                    val from = asked[b]
-                    asked[b] = maxOf(from, end)
-                    (from until end).map { i ->
-                        val d = view.addressAt(b.toUInt(), i.toUInt())
-                        WatchAddr(d.address, d.scriptPubkeyHex, b.toUInt(), i.toUInt())
-                    }
+        // One request for the overwhelmingly common case (addrs.size <= the
+        // edge's cap); `.chunked` only ever splits this for a wallet whose
+        // own issued index alone already exceeds that, which `postScan`'s
+        // per-call cap would otherwise reject outright.
+        for (part in addrs.keys.chunked(BATCH_MAX_ADDRESSES)) {
+            val r = postScan(part)
+            tip = maxOf(tip, r.getLong("tip"))
+            r.getJSONArray("used").let { a -> for (i in 0 until a.length()) used += a.getString(i) }
+            r.getJSONArray("utxos").let { a -> for (i in 0 until a.length()) unspent += a.getJSONObject(i) }
+            r.getJSONArray("txs").let { a ->
+                for (i in 0 until a.length()) {
+                    val t = summarize(a.getJSONObject(i))
+                    txs.putIfAbsent(t.txid, t)
                 }
-            }
-            if (fresh.isEmpty()) return@repeat
-            fresh.forEach { addrs[it.address] = it }
-
-            for (part in fresh.chunked(BATCH_MAX_ADDRESSES)) {
-                val r = postScan(part.map { it.address })
-                tip = maxOf(tip, r.getLong("tip"))
-                r.getJSONArray("used").let { a -> for (i in 0 until a.length()) used += a.getString(i) }
-                r.getJSONArray("utxos").let { a -> for (i in 0 until a.length()) unspent += a.getJSONObject(i) }
-                r.getJSONArray("txs").let { a ->
-                    for (i in 0 until a.length()) {
-                        val t = summarize(a.getJSONObject(i))
-                        txs.putIfAbsent(t.txid, t)
-                    }
-                }
-            }
-
-            // Grow a branch's window when a used address reaches into its last GAP.
-            for (b in 0..1) {
-                val maxUsed = used.mapNotNull { addrs[it] }
-                    .filter { it.branch == b.toUInt() }
-                    .maxOfOrNull { it.index.toInt() } ?: -1
-                val needed = maxUsed + 1 + GAP
-                if (needed > want[b]) want[b] = maxOf(needed, minOf(want[b] * 2, WATCH_SET_HARD_CAP))
             }
         }
-        knownEnd[0] = asked[0]; knownEnd[1] = asked[1]
 
         for (a in used) addrs[a]?.let { noteUsed(it, true) }
         val coins = unspent.map { u ->
