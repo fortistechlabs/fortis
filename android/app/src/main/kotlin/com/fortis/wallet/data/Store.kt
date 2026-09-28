@@ -38,6 +38,11 @@ data class WalletConfig(
     val backendToken: String? = null,
     val watchOnly: Boolean = false,
     val xpub: String? = null,
+    /** Confirmed balance (sat) as of the last successful, non-degraded
+     *  refresh — shown immediately when this wallet is opened, before the
+     *  next live refresh lands, so re-opening the app doesn't always start
+     *  from a blank/zero state. Null until the first refresh ever succeeds. */
+    val lastKnownBalanceSat: Long? = null,
 ) {
     /** e.g. `XBT · Savings` — the label the picker shows. */
     val display: String get() = "${chain.uppercase()} · $name" + if (watchOnly) " · watch-only" else ""
@@ -50,6 +55,7 @@ data class WalletConfig(
         backendToken?.let { put("token", it) }
         if (watchOnly) put("watch_only", true)
         xpub?.let { put("xpub", it) }
+        lastKnownBalanceSat?.let { put("last_known_balance_sat", it) }
     }
 
     companion object {
@@ -65,6 +71,7 @@ data class WalletConfig(
             backendToken = o.optString("token").ifBlank { null },
             watchOnly = o.optBoolean("watch_only", false),
             xpub = o.optString("xpub").ifBlank { null },
+            lastKnownBalanceSat = if (o.has("last_known_balance_sat")) o.getLong("last_known_balance_sat") else null,
         )
     }
 }

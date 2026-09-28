@@ -121,6 +121,23 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
     var status by mutableStateOf<ChainStatus?>(null); private set
     var balances by mutableStateOf<Balances?>(null); private set
 
+    /** True for the duration of an in-flight [refresh] call — lets the UI show
+     *  a "Refreshing…" state distinct from the initial, never-yet-loaded
+     *  "Connecting…" one, so tapping refresh visibly does something instead
+     *  of looking like a no-op until it either finishes or fails. */
+    var refreshing by mutableStateOf(false); private set
+
+    /** The exception message from the most recent failed [refresh] attempt
+     *  (both the primary edge and the fallback failing), or null once a
+     *  refresh has succeeded since. Distinguishes "never loaded yet" from
+     *  "just tried and failed" in the UI, and gives a real, specific string
+     *  to show instead of a silent, indefinite "Connecting…" — found live,
+     *  2026-09-28: a malformed server response threw deep inside a batch
+     *  scan parse, `runCatching` swallowed it with zero log output, and the
+     *  wallet sat on "connecting…" forever with nothing anywhere — not even
+     *  logcat — hinting at what had actually gone wrong. */
+    var lastRefreshError by mutableStateOf<String?>(null); private set
+
     /** USD per whole coin, keyed by chain ("btc" / "xbt"). Shared by every
      *  wallet on that chain; absent = no fiat value shown. */
     var coinUsd by mutableStateOf<Map<String, Double>>(emptyMap()); private set
@@ -249,8 +266,16 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
     /** Drop the in-view backend + derived state — call when the selected wallet changes. */
     private fun resetView() {
         backend = null; fallback = null; usingFallback = false
-        status = null; balances = null; history = emptyList(); feerates = emptyMap()
+        status = null; history = emptyList(); feerates = emptyMap()
         pending = null; lastSentTxid = null
+        // Seed with the last successful refresh's balance rather than a blank
+        // 0, so opening a wallet shows *something* immediately instead of
+        // always starting from scratch — refresh() overwrites this with a
+        // fresh value shortly. `status` staying null keeps the "connecting…"
+        // hint showing alongside it, so a stale number still reads as
+        // "still checking", not as a confirmed-current one.
+        balances = wallets.firstOrNull { it.id == selectedId }?.lastKnownBalanceSat
+            ?.let { Balances(confirmedSat = it, pendingSat = 0) }
     }
 
     // --- navigation ---
@@ -486,7 +511,14 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
 
     // --- backend ---
 
-    /** Drop the stored token and mint a fresh one (Settings → Reconnect). */
+    /** Drop the stored token and mint a fresh one (Settings → Reconnect).
+     *  Found live, 2026-09-28: this used to reset connection state and call
+     *  `backend!!.status()` only to discard its result, then rely on
+     *  whatever ambient poll loop the Wallet screen happens to be running to
+     *  eventually notice — which meant tapping this while already on that
+     *  screen could look like a complete no-op until the next scheduled
+     *  tick. Now calls [refresh] itself directly, so the button visibly does
+     *  something every time regardless of any poll timing. */
     fun reconnect() = wrap {
         val id = selectedId ?: return@wrap
         if (ensureSession(id) == null) return@wrap // needs the wallet open
@@ -494,9 +526,9 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
         updateConfig(id) { it.copy(backendToken = token) }
         backend = edgeBackend(token)
         usingFallback = false
-        backend!!.status()
-        status = null; balances = null; history = emptyList()
+        status = null; history = emptyList()
         resolvePhase()
+        refresh()
     }
 
     /** The hosted fortis-edge as an Esplora backend at `{HOSTED_EDGE}/{chain}`. */
@@ -539,8 +571,6 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    private var refreshing = false
-
     fun refresh() = viewModelScope.launch {
         // The wallet-detail screen's poll loop calls this every 20s with no
         // memory of whether the last call ever finished — without this guard,
@@ -555,6 +585,7 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
         // enough to make an otherwise-healthy edge look unreliable.
         if (refreshing) return@launch
         refreshing = true
+        lastRefreshError = null
         val edge = backend ?: run { refreshing = false; return@launch }
         // The wallet this refresh() call is for — captured now because
         // `selectedId`/`config` can change while the suspend calls below are
@@ -590,6 +621,28 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
             history = newHistory
             balances = newBalances
             refreshingFor?.let { id -> setWalletBalance(id, newBalances.confirmedSat) }
+            // Only when this landed via the primary backend (not the old
+            // public-explorer fallback, `degraded`) *and* the edge itself
+            // didn't flag the data as its own degraded answer
+            // (`newBalances.serverDegraded`, set when the edge's Haskoin
+            // batch source is down and it's serving confirmed-history-only
+            // from its permanent store — see fortis-edge's scan_chain and
+            // scan::response_ex). Checking both closes the gap an earlier
+            // version of this guard left open: found live, 2026-09-28, a
+            // safe-but-empty degraded answer from the edge looked identical
+            // to a healthy one from here, and got remembered as "last known"
+            // over a real balance from moments before.
+            if (!degraded && !newBalances.serverDegraded) {
+                refreshingFor?.let { id ->
+                    // Skip the write entirely when unchanged — this runs on
+                    // every successful poll (every 20s while a wallet's
+                    // open), and the common case is an unchanged balance.
+                    val prev = wallets.firstOrNull { it.id == id }?.lastKnownBalanceSat
+                    if (prev != newBalances.confirmedSat) {
+                        updateConfig(id) { it.copy(lastKnownBalanceSat = newBalances.confirmedSat) }
+                    }
+                }
+            }
 
             val newUsd = refreshingChain?.let { ch -> runCatching { b.price() }.getOrNull()?.let { ch to it } }
             val newFeerates =
@@ -620,7 +673,19 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
         try {
             runCatching { load(edge, false) }
                 .recoverCatching { e -> fallback?.let { load(it, true) } ?: throw e }
-                .onFailure { status = null }
+                .onFailure { e ->
+                    // Found live, 2026-09-28: this used to swallow every
+                    // exception with zero trace anywhere — not logcat, not
+                    // the UI, nothing — which turned a real, fixable bug (a
+                    // malformed server response the client threw parsing)
+                    // into hours of blind guessing. Now always logged, and
+                    // surfaced to the UI via lastRefreshError so a real
+                    // failure reads as a real failure, not an indefinite
+                    // "Connecting…".
+                    android.util.Log.e("WalletRefresh", "refresh failed for ${refreshingChain ?: "?"}", e)
+                    lastRefreshError = e.message ?: e::class.simpleName ?: "unknown error"
+                    status = null
+                }
         } finally {
             refreshing = false
         }

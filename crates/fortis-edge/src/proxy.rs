@@ -186,7 +186,20 @@ impl TipCache {
     /// successful height and served 503 indefinitely, which starves
     /// `/blocks/tip/height` and, downstream, the whole wallet-refresh
     /// pipeline that calls it first.
-    pub fn spawn(upstreams: Vec<Upstream>, interval: Duration) -> Self {
+    ///
+    /// `rpc`, when given (`--btc-rpc-url`), is tried *before* every upstream
+    /// in `upstreams` each cycle — a node this deployment already runs and
+    /// already trusts for broadcast, so it has no rate limit and no shared-IP
+    /// exposure at all. Found live, 2026-09-28: `--btc-upstream` and
+    /// `--btc-upstream-fallback` both failing at once (one 429d, the other
+    /// timed out) reproduced the exact same "never gets a single successful
+    /// height" starvation the 2026-09-15 Maestro incident did, even with a
+    /// perfectly healthy batch source (Haskoin) answering everything else —
+    /// this cache's own upstream chain was the one thing with no fallback
+    /// left. A local node is the obvious fix: it can't be rate-limited by a
+    /// public explorer's policy, and unlike those it's not shared with every
+    /// other wallet behind this edge.
+    pub fn spawn(rpc: Option<fortis_node::Rpc>, upstreams: Vec<Upstream>, interval: Duration) -> Self {
         let current = Arc::new(Mutex::new(None));
         let bg = current.clone();
         std::thread::spawn(move || loop {
@@ -195,7 +208,16 @@ impl TipCache {
             // "no successful height yet" and "actively failing every attempt"
             // looked identical from the outside.
             let mut height = None;
-            for upstream in &upstreams {
+            if let Some(rpc) = &rpc {
+                match rpc.call("getblockcount", serde_json::json!([])) {
+                    Ok(v) => match v.as_u64() {
+                        Some(h) => height = Some(h),
+                        None => eprintln!("tip-cache: node getblockcount gave a non-integer result: {v}"),
+                    },
+                    Err(e) => eprintln!("tip-cache: node getblockcount failed: {e:#}"),
+                }
+            }
+            for upstream in height.is_none().then_some(&upstreams).into_iter().flatten() {
                 let t0 = std::time::Instant::now();
                 let result = upstream.forward(&Method::Get, "blocks/tip/height", "", &[]);
                 height = match &result {

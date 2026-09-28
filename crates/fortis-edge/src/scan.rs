@@ -65,7 +65,18 @@ impl ScanRequest {
 }
 
 pub fn response(tip: u64, used: Vec<String>, utxos: Vec<Value>, txs: Vec<Value>) -> Value {
-    json!({ "tip": tip, "used": used, "utxos": utxos, "txs": txs, "failed": Vec::<String>::new() })
+    response_ex(tip, used, utxos, txs, false)
+}
+
+/// Like [`response`], but lets the caller mark this answer as degraded —
+/// confirmed history only, `utxos` not to be trusted as a real balance (see
+/// `scan_chain`'s Haskoin-failure fallback in `main.rs`). Client-visible so
+/// it can skip remembering this as a "last known balance": found live,
+/// 2026-09-28, a client that couldn't tell a degraded 200 from a healthy one
+/// persisted a stale/partial number from an intermediate poll and showed it
+/// on the next cold open, alongside a real, correct balance moments later.
+pub fn response_ex(tip: u64, used: Vec<String>, utxos: Vec<Value>, txs: Vec<Value>, degraded: bool) -> Value {
+    json!({ "tip": tip, "used": used, "utxos": utxos, "txs": txs, "failed": Vec::<String>::new(), "degraded": degraded })
 }
 
 #[cfg(test)]
@@ -98,5 +109,17 @@ mod tests {
         let r = ScanRequest::parse(br#"{"addresses":["a","b"],"history":7}"#).unwrap();
         let again = ScanRequest::parse(&r.to_body()).unwrap();
         assert_eq!((again.addresses, again.history), (vec!["a".to_string(), "b".to_string()], 7));
+    }
+
+    #[test]
+    fn plain_response_is_not_degraded() {
+        let r = response(1, vec!["a".into()], vec![], vec![]);
+        assert_eq!(r["degraded"], false);
+    }
+
+    #[test]
+    fn response_ex_carries_the_degraded_flag_through() {
+        let r = response_ex(1, vec!["a".into()], vec![], vec![], true);
+        assert_eq!(r["degraded"], true);
     }
 }

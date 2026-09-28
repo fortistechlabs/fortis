@@ -177,6 +177,9 @@ class EsploraBackend(
         /** Every address the scan asked about — what "is this vin/vout ours" is checked against. */
         val mine: Set<String>,
         val tip: Long,
+        /** True if any chunk of this scan came from the edge's own Haskoin-
+         *  failure fallback — see `Balances.serverDegraded`'s doc. */
+        val degraded: Boolean = false,
     )
 
     private var snapshot: Snapshot? = null
@@ -222,6 +225,7 @@ class EsploraBackend(
         val unspent = ArrayList<JSONObject>()
         val txs = LinkedHashMap<String, TxSummary>()
         var tip = 0L
+        var degraded = false
 
         // One request for the overwhelmingly common case (addrs.size <= the
         // edge's cap); `.chunked` only ever splits this for a wallet whose
@@ -230,6 +234,7 @@ class EsploraBackend(
         for (part in addrs.keys.chunked(BATCH_MAX_ADDRESSES)) {
             val r = postScan(part)
             tip = maxOf(tip, r.getLong("tip"))
+            if (r.optBoolean("degraded", false)) degraded = true
             r.getJSONArray("used").let { a -> for (i in 0 until a.length()) used += a.getString(i) }
             r.getJSONArray("utxos").let { a -> for (i in 0 until a.length()) unspent += a.getJSONObject(i) }
             r.getJSONArray("txs").let { a ->
@@ -257,7 +262,7 @@ class EsploraBackend(
                 isChange = a.branch == 1u,
             )
         }
-        return Snapshot(coins, txs.values.toList(), addrs.keys.toHashSet(), tip).also {
+        return Snapshot(coins, txs.values.toList(), addrs.keys.toHashSet(), tip, degraded).also {
             snapshot = it
             snapshotAt = startedAt
         }
@@ -634,9 +639,10 @@ class EsploraBackend(
         )
     }
 
-    private fun balancesFrom(u: List<WalletUtxo>) = Balances(
+    private fun balancesFrom(u: List<WalletUtxo>, serverDegraded: Boolean = false) = Balances(
         confirmedSat = u.filter { it.confirmations >= 1u }.sumOf { it.valueSat.toLong() },
         pendingSat = u.filter { it.confirmations < 1u }.sumOf { it.valueSat.toLong() },
+        serverDegraded = serverDegraded,
     )
 
     /** [balances] and [history] from the exact same [batchSnapshot] call,
@@ -651,7 +657,7 @@ class EsploraBackend(
         if (batchOn) {
             try {
                 val s = batchSnapshot(false)
-                return balancesFrom(s.utxos) to historyFrom(s.txs, s.mine, s.tip, count)
+                return balancesFrom(s.utxos, s.degraded) to historyFrom(s.txs, s.mine, s.tip, count)
             } catch (e: ScanUnsupported) {
                 batchOn = false // fall through to the per-address walk
             }

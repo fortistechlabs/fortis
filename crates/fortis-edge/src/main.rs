@@ -444,10 +444,15 @@ fn run() -> Result<()> {
         // there); only BTC's public-explorer proxy needs the background
         // cache. Deliberately *not* `build_btc_chain()` — see
         // `build_btc_tip_chain`'s doc for why Maestro is excluded here even
-        // though it's the real per-request chain's primary.
+        // though it's the real per-request chain's primary. `btc_broadcast`
+        // (the local node, when `--btc-rpc-url` is set) is tried before any
+        // of that chain — see `TipCache::spawn`'s doc for why a node this
+        // deployment already runs and trusts is a strictly better tip source
+        // than any public explorer.
         btc_tip: {
             let chain = build_btc_tip_chain();
-            (!chain.is_empty()).then(|| proxy::TipCache::spawn(chain, std::time::Duration::from_secs(20)))
+            (btc_broadcast.is_some() || !chain.is_empty())
+                .then(|| proxy::TipCache::spawn(btc_broadcast.clone(), chain, std::time::Duration::from_secs(20)))
         },
         btc_broadcast,
         btc_price: args
@@ -765,6 +770,26 @@ fn proxy_chain(req: &mut Request, st: &State, method: &Method, path: &str, query
         }
     }
 
+    // `GET /btc/debug/history/{address}` — a pure local read of the permanent
+    // confirmed-tx store (see `btc_history`'s doc comment), zero upstream
+    // calls. Exists purely to answer "is this address's history actually in
+    // the database" directly, without that question itself triggering a live
+    // fetch the way the normal `/address/{a}/txs` route does (it always tries
+    // upstream first, merging on success) — added 2026-09-28 because that
+    // distinction genuinely matters and there was no other way to check it
+    // without either hitting an upstream or reading the RocksDB files
+    // directly, which needs privileges this shell didn't have.
+    if method == &Method::Get && chain == "btc" {
+        if let Some(addr) = rest.strip_prefix("debug/history/") {
+            if st.require_token && !token_ok() {
+                Metrics::inc(&st.metrics.unauthorized);
+                return err(401, "missing or invalid token — POST /register first");
+            }
+            let txs = st.btc_history.as_ref().map(|h| h.get(addr)).unwrap_or_default();
+            return Reply::Json(200, json!({ "address": addr, "count": txs.len(), "txs": txs }));
+        }
+    }
+
     // `POST /btc/prewarm` — body is a JSON array of the wallet's addresses. Pull
     // them all from Haskoin in two calls, reshape into per-address Esplora
     // `/address/{a}/{utxo,txs}` bodies, and prime the cache so the scan that
@@ -943,6 +968,44 @@ fn proxy_chain(req: &mut Request, st: &State, method: &Method, path: &str, query
             pacer.wait();
         }
     }
+
+    // `GET /btc/address/{a}/txs` — if the permanent store already has this
+    // address's history, serve it immediately and skip the upstream call
+    // entirely, rather than hitting upstream first and falling back to this
+    // only on outright failure (the previous order). That order meant a slow
+    // upstream (not failing, just slow — confirmed live 2026-09-28: an
+    // *unused* address could hang 20+ seconds on one provider before ever
+    // reaching this fallback) blocked the response even when the database
+    // already had a perfectly good answer sitting there for free.
+    // Deliberately only for addresses the store already knows about: an
+    // address with no stored history yet (genuinely unused, or never fetched
+    // before) still has to ask upstream — there's nothing else to serve.
+    // This trades a small amount of freshness (a brand-new tx to an
+    // already-used address won't show up until the *next* successful
+    // fetch merges it in) for a bounded, database-fast response on this
+    // path — acceptable here because this route only matters when the
+    // batch `/scan` path (Haskoin, with its own real freshness check via
+    // `scan_cache`'s signature comparison) isn't being used at all.
+    if chain == "btc" && method == &Method::Get && rest.ends_with("/txs") {
+        if let (Some(addr), Some(hist)) =
+            (rest.strip_prefix("address/").and_then(|r| r.strip_suffix("/txs")), &st.btc_history)
+        {
+            let known = hist.get(addr);
+            if !known.is_empty() {
+                return Reply::Json(200, serde_json::Value::Array(known));
+            }
+        }
+    }
+
+    // No database-first shortcut for `GET /btc/address/{a}/utxo`, unlike
+    // `/txs` above — tried this 2026-09-28 and reverted it the same day.
+    // `/txs` is safe to serve from the permanent store because a confirmed
+    // transaction is a fact that never changes; a UTXO's unspent status is
+    // not — it can flip the instant something spends it, and worse, this
+    // shortcut ran unconditionally (not just when upstream was struggling),
+    // so once an address had *any* stored history it would skip upstream
+    // forever, freezing that address's balance at whatever it happened to be
+    // the first time this route ever ran for it.
 
     // When the upstream is flaking (429 after retries, 5xx, transport error), a
     // recently-cached copy keeps a wallet scan from aborting on one bad address.
@@ -1166,7 +1229,56 @@ fn scan_chain(req: &mut Request, st: &State, chain: &str, tok: Option<&str>, aut
         }
         Err(e) => {
             Metrics::inc(&st.metrics.upstream_errors);
-            err(502, &format!("haskoin: {e}"))
+            // Haskoin failing outright doesn't have to mean a hard failure
+            // when the permanent store already knows this wallet — the same
+            // "answer from what we already have" fallback the per-address
+            // routes get above, applied to the whole batch at once instead
+            // of one address at a time. Only counts an address as used if
+            // the store has *something* for it; nothing here can detect a
+            // real address that's used but never yet been fetched, so if
+            // the store is empty for every address in the request there's
+            // genuinely nothing to serve and this still returns the real
+            // 502 below rather than a wrong "empty wallet" answer.
+            //
+            // Deliberately serves `txs` but never `utxos`/balance from this
+            // path. A UTXO can only be correctly derived from *complete*
+            // transaction history (an output looks unspent unless some known
+            // tx spends it) — found live, 2026-09-28: if even one spending
+            // transaction was never successfully fetched and merged in (very
+            // plausible during exactly the kind of upstream instability that
+            // makes this fallback trigger at all), a genuinely spent output
+            // reads as still-unspent and the balance comes out *higher* than
+            // reality. Understating a wallet's history (some old txs missing
+            // from the list) is a safe, honest kind of stale; overstating its
+            // spendable balance is not, so utxos stays empty here rather than
+            // risk it — an empty balance is an obviously-degraded state a
+            // user won't act on by mistake, a wrong-but-plausible-looking one
+            // might be.
+            let mut used = Vec::new();
+            let mut txs = Vec::new();
+            if let Some(hist) = st.btc_history.as_ref() {
+                for addr in &parsed.addresses {
+                    let known = hist.get(addr);
+                    if known.is_empty() {
+                        continue;
+                    }
+                    txs.extend(known);
+                    used.push(addr.clone());
+                }
+            }
+            if used.is_empty() {
+                return err(502, &format!("haskoin: {e}"));
+            }
+            // Same dedup + "pending first, then confirmed newest-first, cut
+            // to the requested depth" ordering the healthy path uses — this
+            // fallback previously just concatenated each address's list in
+            // request order, which is not a coherent history to show at all.
+            let txs = haskoin::merge_history(txs, parsed.history);
+            eprintln!(
+                "fortis-edge: haskoin scan failed ({e:#}); serving {} known address(es) from the permanent store (history only, no balance)",
+                used.len()
+            );
+            Reply::Json(200, scan::response_ex(tip, used, Vec::new(), txs, true))
         }
     }
 }
@@ -1211,4 +1323,5 @@ mod tests {
         assert!(!is_bad_upstream(200, &get, "address/bc1qabc/utxo"));
         assert!(!is_bad_upstream(404, &Method::Post, "address/bc1qabc/utxo"));
     }
+
 }

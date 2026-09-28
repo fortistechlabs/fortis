@@ -2,6 +2,18 @@
 
 Fortis Wallet (Android). Versions are `versionName (versionCode)`.
 
+## 0.4.2 (16) — 2026-09-28
+
+- Fixed a case where a BTC wallet could get stuck showing "Connecting…"
+  indefinitely, or briefly show an incorrect balance, when the backend's
+  batch data source was temporarily unavailable. It now shows a safe,
+  clearly-labeled balance in that situation instead of a wrong or stuck one.
+- Reopening a wallet now shows its last-known balance immediately instead of
+  a blank screen while it checks for updates.
+- Tapping "Reconnect" (Settings) now visibly does something — it shows
+  "Refreshing…" and either updates or reports that it couldn't, instead of
+  appearing to do nothing.
+
 ## 0.4.1 (15) — 2026-09-28
 
 - A Bitcoin (BTC) wallet with a lot of history could still take several

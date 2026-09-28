@@ -11,6 +11,7 @@ use anyhow::{anyhow, Context, Result};
 use base64::Engine as _;
 use serde_json::{json, Value};
 
+#[derive(Clone)]
 pub struct Rpc {
     base_url: String,
     auth_header: String,

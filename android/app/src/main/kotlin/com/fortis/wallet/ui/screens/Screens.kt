@@ -765,6 +765,16 @@ private fun WalletTab(vm: WalletViewModel) {
                     // "done" at a glance. Keep showing the "connecting…" state (already
                     // translated everywhere, so reusing it needs no new string) until
                     // the first balance actually arrives.
+                    // Below the status-arrived case, distinguish three states that
+                    // all used to render as the same indefinite "connecting…":
+                    // actively refreshing right now (tapped reconnect, or the
+                    // poll loop firing), a just-failed attempt (shows the last-
+                    // known balance above this, per resetView()'s doc, so this
+                    // text is what tells the user that number might be stale),
+                    // and genuinely never having loaded at all yet. Found live,
+                    // 2026-09-28: with no distinction, tapping refresh looked
+                    // like a no-op and a real failure looked identical to a
+                    // wallet that had simply never loaded.
                     val hint = vm.status?.takeIf { b != null }?.let {
                         val head = when {
                             it.scanningPct != null -> stringResource(R.string.wallet_rescanning, it.scanningPct)
@@ -772,7 +782,11 @@ private fun WalletTab(vm: WalletViewModel) {
                             else -> stringResource(R.string.wallet_syncing)
                         }
                         if (it.degraded) stringResource(R.string.wallet_limited_suffix, head) else head
-                    } ?: stringResource(R.string.wallet_connecting)
+                    } ?: when {
+                        vm.refreshing -> stringResource(R.string.wallet_refreshing)
+                        vm.lastRefreshError != null -> stringResource(R.string.wallet_refresh_failed)
+                        else -> stringResource(R.string.wallet_connecting)
+                    }
                     // Connection dot — same ok/connecting semantics as the web wallet's
                     // `.dot`: green once a status reply landed and the scan isn't still
                     // catching up, yellow (pulsing there; a plain dot here) otherwise,

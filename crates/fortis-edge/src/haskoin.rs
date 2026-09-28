@@ -18,6 +18,11 @@ use crate::scan_cache::{ScanCache, Signature};
 /// Addresses per Haskoin call — a comma-joined query param, so an unbounded
 /// list would trip a URL-length limit (`414`) somewhere on the way.
 const ADDRS_PER_CALL: usize = 150;
+/// Cap on simultaneous in-flight chunk requests — see [`HaskoinStore::
+/// get_chunked`]'s doc comment for the live 503 evidence behind this number.
+/// 3 concurrent requests succeeded in that same test; kept to 2 for margin
+/// rather than riding the exact observed edge of an undocumented limit.
+const MAX_CONCURRENT_CHUNKS: usize = 2;
 /// Haskoin's `limit` on `address/transactions/full` for [`HaskoinStore::warm`]
 /// is *set-wide*, not per address: a response this size may have been cut
 /// off, so it can't be trusted as any single address's full history.
@@ -135,29 +140,44 @@ impl HaskoinStore {
             .collect())
     }
 
-    /// Runs one GET per [`ADDRS_PER_CALL`]-sized chunk of `addresses`, all at
-    /// once rather than one after another — confirmed live, 2026-09-28: a
-    /// single wide one-shot scan (the client now sends its whole watch-set
-    /// in one request, up to 1000 addresses) turned into up to 7 sequential
-    /// `address/balances` calls alone, taking ~1.9s total even though
-    /// Haskoin answers each in ~0.2-0.3s and has no trouble with several at
-    /// the same time. `path_for` builds the full `address/...` path+query
-    /// for one chunk's comma-joined address list; results come back in the
-    /// same order as `addresses.chunks(ADDRS_PER_CALL)`.
+    /// Runs one GET per [`ADDRS_PER_CALL`]-sized chunk of `addresses`, up to
+    /// [`MAX_CONCURRENT_CHUNKS`] at once rather than fully sequential — a
+    /// single wide one-shot scan (the client now sends its whole watch-set in
+    /// one request, up to 1000 addresses) is up to 7 chunks, and doing them
+    /// one after another cost ~1.9s even though Haskoin answers each in
+    /// ~0.2-0.3s alone. Originally fired all chunks at once with no cap;
+    /// confirmed live, 2026-09-28, that this was wrong — 7 truly simultaneous
+    /// requests to Haskoin got 4 of them back as `503` in under 100ms each,
+    /// while every one of those same 7 chunks succeeds individually and even
+    /// 3-at-once succeeded in the same test. A concurrent-request limit, not
+    /// a processing-time one — capping how many are ever in flight at once
+    /// (rather than removing the parallelism entirely) keeps most of the
+    /// speedup while staying under whatever that real limit is. `path_for`
+    /// builds the full `address/...` path+query for one chunk's comma-joined
+    /// address list; results come back in the same order as
+    /// `addresses.chunks(ADDRS_PER_CALL)`.
     fn get_chunked(&self, addresses: &[String], path_for: impl Fn(&str) -> String + Sync) -> Result<Vec<Value>> {
-        std::thread::scope(|scope| {
-            let handles: Vec<_> = addresses
-                .chunks(ADDRS_PER_CALL)
-                .map(|chunk| {
-                    let path = path_for(&chunk.join(","));
-                    scope.spawn(move || self.get(&path))
-                })
-                .collect();
-            handles
-                .into_iter()
-                .map(|h| h.join().unwrap_or_else(|_| Err(anyhow!("haskoin request thread panicked"))))
-                .collect()
-        })
+        let chunks: Vec<&[String]> = addresses.chunks(ADDRS_PER_CALL).collect();
+        let mut out = Vec::with_capacity(chunks.len());
+        for group in chunks.chunks(MAX_CONCURRENT_CHUNKS) {
+            let results: Vec<Result<Value>> = std::thread::scope(|scope| {
+                let handles: Vec<_> = group
+                    .iter()
+                    .map(|chunk| {
+                        let path = path_for(&chunk.join(","));
+                        scope.spawn(move || self.get(&path))
+                    })
+                    .collect();
+                handles
+                    .into_iter()
+                    .map(|h| h.join().unwrap_or_else(|_| Err(anyhow!("haskoin request thread panicked"))))
+                    .collect()
+            });
+            for r in results {
+                out.push(r?);
+            }
+        }
+        Ok(out)
     }
 
     /// `(address, signature)` for every requested address, in request order.
@@ -318,7 +338,7 @@ impl HaskoinStore {
 /// list cut to `history`. Each `address/transactions/full` call returns its
 /// own newest `history` for one chunk of addresses, so the newest overall are
 /// among the union — nothing needed is lost by capping per call first.
-fn merge_history(txs: Vec<Value>, history: usize) -> Vec<Value> {
+pub(crate) fn merge_history(txs: Vec<Value>, history: usize) -> Vec<Value> {
     let mut seen = HashSet::new();
     let (mut pending, mut confirmed): (Vec<Value>, Vec<Value>) = txs
         .into_iter()

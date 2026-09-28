@@ -18,7 +18,15 @@ data class ChainStatus(
     val degraded: Boolean = false,
 )
 
-data class Balances(val confirmedSat: Long, val pendingSat: Long)
+/** `serverDegraded`: the edge said this balance came from its own Haskoin-
+ *  failure fallback (confirmed history only, not a real live balance) —
+ *  distinct from [ChainStatus.degraded] above, which means *this client*
+ *  fell back to the public-explorer backend. Two different, independently
+ *  true-or-false things that happen to share the word "degraded"; found
+ *  live, 2026-09-28, that not distinguishing the server's own signal caused
+ *  a stale/partial balance to get remembered as "last known" and shown on
+ *  the next cold open. */
+data class Balances(val confirmedSat: Long, val pendingSat: Long, val serverDegraded: Boolean = false)
 
 data class HistoryEntry(
     val txid: String,

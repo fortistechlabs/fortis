@@ -152,6 +152,8 @@
     <string name="wallet_syncing">syncing</string>
     <string name="wallet_limited_suffix">%1$s  ·  limited service</string>
     <string name="wallet_connecting">connecting…</string>
+    <string name="wallet_refreshing">refreshing…</string>
+    <string name="wallet_refresh_failed">couldn\'t refresh · will retry</string>
     <string name="fiat_approx">≈ %1$s</string>
 
     <!-- sent banner -->
