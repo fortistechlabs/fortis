@@ -45,6 +45,17 @@ interface Backend {
     suspend fun history(count: Int): List<HistoryEntry>
     suspend fun broadcast(rawHex: String): String
 
+    /** [balances] and [history] together, from one underlying fetch where the
+     *  backend can manage it. Matters because a backend's "check anything new"
+     *  step can be shared between the two (see `EsploraBackend.batchSnapshot`,
+     *  where both are derived from the very same server response) — calling
+     *  them as two separate suspend functions risks one succeeding and the
+     *  other failing independently if the network hiccups in the gap between
+     *  them, even though the data for both already arrived together. Default
+     *  here is the old separate-calls behavior, for a backend with no shared
+     *  fetch to exploit. */
+    suspend fun balancesAndHistory(count: Int): Pair<Balances, List<HistoryEntry>> = balances() to history(count)
+
     /** USD per whole coin for this chain, or null if the backend has no price
      *  feed. Used only to show an approximate fiat value. */
     suspend fun price(): Double? = null

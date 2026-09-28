@@ -573,26 +573,24 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
             // regardless of whether a live walk was even about to happen.
             viewModelScope.launch { runCatching { b.prewarm() } }
             val newStatus = b.status().copy(degraded = degraded)
-            // history() only needs watchSet() (cache-seeded, fast on a warm
-            // reopen) — balances() additionally needs a live per-address UTXO
-            // fetch, which is never cached (see EsploraBackend.scan()).
-            // Committed on its own right below, separately from balances,
-            // so a warm reopen's history actually paints as soon as it's
-            // ready instead of sitting computed-but-unseen behind the slow
-            // live balance scan. Found live, 2026-09-18: an earlier version
-            // fetched history first for exactly this reason but committed
-            // every field together at the very end regardless, so the UI
-            // never actually saw the earlier win — that single combined
-            // commit was added for the staleness guard below, not to
-            // re-couple these two, so give it its own guard instead of
-            // reusing the one further down.
-            val newHistory = b.history(50)
+            // balancesAndHistory(), not two separate calls: a batch-capable
+            // backend answers both from the exact same underlying fetch (see
+            // EsploraBackend.balancesAndHistory's doc) — calling them
+            // separately used to risk one succeeding and the other hitting a
+            // network hiccup in the gap right after, showing history with no
+            // balance to go with it even though the server had already
+            // answered both together. Found live, 2026-09-28, with a flaky
+            // DNS resolver in the mix. Committed together right below, for
+            // the same reason: there's nothing left to stagger once they
+            // come from one call.
+            val (newBalances, newHistory) = b.balancesAndHistory(50)
             if (backend !== b && fallback !== b) return
             status = newStatus
             usingFallback = degraded
             history = newHistory
+            balances = newBalances
+            refreshingFor?.let { id -> setWalletBalance(id, newBalances.confirmedSat) }
 
-            val newBalances = b.balances()
             val newUsd = refreshingChain?.let { ch -> runCatching { b.price() }.getOrNull()?.let { ch to it } }
             val newFeerates =
                 if (feerates.isEmpty()) listOf(1, 6, 144).associateWith { b.feerateSatVb(it).toLong() } else null
@@ -602,17 +600,17 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
             // The user may have switched wallets while the suspend calls above
             // were awaiting a network response — `resetView()`/`ensureBackend()`
             // would have replaced `backend`/`fallback` with a new wallet's by
-            // now. Committing this call's results to the shared status/
-            // balances/history fields at that point would show the *previous*
-            // wallet's data under the *new* one: found live, a slow BTC scan
-            // finishing after switching to an XBT wallet displayed the BTC
-            // balance/history there until the next XBT poll tick corrected it.
-            // Discard silently instead — the new selection's own refresh()
-            // owns the UI now.
+            // now. Committing this call's results to the shared fields at that
+            // point would show the *previous* wallet's data under the *new*
+            // one: found live, a slow BTC scan finishing after switching to an
+            // XBT wallet displayed the BTC balance/history there until the
+            // next XBT poll tick corrected it. Discard silently instead — the
+            // new selection's own refresh() owns the UI now. (balances/history
+            // already passed this same check right after they were fetched;
+            // this second check guards newUsd/newFeerates/freshReceive, which
+            // were fetched afterward and could race a switch on their own.)
             if (backend !== b && fallback !== b) return
 
-            balances = newBalances
-            refreshingFor?.let { id -> setWalletBalance(id, newBalances.confirmedSat) }
             newUsd?.let { (ch, usd) -> setCoinUsd(ch, usd) }
             newFeerates?.let { feerates = it }
             if (refreshingFor != null && freshReceive > cur) {

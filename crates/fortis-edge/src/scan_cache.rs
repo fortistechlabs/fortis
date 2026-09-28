@@ -99,6 +99,15 @@ impl ScanCache {
             let _ = self.db.put(address.as_bytes(), bytes);
         }
     }
+
+    /// Drop whatever's cached for this address, so the next scan treats it
+    /// as changed and re-fetches instead of trusting a stale signature match
+    /// — used when an out-of-band signal (`mempool_ws`) reports real
+    /// activity for an address sooner than the next Haskoin poll would
+    /// otherwise notice it.
+    pub fn forget(&self, address: &str) {
+        let _ = self.db.delete(address.as_bytes());
+    }
 }
 
 #[cfg(test)]
@@ -146,5 +155,14 @@ mod tests {
         let c = ScanCache::new(&temp_dir("independent")).unwrap();
         c.update("addr1", Signature { txs: 1, utxo: 0, unconfirmed: 0 }, &[]);
         assert_eq!(c.signature("addr2"), None);
+    }
+
+    #[test]
+    fn forget_clears_the_entry_so_the_next_scan_treats_it_as_changed() {
+        let c = ScanCache::new(&temp_dir("forget")).unwrap();
+        c.update("addr1", Signature { txs: 1, utxo: 0, unconfirmed: 0 }, &[json!({"txid": "p1"})]);
+        c.forget("addr1");
+        assert_eq!(c.signature("addr1"), None);
+        assert!(c.pending("addr1").is_empty());
     }
 }

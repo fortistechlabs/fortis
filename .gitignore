@@ -32,3 +32,4 @@ deploy/.env
 # wrangler local working state (cache, account id/name, local dev data)
 .wrangler/
 /fortis-wallet.apk
+web/derive-full.html

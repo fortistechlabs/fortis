@@ -634,6 +634,31 @@ class EsploraBackend(
         )
     }
 
+    private fun balancesFrom(u: List<WalletUtxo>) = Balances(
+        confirmedSat = u.filter { it.confirmations >= 1u }.sumOf { it.valueSat.toLong() },
+        pendingSat = u.filter { it.confirmations < 1u }.sumOf { it.valueSat.toLong() },
+    )
+
+    /** [balances] and [history] from the exact same [batchSnapshot] call,
+     *  instead of two separate suspend calls that each independently hit the
+     *  10s cache (or, on a miss, the network) — found live, 2026-09-28: with
+     *  a flaky DNS resolver in the mix, the first of two sequential calls
+     *  could succeed while the second hit the network in the gap right
+     *  after and failed, showing history with no balance to go with it even
+     *  though the server had already answered both together in one
+     *  response. One call here can't split that way. */
+    override suspend fun balancesAndHistory(count: Int): Pair<Balances, List<HistoryEntry>> {
+        if (batchOn) {
+            try {
+                val s = batchSnapshot(false)
+                return balancesFrom(s.utxos) to historyFrom(s.txs, s.mine, s.tip, count)
+            } catch (e: ScanUnsupported) {
+                batchOn = false // fall through to the per-address walk
+            }
+        }
+        return balances() to history(count)
+    }
+
     override suspend fun utxos(minConf: UInt): List<WalletUtxo> =
         scan(force = true).filter { it.confirmations >= minConf }
 

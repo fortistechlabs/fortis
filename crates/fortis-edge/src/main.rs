@@ -12,6 +12,7 @@ mod btc_history;
 mod cache;
 mod haskoin;
 mod limit;
+mod mempool_ws;
 mod metrics;
 mod price;
 mod pricing;
@@ -100,13 +101,25 @@ struct Args {
     #[arg(long, default_value_t = 5.0)]
     btc_upstream_rate: f64,
     /// Batch source for BTC address data — a Haskoin Store base URL. Enables
-    /// `POST /btc/prewarm`, which fetches a wallet's whole address set in two
-    /// calls and pre-fills the cache, so the per-address scan is served locally
-    /// instead of fanned out to `--btc-upstream`. Default is the Haskoin
-    /// project's instance; blockchain.com's is capped at ~1000/day and unusable.
-    /// Empty disables (the client falls back to the paced per-address path).
-    #[arg(long, default_value = "https://api.haskoin.com/btc")]
-    btc_haskoin_url: String,
+    /// `POST /btc/prewarm` and the BTC branch of `POST /btc/scan`, which fetch
+    /// a wallet's whole address set in one or two calls instead of fanning out
+    /// to `--btc-upstream` per address. Unset (default) disables both — `/btc/
+    /// scan` 404s for BTC, which the Android/web clients already treat as
+    /// "unsupported" and fall back to their per-address walk against
+    /// `--btc-upstream`/`--btc-upstream-fallback`.
+    ///
+    /// Was on by default (api.haskoin.com) until 2026-09-28: confirmed live,
+    /// it started 503ing (rate-limited/unavailable) on real wallet-sized batch
+    /// requests, turning into a hard 502 for every scan instead of a graceful
+    /// degrade — worse than not having it. Deliberately an `Option<String>`
+    /// with no default now, not a `String` with an empty-string-means-off
+    /// convention: passing an empty string through nssm's `AppParameters`
+    /// (a single string re-split by Windows on service start) turned out to
+    /// not survive the round-trip intact and silently merged every following
+    /// flag into this one's value — omitting the flag entirely, which this
+    /// type makes the natural way to disable it, has no such failure mode.
+    #[arg(long)]
+    btc_haskoin_url: Option<String>,
     /// Optional `X-API-Key` header for `--btc-haskoin-url` (api.haskoin.com needs
     /// none).
     #[arg(long)]
@@ -174,6 +187,16 @@ struct Args {
     /// <home>/fortis-edge-btc-scancache-rocksdb.
     #[arg(long)]
     btc_scan_cache_dir: Option<PathBuf>,
+    /// A mempool.space-compatible WebSocket URL (`.../api/v1/ws`) to track
+    /// scanned addresses on for low-latency cache invalidation — purely an
+    /// optimization layered on the existing Haskoin+scan-cache path, see
+    /// `mempool_ws`'s doc comment. mempool.space itself is unreachable from
+    /// this network (confirmed 2026-09-28); a good default once enabled is
+    /// a community-run mirror on the same open-source backend, e.g.
+    /// `wss://mempool.emzy.de/api/v1/ws`. Unset (default) disables this
+    /// entirely — no outbound connection is made.
+    #[arg(long)]
+    btc_mempool_ws_url: Option<String>,
     /// HTTP worker threads.
     #[arg(long, default_value_t = 4)]
     workers: usize,
@@ -234,6 +257,9 @@ struct State {
     /// nothing about it has changed since last time — see `scan_cache`'s doc
     /// comment. `None` only if the db couldn't be opened.
     btc_scan_cache: Option<scan_cache::ScanCache>,
+    /// Optional low-latency companion to `btc_scan_cache` — see
+    /// `mempool_ws`'s doc comment. `None` unless `--btc-mempool-ws-url` is set.
+    btc_mempool_ws: Option<mempool_ws::MempoolWs>,
     metrics: Metrics,
 }
 
@@ -431,8 +457,12 @@ fn run() -> Result<()> {
         xbt_price: xbt_price_url
             .as_deref()
             .map(|u| price::PriceCache::spawn(price::PriceSource::new(u), std::time::Duration::from_secs(60))),
-        btc_haskoin: (!args.btc_haskoin_url.trim().is_empty())
-            .then(|| haskoin::HaskoinStore::new(&args.btc_haskoin_url, args.btc_haskoin_key.clone())),
+        btc_haskoin: args
+            .btc_haskoin_url
+            .as_deref()
+            .map(str::trim)
+            .filter(|u| !u.is_empty())
+            .map(|u| haskoin::HaskoinStore::new(u, args.btc_haskoin_key.clone())),
         btc_pacer: (args.btc_upstream_rate > 0.0).then(|| Pacer::new(args.btc_upstream_rate)),
         limiter: RateLimiter::new(args.rate_per_min, args.rate_burst),
         register_limiter: RateLimiter::new(args.register_per_hour, args.register_per_hour.max(1)),
@@ -443,6 +473,7 @@ fn run() -> Result<()> {
         cache: Cache::new(args.cache_entries, &cache_dir),
         btc_history: BtcHistory::new(&btc_history_dir),
         btc_scan_cache: scan_cache::ScanCache::new(&btc_scan_cache_dir),
+        btc_mempool_ws: args.btc_mempool_ws_url.clone().map(mempool_ws::MempoolWs::spawn),
         metrics: Metrics::default(),
     });
 
@@ -488,6 +519,10 @@ fn run() -> Result<()> {
         }
     );
     eprintln!(
+        "  btc mempool ws {}",
+        args.btc_mempool_ws_url.as_deref().unwrap_or("(disabled)")
+    );
+    eprintln!(
         "  btc pacing     {}",
         if args.btc_upstream_rate > 0.0 {
             format!("{}/s on /address/*", args.btc_upstream_rate)
@@ -497,10 +532,9 @@ fn run() -> Result<()> {
     );
     eprintln!(
         "  btc batch      {}",
-        if args.btc_haskoin_url.trim().is_empty() {
-            "(off)".into()
-        } else {
-            format!("{} (/btc/prewarm)", args.btc_haskoin_url)
+        match args.btc_haskoin_url.as_deref().map(str::trim).filter(|u| !u.is_empty()) {
+            Some(u) => format!("{u} (/btc/prewarm)"),
+            None => "(off)".into(),
         },
     );
     eprintln!("  token auth     {}", if args.require_token { "required" } else { "optional" });
@@ -1103,6 +1137,19 @@ fn scan_chain(req: &mut Request, st: &State, chain: &str, tok: Option<&str>, aut
         Metrics::inc(&st.metrics.upstream_errors);
         return err(503, "btc tip height: not yet available");
     };
+    // Best-effort early cache invalidation: forget any address the mempool
+    // WS connection has reported activity for since the last scan, so this
+    // scan re-fetches it instead of trusting a stale signature match. See
+    // mempool_ws's doc comment — this is a pure latency optimization, a
+    // no-op whenever it's unconfigured or its connection is down.
+    if let Some(mw) = st.btc_mempool_ws.as_ref() {
+        if let Some(sc) = st.btc_scan_cache.as_ref() {
+            for addr in mw.take_dirty() {
+                sc.forget(&addr);
+            }
+        }
+        mw.note(&parsed.addresses);
+    }
     match hs.scan(&parsed.addresses, parsed.history, st.btc_history.as_ref(), st.btc_scan_cache.as_ref()) {
         Ok(mut s) => {
             // Haskoin is the only BTC source here that isn't backed by a
