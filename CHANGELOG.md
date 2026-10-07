@@ -2,6 +2,11 @@
 
 Fortis Wallet (Android). Versions are `versionName (versionCode)`.
 
+## Unreleased
+
+- Backend build: minimum supported Rust version raised from 1.82 to 1.88
+  (required by rocksdb 0.25).
+
 ## 0.4.3 (17) — 2026-09-28
 
 - Fixed a BTC watch-only wallet briefly showing 0 BTC before showing its
