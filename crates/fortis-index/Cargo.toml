@@ -19,4 +19,8 @@ hex = { workspace = true }
 serde_json = { workspace = true }
 clap = { version = "4", features = ["derive"] }
 rocksdb = "0.25"
+thiserror = { workspace = true }
 tiny_http = "0.12"
+
+[dev-dependencies]
+tempfile = "3"

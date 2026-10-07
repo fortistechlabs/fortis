@@ -19,6 +19,8 @@
 #[allow(dead_code)]
 mod chain;
 #[allow(dead_code)]
+mod db;
+#[allow(dead_code)]
 mod extract;
 #[allow(dead_code)]
 mod keys;
@@ -45,7 +47,11 @@ use v1::sync::Syncer;
 const SEGWIT_ACTIVATION_HEIGHT: u64 = 481_824;
 
 #[derive(Parser)]
-#[command(name = "fortis-index", version, about = "address index → Esplora REST (holds no keys)")]
+#[command(
+    name = "fortis-index",
+    version,
+    about = "address index → Esplora REST (holds no keys)"
+)]
 struct Args {
     /// Node RPC URL. Default: 127.0.0.1:8332 (:18443 for regtest).
     #[arg(long)]
@@ -98,15 +104,21 @@ fn run() -> Result<()> {
 
     let regtest = args.network.starts_with("regtest");
 
-    let rpc_url = args
-        .rpc_url
-        .clone()
-        .unwrap_or_else(|| if regtest { "http://127.0.0.1:18443".into() } else { "http://127.0.0.1:8332".into() });
+    let rpc_url = args.rpc_url.clone().unwrap_or_else(|| {
+        if regtest {
+            "http://127.0.0.1:18443".into()
+        } else {
+            "http://127.0.0.1:8332".into()
+        }
+    });
     let rpc = match (&args.rpc_auth, &args.cookie_file) {
         (Some(auth), _) => Rpc::new(&rpc_url, auth.trim()),
-        (None, Some(cf)) => {
-            Rpc::new(&rpc_url, std::fs::read_to_string(cf).with_context(|| format!("reading {cf}"))?.trim())
-        }
+        (None, Some(cf)) => Rpc::new(
+            &rpc_url,
+            std::fs::read_to_string(cf)
+                .with_context(|| format!("reading {cf}"))?
+                .trim(),
+        ),
         (None, None) => {
             let dd = args
                 .datadir
@@ -120,14 +132,26 @@ fn run() -> Result<()> {
     let rpc = Arc::new(rpc);
 
     let cs = fortis_node::chain_status(&rpc).context("reaching the node")?;
-    let network = if regtest { bitcoin::Network::Regtest } else { bitcoin::Network::Bitcoin };
+    let network = if regtest {
+        bitcoin::Network::Regtest
+    } else {
+        bitcoin::Network::Bitcoin
+    };
     // Regtest has its own genesis and activates SegWit from block 0 (chain
     // params, not a real mainnet-style activation height), so mainnet's
     // SegWit-activation floor doesn't apply there — keep 0.
-    let start_height = args.start_height.unwrap_or(if regtest { 0 } else { SEGWIT_ACTIVATION_HEIGHT });
+    let start_height =
+        args.start_height
+            .unwrap_or(if regtest { 0 } else { SEGWIT_ACTIVATION_HEIGHT });
 
-    eprintln!("fortis-index → {rpc_url}  ({}, chain {})", cs.subversion, cs.chain);
-    eprintln!("             db {}  ·  indexing from height {start_height}", args.db);
+    eprintln!(
+        "fortis-index → {rpc_url}  ({}, chain {})",
+        cs.subversion, cs.chain
+    );
+    eprintln!(
+        "             db {}  ·  indexing from height {start_height}",
+        args.db
+    );
 
     // Opens (creating if needed) the shared DB handle the reader below
     // clones -- must happen first, see `store::open_shared_db`.
@@ -158,7 +182,13 @@ fn indexer_loop(
 ) {
     let mut local = Mempool::default();
     loop {
-        match (Syncer { rpc, store, start_height }).sync_to_tip() {
+        match (Syncer {
+            rpc,
+            store,
+            start_height,
+        })
+        .sync_to_tip()
+        {
             Ok((tip, applied)) if applied > 0 => eprintln!("index: +{applied} block(s), tip {tip}"),
             Ok(_) => {}
             Err(e) => eprintln!("index: {e:#}"),
