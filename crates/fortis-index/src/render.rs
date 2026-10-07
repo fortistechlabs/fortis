@@ -168,10 +168,9 @@ impl Renderer {
         for (&i, r) in misses.iter().zip(fetched) {
             match r {
                 Ok(t) => {
-                    let tx = esplora_tx(
-                        &backfill_prevouts(&t, v, mp, self.network),
-                        json!({ "confirmed": false }),
-                    );
+                    let mut t = backfill_prevouts(&t, v, mp, self.network);
+                    fill_fee(&mut t);
+                    let tx = esplora_tx(&t, json!({ "confirmed": false }));
                     let mut cache = self.pending.lock().unwrap();
                     if cache.len() >= PENDING_CACHE_MAX {
                         cache.clear();
@@ -247,6 +246,30 @@ pub(crate) fn backfill_prevouts(t: &Value, v: &View, mp: &MempoolView, network: 
         });
     }
     t
+}
+
+/// Mempool txs come from the node without `fee` (it is only known once the
+/// prevouts are). When every input's prevout is present — after
+/// [`backfill_prevouts`] — derive it; otherwise leave it unknown.
+pub(crate) fn fill_fee(t: &mut Value) {
+    if t.get("fee").is_some_and(|f| !f.is_null()) {
+        return;
+    }
+    let ins: Option<u64> = t["vin"].as_array().and_then(|vin| {
+        vin.iter()
+            .map(|i| {
+                i.get("prevout")
+                    .filter(|p| !p.is_null())
+                    .map(|p| btc_to_sat(&p["value"]))
+            })
+            .sum()
+    });
+    let outs: u64 = t["vout"]
+        .as_array()
+        .map_or(0, |v| v.iter().map(|o| btc_to_sat(&o["value"])).sum());
+    if let Some(fee) = ins.and_then(|i| i.checked_sub(outs)) {
+        t["fee"] = json!(fee as f64 / 1e8);
+    }
 }
 
 /// The Esplora shape of a verbose node transaction, with `status` as given.
@@ -388,6 +411,31 @@ mod tests {
             db,
             chain,
         }
+    }
+
+    #[test]
+    fn a_pending_fee_is_derived_from_complete_prevouts() {
+        let mut t = json!({
+            "vin": [
+                { "prevout": { "scriptPubKey": { "address": "bc1qa" }, "value": 0.01 } },
+                { "prevout": { "scriptPubKey": { "address": "bc1qb" }, "value": 0.00500001 } },
+            ],
+            "vout": [{ "value": 0.0149, "scriptPubKey": { "address": "bc1qc" } }],
+        });
+        fill_fee(&mut t);
+        assert_eq!(esplora_tx(&t, Value::Null)["fee"], 10_001);
+        // An unknown prevout leaves the fee unknown (0), never a wrong number.
+        let mut partial = json!({
+            "vin": [{ "prevout": { "value": 0.01 } }, { "prevout": null }],
+            "vout": [{ "value": 0.005 }],
+        });
+        fill_fee(&mut partial);
+        assert_eq!(esplora_tx(&partial, Value::Null)["fee"], 0);
+        // A fee the node gave is kept.
+        let mut given =
+            json!({ "fee": 0.0002, "vin": [{ "prevout": { "value": 1.0 } }], "vout": [] });
+        fill_fee(&mut given);
+        assert_eq!(esplora_tx(&given, Value::Null)["fee"], 20_000);
     }
 
     #[test]
