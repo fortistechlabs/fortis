@@ -37,6 +37,19 @@ impl RpcSource {
         }
     }
 
+    /// One RPC call on a pooled agent.
+    pub fn call(&self, method: &str, params: serde_json::Value) -> Result<serde_json::Value> {
+        self.with(|r| r.call(method, params))
+    }
+
+    /// One JSON-RPC batch on a pooled agent.
+    pub fn batch(
+        &self,
+        calls: &[(&str, serde_json::Value)],
+    ) -> Result<Vec<Result<serde_json::Value>>> {
+        self.with(|r| r.call_batch(calls))
+    }
+
     fn with<T>(&self, f: impl FnOnce(&Rpc) -> Result<T>) -> Result<T> {
         let rpc = self
             .pool
