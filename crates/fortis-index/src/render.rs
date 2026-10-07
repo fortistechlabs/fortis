@@ -249,13 +249,6 @@ pub(crate) fn backfill_prevouts(t: &Value, v: &View, mp: &MempoolView, network: 
     t
 }
 
-pub(crate) fn spk_hex_to_address(spk_hex: &str, network: Network) -> Option<String> {
-    let spk = ScriptBuf::from(hex::decode(spk_hex).ok()?);
-    Address::from_script(&spk, network)
-        .ok()
-        .map(|a| a.to_string())
-}
-
 /// The Esplora shape of a verbose node transaction, with `status` as given.
 pub fn esplora_tx(t: &Value, status: Value) -> Value {
     let vin: Vec<Value> = t["vin"]
@@ -313,6 +306,13 @@ mod tests {
     // BIP-173 P2WPKH example program.
     const P2WPKH_SPK: &str = "0014751e76e8199196d454941c45d1b3a323f1433bd6";
     const P2WPKH_ADDR: &str = "bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4";
+
+    fn spk_hex_to_address(spk_hex: &str, network: Network) -> Option<String> {
+        let spk = ScriptBuf::from(hex::decode(spk_hex).ok()?);
+        Address::from_script(&spk, network)
+            .ok()
+            .map(|a| a.to_string())
+    }
 
     #[derive(Default)]
     struct Fake {

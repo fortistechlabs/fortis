@@ -63,7 +63,6 @@ impl MempoolSource for RpcSource {
 
 #[derive(Default)]
 pub struct MempoolView {
-    pub seq: u64,
     txs: HashMap<Txid, Arc<TxRows>>,
     by_program: HashMap<Program, Vec<Txid>>,
     spent: HashSet<OutPoint>,
@@ -71,11 +70,8 @@ pub struct MempoolView {
 }
 
 impl MempoolView {
-    fn build(seq: u64, txs: HashMap<Txid, Arc<TxRows>>) -> Self {
-        let mut v = MempoolView {
-            seq,
-            ..Default::default()
-        };
+    pub(crate) fn build(txs: HashMap<Txid, Arc<TxRows>>) -> Self {
+        let mut v = MempoolView::default();
         for (id, rows) in &txs {
             let mut touched = HashSet::new();
             for f in &rows.funded {
@@ -108,6 +104,7 @@ impl MempoolView {
         self.txs.len()
     }
 
+    #[allow(dead_code)] // pairs with `len` (clippy::len_without_is_empty)
     pub fn is_empty(&self) -> bool {
         self.txs.is_empty()
     }
@@ -202,7 +199,7 @@ impl MempoolTracker {
             }
         }
         self.seq = Some(seq);
-        Ok(Some(MempoolView::build(seq, self.rows.clone())))
+        Ok(Some(MempoolView::build(self.rows.clone())))
     }
 }
 

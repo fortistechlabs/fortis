@@ -249,10 +249,6 @@ pub mod mem {
             *self.delay.lock().unwrap() = Some(Box::new(f));
         }
 
-        pub fn salt(&self, h: u32) -> u8 {
-            self.chain.lock().unwrap().salts[h as usize]
-        }
-
         pub fn hash(&self, h: u32) -> BlockHash {
             self.chain.lock().unwrap().blocks[h as usize].block_hash()
         }

@@ -17,6 +17,7 @@ pub struct HeaderFormat {
 }
 
 impl HeaderFormat {
+    #[cfg(test)]
     pub const BTC: HeaderFormat = HeaderFormat { v2_from: None };
 
     pub fn header_len(&self, height: u32) -> usize {

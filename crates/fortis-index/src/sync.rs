@@ -4,7 +4,7 @@
 
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result};
 
@@ -52,6 +52,9 @@ pub struct Syncer {
     /// Bulk (WAL-less) writes not yet flushed: must be flushed before any
     /// durable write, or a crash could replay the WAL on top of a hole.
     bulk_dirty: bool,
+    /// Progress logging: blocks applied since the last line, and when that was.
+    log_count: u32,
+    log_at: Option<Instant>,
 }
 
 /// Errors that must stop the process (exit 2) rather than be retried.
@@ -83,6 +86,8 @@ impl Syncer {
             backoff,
             status,
             bulk_dirty: false,
+            log_count: 0,
+            log_at: None,
         }
     }
 
@@ -130,7 +135,36 @@ impl Syncer {
             t.push(b.height, r);
         }
         self.publish(t);
+        self.progress(blocks.len() as u32, t, d);
         Ok(())
+    }
+
+    /// `index: +N block(s), tip H` — every durable block, and in bulk mode on
+    /// the first batch and then at most every 10 s (with the rate).
+    fn progress(&mut self, n: u32, t: &BlockTable, d: Durability) {
+        self.log_count += n;
+        let now = Instant::now();
+        let due = match self.log_at {
+            None => true,
+            Some(at) => d == Durability::Durable || now - at >= Duration::from_secs(10),
+        };
+        if !due {
+            return;
+        }
+        let tip = t.tip().map_or(0, |(h, _)| h);
+        let node = self.status.node_tip.load(Ordering::SeqCst);
+        match self.log_at {
+            Some(at) if d == Durability::Bulk => {
+                let rate = self.log_count as f64 / (now - at).as_secs_f64();
+                eprintln!(
+                    "index: +{} blocks, tip {tip}/{node} ({rate:.0} blk/s)",
+                    self.log_count
+                );
+            }
+            _ => eprintln!("index: +{} block(s), tip {tip}", self.log_count),
+        }
+        self.log_count = 0;
+        self.log_at = Some(now);
     }
 
     fn enter_follow(&mut self, h: u32) -> Result<()> {

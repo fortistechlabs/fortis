@@ -21,8 +21,10 @@ crossbeam-channel = "0.5"
 clap = { version = "4", features = ["derive"] }
 arc-swap = "1.9"
 rocksdb = "0.25"
+axum = "0.8"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "signal", "net"] }
+tower = { version = "0.5", features = ["limit", "util"] }
 thiserror = { workspace = true }
-tiny_http = "0.12"
 
 [dev-dependencies]
 tempfile = "3"
