@@ -463,3 +463,44 @@ async fn a_non_p2wpkh_address_has_no_rows() {
     let (s, v) = get_json(&r.state, "/address/1BvBMSEYstWetqTFn5Au4m4GFg7xJaNVN2/utxo").await;
     assert_eq!((s, v), (StatusCode::OK, json!([])));
 }
+
+#[tokio::test]
+async fn a_just_mined_tx_still_in_the_mempool_view_is_listed_once() {
+    // Block 100 confirmed aa:0 to p; the mempool view (not yet refreshed) still
+    // holds aa as pending.
+    let p = prog(1);
+    let aa = funds(txid(0xaa), &[(p, 0, 500)]);
+    let mp = MempoolView::build(HashMap::from([(txid(0xaa), Arc::new(aa.clone()))]));
+    let r = rig_with(vec![blk(100, vec![aa])], mp, Duration::ZERO);
+    let (_, v) = get_json(&r.state, &format!("/address/{}/utxo", addr(&p))).await;
+    assert_eq!(
+        v,
+        json!([{ "txid": txid(0xaa).to_string(), "vout": 0, "value": 500,
+                 "status": { "confirmed": true, "block_height": 100 } }])
+    );
+}
+
+#[tokio::test]
+async fn pending_txs_rendered_per_request_are_capped() {
+    let p = prog(1);
+    let txs: HashMap<Txid, Arc<TxRows>> = (0..150u32)
+        .map(|i| {
+            let mut b = [0u8; 32];
+            b[..4].copy_from_slice(&i.to_be_bytes());
+            let id = Txid::from_byte_array(b);
+            (id, Arc::new(funds(id, &[(p, 0, 1)])))
+        })
+        .collect();
+    let r = rig_with(
+        vec![blk(100, vec![])],
+        MempoolView::build(txs),
+        Duration::ZERO,
+    );
+    let (s, v) = get_json(&r.state, &format!("/address/{}/txs", addr(&p))).await;
+    assert_eq!(s, StatusCode::OK);
+    assert_eq!(v.as_array().unwrap().len(), PENDING_MAX);
+    let body = json!({ "addresses": [addr(&p)] }).to_string();
+    let (_, _, b) = call(&r.state, "POST", "/scan", &body).await;
+    let v: Value = serde_json::from_slice(&b).unwrap();
+    assert_eq!(v["txs"].as_array().unwrap().len(), PENDING_MAX);
+}

@@ -218,8 +218,11 @@ fn run(args: Args) -> Result<()> {
     let mempool: SharedMempool = Arc::new(ArcSwap::from_pointee(MempoolView::default()));
     let status = Arc::new(SyncStatus::default());
     let src = Arc::new(RpcSource::new(rpc.clone()));
+    // Calls made for an API client get a short timeout: a wedged node must not
+    // hold a request (and its concurrency slot) for the syncer's 10 minutes.
+    let api_rpc = rpc.with_timeout(std::time::Duration::from_secs(30));
     let renderer = Arc::new(Renderer::new(
-        src.clone() as Arc<dyn TxSource>,
+        Arc::new(RpcSource::new(api_rpc.clone())) as Arc<dyn TxSource>,
         db.clone(),
         network,
     ));
@@ -265,7 +268,7 @@ fn run(args: Args) -> Result<()> {
         chain,
         mempool,
         renderer,
-        rpc,
+        rpc: api_rpc,
         network,
         status,
         chain_id,
@@ -276,7 +279,9 @@ fn run(args: Args) -> Result<()> {
     let sync_result = rt.block_on(serve(&args.bind, state, done_rx))?;
 
     stop.store(true, Ordering::SeqCst);
-    let _ = sync_thread.join();
+    if sync_thread.join().is_err() && sync_result.is_ok() {
+        bail!("sync thread panicked");
+    }
     db.flush()?;
     eprintln!("fortis-index: stopped");
     sync_result
@@ -308,11 +313,17 @@ async fn serve(
             eprintln!("fortis-index: shutting down");
             Ok(())
         }
-        r = done => r.unwrap_or(Ok(())),
+        r = done => sync_outcome(r),
     };
     let _ = end_tx.send(true);
     server.await?.context("HTTP server")?;
     Ok(outcome)
+}
+
+/// The sync thread's result; a thread that ended without sending one
+/// panicked, which must not look like a clean stop (exit 0 = no restart).
+fn sync_outcome(r: Result<Result<()>, tokio::sync::oneshot::error::RecvError>) -> Result<()> {
+    r.unwrap_or_else(|_| Err(anyhow::anyhow!("sync thread panicked")))
 }
 
 async fn shutdown_signal() {
@@ -340,5 +351,24 @@ fn default_bitcoin_datadir() -> PathBuf {
     #[cfg(not(windows))]
     {
         PathBuf::from(std::env::var("HOME").unwrap_or_else(|_| ".".into())).join(".bitcoin")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_sync_thread_that_died_without_a_result_is_an_error() {
+        let (tx, rx) = tokio::sync::oneshot::channel::<Result<()>>();
+        drop(tx); // the thread panicked before sending
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .build()
+            .unwrap();
+        let r = rt.block_on(rx);
+        assert!(sync_outcome(r).is_err());
+        let (tx, rx) = tokio::sync::oneshot::channel::<Result<()>>();
+        tx.send(Ok(())).unwrap();
+        assert!(sync_outcome(rt.block_on(rx)).is_ok());
     }
 }

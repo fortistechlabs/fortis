@@ -101,6 +101,16 @@ impl Syncer {
 
     /// Roll back while our tip is not on the node's chain.
     fn unwind(&mut self, node_tip: u32, t: &mut BlockTable) -> Result<()> {
+        // A node behind us whose own tip is on our chain is catching up (e.g.
+        // restarted with -reindex), not reorging: wait rather than discard
+        // valid blocks.
+        if let (Some((h, _)), Some(ours)) = (t.tip(), t.get(node_tip)) {
+            if h > node_tip && self.src.hashes(node_tip, 1)?[0] == ours.hash {
+                anyhow::bail!(
+                    "node tip {node_tip} is behind the index tip {h} on the same chain; waiting"
+                );
+            }
+        }
         while let Some((h, rec)) = t.tip().map(|(h, r)| (h, *r)) {
             if h <= node_tip && self.src.hashes(h, 1)?[0] == rec.hash {
                 return Ok(());
@@ -316,6 +326,7 @@ mod tests {
     use crate::source::mem::{program, MemSource};
     use arc_swap::ArcSwap;
     use bitcoin::Txid;
+    use std::path::Path;
 
     struct Rig {
         _dir: tempfile::TempDir,
@@ -448,6 +459,21 @@ mod tests {
     }
 
     #[test]
+    fn a_node_behind_the_index_on_the_same_chain_is_waited_for_not_unwound() {
+        // e.g. the node restarted with -reindex: same chain, lower tip.
+        let mut r = rig(Arc::new(MemSource::new(1000)), 0, None);
+        r.syncer.step(&AtomicBool::new(false)).unwrap();
+        r.src.reorg(600, 600, 0); // identical blocks, chain now ends at 600
+        let err = r.syncer.step(&AtomicBool::new(false)).unwrap_err();
+        assert!(!is_fatal(&err), "{err:#}");
+        assert_eq!(tip(&r.syncer), 1000);
+        assert_eq!(r.syncer.db.reader().tip().unwrap().unwrap().0, 1000);
+        r.src.reorg(601, 1001, 0); // caught up, and one more block
+        r.syncer.step(&AtomicBool::new(false)).unwrap();
+        assert_eq!(tip(&r.syncer), 1001);
+    }
+
+    #[test]
     fn reorg_deeper_than_undo_is_fatal() {
         let mut r = rig(Arc::new(MemSource::new(1000)), 0, None);
         r.syncer.step(&AtomicBool::new(false)).unwrap();
@@ -486,6 +512,74 @@ mod tests {
         drop(r.syncer);
         let db = Db::open(&path, &DbConfig { cache_mb: 8 }, "btc").unwrap();
         assert_eq!(db.load_blocks().unwrap().len(), 501);
+    }
+
+    /// Review Focus 2: an abort (no destructors, no flush) in the middle of a
+    /// WAL-less bulk load. The test re-runs itself as a child that writes six
+    /// 64-block bulk batches, flushes after the third, then aborts.
+    #[test]
+    fn a_crash_mid_bulk_resumes_from_the_last_flush() {
+        const CHILD: &str = "FORTIS_INDEX_CRASH_CHILD_DB";
+        if let Ok(path) = std::env::var(CHILD) {
+            let db = Db::open(Path::new(&path), &DbConfig { cache_mb: 8 }, "btc").unwrap();
+            let src: Arc<dyn BlockSource> = Arc::new(MemSource::new(1000));
+            let rx = fetch_range(
+                src,
+                HeaderFormat::BTC,
+                0,
+                383,
+                &FetchConfig { workers: 4 },
+                Arc::new(AtomicBool::new(false)),
+            );
+            let blocks: Vec<ParsedBlock> = rx.iter().map(Result::unwrap).collect();
+            let mut next = 0;
+            for (i, chunk) in blocks.chunks(64).enumerate() {
+                let recs = db.apply(chunk, next, Durability::Bulk, false).unwrap();
+                next = recs.last().map_or(next, |r| r.first_txnum + r.n_txs as u64);
+                if i == 2 {
+                    db.flush().unwrap();
+                }
+            }
+            std::process::abort();
+        }
+
+        let dir = tempfile::tempdir().unwrap();
+        let status = std::process::Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                "sync::tests::a_crash_mid_bulk_resumes_from_the_last_flush",
+                "--test-threads=1",
+            ])
+            .env(CHILD, dir.path())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status()
+            .unwrap();
+        assert!(!status.success(), "the child must have aborted");
+
+        let db = Db::open(dir.path(), &DbConfig { cache_mb: 8 }, "btc").unwrap();
+        assert_eq!(
+            db.reader().tip().unwrap().map(|t| t.0),
+            Some(191),
+            "tip of the flushed batch"
+        );
+        let table = BlockTable::from_db(db.load_blocks().unwrap()).unwrap();
+        assert_eq!(table.tip().map(|t| t.0), Some(191));
+        drop(db);
+
+        let src = Arc::new(MemSource::new(1000));
+        let mut resumed = rig(src.clone(), 0, None);
+        resumed.syncer.db = Db::open(dir.path(), &DbConfig { cache_mb: 8 }, "btc").unwrap();
+        resumed.syncer.chain.store(Arc::new(table));
+        resumed.syncer.step(&AtomicBool::new(false)).unwrap();
+        assert_eq!(tip(&resumed.syncer), 1000);
+        let mut fresh = rig(Arc::new(MemSource::new(1000)), 0, None);
+        fresh.syncer.step(&AtomicBool::new(false)).unwrap();
+        assert_eq!(state(&resumed.syncer, 1000), state(&fresh.syncer, 1000));
+        assert_eq!(
+            resumed.syncer.db.load_blocks().unwrap(),
+            fresh.syncer.db.load_blocks().unwrap()
+        );
     }
 
     #[test]

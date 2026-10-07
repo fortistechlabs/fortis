@@ -3,9 +3,11 @@
 //! in memory while they stay in the mempool.
 
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
+use std::time::{Duration, Instant};
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{anyhow, bail, Context, Result};
 use bitcoin::hashes::{hash160, Hash};
 use bitcoin::{Address, BlockHash, Network, OutPoint, ScriptBuf, Txid, WPubkeyHash};
 use serde_json::{json, Value};
@@ -42,19 +44,58 @@ struct Slots {
     cv: Condvar,
 }
 
+/// How long a request waits for a free node-RPC slot before giving up.
+const SLOT_WAIT: Duration = Duration::from_secs(30);
+
 impl Slots {
-    fn run<T>(&self, f: impl FnOnce() -> T) -> T {
+    /// Run `f` holding one slot; an error if none frees up within `wait`.
+    fn run<T>(&self, wait: Duration, f: impl FnOnce() -> T) -> Result<T> {
+        let deadline = Instant::now() + wait;
         let mut n = self.free.lock().unwrap();
         while *n == 0 {
-            n = self.cv.wait(n).unwrap();
+            let left = deadline.saturating_duration_since(Instant::now());
+            if left.is_zero() {
+                bail!("node RPC busy: no free slot within {wait:?}");
+            }
+            n = self.cv.wait_timeout(n, left).unwrap().0;
         }
         *n -= 1;
         drop(n);
         let out = f();
         *self.free.lock().unwrap() += 1;
         self.cv.notify_one();
-        out
+        Ok(out)
     }
+}
+
+/// `f(i)` for every `i < n`, on at most `RPC_SLOTS` threads, each call
+/// holding a node-RPC slot. Results in index order.
+fn fan_out(
+    slots: &Slots,
+    n: usize,
+    f: impl Fn(usize) -> Result<Value> + Sync,
+) -> Vec<Result<Value>> {
+    let next = AtomicUsize::new(0);
+    let out: Vec<Mutex<Option<Result<Value>>>> = (0..n).map(|_| Mutex::new(None)).collect();
+    std::thread::scope(|s| {
+        for _ in 0..n.min(RPC_SLOTS) {
+            s.spawn(|| loop {
+                let i = next.fetch_add(1, Ordering::SeqCst);
+                if i >= n {
+                    return;
+                }
+                let r = slots.run(SLOT_WAIT, || f(i)).and_then(|r| r);
+                *out[i].lock().unwrap() = Some(r);
+            });
+        }
+    });
+    out.into_iter()
+        .map(|m| {
+            m.into_inner()
+                .unwrap()
+                .unwrap_or_else(|| Err(anyhow!("render worker panicked")))
+        })
+        .collect()
 }
 
 pub struct Renderer {
@@ -106,21 +147,9 @@ impl Renderer {
             rows.push((n, txid, rec.hash, status, cached));
         }
         let misses: Vec<usize> = (0..rows.len()).filter(|&i| rows[i].4.is_none()).collect();
-        let fetched: Vec<Result<Value>> = std::thread::scope(|s| {
-            let handles: Vec<_> = misses
-                .iter()
-                .map(|&i| {
-                    let (_, txid, block, _, _) = &rows[i];
-                    s.spawn(move || self.slots.run(|| self.src.tx_verbose(txid, Some(block))))
-                })
-                .collect();
-            handles
-                .into_iter()
-                .map(|h| {
-                    h.join()
-                        .unwrap_or_else(|_| Err(anyhow!("render worker panicked")))
-                })
-                .collect()
+        let fetched = fan_out(&self.slots, misses.len(), |k| {
+            let (_, txid, block, _, _) = &rows[misses[k]];
+            self.src.tx_verbose(txid, Some(block))
         });
         for (&i, r) in misses.iter().zip(fetched) {
             let (n, txid, ..) = rows[i];
@@ -149,21 +178,8 @@ impl Renderer {
             ids.iter().map(|id| cache.get(id).cloned()).collect()
         };
         let misses: Vec<usize> = (0..ids.len()).filter(|&i| out[i].is_none()).collect();
-        let fetched: Vec<Result<Value>> = std::thread::scope(|s| {
-            let handles: Vec<_> = misses
-                .iter()
-                .map(|&i| {
-                    let id = &ids[i];
-                    s.spawn(move || self.slots.run(|| self.src.tx_verbose(id, None)))
-                })
-                .collect();
-            handles
-                .into_iter()
-                .map(|h| {
-                    h.join()
-                        .unwrap_or_else(|_| Err(anyhow!("render worker panicked")))
-                })
-                .collect()
+        let fetched = fan_out(&self.slots, misses.len(), |k| {
+            self.src.tx_verbose(&ids[misses[k]], None)
         });
         for (&i, r) in misses.iter().zip(fetched) {
             match r {
@@ -411,6 +427,54 @@ mod tests {
             db,
             chain,
         }
+    }
+
+    /// Records which threads called it.
+    #[derive(Default)]
+    struct ThreadCounter(Mutex<std::collections::HashSet<std::thread::ThreadId>>);
+
+    impl TxSource for ThreadCounter {
+        fn tx_verbose(&self, txid: &Txid, _: Option<&BlockHash>) -> Result<Value> {
+            self.0.lock().unwrap().insert(std::thread::current().id());
+            std::thread::sleep(Duration::from_millis(2));
+            Ok(json!({ "txid": txid.to_string(), "vin": [], "vout": [] }))
+        }
+    }
+
+    #[test]
+    fn many_misses_use_at_most_rpc_slots_threads() {
+        let r = rig(60);
+        let src = Arc::new(ThreadCounter::default());
+        let renderer = Renderer::new(src.clone(), r.db.clone(), Network::Bitcoin);
+        let v = view(&r.db, &r.chain).unwrap();
+        let ns: Vec<TxNum> = (0..60).collect();
+        assert_eq!(renderer.confirmed(&v, &ns).unwrap().len(), 60);
+        assert!(src.0.lock().unwrap().len() <= RPC_SLOTS);
+        src.0.lock().unwrap().clear();
+        let ids: Vec<Txid> = (100..160u8).map(txid).collect();
+        assert_eq!(
+            renderer
+                .pending(&v, &MempoolView::default(), &ids)
+                .unwrap()
+                .len(),
+            60
+        );
+        assert!(
+            src.0.lock().unwrap().len() <= RPC_SLOTS,
+            "{} threads",
+            src.0.lock().unwrap().len()
+        );
+    }
+
+    #[test]
+    fn a_saturated_node_is_an_error_after_the_slot_wait_not_a_hang() {
+        let slots = Slots {
+            free: Mutex::new(0),
+            cv: Condvar::new(),
+        };
+        let t = std::time::Instant::now();
+        assert!(slots.run(Duration::from_millis(50), || ()).is_err());
+        assert!(t.elapsed() < Duration::from_secs(1));
     }
 
     #[test]

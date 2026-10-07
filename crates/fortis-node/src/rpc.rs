@@ -76,6 +76,16 @@ impl Rpc {
         }
     }
 
+    /// Same url and (shared, re-readable) auth with a different request
+    /// timeout — e.g. a short one for calls made on behalf of an API client.
+    pub fn with_timeout(&self, timeout: Duration) -> Rpc {
+        Rpc {
+            timeout,
+            agent: ureq::AgentBuilder::new().timeout(timeout).build(),
+            ..self.clone()
+        }
+    }
+
     /// A top-level RPC call (no wallet context).
     pub fn call(&self, method: &str, params: Value) -> Result<Value> {
         self.request("", method, params)
@@ -330,6 +340,22 @@ mod tests {
             }
         });
         (url, seen)
+    }
+
+    #[test]
+    fn with_timeout_bounds_a_slow_node_and_keeps_the_credentials() {
+        let (url, seen) = stub(|_| {
+            std::thread::sleep(std::time::Duration::from_millis(400));
+            (200, r#"{"result":1,"error":null,"id":"fortis"}"#.into())
+        });
+        let slow = Rpc::new(&url, "u:p");
+        let quick = slow.with_timeout(std::time::Duration::from_millis(100));
+        let t = std::time::Instant::now();
+        assert!(quick.call("getblockcount", json!([])).is_err());
+        assert!(t.elapsed() < std::time::Duration::from_millis(350));
+        assert_eq!(slow.call("getblockcount", json!([])).unwrap(), json!(1));
+        let auth = base64::engine::general_purpose::STANDARD.encode("u:p");
+        assert!(seen.lock().unwrap().iter().all(|r| r.contains(&auth)));
     }
 
     #[test]

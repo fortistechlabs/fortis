@@ -41,6 +41,8 @@ pub const SCAN_MAX_HISTORY: usize = 100;
 pub const TXS_HISTORY: usize = 100;
 /// An address with more UTXO rows than this is refused as "too heavy".
 pub const MAX_ROWS: usize = 10_000;
+/// Pending transactions rendered per request (each may cost a node RPC).
+pub const PENDING_MAX: usize = 100;
 
 const MAX_CONCURRENT: usize = 64;
 const BODY_LIMIT: usize = 2 * 1024 * 1024;
@@ -239,7 +241,21 @@ fn utxo_rows(v: &View, mp: &MempoolView, p: &Program) -> ApiResult<Vec<Value>> {
             })
         })
         .collect();
+    // A tx mined since the mempool snapshot is in both until the next refresh:
+    // list its outputs once, as confirmed.
+    let confirmed: HashSet<(String, u64)> = rows
+        .iter()
+        .map(|r| {
+            (
+                r["txid"].as_str().unwrap_or_default().to_string(),
+                r["vout"].as_u64().unwrap_or_default(),
+            )
+        })
+        .collect();
     for (op, value) in mp.utxos_for(p) {
+        if confirmed.contains(&(op.txid.to_string(), op.vout as u64)) {
+            continue;
+        }
         rows.push(json!({
             "txid": op.txid.to_string(),
             "vout": op.vout,
@@ -289,7 +305,8 @@ async fn address_txs(
     };
     with_view(&st, move |st, v, mp| {
         let ids = mp.txids_for(&p);
-        let mut txs = st.renderer.pending(v, mp, &ids).map_err(ApiError::node)?;
+        let shown = &ids[..ids.len().min(PENDING_MAX)];
+        let mut txs = st.renderer.pending(v, mp, shown).map_err(ApiError::node)?;
         let pending: HashSet<Txid> = ids.into_iter().collect();
         let rows = v.reader.history(&p, TXS_HISTORY).map_err(ApiError::index)?;
         let rows = without_pending(v, rows, &pending)?;
@@ -380,6 +397,7 @@ fn scan_plan(
             }
         }
     }
+    pending.truncate(PENDING_MAX);
     let mut confirmed = without_pending(v, confirmed, &pending_ids)?;
     // The newest `history` overall are within the newest `history` of each
     // address, so the per-address cap above lost nothing.
