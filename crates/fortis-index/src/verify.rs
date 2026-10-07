@@ -366,7 +366,13 @@ mod tests {
         };
         db.apply(&[b], 0, Durability::Durable, false).unwrap();
         s.catch_up().unwrap();
-        assert_eq!(s.reader().tip().unwrap().map(|t| t.0), Some(5));
+        let r = s.reader();
+        assert_eq!(r.tip().unwrap().map(|t| t.0), Some(5));
+        // Iterators too: a secondary has no snapshots.
+        assert_eq!(r.utxos(&[1; 20], 10).unwrap().len(), 1);
+        assert_eq!(r.history(&[1; 20], 10).unwrap(), vec![0]);
+        assert_eq!(sample_programs(&r, 3, 1).unwrap(), vec![[1; 20]]);
+        drop(r);
         assert!(
             Db::open_secondary(dir.path(), sec.path(), &DbConfig { cache_mb: 8 }, "xbt@1").is_err()
         );

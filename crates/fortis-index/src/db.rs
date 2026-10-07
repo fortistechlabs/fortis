@@ -11,7 +11,8 @@ use bitcoin::hashes::Hash;
 use bitcoin::{BlockHash, OutPoint, Txid};
 use rocksdb::{
     BlockBasedOptions, Cache, ColumnFamily, ColumnFamilyDescriptor, DBCompressionType,
-    FlushOptions, Options, ReadOptions, SliceTransform, Snapshot, WriteBatch, WriteOptions, DB,
+    DBRawIterator, FlushOptions, Options, ReadOptions, SliceTransform, Snapshot, WriteBatch,
+    WriteOptions, DB,
 };
 
 use crate::extract::ParsedBlock;
@@ -75,6 +76,9 @@ pub struct NoUndo {
 #[derive(Clone)]
 pub struct Db {
     db: Arc<DB>,
+    /// A read-only secondary: no snapshots (RocksDB doesn't support them
+    /// there); its view only changes on `catch_up`.
+    secondary: bool,
 }
 
 /// What `rollback` needs to undo one block: the keys it added and the UTXOs
@@ -221,7 +225,10 @@ impl Db {
         let (opts, cfs) = db_options(cfg);
         let db = DB::open_cf_descriptors(&opts, path, cfs)
             .with_context(|| format!("opening index database {}", path.display()))?;
-        let db = Db { db: Arc::new(db) };
+        let db = Db {
+            db: Arc::new(db),
+            secondary: false,
+        };
         db.guard(chain_id, true)?;
         Ok(db)
     }
@@ -240,7 +247,10 @@ impl Db {
         opts.set_max_open_files(-1);
         let db = DB::open_cf_descriptors_as_secondary(&opts, path, secondary, cfs)
             .with_context(|| format!("opening index database {} as secondary", path.display()))?;
-        let db = Db { db: Arc::new(db) };
+        let db = Db {
+            db: Arc::new(db),
+            secondary: true,
+        };
         db.guard(chain_id, false)?;
         Ok(db)
     }
@@ -533,7 +543,7 @@ impl Db {
     pub fn reader(&self) -> Reader<'_> {
         Reader {
             db: self,
-            snap: self.db.snapshot(),
+            snap: (!self.secondary).then(|| self.db.snapshot()),
         }
     }
 
@@ -553,7 +563,7 @@ fn durable() -> WriteOptions {
 /// A consistent point-in-time view of the database.
 pub struct Reader<'a> {
     db: &'a Db,
-    snap: Snapshot<'a>,
+    snap: Option<Snapshot<'a>>,
 }
 
 fn prefix_opts(p: &Program) -> ReadOptions {
@@ -571,11 +581,26 @@ fn prefix_opts(p: &Program) -> ReadOptions {
     ro
 }
 
-impl Reader<'_> {
+impl<'a> Reader<'a> {
+    fn get(&self, cf: &str, key: &[u8]) -> Result<Option<Vec<u8>>> {
+        let cf = self.db.cf(cf);
+        Ok(match &self.snap {
+            Some(s) => s.get_cf(cf, key)?,
+            None => self.db.db.get_cf(cf, key)?,
+        })
+    }
+
+    fn raw_iter(&self, cf: &str, ro: ReadOptions) -> DBRawIterator<'_> {
+        let cf = self.db.cf(cf);
+        match &self.snap {
+            Some(s) => s.raw_iterator_cf_opt(cf, ro),
+            None => self.db.db.raw_iterator_cf_opt(cf, ro),
+        }
+    }
+
     /// `meta.tip`: the height and hash of the last applied block.
     pub fn tip(&self) -> Result<Option<(u32, BlockHash)>> {
-        self.snap
-            .get_cf(self.db.cf(CF_META), META_TIP)?
+        self.get(CF_META, META_TIP)?
             .map(|v| tip_from(&v))
             .transpose()
     }
@@ -583,10 +608,10 @@ impl Reader<'_> {
     /// The program of the first `history` (or `utxo`) key at or after `key`
     /// in total order — a random seek target for sampling.
     pub fn program_at_or_after(&self, history: bool, key: &[u8]) -> Result<Option<Program>> {
-        let cf = self.db.cf(if history { CF_HISTORY } else { CF_UTXO });
+        let cf = if history { CF_HISTORY } else { CF_UTXO };
         let mut ro = ReadOptions::default();
         ro.set_total_order_seek(true);
-        let mut it = self.snap.raw_iterator_cf_opt(cf, ro);
+        let mut it = self.raw_iter(cf, ro);
         it.seek(key);
         if !it.valid() {
             it.status()?;
@@ -600,9 +625,7 @@ impl Reader<'_> {
 
     /// Txnums touching `p`, newest first, at most `limit`.
     pub fn history(&self, p: &Program, limit: usize) -> Result<Vec<TxNum>> {
-        let mut it = self
-            .snap
-            .raw_iterator_cf_opt(self.db.cf(CF_HISTORY), prefix_opts(p));
+        let mut it = self.raw_iter(CF_HISTORY, prefix_opts(p));
         it.seek_for_prev(history_key(p, MAX_TXNUM));
         let mut out = Vec::new();
         while out.len() < limit && it.valid() {
@@ -619,9 +642,7 @@ impl Reader<'_> {
 
     /// Every unspent output of `p`; [`TooHeavy`] if there are more than `max_rows`.
     pub fn utxos(&self, p: &Program, max_rows: usize) -> Result<Vec<(OutPoint, UtxoVal)>> {
-        let mut it = self
-            .snap
-            .raw_iterator_cf_opt(self.db.cf(CF_UTXO), prefix_opts(p));
+        let mut it = self.raw_iter(CF_UTXO, prefix_opts(p));
         it.seek(p);
         let mut out = Vec::new();
         while it.valid() {
@@ -640,14 +661,13 @@ impl Reader<'_> {
     }
 
     pub fn utxo(&self, p: &Program, op: &OutPoint) -> Result<Option<UtxoVal>> {
-        self.snap
-            .get_cf(self.db.cf(CF_UTXO), utxo_key(p, op))?
+        self.get(CF_UTXO, &utxo_key(p, op))?
             .map(|v| UtxoVal::decode(&v))
             .transpose()
     }
 
     pub fn txid(&self, n: TxNum) -> Result<Option<Txid>> {
-        match self.snap.get_cf(self.db.cf(CF_TXIDS), txnum_key(n))? {
+        match self.get(CF_TXIDS, &txnum_key(n))? {
             None => Ok(None),
             Some(v) => {
                 let a: [u8; 32] = v[..].try_into().context("txid value length")?;
@@ -657,7 +677,7 @@ impl Reader<'_> {
     }
 
     pub fn render_get(&self, n: TxNum) -> Result<Option<Vec<u8>>> {
-        Ok(self.snap.get_cf(self.db.cf(CF_RENDER), txnum_key(n))?)
+        self.get(CF_RENDER, &txnum_key(n))
     }
 }
 
