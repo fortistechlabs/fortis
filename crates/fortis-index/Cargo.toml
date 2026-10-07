@@ -18,5 +18,5 @@ anyhow = "1"
 hex = { workspace = true }
 serde_json = { workspace = true }
 clap = { version = "4", features = ["derive"] }
-rocksdb = "0.22"
+rocksdb = "0.25"
 tiny_http = "0.12"

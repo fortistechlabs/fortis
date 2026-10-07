@@ -24,7 +24,7 @@ sha2 = "0.10"
 tiny_http = "0.12"
 ureq = { version = "2", default-features = false, features = ["json", "native-tls"] }
 native-tls = "0.2"
-rocksdb = "0.22"
+rocksdb = "0.25"
 tungstenite = { version = "0.24", default-features = false, features = ["handshake"] }
 
 [dev-dependencies]
