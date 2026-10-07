@@ -31,6 +31,8 @@ mod keys;
 #[allow(dead_code)]
 mod mempool;
 #[allow(dead_code)]
+mod render;
+#[allow(dead_code)]
 mod source;
 #[allow(dead_code)]
 mod sync;
