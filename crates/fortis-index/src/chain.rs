@@ -69,9 +69,7 @@ pub fn parse_block(bytes: &[u8], header_len: usize) -> Result<BlockBody> {
     let prev = bitcoin::BlockHash::from_slice(&bytes[4..36]).context("prev hash")?;
     let time = u32::from_le_bytes(bytes[68..72].try_into().expect("4 bytes"));
     let mut r = &bytes[header_len..];
-    let n = VarInt::consensus_decode(&mut r)
-        .context("tx count")?
-        .0;
+    let n = VarInt::consensus_decode(&mut r).context("tx count")?.0;
     // Each tx is at least 10 bytes; reject absurd counts before allocating.
     ensure!(
         n <= r.len() as u64 / 10,

@@ -94,23 +94,32 @@ impl Mempool {
                 }
                 if let Some(spk) = i["prevout"]["scriptPubKey"]["hex"].as_str() {
                     if is_p2wpkh_spk(spk) {
-                        self.txids.entry(spk.to_string()).or_default().push(txid.clone());
+                        self.txids
+                            .entry(spk.to_string())
+                            .or_default()
+                            .push(txid.clone());
                     }
                 }
             }
             for (n, o) in t["vout"].as_array().into_iter().flatten().enumerate() {
-                let Some(spk) = o["scriptPubKey"]["hex"].as_str() else { continue };
+                let Some(spk) = o["scriptPubKey"]["hex"].as_str() else {
+                    continue;
+                };
                 if !is_p2wpkh_spk(spk) {
                     continue;
                 }
                 let value = to_sat(&o["value"]);
-                self.outputs
-                    .entry(spk.to_string())
-                    .or_default()
-                    .push((txid.clone(), n as u32, value));
+                self.outputs.entry(spk.to_string()).or_default().push((
+                    txid.clone(),
+                    n as u32,
+                    value,
+                ));
                 self.by_outpoint
                     .insert(outpoint(txid, n as u32), (spk.to_string(), value));
-                self.txids.entry(spk.to_string()).or_default().push(txid.clone());
+                self.txids
+                    .entry(spk.to_string())
+                    .or_default()
+                    .push(txid.clone());
             }
         }
         for v in self.txids.values_mut() {
@@ -198,7 +207,11 @@ mod tests {
         // t2 spends confirmed output cc:0 (which pays SPK_A)
         let m = indexed(&[(
             "t2",
-            raw("t2", json!([vin_from("cc", 0, SPK_A)]), json!([vout_to(SPK_B, 0.9)])),
+            raw(
+                "t2",
+                json!([vin_from("cc", 0, SPK_A)]),
+                json!([vout_to(SPK_B, 0.9)]),
+            ),
         )]);
         assert!(m.is_spent("cc", 0));
         // SPK_A's mempool history includes the spend
@@ -209,7 +222,14 @@ mod tests {
     fn hides_a_mempool_output_already_spent_by_another_mempool_tx() {
         let m = indexed(&[
             ("t1", raw("t1", json!([]), json!([vout_to(SPK_A, 1.0)]))),
-            ("t2", raw("t2", json!([vin_from("t1", 0, SPK_A)]), json!([vout_to(SPK_C, 0.9)]))),
+            (
+                "t2",
+                raw(
+                    "t2",
+                    json!([vin_from("t1", 0, SPK_A)]),
+                    json!([vout_to(SPK_C, 0.9)]),
+                ),
+            ),
         ]);
         assert!(m.utxos_for(SPK_A).next().is_none()); // t1:0 is spent by t2
         assert_eq!(m.utxos_for(SPK_C).count(), 1);
@@ -217,7 +237,14 @@ mod tests {
 
     #[test]
     fn output_at_resolves_an_outpoint_to_its_spk_and_value() {
-        let m = indexed(&[("t1", raw("t1", json!([]), json!([vout_to(SPK_A, 1.0), vout_to(SPK_B, 0.5)])))]);
+        let m = indexed(&[(
+            "t1",
+            raw(
+                "t1",
+                json!([]),
+                json!([vout_to(SPK_A, 1.0), vout_to(SPK_B, 0.5)]),
+            ),
+        )]);
         assert_eq!(m.output_at("t1", 0), Some((SPK_A.to_string(), 100_000_000)));
         assert_eq!(m.output_at("t1", 1), Some((SPK_B.to_string(), 50_000_000)));
         assert_eq!(m.output_at("t1", 2), None);
@@ -240,7 +267,11 @@ mod tests {
         // the persistent index's block_txs filter).
         let m = indexed(&[(
             "t1",
-            raw("t1", json!([]), json!([vout_to(SPK_OP_RETURN, 0.0), vout_to(SPK_A, 1.0)])),
+            raw(
+                "t1",
+                json!([]),
+                json!([vout_to(SPK_OP_RETURN, 0.0), vout_to(SPK_A, 1.0)]),
+            ),
         )]);
         assert!(m.utxos_for(SPK_OP_RETURN).next().is_none());
         assert_eq!(m.output_at("t1", 0), None); // the OP_RETURN vout
@@ -251,7 +282,11 @@ mod tests {
         // depend on knowing the prevout's script type).
         let m2 = indexed(&[(
             "t2",
-            raw("t2", json!([vin_from("cc", 0, SPK_OP_RETURN)]), json!([vout_to(SPK_B, 0.9)])),
+            raw(
+                "t2",
+                json!([vin_from("cc", 0, SPK_OP_RETURN)]),
+                json!([vout_to(SPK_B, 0.9)]),
+            ),
         )]);
         assert!(m2.is_spent("cc", 0));
         assert!(m2.txs_for(SPK_OP_RETURN).is_empty());

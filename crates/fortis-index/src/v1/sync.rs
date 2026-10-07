@@ -72,8 +72,10 @@ impl Syncer<'_> {
             let (owned, parse_err) = validate_batch(&heights, fetched, prev_hash);
 
             if !owned.is_empty() {
-                let refs: Vec<(u64, &str, &[IndexedTx])> =
-                    owned.iter().map(|(h, hash, txs)| (*h, hash.as_str(), txs.as_slice())).collect();
+                let refs: Vec<(u64, &str, &[IndexedTx])> = owned
+                    .iter()
+                    .map(|(h, hash, txs)| (*h, hash.as_str(), txs.as_slice()))
+                    .collect();
                 self.store.apply_blocks(&refs)?;
                 applied += owned.len() as u64;
             }
@@ -140,7 +142,10 @@ fn validate_batch(
     let parsed = parse_blocks(&fetched);
     let mut owned = Vec::with_capacity(heights.len());
     for ((height, (hash, block)), txs_result) in heights.iter().zip(fetched).zip(parsed) {
-        let prev = block["previousblockhash"].as_str().unwrap_or("").to_string();
+        let prev = block["previousblockhash"]
+            .as_str()
+            .unwrap_or("")
+            .to_string();
         if let Some(ph) = &prev_hash {
             if *ph != prev {
                 break;
@@ -179,14 +184,23 @@ fn parse_blocks(fetched: &[(String, Value)]) -> Vec<Result<Vec<IndexedTx>>> {
         .unwrap_or(1)
         .min(fetched.len().max(1));
     let chunk_size = fetched.len().div_ceil(workers).max(1);
-    let mut results: Vec<Option<Result<Vec<IndexedTx>>>> = (0..fetched.len()).map(|_| None).collect();
+    let mut results: Vec<Option<Result<Vec<IndexedTx>>>> =
+        (0..fetched.len()).map(|_| None).collect();
     std::thread::scope(|scope| {
         let handles: Vec<_> = fetched
             .chunks(chunk_size)
             .enumerate()
             .map(|(ci, chunk)| {
                 let base = ci * chunk_size;
-                (base, scope.spawn(move || chunk.iter().map(|(_, block)| block_txs(block)).collect::<Vec<_>>()))
+                (
+                    base,
+                    scope.spawn(move || {
+                        chunk
+                            .iter()
+                            .map(|(_, block)| block_txs(block))
+                            .collect::<Vec<_>>()
+                    }),
+                )
             })
             .collect();
         for (base, handle) in handles {
@@ -196,7 +210,10 @@ fn parse_blocks(fetched: &[(String, Value)]) -> Vec<Result<Vec<IndexedTx>>> {
             }
         }
     });
-    results.into_iter().map(|o| o.expect("every block was assigned to a worker")).collect()
+    results
+        .into_iter()
+        .map(|o| o.expect("every block was assigned to a worker"))
+        .collect()
 }
 
 /// Fetch `getblockhash` + `getblock <hash> 2` for every height in `heights`,
@@ -206,25 +223,36 @@ fn parse_blocks(fetched: &[(String, Value)]) -> Vec<Result<Vec<IndexedTx>>> {
 /// regardless of which worker finished first.
 fn fetch_blocks(rpc: &Rpc, heights: &[u64]) -> Result<Vec<(String, Value)>> {
     let chunk_size = heights.len().div_ceil(FETCH_WORKERS).max(1);
-    let mut results: Vec<Option<Result<(String, Value)>>> = (0..heights.len()).map(|_| None).collect();
+    let mut results: Vec<Option<Result<(String, Value)>>> =
+        (0..heights.len()).map(|_| None).collect();
     std::thread::scope(|scope| -> Result<()> {
         let handles: Vec<_> = heights
             .chunks(chunk_size)
             .enumerate()
             .map(|(ci, chunk)| {
                 let base = ci * chunk_size;
-                (base, scope.spawn(move || chunk.iter().map(|&h| fetch_one(rpc, h)).collect::<Vec<_>>()))
+                (
+                    base,
+                    scope.spawn(move || {
+                        chunk.iter().map(|&h| fetch_one(rpc, h)).collect::<Vec<_>>()
+                    }),
+                )
             })
             .collect();
         for (base, handle) in handles {
-            let chunk_results = handle.join().map_err(|_| anyhow!("block-fetch worker panicked"))?;
+            let chunk_results = handle
+                .join()
+                .map_err(|_| anyhow!("block-fetch worker panicked"))?;
             for (i, r) in chunk_results.into_iter().enumerate() {
                 results[base + i] = Some(r);
             }
         }
         Ok(())
     })?;
-    results.into_iter().map(|o| o.expect("every height was assigned to a worker")).collect()
+    results
+        .into_iter()
+        .map(|o| o.expect("every height was assigned to a worker"))
+        .collect()
 }
 
 fn fetch_one(rpc: &Rpc, height: u64) -> Result<(String, Value)> {
@@ -243,8 +271,7 @@ fn block_txs(block: &Value) -> Result<Vec<IndexedTx>> {
         let txid = t["txid"].as_str().context("tx.txid")?.to_string();
         let raw = hex::decode(t["hex"].as_str().context("tx.hex")?)
             .with_context(|| format!("decoding tx {txid}"))?;
-        let tx: Transaction =
-            deserialize(&raw).map_err(|e| anyhow!("parsing tx {txid}: {e}"))?;
+        let tx: Transaction = deserialize(&raw).map_err(|e| anyhow!("parsing tx {txid}: {e}"))?;
 
         let inputs = if tx.is_coinbase() {
             Vec::new()
@@ -277,7 +304,11 @@ fn block_txs(block: &Value) -> Result<Vec<IndexedTx>> {
                 value_sat: o.value.to_sat(),
             })
             .collect();
-        out.push(IndexedTx { txid, inputs, outputs });
+        out.push(IndexedTx {
+            txid,
+            inputs,
+            outputs,
+        });
     }
     Ok(out)
 }
@@ -302,9 +333,18 @@ mod tests {
             lock_time: absolute::LockTime::ZERO,
             input: vec![],
             output: vec![
-                bitcoin::TxOut { value: Amount::from_sat(1_000), script_pubkey: op_return },
-                bitcoin::TxOut { value: Amount::from_sat(2_000), script_pubkey: p2wpkh },
-                bitcoin::TxOut { value: Amount::from_sat(3_000), script_pubkey: p2pkh },
+                bitcoin::TxOut {
+                    value: Amount::from_sat(1_000),
+                    script_pubkey: op_return,
+                },
+                bitcoin::TxOut {
+                    value: Amount::from_sat(2_000),
+                    script_pubkey: p2wpkh,
+                },
+                bitcoin::TxOut {
+                    value: Amount::from_sat(3_000),
+                    script_pubkey: p2pkh,
+                },
             ],
         };
         let txid = tx.compute_txid().to_string();
@@ -326,7 +366,10 @@ mod tests {
             version: transaction::Version::TWO,
             lock_time: absolute::LockTime::ZERO,
             input: vec![],
-            output: vec![bitcoin::TxOut { value: Amount::ZERO, script_pubkey: op_return }],
+            output: vec![bitcoin::TxOut {
+                value: Amount::ZERO,
+                script_pubkey: op_return,
+            }],
         };
         let txid = tx.compute_txid().to_string();
         let hex = hex::encode(bitcoin::consensus::serialize(&tx));
@@ -410,6 +453,9 @@ mod tests {
         assert_eq!(owned.len(), 1);
         assert_eq!(owned[0].0, 100);
         let err = err.expect("a missing tx.hex must surface as an error, not be silently dropped");
-        assert!(err.to_string().contains("101"), "error should name the failing height: {err}");
+        assert!(
+            err.to_string().contains("101"),
+            "error should name the failing height: {err}"
+        );
     }
 }

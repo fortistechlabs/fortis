@@ -98,7 +98,10 @@ where
                 .collect();
             handles
                 .into_iter()
-                .map(|h| h.join().unwrap_or_else(|_| Err(anyhow!("node RPC worker panicked"))))
+                .map(|h| {
+                    h.join()
+                        .unwrap_or_else(|_| Err(anyhow!("node RPC worker panicked")))
+                })
                 .collect()
         });
         for (&i, r) in group.iter().zip(fetched) {
@@ -107,7 +110,10 @@ where
             out[i] = Some(tx);
         }
     }
-    Ok(out.into_iter().map(|v| v.expect("every row filled or an error returned")).collect())
+    Ok(out
+        .into_iter()
+        .map(|v| v.expect("every row filled or an error returned"))
+        .collect())
 }
 
 /// One mined transaction's Esplora shape, straight from the node.
@@ -239,12 +245,17 @@ fn address_txs(
         .into_iter()
         .map(|t| esplora_tx(&backfill_prevouts(t, store, mp, network), None))
         .collect();
-    let pending: std::collections::HashSet<String> =
-        txs.iter().filter_map(|t| t["txid"].as_str().map(str::to_string)).collect();
+    let pending: std::collections::HashSet<String> = txs
+        .iter()
+        .filter_map(|t| t["txid"].as_str().map(str::to_string))
+        .collect();
 
     // A block may just have landed that the mempool snapshot still lists.
-    let rows: Vec<HistTx> =
-        store.history_for(spk, 100)?.into_iter().filter(|h| !pending.contains(&h.txid)).collect();
+    let rows: Vec<HistTx> = store
+        .history_for(spk, 100)?
+        .into_iter()
+        .filter(|h| !pending.contains(&h.txid))
+        .collect();
     txs.extend(confirmed_txs(&rows, tx_cache, |h| fetch_confirmed(rpc, h))?);
     Ok(Value::Array(txs))
 }
@@ -287,15 +298,22 @@ fn scan_route(
         return err(400, "expected {\"addresses\": [...]}");
     };
     if list.is_empty() || list.len() > SCAN_MAX_ADDRESSES {
-        return err(400, format!("addresses: expected 1 to {SCAN_MAX_ADDRESSES}"));
+        return err(
+            400,
+            format!("addresses: expected 1 to {SCAN_MAX_ADDRESSES}"),
+        );
     }
-    let history =
-        req["history"].as_u64().map_or(SCAN_DEFAULT_HISTORY, |n| n as usize).min(SCAN_MAX_HISTORY);
+    let history = req["history"]
+        .as_u64()
+        .map_or(SCAN_DEFAULT_HISTORY, |n| n as usize)
+        .min(SCAN_MAX_HISTORY);
 
     let mut seen = HashSet::new();
     let mut targets = Vec::with_capacity(list.len());
     for v in list {
-        let Some(addr) = v.as_str() else { return err(400, "addresses must be strings") };
+        let Some(addr) = v.as_str() else {
+            return err(400, "addresses must be strings");
+        };
         if !seen.insert(addr) {
             continue;
         }
@@ -303,7 +321,12 @@ fn scan_route(
             // The index only stores P2WPKH outputs — anything else would look
             // "unused" here, which is a wrong answer, not an empty one.
             Ok(spk) if spk.len() == SPK_LEN * 2 => targets.push((addr.to_string(), spk)),
-            Ok(_) => return err(400, format!("address {addr}: only P2WPKH addresses are indexed")),
+            Ok(_) => {
+                return err(
+                    400,
+                    format!("address {addr}: only P2WPKH addresses are indexed"),
+                )
+            }
             Err(e) => return err(400, e),
         }
     }
@@ -375,7 +398,12 @@ fn scan_plan(
     // address, so the per-address cap above lost nothing.
     confirmed.sort_by(|a, b| b.height.cmp(&a.height).then_with(|| a.txid.cmp(&b.txid)));
     confirmed.truncate(history);
-    Ok(ScanPlan { used, utxos, pending, confirmed })
+    Ok(ScanPlan {
+        used,
+        utxos,
+        pending,
+        confirmed,
+    })
 }
 
 /// Fetch full detail for the (at most `history`) confirmed txs the plan kept —
@@ -384,7 +412,9 @@ fn scan_plan(
 fn scan_finish(plan: ScanPlan, store: &Store, rpc: &Rpc, tx_cache: &TxCache) -> Result<Value> {
     let tip = store.tip()?.map_or(0, |(h, _)| h);
     let mut txs = plan.pending;
-    txs.extend(confirmed_txs(&plan.confirmed, tx_cache, |h| fetch_confirmed(rpc, h))?);
+    txs.extend(confirmed_txs(&plan.confirmed, tx_cache, |h| {
+        fetch_confirmed(rpc, h)
+    })?);
     Ok(json!({
         "tip": tip,
         "used": plan.used,
@@ -402,12 +432,16 @@ fn scan_finish(plan: ScanPlan, store: &Store, rpc: &Rpc, tx_cache: &TxCache) -> 
 /// A no-op when the node already provided the prevout.
 fn backfill_prevouts(t: &Value, store: &Store, mp: &Mempool, network: Network) -> Value {
     let mut t = t.clone();
-    let Some(vins) = t.get_mut("vin").and_then(Value::as_array_mut) else { return t };
+    let Some(vins) = t.get_mut("vin").and_then(Value::as_array_mut) else {
+        return t;
+    };
     for i in vins {
         if i.get("prevout").is_some_and(|p| !p.is_null()) {
             continue;
         }
-        let (Some(ptxid), Some(pvout)) = (i["txid"].as_str(), i["vout"].as_u64()) else { continue };
+        let (Some(ptxid), Some(pvout)) = (i["txid"].as_str(), i["vout"].as_u64()) else {
+            continue;
+        };
         let (ptxid, pvout) = (ptxid.to_string(), pvout as u32);
         let Some((spk_hex, value_sat)) = mp
             .output_at(&ptxid, pvout)
@@ -415,7 +449,9 @@ fn backfill_prevouts(t: &Value, store: &Store, mp: &Mempool, network: Network) -
         else {
             continue;
         };
-        let Some(addr) = spk_hex_to_address(&spk_hex, network) else { continue };
+        let Some(addr) = spk_hex_to_address(&spk_hex, network) else {
+            continue;
+        };
         i["prevout"] = json!({
             "scriptPubKey": { "address": addr },
             "value": value_sat as f64 / 1e8,
@@ -426,7 +462,9 @@ fn backfill_prevouts(t: &Value, store: &Store, mp: &Mempool, network: Network) -
 
 fn spk_hex_to_address(spk_hex: &str, network: Network) -> Option<String> {
     let spk = ScriptBuf::from(hex::decode(spk_hex).ok()?);
-    Address::from_script(&spk, network).ok().map(|a| a.to_string())
+    Address::from_script(&spk, network)
+        .ok()
+        .map(|a| a.to_string())
 }
 
 /// `confirmed_at` is `Some(height)` for a mined tx, `None` for a mempool one.
@@ -526,7 +564,11 @@ fn respond(req: Request, reply: Reply) -> std::io::Result<()> {
     let (status, ctype, data): (u16, &str, Vec<u8>) = match reply {
         Reply::Empty(s) => (s, "text/plain", Vec::new()),
         Reply::Text(s, t) => (s, "text/plain", t.into_bytes()),
-        Reply::Json(s, v) => (s, "application/json", serde_json::to_vec(&v).unwrap_or_default()),
+        Reply::Json(s, v) => (
+            s,
+            "application/json",
+            serde_json::to_vec(&v).unwrap_or_default(),
+        ),
     };
     let mut resp = Response::from_data(data).with_status_code(status);
     for (k, v) in [
@@ -573,7 +615,10 @@ mod tests {
 
     #[test]
     fn spk_hex_to_address_round_trips_a_p2wpkh() {
-        assert_eq!(spk_hex_to_address(P2WPKH_SPK, Network::Bitcoin).as_deref(), Some(P2WPKH_ADDR));
+        assert_eq!(
+            spk_hex_to_address(P2WPKH_SPK, Network::Bitcoin).as_deref(),
+            Some(P2WPKH_ADDR)
+        );
         assert_eq!(spk_hex_to_address("not-hex", Network::Bitcoin), None);
         assert_eq!(spk_hex_to_address("00", Network::Bitcoin), None); // not a known template
     }
@@ -588,7 +633,11 @@ mod tests {
                 &[IndexedTx {
                     txid: txid("aa"),
                     inputs: vec![],
-                    outputs: vec![TxOut { vout: 0, spk_hex: P2WPKH_SPK.into(), value_sat: 500_000 }],
+                    outputs: vec![TxOut {
+                        vout: 0,
+                        spk_hex: P2WPKH_SPK.into(),
+                        value_sat: 500_000,
+                    }],
                 }],
             )
             .unwrap();
@@ -621,7 +670,10 @@ mod tests {
             "vout": [],
         });
         let filled = backfill_prevouts(&tx, &store, &mp, Network::Bitcoin);
-        assert_eq!(filled["vin"][0]["prevout"]["scriptPubKey"]["address"], "bc1qkeep");
+        assert_eq!(
+            filled["vin"][0]["prevout"]["scriptPubKey"]["address"],
+            "bc1qkeep"
+        );
     }
 
     /// A P2WPKH spk with a recognisable 20-byte program, and its address.
@@ -632,7 +684,11 @@ mod tests {
     }
 
     fn out(vout: u32, spk: &str, value_sat: u64) -> TxOut {
-        TxOut { vout, spk_hex: spk.into(), value_sat }
+        TxOut {
+            vout,
+            spk_hex: spk.into(),
+            value_sat,
+        }
     }
 
     /// Three blocks over two of the wallet's addresses (`a`, `b`) plus one
@@ -643,15 +699,39 @@ mod tests {
     fn scan_fixture() -> (Store, Vec<(String, String)>) {
         let mut s = Store::open(&test_store_path()).unwrap();
         let (a, b, z) = (p2wpkh("a1").0, p2wpkh("b1").0, p2wpkh("f1").0);
-        s.apply_block(100, &txid("100"), &[IndexedTx {
-            txid: txid("aa"), inputs: vec![], outputs: vec![out(0, &a, 500), out(1, &b, 300)],
-        }]).unwrap();
-        s.apply_block(101, &txid("101"), &[IndexedTx {
-            txid: txid("bb"), inputs: vec![], outputs: vec![out(0, &a, 200), out(1, &b, 100)],
-        }]).unwrap();
-        s.apply_block(102, &txid("102"), &[IndexedTx {
-            txid: txid("cc"), inputs: vec![TxIn { txid: txid("aa"), vout: 0 }], outputs: vec![out(0, &z, 480)],
-        }]).unwrap();
+        s.apply_block(
+            100,
+            &txid("100"),
+            &[IndexedTx {
+                txid: txid("aa"),
+                inputs: vec![],
+                outputs: vec![out(0, &a, 500), out(1, &b, 300)],
+            }],
+        )
+        .unwrap();
+        s.apply_block(
+            101,
+            &txid("101"),
+            &[IndexedTx {
+                txid: txid("bb"),
+                inputs: vec![],
+                outputs: vec![out(0, &a, 200), out(1, &b, 100)],
+            }],
+        )
+        .unwrap();
+        s.apply_block(
+            102,
+            &txid("102"),
+            &[IndexedTx {
+                txid: txid("cc"),
+                inputs: vec![TxIn {
+                    txid: txid("aa"),
+                    vout: 0,
+                }],
+                outputs: vec![out(0, &z, 480)],
+            }],
+        )
+        .unwrap();
         let targets = ["a1", "b1", "d1"].map(|seed| {
             let (spk, addr) = p2wpkh(seed);
             (addr, spk)
@@ -671,7 +751,13 @@ mod tests {
         let mut got: Vec<(String, String, u64)> = plan
             .utxos
             .iter()
-            .map(|u| (u["address"].as_str().unwrap().into(), u["txid"].as_str().unwrap().into(), u["value"].as_u64().unwrap()))
+            .map(|u| {
+                (
+                    u["address"].as_str().unwrap().into(),
+                    u["txid"].as_str().unwrap().into(),
+                    u["value"].as_u64().unwrap(),
+                )
+            })
             .collect();
         got.sort();
         let mut want = vec![
@@ -691,7 +777,10 @@ mod tests {
         let ids: Vec<&str> = plan.confirmed.iter().map(|h| h.txid.as_str()).collect();
         // bb pays both a and b (listed once); cc is a's spend (sender-side history).
         assert_eq!(ids, vec![txid("cc"), txid("bb"), txid("aa")]);
-        assert_eq!(plan.confirmed.iter().map(|h| h.height).collect::<Vec<_>>(), vec![102, 101, 100]);
+        assert_eq!(
+            plan.confirmed.iter().map(|h| h.height).collect::<Vec<_>>(),
+            vec![102, 101, 100]
+        );
     }
 
     #[test]
@@ -703,11 +792,17 @@ mod tests {
     }
 
     fn row(txid: &str, height: u64, block: &str) -> HistTx {
-        HistTx { txid: txid.into(), height, block_hash: block.into() }
+        HistTx {
+            txid: txid.into(),
+            height,
+            block_hash: block.into(),
+        }
     }
 
     /// A fake node: counts calls, and returns a tx that records which row it was for.
-    fn counting_fetch(calls: &std::sync::atomic::AtomicUsize) -> impl Fn(&HistTx) -> Result<Value> + Sync + '_ {
+    fn counting_fetch(
+        calls: &std::sync::atomic::AtomicUsize,
+    ) -> impl Fn(&HistTx) -> Result<Value> + Sync + '_ {
         move |h| {
             calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
             Ok(json!({ "txid": h.txid, "status": { "block_height": h.height } }))
@@ -720,15 +815,25 @@ mod tests {
         let cache = TxCache::default();
         let calls = AtomicUsize::new(0);
         // more rows than RPC_PARALLEL, so several groups run
-        let rows: Vec<HistTx> = (0..20).map(|i| row(&format!("t{i}"), 100 + i, "blk")).collect();
+        let rows: Vec<HistTx> = (0..20)
+            .map(|i| row(&format!("t{i}"), 100 + i, "blk"))
+            .collect();
 
         let first = confirmed_txs(&rows, &cache, counting_fetch(&calls)).unwrap();
         assert_eq!(calls.load(SeqCst), 20);
         let ids: Vec<&str> = first.iter().map(|t| t["txid"].as_str().unwrap()).collect();
-        assert_eq!(ids, rows.iter().map(|r| r.txid.as_str()).collect::<Vec<_>>(), "order preserved");
+        assert_eq!(
+            ids,
+            rows.iter().map(|r| r.txid.as_str()).collect::<Vec<_>>(),
+            "order preserved"
+        );
 
         let second = confirmed_txs(&rows, &cache, counting_fetch(&calls)).unwrap();
-        assert_eq!(calls.load(SeqCst), 20, "a repeat refresh makes no node RPCs");
+        assert_eq!(
+            calls.load(SeqCst),
+            20,
+            "a repeat refresh makes no node RPCs"
+        );
         assert_eq!(first, second);
     }
 
@@ -739,7 +844,8 @@ mod tests {
         let calls = AtomicUsize::new(0);
         confirmed_txs(&[row("t1", 100, "blockA")], &cache, counting_fetch(&calls)).unwrap();
         // a reorg re-mines t1 at another height in another block
-        let after = confirmed_txs(&[row("t1", 101, "blockB")], &cache, counting_fetch(&calls)).unwrap();
+        let after =
+            confirmed_txs(&[row("t1", 101, "blockB")], &cache, counting_fetch(&calls)).unwrap();
         assert_eq!(calls.load(SeqCst), 2);
         assert_eq!(after[0]["status"]["block_height"], 101);
     }
@@ -767,16 +873,20 @@ mod tests {
         let mp = Mempool::default();
         let rpc = Rpc::new("http://127.0.0.1:1", "u:p");
         let cache = TxCache::default();
-        let status = |body: &str| match scan_route(body, &store, &rpc, &mp, Network::Bitcoin, &cache) {
-            Reply::Json(s, _) => s,
-            _ => panic!("expected a JSON reply"),
-        };
+        let status =
+            |body: &str| match scan_route(body, &store, &rpc, &mp, Network::Bitcoin, &cache) {
+                Reply::Json(s, _) => s,
+                _ => panic!("expected a JSON reply"),
+            };
         assert_eq!(status("not json"), 400);
         assert_eq!(status(r#"{"nope":1}"#), 400);
         assert_eq!(status(r#"{"addresses":[]}"#), 400);
         assert_eq!(status(r#"{"addresses":[7]}"#), 400);
         assert_eq!(status(r#"{"addresses":["not-an-address"]}"#), 400);
         // valid mainnet P2PKH: real address, but not something this index stores
-        assert_eq!(status(r#"{"addresses":["1BvBMSEYstWetqTFn5Au4m4GFg7xJaNVN2"]}"#), 400);
+        assert_eq!(
+            status(r#"{"addresses":["1BvBMSEYstWetqTFn5Au4m4GFg7xJaNVN2"]}"#),
+            400
+        );
     }
 }

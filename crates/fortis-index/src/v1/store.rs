@@ -105,12 +105,14 @@ pub struct HistTx {
 
 pub(crate) fn txid_bytes(txid: &str) -> Result<[u8; TXID_LEN]> {
     let v = hex::decode(txid).with_context(|| format!("txid not hex: {txid}"))?;
-    v.try_into().map_err(|v: Vec<u8>| anyhow!("txid wrong length: {} bytes", v.len()))
+    v.try_into()
+        .map_err(|v: Vec<u8>| anyhow!("txid wrong length: {} bytes", v.len()))
 }
 
 pub(crate) fn spk_bytes(spk_hex: &str) -> Result<[u8; SPK_LEN]> {
     let v = hex::decode(spk_hex).with_context(|| format!("spk not hex: {spk_hex}"))?;
-    v.try_into().map_err(|v: Vec<u8>| anyhow!("spk wrong length: {} bytes (P2WPKH must be 22)", v.len()))
+    v.try_into()
+        .map_err(|v: Vec<u8>| anyhow!("spk wrong length: {} bytes (P2WPKH must be 22)", v.len()))
 }
 
 pub(crate) fn outputs_key(txid: &[u8; TXID_LEN], vout: u32) -> [u8; TXID_LEN + 4] {
@@ -124,7 +126,12 @@ pub(crate) fn blocks_key(height: u64) -> [u8; 8] {
     height.to_be_bytes()
 }
 
-pub(crate) fn utxo_by_spk_key(spk: &[u8; SPK_LEN], height: u64, txid: &[u8; TXID_LEN], vout: u32) -> Vec<u8> {
+pub(crate) fn utxo_by_spk_key(
+    spk: &[u8; SPK_LEN],
+    height: u64,
+    txid: &[u8; TXID_LEN],
+    vout: u32,
+) -> Vec<u8> {
     let mut k = Vec::with_capacity(SPK_LEN + 8 + TXID_LEN + 4);
     k.extend_from_slice(spk);
     k.extend_from_slice(&height.to_be_bytes());
@@ -136,7 +143,11 @@ pub(crate) fn utxo_by_spk_key(spk: &[u8; SPK_LEN], height: u64, txid: &[u8; TXID
 /// `inv_height` (not plain height) so a forward scan gives `height DESC,
 /// txid ASC` directly — reverse-iterating a plain-height key would give
 /// `txid DESC` within a tied height, the wrong secondary sort.
-pub(crate) fn history_by_spk_key(spk: &[u8; SPK_LEN], height: u64, txid: &[u8; TXID_LEN]) -> Vec<u8> {
+pub(crate) fn history_by_spk_key(
+    spk: &[u8; SPK_LEN],
+    height: u64,
+    txid: &[u8; TXID_LEN],
+) -> Vec<u8> {
     let mut k = Vec::with_capacity(SPK_LEN + 8 + TXID_LEN);
     k.extend_from_slice(spk);
     k.extend_from_slice(&(u64::MAX - height).to_be_bytes());
@@ -180,7 +191,11 @@ impl OutputRecord {
 
     pub fn decode(bytes: &[u8]) -> Result<Self> {
         if bytes.len() != Self::ENCODED_LEN {
-            return Err(anyhow!("corrupt outputs record: {} bytes, expected {}", bytes.len(), Self::ENCODED_LEN));
+            return Err(anyhow!(
+                "corrupt outputs record: {} bytes, expected {}",
+                bytes.len(),
+                Self::ENCODED_LEN
+            ));
         }
         let mut c = Cursor::new(bytes);
         let spk = c.fixed::<SPK_LEN>()?;
@@ -189,8 +204,17 @@ impl OutputRecord {
         let flag = c.byte()?;
         let spent_height = c.u64()?;
         let spent_txid = c.fixed::<TXID_LEN>()?;
-        let spent = if flag == 1 { Some((spent_height, spent_txid)) } else { None };
-        Ok(Self { spk, value_sat, height, spent })
+        let spent = if flag == 1 {
+            Some((spent_height, spent_txid))
+        } else {
+            None
+        };
+        Ok(Self {
+            spk,
+            value_sat,
+            height,
+            spent,
+        })
     }
 }
 
@@ -241,19 +265,34 @@ impl UndoRecord {
         let n = c.u32()?;
         let mut created = Vec::with_capacity(n as usize);
         for _ in 0..n {
-            created.push((c.fixed::<TXID_LEN>()?, c.u32()?, c.fixed::<SPK_LEN>()?, c.u64()?));
+            created.push((
+                c.fixed::<TXID_LEN>()?,
+                c.u32()?,
+                c.fixed::<SPK_LEN>()?,
+                c.u64()?,
+            ));
         }
         let n = c.u32()?;
         let mut spent = Vec::with_capacity(n as usize);
         for _ in 0..n {
-            spent.push((c.fixed::<TXID_LEN>()?, c.u32()?, c.fixed::<SPK_LEN>()?, c.u64()?, c.u64()?));
+            spent.push((
+                c.fixed::<TXID_LEN>()?,
+                c.u32()?,
+                c.fixed::<SPK_LEN>()?,
+                c.u64()?,
+                c.u64()?,
+            ));
         }
         let n = c.u32()?;
         let mut history = Vec::with_capacity(n as usize);
         for _ in 0..n {
             history.push((c.fixed::<SPK_LEN>()?, c.fixed::<TXID_LEN>()?));
         }
-        Ok(Self { created, spent, history })
+        Ok(Self {
+            created,
+            spent,
+            history,
+        })
     }
 }
 
@@ -348,7 +387,9 @@ pub(crate) fn build_db(path: &Path) -> Result<DB> {
     let mut db_opts = Options::default();
     db_opts.create_if_missing(true);
     db_opts.create_missing_column_families(true);
-    let workers = std::thread::available_parallelism().map(|n| n.get() as i32).unwrap_or(4);
+    let workers = std::thread::available_parallelism()
+        .map(|n| n.get() as i32)
+        .unwrap_or(4);
     db_opts.set_max_background_jobs(workers);
     db_opts.set_level_compaction_dynamic_level_bytes(true);
     db_opts.set_wal_recovery_mode(DBRecoveryMode::PointInTime);
@@ -380,7 +421,10 @@ pub struct Store {
 impl Store {
     /// Open (creating if needed) the writer handle.
     pub fn open(path: &str) -> Result<Self> {
-        Ok(Self { db: open_shared_db(path)?, is_writer: true })
+        Ok(Self {
+            db: open_shared_db(path)?,
+            is_writer: true,
+        })
     }
 
     /// Open the reader handle (shares the writer's `Arc<DB>` if it's already
@@ -389,11 +433,16 @@ impl Store {
     /// doesn't set `create_if_missing`... actually it does, via the shared
     /// `build_db` path, so this also works called alone).
     pub fn open_readonly(path: &str) -> Result<Self> {
-        Ok(Self { db: open_shared_db(path)?, is_writer: false })
+        Ok(Self {
+            db: open_shared_db(path)?,
+            is_writer: false,
+        })
     }
 
     fn cf(&self, name: &str) -> &rocksdb::ColumnFamily {
-        self.db.cf_handle(name).unwrap_or_else(|| panic!("missing column family {name}"))
+        self.db
+            .cf_handle(name)
+            .unwrap_or_else(|| panic!("missing column family {name}"))
     }
 
     pub fn tip(&self) -> Result<Option<(u64, String)>> {
@@ -403,7 +452,8 @@ impl Store {
             None => Ok(None),
             Some(item) => {
                 let (k, v) = item?;
-                let height = u64::from_be_bytes(k.as_ref().try_into().context("corrupt blocks key")?);
+                let height =
+                    u64::from_be_bytes(k.as_ref().try_into().context("corrupt blocks key")?);
                 Ok(Some((height, hex::encode(v))))
             }
         }
@@ -428,7 +478,9 @@ impl Store {
         if !self.is_writer {
             panic!("rollback_from is writer-only");
         }
-        let Some((tip_height, _)) = self.tip()? else { return Ok(()) };
+        let Some((tip_height, _)) = self.tip()? else {
+            return Ok(());
+        };
         if tip_height < height {
             return Ok(());
         }
@@ -452,9 +504,18 @@ impl Store {
             let undo = UndoRecord::decode(&bytes)?;
 
             for (txid, vout, spk, value_sat, orig_height) in &undo.spent {
-                let rec = OutputRecord { spk: *spk, value_sat: *value_sat, height: *orig_height, spent: None };
+                let rec = OutputRecord {
+                    spk: *spk,
+                    value_sat: *value_sat,
+                    height: *orig_height,
+                    spent: None,
+                };
                 batch.put_cf(&cf_outputs, outputs_key(txid, *vout), rec.encode());
-                batch.put_cf(&cf_utxo, utxo_by_spk_key(spk, *orig_height, txid, *vout), value_sat.to_be_bytes());
+                batch.put_cf(
+                    &cf_utxo,
+                    utxo_by_spk_key(spk, *orig_height, txid, *vout),
+                    value_sat.to_be_bytes(),
+                );
             }
             for (txid, vout, spk, _value_sat) in &undo.created {
                 batch.delete_cf(&cf_outputs, outputs_key(txid, *vout));
@@ -538,9 +599,18 @@ impl Store {
                         }
                     }
 
-                    let rec = OutputRecord { spk, value_sat: o.value_sat, height, spent: None };
+                    let rec = OutputRecord {
+                        spk,
+                        value_sat: o.value_sat,
+                        height,
+                        spent: None,
+                    };
                     batch.put_cf(&cf_outputs, key, rec.encode());
-                    batch.put_cf(&cf_utxo, utxo_by_spk_key(&spk, height, &txid, o.vout), o.value_sat.to_be_bytes());
+                    batch.put_cf(
+                        &cf_utxo,
+                        utxo_by_spk_key(&spk, height, &txid, o.vout),
+                        o.value_sat.to_be_bytes(),
+                    );
                     pending.insert((txid, o.vout), rec);
                     undo.created.push((txid, o.vout, spk, o.value_sat));
 
@@ -569,8 +639,12 @@ impl Store {
                     let orig_height = rec.height;
                     rec.spent = Some((height, txid));
                     batch.put_cf(&cf_outputs, pkey, rec.encode());
-                    batch.delete_cf(&cf_utxo, utxo_by_spk_key(&rec.spk, orig_height, &ptxid, inp.vout));
-                    undo.spent.push((ptxid, inp.vout, rec.spk, rec.value_sat, orig_height));
+                    batch.delete_cf(
+                        &cf_utxo,
+                        utxo_by_spk_key(&rec.spk, orig_height, &ptxid, inp.vout),
+                    );
+                    undo.spent
+                        .push((ptxid, inp.vout, rec.spk, rec.value_sat, orig_height));
                     pending.insert((ptxid, inp.vout), rec.clone());
 
                     if seen_history.insert((rec.spk, txid)) {
@@ -580,7 +654,11 @@ impl Store {
                 }
             }
 
-            batch.put_cf(&cf_blocks, blocks_key(height), hex::decode(hash).context("block hash not hex")?);
+            batch.put_cf(
+                &cf_blocks,
+                blocks_key(height),
+                hex::decode(hash).context("block hash not hex")?,
+            );
             batch.put_cf(&cf_undo, undo_log_key(height), undo.encode());
         }
 
@@ -600,8 +678,14 @@ impl Store {
             let height = u64::from_be_bytes(k[SPK_LEN..SPK_LEN + 8].try_into().unwrap());
             let txid = hex::encode(&k[SPK_LEN + 8..SPK_LEN + 8 + TXID_LEN]);
             let vout = u32::from_be_bytes(k[SPK_LEN + 8 + TXID_LEN..].try_into().unwrap());
-            let value_sat = u64::from_be_bytes(v.as_ref().try_into().context("corrupt utxo value")?);
-            out.push(Utxo { txid, vout, value_sat, height });
+            let value_sat =
+                u64::from_be_bytes(v.as_ref().try_into().context("corrupt utxo value")?);
+            out.push(Utxo {
+                txid,
+                vout,
+                value_sat,
+                height,
+            });
         }
         Ok(out)
     }
@@ -632,7 +716,8 @@ impl Store {
         let mut ro = ReadOptions::default();
         ro.set_prefix_same_as_start(true);
         let mut out = Vec::with_capacity(limit.min(1024));
-        let iter = snapshot.iterator_cf_opt(&cf_hist, ro, IteratorMode::From(&spk, Direction::Forward));
+        let iter =
+            snapshot.iterator_cf_opt(&cf_hist, ro, IteratorMode::From(&spk, Direction::Forward));
         for item in iter {
             if out.len() >= limit {
                 break;
@@ -648,7 +733,11 @@ impl Store {
                 Some(h) => hex::encode(h),
                 None => continue, // a block for a recorded history height must exist; skip defensively
             };
-            out.push(HistTx { txid, height, block_hash });
+            out.push(HistTx {
+                txid,
+                height,
+                block_hash,
+            });
         }
         Ok(out)
     }

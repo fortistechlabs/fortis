@@ -53,7 +53,10 @@ pub fn utxo_key(p: &Program, op: &OutPoint) -> [u8; 56] {
 pub fn utxo_outpoint(key: &[u8]) -> OutPoint {
     let txid: [u8; 32] = key[20..52].try_into().unwrap();
     let vout = u32::from_be_bytes(key[52..56].try_into().unwrap());
-    OutPoint { txid: Txid::from_byte_array(txid), vout }
+    OutPoint {
+        txid: Txid::from_byte_array(txid),
+        vout,
+    }
 }
 
 /// `utxo` value: value u64 BE · height u32 BE.
@@ -158,7 +161,10 @@ mod tests {
     #[test]
     fn utxo_key_round_trips_the_outpoint() {
         let p = [7u8; 20];
-        let op = OutPoint { txid: Txid::from_byte_array([9; 32]), vout: 70000 };
+        let op = OutPoint {
+            txid: Txid::from_byte_array([9; 32]),
+            vout: 70000,
+        };
         let k = utxo_key(&p, &op);
         assert_eq!(utxo_outpoint(&k), op);
         assert_eq!(k[..20], p);
@@ -166,7 +172,10 @@ mod tests {
 
     #[test]
     fn block_rec_and_utxo_val_round_trip() {
-        let v = UtxoVal { value: 123_456_789_012, height: 976_000 };
+        let v = UtxoVal {
+            value: 123_456_789_012,
+            height: 976_000,
+        };
         assert_eq!(UtxoVal::decode(&v.encode()).unwrap(), v);
         assert!(UtxoVal::decode(&[1, 2, 3]).is_err());
 
