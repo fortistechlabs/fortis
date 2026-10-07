@@ -19,6 +19,8 @@
 #[allow(dead_code)]
 mod chain;
 #[allow(dead_code)]
+mod chainstate;
+#[allow(dead_code)]
 mod db;
 #[allow(dead_code)]
 mod extract;
