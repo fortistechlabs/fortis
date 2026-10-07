@@ -30,6 +30,8 @@ mod fetch;
 mod keys;
 #[allow(dead_code)]
 mod source;
+#[allow(dead_code)]
+mod sync;
 mod v1;
 
 use std::path::PathBuf;
