@@ -157,6 +157,26 @@ impl Undo {
     }
 }
 
+fn db_options(cfg: &DbConfig) -> (Options, Vec<ColumnFamilyDescriptor>) {
+    let cache = Cache::new_lru_cache(cfg.cache_mb.max(1) << 20);
+    let mut opts = Options::default();
+    opts.create_if_missing(true);
+    opts.create_missing_column_families(true);
+    opts.set_atomic_flush(true);
+    let cores = std::thread::available_parallelism()
+        .map(|n| n.get())
+        .unwrap_or(4);
+    opts.increase_parallelism(cores as i32);
+    let cfs = ALL_CFS
+        .iter()
+        .map(|&name| {
+            let big = name == CF_HISTORY || name == CF_UTXO;
+            ColumnFamilyDescriptor::new(name, cf_options(&cache, big, big))
+        })
+        .collect();
+    (opts, cfs)
+}
+
 fn cf_options(cache: &Cache, prefix_bloom: bool, big_buffers: bool) -> Options {
     let mut bb = BlockBasedOptions::default();
     bb.set_block_cache(cache);
@@ -198,24 +218,38 @@ impl Db {
                 .into());
             }
         }
-        let cache = Cache::new_lru_cache(cfg.cache_mb.max(1) << 20);
-        let mut opts = Options::default();
-        opts.create_if_missing(true);
-        opts.create_missing_column_families(true);
-        opts.set_atomic_flush(true);
-        let cores = std::thread::available_parallelism()
-            .map(|n| n.get())
-            .unwrap_or(4);
-        opts.increase_parallelism(cores as i32);
-        let cfs = ALL_CFS.iter().map(|&name| {
-            let big = name == CF_HISTORY || name == CF_UTXO;
-            ColumnFamilyDescriptor::new(name, cf_options(&cache, big, big))
-        });
+        let (opts, cfs) = db_options(cfg);
         let db = DB::open_cf_descriptors(&opts, path, cfs)
             .with_context(|| format!("opening index database {}", path.display()))?;
         let db = Db { db: Arc::new(db) };
-        db.guard(chain_id)?;
+        db.guard(chain_id, true)?;
         Ok(db)
+    }
+
+    /// Open read-only as a RocksDB secondary of the (possibly running)
+    /// primary at `path`, keeping its own files in `secondary`. Sees only what
+    /// the primary has flushed or logged; refresh with [`Db::catch_up`].
+    pub fn open_secondary(
+        path: &Path,
+        secondary: &Path,
+        cfg: &DbConfig,
+        chain_id: &str,
+    ) -> Result<Db> {
+        let (mut opts, cfs) = db_options(cfg);
+        opts.create_if_missing(false);
+        opts.set_max_open_files(-1);
+        let db = DB::open_cf_descriptors_as_secondary(&opts, path, secondary, cfs)
+            .with_context(|| format!("opening index database {} as secondary", path.display()))?;
+        let db = Db { db: Arc::new(db) };
+        db.guard(chain_id, false)?;
+        Ok(db)
+    }
+
+    /// Secondary only: pick up the primary's latest writes.
+    pub fn catch_up(&self) -> Result<()> {
+        self.db
+            .try_catch_up_with_primary()
+            .context("catching up with the primary index")
     }
 
     fn cf(&self, name: &str) -> &ColumnFamily {
@@ -224,12 +258,12 @@ impl Db {
             .expect("column family created at open")
     }
 
-    fn guard(&self, chain_id: &str) -> Result<()> {
+    fn guard(&self, chain_id: &str, may_init: bool) -> Result<()> {
         let meta = self.cf(CF_META);
         let schema = self.db.get_cf(meta, META_SCHEMA)?;
         let chain = self.db.get_cf(meta, META_CHAIN)?;
         match (schema, chain) {
-            (None, None) => {
+            (None, None) if may_init => {
                 let mut wb = WriteBatch::default();
                 wb.put_cf(meta, META_SCHEMA, SCHEMA_VERSION.to_be_bytes());
                 wb.put_cf(meta, META_CHAIN, chain_id.as_bytes());
@@ -544,6 +578,24 @@ impl Reader<'_> {
             .get_cf(self.db.cf(CF_META), META_TIP)?
             .map(|v| tip_from(&v))
             .transpose()
+    }
+
+    /// The program of the first `history` (or `utxo`) key at or after `key`
+    /// in total order — a random seek target for sampling.
+    pub fn program_at_or_after(&self, history: bool, key: &[u8]) -> Result<Option<Program>> {
+        let cf = self.db.cf(if history { CF_HISTORY } else { CF_UTXO });
+        let mut ro = ReadOptions::default();
+        ro.set_total_order_seek(true);
+        let mut it = self.snap.raw_iterator_cf_opt(cf, ro);
+        it.seek(key);
+        if !it.valid() {
+            it.status()?;
+            return Ok(None);
+        }
+        Ok(it
+            .key()
+            .and_then(|k| k.get(..PROGRAM_LEN))
+            .map(|p| p.try_into().unwrap()))
     }
 
     /// Txnums touching `p`, newest first, at most `limit`.

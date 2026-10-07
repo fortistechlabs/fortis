@@ -20,6 +20,7 @@ mod mempool;
 mod render;
 mod source;
 mod sync;
+mod verify;
 
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -55,24 +56,26 @@ const EXIT_FATAL: u8 = 2;
     about = "address index → Esplora REST (holds no keys)"
 )]
 struct Args {
+    #[command(subcommand)]
+    cmd: Option<Cmd>,
     /// Node RPC URL. Default: 127.0.0.1:8332 (:18443 for regtest).
-    #[arg(long)]
+    #[arg(long, global = true)]
     rpc_url: Option<String>,
     /// Node data directory (for its `.cookie`). Default: the platform Bitcoin dir.
-    #[arg(long)]
+    #[arg(long, global = true)]
     datadir: Option<PathBuf>,
     /// Explicit RPC cookie file (overrides `--datadir`). Re-read when the node
     /// restarts and rotates it.
-    #[arg(long)]
+    #[arg(long, global = true)]
     cookie_file: Option<PathBuf>,
     /// Static RPC credentials as `user:password`. Overrides `--cookie-file` / `--datadir`.
-    #[arg(long, value_name = "USER:PASS")]
+    #[arg(long, value_name = "USER:PASS", global = true)]
     rpc_auth: Option<String>,
     /// Node network: mainnet | regtest.
-    #[arg(long, default_value = "mainnet")]
+    #[arg(long, default_value = "mainnet", global = true)]
     network: String,
     /// RocksDB index directory (created if missing). Must not hold a v1 index.
-    #[arg(long, default_value = "fortis-index-rocksdb")]
+    #[arg(long, default_value = "fortis-index-rocksdb", global = true)]
     db: PathBuf,
     /// Address to bind the HTTP API to.
     #[arg(long, default_value = "127.0.0.1:8094")]
@@ -91,8 +94,29 @@ struct Args {
     stop_height: Option<u32>,
 }
 
+#[derive(clap::Subcommand)]
+enum Cmd {
+    /// Compare the UTXOs of N sampled indexed addresses with the node's
+    /// `scantxoutset`; safe while the index is running. Exit 0 if they all
+    /// match, 1 otherwise.
+    Verify {
+        #[arg(long, default_value_t = 100)]
+        sample: usize,
+    },
+}
+
 fn main() -> ExitCode {
     let args = Args::parse();
+    if let Some(Cmd::Verify { sample }) = args.cmd {
+        return match verify_cmd(&args, sample) {
+            Ok(true) => ExitCode::SUCCESS,
+            Ok(false) => ExitCode::FAILURE,
+            Err(e) => {
+                eprintln!("error: {e:#}");
+                ExitCode::FAILURE
+            }
+        };
+    }
     match run(args) {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) if is_fatal(&e) => {
@@ -103,6 +127,25 @@ fn main() -> ExitCode {
             eprintln!("error: {e:#}");
             ExitCode::FAILURE
         }
+    }
+}
+
+/// `verify`: print every mismatch; `Ok(true)` when there are none.
+fn verify_cmd(args: &Args, sample: usize) -> Result<bool> {
+    let (rpc, _) = connect(args)?;
+    let mismatches = verify::run(&args.db, &rpc, network(&args.network), sample)?;
+    for m in &mismatches {
+        println!("{m}");
+    }
+    eprintln!("verify: {} mismatch(es)", mismatches.len());
+    Ok(mismatches.is_empty())
+}
+
+fn network(name: &str) -> bitcoin::Network {
+    if regtest(name) {
+        bitcoin::Network::Regtest
+    } else {
+        bitcoin::Network::Bitcoin
     }
 }
 
@@ -137,11 +180,7 @@ fn connect(args: &Args) -> Result<(Rpc, String)> {
 
 fn run(args: Args) -> Result<()> {
     let (rpc, url) = connect(&args)?;
-    let network = if regtest(&args.network) {
-        bitcoin::Network::Regtest
-    } else {
-        bitcoin::Network::Bitcoin
-    };
+    let network = network(&args.network);
     let start_height = args.start_height.unwrap_or(if regtest(&args.network) {
         0
     } else {
