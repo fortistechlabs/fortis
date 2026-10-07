@@ -235,7 +235,6 @@ fn wallet_flow_through_the_edge() {
             "--db", node.datadir.join("idx-rocksdb").to_str().unwrap(),
             "--start-height", "0",
             "--bind", &format!("127.0.0.1:{idx_port}"),
-            "--poll", "1",
         ],
     );
     let _ = cookie_of(&node); // sanity: the cookie exists
