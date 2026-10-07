@@ -35,12 +35,18 @@ impl HeaderFormat {
         }
     }
 
-    /// Knots reports the fork under `deployments.blake2b.height`; anything
-    /// without it is treated as plain Bitcoin.
+    /// Knots reports the fork as a top-level `blake2b.height` in
+    /// `getdeploymentinfo` (beside `deployments`, on mainnet and regtest
+    /// alike); `deployments.blake2b` is accepted too. Anything without it is
+    /// plain Bitcoin.
     pub fn from_deployment_info(v: &Value) -> Self {
-        let h = v["deployments"]["blake2b"]["height"]
-            .as_u64()
-            .and_then(|h| u32::try_from(h).ok());
+        let h = [
+            &v["blake2b"]["height"],
+            &v["deployments"]["blake2b"]["height"],
+        ]
+        .into_iter()
+        .find_map(Value::as_u64)
+        .and_then(|h| u32::try_from(h).ok());
         HeaderFormat { v2_from: h }
     }
 
@@ -172,7 +178,9 @@ mod tests {
 
     #[test]
     fn header_format_from_deployment_info() {
-        let knots = json!({"deployments": {"blake2b": {"height": 961640, "active": true}}});
+        // Real Knots (mainnet and regtest) reports the fork at the top level,
+        // beside `deployments`, not inside it.
+        let knots = json!({"deployments": {"segwit": {"height": 481824}}, "blake2b": {"height": 961640, "active": true}});
         let f = HeaderFormat::from_deployment_info(&knots);
         assert_eq!((f.header_len(961639), f.header_len(961640)), (80, 164));
         assert_eq!(f.chain_id(), "xbt@961640");
