@@ -66,6 +66,12 @@ pub enum OpenError {
 #[error("address too heavy")]
 pub struct TooHeavy;
 
+#[derive(Debug, thiserror::Error)]
+#[error("no undo for height {height}: reorg deeper than {MAX_REORG_DEPTH}; rebuild with --start-height or restore")]
+pub struct NoUndo {
+    pub height: u32,
+}
+
 #[derive(Clone)]
 pub struct Db {
     db: Arc<DB>,
@@ -402,6 +408,68 @@ impl Db {
             }
         }
         Ok(out)
+    }
+
+    /// Undo block `height` (whose row is `rec`) in one durable `WriteBatch`:
+    /// delete the keys it added, restore the UTXOs it spent, drop its txids,
+    /// render cache rows, `blocks` and `undo` rows, and set `meta.tip` to
+    /// `new_tip` (removed when `None`). [`NoUndo`] if it has no undo record.
+    pub fn rollback(
+        &self,
+        height: u32,
+        rec: &BlockRec,
+        new_tip: Option<(u32, BlockHash)>,
+    ) -> Result<()> {
+        let cf_undo = self.cf(CF_UNDO);
+        let Some(raw) = self.db.get_cf(cf_undo, height_key(height))? else {
+            return Err(NoUndo { height }.into());
+        };
+        let undo =
+            Undo::decode(&raw).with_context(|| format!("undo record for height {height}"))?;
+        if (undo.first_txnum, undo.n_txs) != (rec.first_txnum, rec.n_txs) {
+            bail!(
+                "undo for height {height} covers txnums {}+{}, block row says {}+{}",
+                undo.first_txnum,
+                undo.n_txs,
+                rec.first_txnum,
+                rec.n_txs
+            );
+        }
+        let (cf_hist, cf_utxo) = (self.cf(CF_HISTORY), self.cf(CF_UTXO));
+        let mut wb = WriteBatch::default();
+        for k in &undo.added_history {
+            wb.delete_cf(cf_hist, k);
+        }
+        for k in &undo.added_utxo {
+            wb.delete_cf(cf_utxo, k);
+        }
+        for (k, v) in &undo.deleted_utxo {
+            wb.put_cf(cf_utxo, k, v.encode());
+        }
+        let end = rec.first_txnum + rec.n_txs as TxNum;
+        if end > rec.first_txnum {
+            let (lo, hi) = (txnum_key(rec.first_txnum), txnum_key(end));
+            wb.delete_range_cf(self.cf(CF_TXIDS), lo, hi);
+            wb.delete_range_cf(self.cf(CF_RENDER), lo, hi);
+        }
+        wb.delete_cf(self.cf(CF_BLOCKS), height_key(height));
+        wb.delete_cf(cf_undo, height_key(height));
+        match new_tip {
+            Some((h, hash)) => wb.put_cf(self.cf(CF_META), META_TIP, tip_value(h, &hash)),
+            None => wb.delete_cf(self.cf(CF_META), META_TIP),
+        }
+        self.db
+            .write_opt(wb, &durable())
+            .context("writing rollback batch")
+    }
+
+    /// Drop undo records for heights below `below`.
+    pub fn prune_undo(&self, below: u32) -> Result<()> {
+        let mut wb = WriteBatch::default();
+        wb.delete_range_cf(self.cf(CF_UNDO), height_key(0), height_key(below));
+        self.db
+            .write_opt(wb, &durable())
+            .context("pruning undo records")
     }
 
     /// Persist every memtable (all column families, atomically).

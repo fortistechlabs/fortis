@@ -311,3 +311,135 @@ fn empty_database_has_no_tip() {
     assert_eq!(db.reader().tip().unwrap(), None);
     assert!(db.load_blocks().unwrap().is_empty());
 }
+
+#[test]
+fn rollback_restores_the_previous_state_exactly() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = open(&dir);
+    let blocks = a_then_b();
+    db.apply(&blocks[..1], 0, Durability::Durable, true)
+        .unwrap();
+    let recs = db
+        .apply(&blocks[1..], 1, Durability::Durable, true)
+        .unwrap();
+    db.render_put(1, b"x").unwrap();
+    db.rollback(101, &recs[0], Some((100, hash(100)))).unwrap();
+    let r = db.reader();
+    assert_eq!(r.history(&P1, 100).unwrap(), vec![0]);
+    assert_eq!(
+        r.utxos(&P1, 100).unwrap(),
+        vec![(
+            OutPoint {
+                txid: txid(0xaa),
+                vout: 1
+            },
+            UtxoVal {
+                value: 500,
+                height: 100
+            }
+        )]
+    );
+    assert!(r.utxos(&P2, 100).unwrap().is_empty());
+    assert!(r.history(&P2, 100).unwrap().is_empty());
+    assert_eq!(r.txid(1).unwrap(), None);
+    assert_eq!(r.render_get(1).unwrap(), None);
+    assert_eq!(db.load_blocks().unwrap().len(), 1);
+    assert_eq!(r.tip().unwrap(), Some((100, hash(100))));
+}
+
+#[test]
+fn rollback_of_a_block_that_funds_and_spends_the_same_output_leaves_nothing() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = open(&dir);
+    let (a, b) = (txid(0xaa), txid(0xbb));
+    db.apply(
+        &[blk(100, vec![fund(txid(1), P2, 0, 7)])],
+        0,
+        Durability::Durable,
+        true,
+    )
+    .unwrap();
+    let recs = db
+        .apply(
+            &[blk(
+                101,
+                vec![
+                    fund(a, P1, 0, 500),
+                    TxRows {
+                        txid: b,
+                        funded: vec![],
+                        spent: vec![Spent {
+                            program: P1,
+                            prevout: OutPoint { txid: a, vout: 0 },
+                        }],
+                    },
+                ],
+            )],
+            1,
+            Durability::Durable,
+            true,
+        )
+        .unwrap();
+    db.rollback(101, &recs[0], Some((100, hash(100)))).unwrap();
+    let r = db.reader();
+    assert!(r.utxos(&P1, 100).unwrap().is_empty());
+    assert!(r.history(&P1, 100).unwrap().is_empty());
+    assert_eq!(r.utxos(&P2, 100).unwrap().len(), 1);
+}
+
+#[test]
+fn rollback_to_empty_clears_the_tip() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = open(&dir);
+    let recs = db
+        .apply(&a_then_b()[..1], 0, Durability::Durable, true)
+        .unwrap();
+    db.rollback(100, &recs[0], None).unwrap();
+    assert_eq!(db.reader().tip().unwrap(), None);
+    assert!(db.load_blocks().unwrap().is_empty());
+    assert!(db.reader().utxos(&P1, 100).unwrap().is_empty());
+}
+
+#[test]
+fn rollback_without_undo_is_no_undo() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = open(&dir);
+    let recs = db.apply(&a_then_b(), 0, Durability::Bulk, false).unwrap();
+    let err = db
+        .rollback(101, &recs[1], Some((100, hash(100))))
+        .unwrap_err();
+    match err.downcast_ref::<NoUndo>() {
+        Some(NoUndo { height }) => assert_eq!(*height, 101),
+        None => panic!("expected NoUndo, got {err:#}"),
+    }
+}
+
+#[test]
+fn prune_drops_old_undo_only() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = open(&dir);
+    let recs = db.apply(&a_then_b(), 0, Durability::Durable, true).unwrap();
+    db.prune_undo(101).unwrap();
+    db.rollback(101, &recs[1], Some((100, hash(100)))).unwrap();
+    let err = db.rollback(100, &recs[0], None).unwrap_err();
+    assert!(err.downcast_ref::<NoUndo>().is_some(), "{err:#}");
+}
+
+#[test]
+fn undo_record_round_trips() {
+    let u = Undo {
+        first_txnum: 1 << 33,
+        n_txs: 3,
+        added_history: vec![[1; 25], [2; 25]],
+        added_utxo: vec![[3; 56]],
+        deleted_utxo: vec![(
+            [4; 56],
+            UtxoVal {
+                value: 9,
+                height: 8,
+            },
+        )],
+    };
+    assert_eq!(Undo::decode(&u.encode()).unwrap(), u);
+    assert!(Undo::decode(&u.encode()[..30]).is_err());
+}
