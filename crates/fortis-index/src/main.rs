@@ -19,6 +19,8 @@
 #[allow(dead_code)]
 mod chain;
 #[allow(dead_code)]
+mod extract;
+#[allow(dead_code)]
 mod keys;
 mod v1;
 
