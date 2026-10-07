@@ -17,6 +17,7 @@ bitcoin = { workspace = true }
 anyhow = "1"
 hex = { workspace = true }
 serde_json = { workspace = true }
+crossbeam-channel = "0.5"
 clap = { version = "4", features = ["derive"] }
 arc-swap = "1.9"
 rocksdb = "0.25"

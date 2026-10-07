@@ -25,7 +25,11 @@ mod db;
 #[allow(dead_code)]
 mod extract;
 #[allow(dead_code)]
+mod fetch;
+#[allow(dead_code)]
 mod keys;
+#[allow(dead_code)]
+mod source;
 mod v1;
 
 use std::path::PathBuf;
