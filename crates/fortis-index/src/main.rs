@@ -16,6 +16,8 @@
 //! blocks entirely and index even faster when pre-fork coins don't matter
 //! (e.g. regtest, or a wallet known to postdate the fork).
 
+#[allow(dead_code)]
+mod keys;
 mod v1;
 
 use std::path::PathBuf;
