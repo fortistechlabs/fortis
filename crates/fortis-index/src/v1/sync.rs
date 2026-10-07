@@ -12,7 +12,7 @@ use serde_json::{json, Value};
 
 use fortis_node::Rpc;
 
-use crate::store::{IndexedTx, Store, TxIn, TxOut};
+use crate::v1::store::{IndexedTx, Store, TxIn, TxOut};
 
 /// Blocks fetched per round and applied together as one transaction (see
 /// `Store::apply_blocks`) — one commit (one WAL flush) per batch instead of

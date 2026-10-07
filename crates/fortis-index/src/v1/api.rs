@@ -17,8 +17,8 @@ use tiny_http::{Header, Method, Request, Response, Server};
 
 use fortis_node::Rpc;
 
-use crate::mempool::Mempool;
-use crate::store::{HistTx, Store, SPK_LEN};
+use crate::v1::mempool::Mempool;
+use crate::v1::store::{HistTx, Store, SPK_LEN};
 
 enum Reply {
     Json(u16, Value),
@@ -545,7 +545,7 @@ fn respond(req: Request, reply: Reply) -> std::io::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::store::{IndexedTx, Store, TxIn, TxOut};
+    use crate::v1::store::{IndexedTx, Store, TxIn, TxOut};
 
     // BIP-173 P2WPKH example program.
     const P2WPKH_SPK: &str = "0014751e76e8199196d454941c45d1b3a323f1433bd6";

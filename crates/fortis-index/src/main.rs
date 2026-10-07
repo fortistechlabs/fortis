@@ -16,10 +16,7 @@
 //! blocks entirely and index even faster when pre-fork coins don't matter
 //! (e.g. regtest, or a wallet known to postdate the fork).
 
-mod api;
-mod mempool;
-mod store;
-mod sync;
+mod v1;
 
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -31,9 +28,9 @@ use anyhow::{Context, Result};
 use clap::Parser;
 
 use fortis_node::Rpc;
-use mempool::Mempool;
-use store::Store;
-use sync::Syncer;
+use v1::mempool::Mempool;
+use v1::store::Store;
+use v1::sync::Syncer;
 
 /// Mainnet SegWit (BIP141) activation — the earliest block that can contain a
 /// P2WPKH output, which is the only address type any fortis wallet ever
@@ -143,7 +140,7 @@ fn run() -> Result<()> {
     }
 
     let reader = Store::open_readonly(&args.db)?;
-    api::serve(&args.bind, reader, rpc, mempool, network)
+    v1::api::serve(&args.bind, reader, rpc, mempool, network)
 }
 
 fn indexer_loop(
