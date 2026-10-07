@@ -17,6 +17,8 @@
 //! (e.g. regtest, or a wallet known to postdate the fork).
 
 #[allow(dead_code)]
+mod chain;
+#[allow(dead_code)]
 mod keys;
 mod v1;
 
