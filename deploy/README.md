@@ -34,12 +34,13 @@ cargo build --release -p fortis-index -p fortis-edge
 ./target/release/fortis-index \
   --network mainnet --rpc-url http://127.0.0.1:8332 \
   --rpc-auth fortis:YOURPASS \
-  --db fortis-index.sqlite --bind 127.0.0.1:8094
+  --db xbt-index-v2 --bind 127.0.0.1:8094
 # first run indexes from SegWit activation (block 481824, the earliest any
-# fortis wallet address can possibly have history) — a real one-time sync,
-# needs an unpruned node. Pass --start-height 961640 instead to skip
-# pre-fork blocks entirely (minutes) if pre-fork coin history doesn't
-# matter for this deployment.
+# fortis wallet address can possibly have history) — a one-time sync of a few
+# hours, needs an unpruned node. Pass --start-height 961640 instead to skip
+# pre-fork blocks entirely if pre-fork coin history doesn't matter.
+# --db must be a new directory: a v1 index (or one built for the other
+# chain) is refused with exit code 2.
 
 # terminal 2 — the edge
 ./target/release/fortis-edge \
@@ -54,6 +55,13 @@ cargo build --release -p fortis-index -p fortis-edge
   # --service-fee-address <addr>   optional: advertise + enforce a % fee to <addr>.
   #   The public fortistechlabs.com edge runs without it (no fee).
 ```
+
+**Linux home host** (Core + Knots on one machine): `deploy/linux-home/` has
+units for a BTC index (Core, RPC `:8332` → index `:8095`), an XBT index (Knots
+on RPC **`:8432`** here, since `:8332` is Core → index `:8094`) and the edge,
+with the v2 databases in `/var/lib/fortis/{btc,xbt}-index-v2`. Install with
+`sudo deploy/linux-home/install.sh` (see its header for `--index-from`, which
+imports indexes already synced elsewhere, and `--cloudflared-from`).
 
 On Linux, `deploy/systemd/*.service` run these under `systemd` with sandboxing —
 copy to `/etc/systemd/system/`, edit the `--rpc-auth` / `--allow-origin`, then
@@ -123,8 +131,13 @@ from then on. Update the default in `web/src/app.js` (`DEFAULT_EDGE`) and
 - `GET /metrics` on the edge — Prometheus counters (requests, registrations,
   cache hits, rate-limit / auth rejections, upstream errors).
 - `GET /` on the edge and the index — health + which chains are served.
-- The index is safe to restart any time (it resumes from its SQLite tip);
-  a `--rpc-auth` credential means it reconnects cleanly after a node restart too.
+- The index is safe to stop or restart any time (SIGTERM flushes; even a
+  `kill -9` resumes from the last flushed tip). With `--cookie-file` it re-reads
+  the rotated cookie after a node restart; `--rpc-auth` works too.
+- `fortis-index verify --sample 500 --db … --rpc-url … --cookie-file …` checks a
+  random sample of addresses against the node's UTXO set, live.
+- Exit code 2 is fatal (wrong chain/schema in `--db`, reorg deeper than 288
+  blocks); the linux-home units don't restart on it.
 
 ## Not covered yet
 

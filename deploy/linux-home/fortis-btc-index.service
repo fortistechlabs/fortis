@@ -21,10 +21,15 @@ ExecStart=/usr/local/bin/fortis-index \
   --network mainnet \
   --rpc-url http://127.0.0.1:8332 \
   --cookie-file /var/lib/bitcoin-core/.cookie \
-  --db /var/lib/fortis/btc-index \
+  --db /var/lib/fortis/btc-index-v2 \
   --bind 127.0.0.1:8095
 Restart=on-failure
 RestartSec=10
+# Exit 2 = fatal (wrong chain or schema in --db, reorg deeper than the undo
+# window): restarting cannot fix it, so don't loop.
+RestartPreventExitStatus=2
+# SIGTERM finishes the current batch and flushes RocksDB before exiting.
+TimeoutStopSec=120
 StateDirectory=fortis
 NoNewPrivileges=true
 ProtectSystem=strict

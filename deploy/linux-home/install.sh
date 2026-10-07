@@ -3,10 +3,15 @@
 # this host, managed by ~/Work/bitcoin-nodes). Safe to re-run.
 #
 #   cargo build --release -p fortis-index -p fortis-edge     # as your user, first
-#   sudo deploy/linux-home/install.sh [--xbt-index-from DIR] [--cloudflared-from DIR]
+#   sudo deploy/linux-home/install.sh [--index-from DIR] [--cloudflared-from DIR]
 #
-#   --xbt-index-from DIR    copy an existing XBT index (the Windows box's RocksDB
-#                           index directory) instead of syncing from scratch
+# The v2 indexes live in /var/lib/fortis/{xbt,btc}-index-v2 and sync from
+# scratch on first start (a v1 index directory is refused, never imported).
+#
+#   --index-from DIR        copy v2 indexes already synced elsewhere (DIR/xbt,
+#                           DIR/btc — e.g. by running fortis-index by hand) into
+#                           place instead of syncing again; stop those first
+#
 #   --cloudflared-from DIR  the Windows %USERPROFILE%\.cloudflared folder
 #                           (config.yml + <tunnel-id>.json) — reuses the same
 #                           tunnel and DNS name
@@ -14,10 +19,10 @@ set -euo pipefail
 
 here=$(cd "$(dirname "$(readlink -f "$0")")" && pwd)
 repo=$(cd "$here/../.." && pwd)
-xbt_from= cf_from=
+index_from= cf_from=
 while (( $# )); do
   case $1 in
-    --xbt-index-from) xbt_from=$2; shift 2 ;;
+    --index-from) index_from=$2; shift 2 ;;
     --cloudflared-from) cf_from=$2; shift 2 ;;
     *) echo "unknown argument: $1" >&2; exit 2 ;;
   esac
@@ -36,12 +41,16 @@ id fortis &>/dev/null || useradd --system --home-dir /var/lib/fortis --shell /us
 usermod -aG bitcoin-core,bitcoin-knots fortis
 install -d -o fortis -g fortis -m 0750 /var/lib/fortis /var/lib/fortis/edge /var/log/fortis
 
-if [[ -n $xbt_from ]]; then
-  step "Importing XBT index from $xbt_from"
-  systemctl stop fortis-xbt-index 2>/dev/null || true
-  [[ -e /var/lib/fortis/xbt-index ]] && mv /var/lib/fortis/xbt-index "/var/lib/fortis/xbt-index.old.$(date +%s)"
-  cp -a "$xbt_from" /var/lib/fortis/xbt-index
-  chown -R fortis:fortis /var/lib/fortis/xbt-index
+if [[ -n $index_from ]]; then
+  for c in xbt btc; do
+    [[ -d $index_from/$c ]] || continue
+    step "Importing v2 $c index from $index_from/$c"
+    systemctl stop "fortis-$c-index" 2>/dev/null || true
+    dst=/var/lib/fortis/$c-index-v2
+    [[ -e $dst ]] && mv "$dst" "$dst.old.$(date +%s)"
+    cp -a "$index_from/$c" "$dst"
+    chown -R fortis:fortis "$dst"
+  done
 fi
 
 step "Units"
@@ -58,12 +67,16 @@ if [[ -n $cf_from ]]; then
   step "Cloudflare tunnel"
   command -v cloudflared >/dev/null || pacman -S --needed --noconfirm cloudflared
   install -d -m 0755 /etc/cloudflared
-  for f in "$cf_from"/*.json "$cf_from"/cert.pem; do
-    [[ -e $f ]] && install -m 0600 "$f" /etc/cloudflared/
-  done
-  # Rewrite the Windows credentials-file path to the Linux one; ingress stays as-is.
-  sed -E 's|^(credentials-file:).*[\\/]([^\\/]+\.json)\s*$|\1 /etc/cloudflared/\2|' \
-    "$cf_from/config.yml" > /etc/cloudflared/config.yml
+  # Already in place (e.g. --cloudflared-from /etc/cloudflared): copying it onto
+  # itself would truncate config.yml, so only (re)start the service.
+  if [[ $(readlink -f "$cf_from") != /etc/cloudflared ]]; then
+    for f in "$cf_from"/*.json "$cf_from"/cert.pem; do
+      [[ -e $f ]] && install -m 0600 "$f" /etc/cloudflared/
+    done
+    # Rewrite the Windows credentials-file path to the Linux one; ingress stays as-is.
+    sed -E 's|^(credentials-file:).*[\\/]([^\\/]+\.json)\s*$|\1 /etc/cloudflared/\2|' \
+      "$cf_from/config.yml" > /etc/cloudflared/config.yml
+  fi
   grep -q 'localhost:8098\|127.0.0.1:8098' /etc/cloudflared/config.yml \
     || echo "warning: config.yml ingress doesn't point at localhost:8098 — check it" >&2
   cloudflared --config /etc/cloudflared/config.yml tunnel ingress validate

@@ -6,6 +6,14 @@ Fortis Wallet (Android). Versions are `versionName (versionCode)`.
 
 - Backend build: minimum supported Rust version raised from 1.82 to 1.88
   (required by rocksdb 0.25).
+- Backend: the address index (`fortis-index`) is rewritten. A full sync from
+  SegWit activation now takes hours instead of ~11 days, the API serves many
+  wallets at once, and the index survives crashes, reorgs and node restarts
+  without manual repair. It also serves BTC over a local Bitcoin Core node.
+  Existing indexes must be rebuilt into a new directory (the old format is
+  refused).
+- Backend: pending transactions now report their fee when every input is a
+  known P2WPKH output (previously 0 until confirmed).
 
 ## 0.4.3 (17) — 2026-09-28
 
