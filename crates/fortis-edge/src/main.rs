@@ -124,6 +124,12 @@ struct Args {
     /// none).
     #[arg(long)]
     btc_haskoin_key: Option<String>,
+    /// `--btc-upstream` is a `fortis-index` (e.g. one over a local Bitcoin
+    /// Core node), so forward `POST /btc/scan` to it exactly as `/xbt/scan`
+    /// is forwarded — answered natively from its address index. Takes
+    /// precedence over `--btc-haskoin-url` for `/btc/scan`.
+    #[arg(long)]
+    btc_upstream_scan: bool,
     /// Broadcast `POST /btc/tx` through a local Bitcoin Core / Knots node's
     /// `sendrawtransaction` instead of `--btc-upstream` (a pruned node is fine).
     /// Lets replay-protected sends (oversized `OP_RETURN`) reach the network even
@@ -243,6 +249,7 @@ struct State {
     btc_price: Option<price::PriceCache>,
     xbt_price: Option<price::PriceCache>,
     btc_haskoin: Option<haskoin::HaskoinStore>,
+    btc_upstream_scan: bool,
     btc_pacer: Option<Pacer>,
     limiter: RateLimiter,
     register_limiter: RateLimiter,
@@ -468,6 +475,7 @@ fn run() -> Result<()> {
             .map(str::trim)
             .filter(|u| !u.is_empty())
             .map(|u| haskoin::HaskoinStore::new(u, args.btc_haskoin_key.clone())),
+        btc_upstream_scan: args.btc_upstream_scan,
         btc_pacer: (args.btc_upstream_rate > 0.0).then(|| Pacer::new(args.btc_upstream_rate)),
         limiter: RateLimiter::new(args.rate_per_min, args.rate_burst),
         register_limiter: RateLimiter::new(args.register_per_hour, args.register_per_hour.max(1)),
@@ -535,6 +543,9 @@ fn run() -> Result<()> {
             "(off)".into()
         },
     );
+    if args.btc_upstream_scan {
+        eprintln!("  btc scan       forwarded to btc upstream (fortis-index)");
+    }
     eprintln!(
         "  btc batch      {}",
         match args.btc_haskoin_url.as_deref().map(str::trim).filter(|u| !u.is_empty()) {
@@ -1181,14 +1192,15 @@ fn scan_chain(req: &mut Request, st: &State, chain: &str, tok: Option<&str>, aut
         return err(429, "rate limit exceeded");
     }
 
-    if chain == "xbt" {
+    if chain == "xbt" || st.btc_upstream_scan {
         // fortis-index answers this natively, straight from its address index.
-        let Some(up) = st.xbt.as_ref() else { return err(404, "that chain is not served here") };
+        let up = if chain == "xbt" { st.xbt.as_ref() } else { st.btc.as_ref() };
+        let Some(up) = up else { return err(404, "that chain is not served here") };
         return match up.forward(&Method::Post, "scan", "", &parsed.to_body()) {
             Ok(r) => Reply::Raw(r.status, r.content_type, r.body),
             Err(e) => {
                 Metrics::inc(&st.metrics.upstream_errors);
-                err(502, &format!("upstream xbt: {e}"))
+                err(502, &format!("upstream {chain}: {e}"))
             }
         };
     }

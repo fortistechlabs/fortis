@@ -17,6 +17,15 @@ bitcoin = { workspace = true }
 anyhow = "1"
 hex = { workspace = true }
 serde_json = { workspace = true }
+crossbeam-channel = "0.5"
 clap = { version = "4", features = ["derive"] }
-rocksdb = "0.22"
-tiny_http = "0.12"
+arc-swap = "1.9"
+rocksdb = "0.25"
+axum = "0.8"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "signal", "net"] }
+tower = { version = "0.5", features = ["limit", "util"] }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+tempfile = "3"
+ureq = { version = "2", default-features = false, features = ["json"] }

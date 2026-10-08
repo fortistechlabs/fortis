@@ -1,259 +1,425 @@
-//! An in-memory overlay of the node's mempool, refreshed on the same cadence as
-//! the block sync. It carries unconfirmed outputs (funds received but not yet
-//! mined) and unconfirmed spends (so a coin the wallet already spent in a pending
-//! tx is not offered again for selection).
-//!
-//! Nothing here is written to SQLite — the confirmed index stays clean and the
-//! overlay is just rebuilt each poll from `getrawmempool` + `getrawtransaction
-//! <txid> 2` (verbosity 2, which includes `prevout` for every input).
+//! The mempool overlay. Each refresh diffs the node's mempool (txids plus its
+//! sequence number) against what we already hold, fetches only new txs (raw,
+//! batched), and publishes an immutable `MempoolView` that requests read
+//! without locks.
 
 use std::collections::{HashMap, HashSet};
+use std::sync::Arc;
 
-use anyhow::{Context, Result};
-use serde_json::{json, Value};
+use anyhow::{anyhow, Context, Result};
+use bitcoin::consensus::deserialize;
+use bitcoin::{OutPoint, Transaction, Txid};
+use serde_json::json;
 
-use fortis_node::Rpc;
+use crate::extract::{tx_rows, TxRows};
+use crate::keys::Program;
+use crate::source::RpcSource;
 
-fn outpoint(txid: &str, vout: u32) -> String {
-    format!("{txid}:{vout}")
+const RAW_BATCH: usize = 500;
+
+pub trait MempoolSource: Send + Sync {
+    /// `getrawmempool false true`: the mempool sequence and every txid.
+    fn snapshot(&self) -> Result<(u64, Vec<Txid>)>;
+    /// Raw transactions (`getrawtransaction <id> 0`); `None` for one that
+    /// left the mempool. At most `RAW_BATCH` ids per call.
+    fn raw_txs(&self, ids: &[Txid]) -> Result<Vec<Option<Vec<u8>>>>;
 }
 
-/// True if `spk_hex` is a P2WPKH scriptPubKey — `OP_0 <20-byte-hash>`, i.e.
-/// hex `0014` followed by exactly 40 more hex chars. The only address type
-/// wallet-core ever derives (`Address::p2wpkh`, `wallet-core/src/wallet.rs`),
-/// so nothing else can ever be a fortis wallet address. Same filter the
-/// persistent index applies in `sync.rs::block_txs` — this overlay isn't
-/// written to disk, but there's no reason to track outputs/spends no wallet
-/// query can ever match either.
-fn is_p2wpkh_spk(spk_hex: &str) -> bool {
-    spk_hex.len() == 44 && spk_hex.starts_with("0014")
+impl MempoolSource for RpcSource {
+    fn snapshot(&self) -> Result<(u64, Vec<Txid>)> {
+        let v = self.call("getrawmempool", json!([false, true]))?;
+        let seq = v["mempool_sequence"]
+            .as_u64()
+            .ok_or_else(|| anyhow!("getrawmempool: no mempool_sequence"))?;
+        let ids = v["txids"]
+            .as_array()
+            .ok_or_else(|| anyhow!("getrawmempool: no txids"))?
+            .iter()
+            .map(|t| {
+                t.as_str()
+                    .ok_or_else(|| anyhow!("getrawmempool: bad txid {t}"))?
+                    .parse()
+                    .context("txid")
+            })
+            .collect::<Result<_>>()?;
+        Ok((seq, ids))
+    }
+
+    fn raw_txs(&self, ids: &[Txid]) -> Result<Vec<Option<Vec<u8>>>> {
+        let calls: Vec<(&str, serde_json::Value)> = ids
+            .iter()
+            .map(|id| ("getrawtransaction", json!([id.to_string(), 0])))
+            .collect();
+        let out = self.batch(&calls)?;
+        Ok(out
+            .into_iter()
+            .map(|r| {
+                r.ok()
+                    .and_then(|v| v.as_str().and_then(|s| hex::decode(s).ok()))
+            })
+            .collect())
+    }
 }
 
-fn to_sat(v: &Value) -> u64 {
-    (v.as_f64().unwrap_or(0.0) * 1e8).round().max(0.0) as u64
+#[derive(Default)]
+pub struct MempoolView {
+    txs: HashMap<Txid, Arc<TxRows>>,
+    by_program: HashMap<Program, Vec<Txid>>,
+    spent: HashSet<OutPoint>,
+    outputs: HashMap<OutPoint, (Program, u64)>,
 }
 
-#[derive(Default, Clone)]
-pub struct Mempool {
-    /// txid → its `getrawtransaction <txid> 2` JSON.
-    txs: HashMap<String, Value>,
-    /// `"txid:vout"` outpoints spent by some mempool tx.
-    spent: HashSet<String>,
-    /// spk hex → outputs the mempool creates for it: `(txid, vout, value_sat)`.
-    outputs: HashMap<String, Vec<(String, u32, u64)>>,
-    /// `"txid:vout"` → `(spk hex, value_sat)` for every output the mempool creates
-    /// — backfills the prevout of a mempool-to-mempool spend.
-    by_outpoint: HashMap<String, (String, u64)>,
-    /// spk hex → txids that fund or spend it (for `/address/:a/txs`).
-    txids: HashMap<String, Vec<String>>,
-}
+impl MempoolView {
+    pub(crate) fn build(txs: HashMap<Txid, Arc<TxRows>>) -> Self {
+        let mut v = MempoolView::default();
+        for (id, rows) in &txs {
+            let mut touched = HashSet::new();
+            for f in &rows.funded {
+                touched.insert(f.program);
+                v.outputs.insert(
+                    OutPoint {
+                        txid: *id,
+                        vout: f.vout,
+                    },
+                    (f.program, f.value),
+                );
+            }
+            for s in &rows.spent {
+                touched.insert(s.program);
+                v.spent.insert(s.prevout);
+            }
+            for p in touched {
+                v.by_program.entry(p).or_default().push(*id);
+            }
+        }
+        for ids in v.by_program.values_mut() {
+            ids.sort();
+        }
+        v.txs = txs;
+        v
+    }
 
-impl Mempool {
+    /// Number of mempool transactions touching any P2WPKH program.
     pub fn len(&self) -> usize {
         self.txs.len()
     }
 
-    /// Pull the current mempool, keeping already-decoded txs and fetching only
-    /// new ones, then rebuild the derived lookups.
-    pub fn refresh(&mut self, rpc: &Rpc) -> Result<()> {
-        let ids: Vec<String> = rpc
-            .call("getrawmempool", json!([]))?
-            .as_array()
-            .context("getrawmempool")?
-            .iter()
-            .filter_map(|v| v.as_str().map(str::to_string))
-            .collect();
-        let live: HashSet<&str> = ids.iter().map(String::as_str).collect();
-
-        self.txs.retain(|k, _| live.contains(k.as_str()));
-        for id in &ids {
-            if self.txs.contains_key(id) {
-                continue;
-            }
-            // A tx can be mined or replaced between the list and the fetch — skip it.
-            if let Ok(t) = rpc.call("getrawtransaction", json!([id, 2])) {
-                if t.is_object() {
-                    self.txs.insert(id.clone(), t);
-                }
-            }
-        }
-        self.reindex();
-        Ok(())
+    #[allow(dead_code)] // pairs with `len` (clippy::len_without_is_empty)
+    pub fn is_empty(&self) -> bool {
+        self.txs.is_empty()
     }
 
-    fn reindex(&mut self) {
-        self.spent.clear();
-        self.outputs.clear();
-        self.by_outpoint.clear();
-        self.txids.clear();
+    pub fn txids_for(&self, p: &Program) -> Vec<Txid> {
+        self.by_program.get(p).cloned().unwrap_or_default()
+    }
 
-        for (txid, t) in &self.txs {
-            for i in t["vin"].as_array().into_iter().flatten() {
-                if let (Some(pt), Some(pv)) = (i["txid"].as_str(), i["vout"].as_u64()) {
-                    self.spent.insert(outpoint(pt, pv as u32));
-                }
-                if let Some(spk) = i["prevout"]["scriptPubKey"]["hex"].as_str() {
-                    if is_p2wpkh_spk(spk) {
-                        self.txids.entry(spk.to_string()).or_default().push(txid.clone());
+    /// Outputs to `p` created in the mempool and not spent by another mempool tx.
+    pub fn utxos_for(&self, p: &Program) -> Vec<(OutPoint, u64)> {
+        let mut out: Vec<(OutPoint, u64)> = self
+            .txids_for(p)
+            .iter()
+            .flat_map(|id| {
+                self.txs[id]
+                    .funded
+                    .iter()
+                    .filter(|f| &f.program == p)
+                    .map(|f| {
+                        (
+                            OutPoint {
+                                txid: *id,
+                                vout: f.vout,
+                            },
+                            f.value,
+                        )
+                    })
+            })
+            .filter(|(op, _)| !self.spent.contains(op))
+            .collect();
+        out.sort();
+        out
+    }
+
+    pub fn is_spent(&self, op: &OutPoint) -> bool {
+        self.spent.contains(op)
+    }
+
+    pub fn output_at(&self, op: &OutPoint) -> Option<(Program, u64)> {
+        self.outputs.get(op).copied()
+    }
+
+    pub fn contains(&self, id: &Txid) -> bool {
+        self.txs.contains_key(id)
+    }
+}
+
+pub type SharedMempool = Arc<arc_swap::ArcSwap<MempoolView>>;
+
+#[derive(Default)]
+pub struct MempoolTracker {
+    rows: HashMap<Txid, Arc<TxRows>>,
+    /// Txids already fetched that touch no P2WPKH program.
+    nothing: HashSet<Txid>,
+    seq: Option<u64>,
+}
+
+impl MempoolTracker {
+    /// Refresh from the node; `None` if its mempool sequence is unchanged.
+    pub fn refresh(&mut self, src: &dyn MempoolSource) -> Result<Option<MempoolView>> {
+        let (seq, ids) = src.snapshot()?;
+        if self.seq == Some(seq) {
+            return Ok(None);
+        }
+        let current: HashSet<Txid> = ids.iter().copied().collect();
+        self.rows.retain(|id, _| current.contains(id));
+        self.nothing.retain(|id| current.contains(id));
+        let new: Vec<Txid> = ids
+            .into_iter()
+            .filter(|id| !self.rows.contains_key(id) && !self.nothing.contains(id))
+            .collect();
+        for chunk in new.chunks(RAW_BATCH) {
+            let raws = src.raw_txs(chunk)?;
+            for (id, raw) in chunk.iter().zip(raws) {
+                // Gone before we fetched it: the next snapshot won't list it.
+                let Some(raw) = raw else { continue };
+                let tx: Transaction = match deserialize(&raw) {
+                    Ok(t) => t,
+                    Err(e) => {
+                        eprintln!("mempool: undecodable tx {id}: {e}");
+                        continue;
+                    }
+                };
+                match tx_rows(&tx) {
+                    Some(r) => {
+                        self.rows.insert(*id, Arc::new(r));
+                    }
+                    None => {
+                        self.nothing.insert(*id);
                     }
                 }
             }
-            for (n, o) in t["vout"].as_array().into_iter().flatten().enumerate() {
-                let Some(spk) = o["scriptPubKey"]["hex"].as_str() else { continue };
-                if !is_p2wpkh_spk(spk) {
-                    continue;
-                }
-                let value = to_sat(&o["value"]);
-                self.outputs
-                    .entry(spk.to_string())
-                    .or_default()
-                    .push((txid.clone(), n as u32, value));
-                self.by_outpoint
-                    .insert(outpoint(txid, n as u32), (spk.to_string(), value));
-                self.txids.entry(spk.to_string()).or_default().push(txid.clone());
-            }
         }
-        for v in self.txids.values_mut() {
-            v.sort();
-            v.dedup();
-        }
-    }
-
-    pub fn is_spent(&self, txid: &str, vout: u32) -> bool {
-        self.spent.contains(&outpoint(txid, vout))
-    }
-
-    /// `(spk hex, value_sat)` for an output some mempool tx created.
-    pub fn output_at(&self, txid: &str, vout: u32) -> Option<(String, u64)> {
-        self.by_outpoint.get(&outpoint(txid, vout)).cloned()
-    }
-
-    /// Unconfirmed outputs for `spk` that aren't themselves already spent by
-    /// another mempool tx: `(txid, vout, value_sat)`.
-    pub fn utxos_for<'a>(&'a self, spk: &str) -> impl Iterator<Item = &'a (String, u32, u64)> {
-        let spent = &self.spent;
-        self.outputs
-            .get(spk)
-            .into_iter()
-            .flatten()
-            .filter(move |(t, v, _)| !spent.contains(&outpoint(t, *v)))
-    }
-
-    /// The `getrawtransaction <txid> 2` JSON for every mempool tx touching `spk`.
-    pub fn txs_for(&self, spk: &str) -> Vec<&Value> {
-        self.txids
-            .get(spk)
-            .into_iter()
-            .flatten()
-            .filter_map(|id| self.txs.get(id))
-            .collect()
+        self.seq = Some(seq);
+        Ok(Some(MempoolView::build(self.rows.clone())))
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use bitcoin::absolute::LockTime;
+    use bitcoin::hashes::{hash160, Hash};
+    use bitcoin::{Amount, ScriptBuf, Sequence, TxIn, TxOut, WPubkeyHash, Witness};
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::Mutex;
 
-    // Valid-shaped P2WPKH scriptPubKeys (`0014` + 20-byte hash) — the filter
-    // added in `reindex()` drops anything that doesn't look like this, so
-    // fixtures need to actually pass it, not just be distinct opaque tags.
-    const SPK_A: &str = "0014aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
-    const SPK_B: &str = "0014bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
-    const SPK_C: &str = "0014cccccccccccccccccccccccccccccccccccccccc";
-    // Not P2WPKH — an OP_RETURN (`6a` + push), same shape a real node would
-    // report for one.
-    const SPK_OP_RETURN: &str = "6a04deadbeef";
-
-    /// A minimal `getrawtransaction <txid> 2`-shaped object.
-    fn raw(txid: &str, vin: Value, vout: Value) -> Value {
-        json!({ "txid": txid, "vin": vin, "vout": vout, "fee": 0.0 })
-    }
-    fn vout_to(spk: &str, btc: f64) -> Value {
-        json!({ "value": btc, "scriptPubKey": { "hex": spk } })
-    }
-    fn vin_from(txid: &str, vout: u32, prev_spk: &str) -> Value {
-        json!({ "txid": txid, "vout": vout, "prevout": { "scriptPubKey": { "hex": prev_spk } } })
+    #[derive(Default)]
+    struct Fake {
+        seq: Mutex<u64>,
+        txs: Mutex<Vec<Transaction>>,
+        /// Listed in the snapshot but gone by fetch time.
+        vanished: Mutex<HashSet<Txid>>,
+        raw_calls: AtomicUsize,
+        fetched: AtomicUsize,
     }
 
-    fn indexed(txs: &[(&str, Value)]) -> Mempool {
-        let mut m = Mempool::default();
-        for (id, t) in txs {
-            m.txs.insert((*id).into(), t.clone());
+    impl Fake {
+        fn set(&self, seq: u64, txs: Vec<Transaction>) {
+            *self.seq.lock().unwrap() = seq;
+            *self.txs.lock().unwrap() = txs;
         }
-        m.reindex();
-        m
+    }
+
+    impl MempoolSource for Fake {
+        fn snapshot(&self) -> Result<(u64, Vec<Txid>)> {
+            let ids = self
+                .txs
+                .lock()
+                .unwrap()
+                .iter()
+                .map(|t| t.compute_txid())
+                .collect();
+            Ok((*self.seq.lock().unwrap(), ids))
+        }
+
+        fn raw_txs(&self, ids: &[Txid]) -> Result<Vec<Option<Vec<u8>>>> {
+            self.raw_calls.fetch_add(1, Ordering::SeqCst);
+            self.fetched.fetch_add(ids.len(), Ordering::SeqCst);
+            let txs = self.txs.lock().unwrap();
+            let gone = self.vanished.lock().unwrap();
+            Ok(ids
+                .iter()
+                .map(|id| {
+                    if gone.contains(id) {
+                        return None;
+                    }
+                    txs.iter()
+                        .find(|t| &t.compute_txid() == id)
+                        .map(bitcoin::consensus::serialize)
+                })
+                .collect())
+        }
+    }
+
+    fn key(n: u8) -> Vec<u8> {
+        let mut k = vec![2u8; 33];
+        k[1] = n;
+        k
+    }
+
+    fn prog(n: u8) -> Program {
+        hash160::Hash::hash(&key(n)).to_byte_array()
+    }
+
+    /// Spends `prev` (owned by key `from`, if any) and pays `value` to key `to`.
+    fn tx(prev: OutPoint, from: Option<u8>, to: u8, value: u64) -> Transaction {
+        let witness = match from {
+            Some(f) => Witness::from_slice(&[vec![0x30; 72], key(f)]),
+            None => Witness::new(),
+        };
+        Transaction {
+            version: bitcoin::transaction::Version::TWO,
+            lock_time: LockTime::ZERO,
+            input: vec![TxIn {
+                previous_output: prev,
+                script_sig: ScriptBuf::new(),
+                sequence: Sequence::MAX,
+                witness,
+            }],
+            output: vec![TxOut {
+                value: Amount::from_sat(value),
+                script_pubkey: ScriptBuf::new_p2wpkh(&WPubkeyHash::from_byte_array(prog(to))),
+            }],
+        }
+    }
+
+    fn op(n: u8) -> OutPoint {
+        OutPoint {
+            txid: Txid::from_byte_array([n; 32]),
+            vout: 0,
+        }
+    }
+
+    fn no_p2wpkh(n: u8) -> Transaction {
+        let mut t = tx(op(n), None, 0, 1);
+        t.output[0].script_pubkey = ScriptBuf::new_op_return([n]);
+        t
     }
 
     #[test]
-    fn exposes_unconfirmed_outputs() {
-        let m = indexed(&[("t1", raw("t1", json!([]), json!([vout_to(SPK_A, 1.0)])))]);
-        let us: Vec<_> = m.utxos_for(SPK_A).collect();
-        assert_eq!(us.len(), 1);
-        assert_eq!(us[0], &("t1".to_string(), 0, 100_000_000));
-        assert!(m.txs_for(SPK_A).len() == 1);
+    fn a_new_tx_funding_a_program_is_a_pending_utxo() {
+        let src = Fake::default();
+        let t = tx(op(1), None, 7, 900);
+        src.set(1, vec![t.clone()]);
+        let v = MempoolTracker::default().refresh(&src).unwrap().unwrap();
+        let out = OutPoint {
+            txid: t.compute_txid(),
+            vout: 0,
+        };
+        assert_eq!(v.utxos_for(&prog(7)), vec![(out, 900)]);
+        assert_eq!(v.txids_for(&prog(7)), vec![t.compute_txid()]);
+        assert_eq!(v.output_at(&out), Some((prog(7), 900)));
+        assert_eq!(v.len(), 1);
     }
 
     #[test]
-    fn marks_a_confirmed_coin_as_spent() {
-        // t2 spends confirmed output cc:0 (which pays SPK_A)
-        let m = indexed(&[(
-            "t2",
-            raw("t2", json!([vin_from("cc", 0, SPK_A)]), json!([vout_to(SPK_B, 0.9)])),
-        )]);
-        assert!(m.is_spent("cc", 0));
-        // SPK_A's mempool history includes the spend
-        assert_eq!(m.txs_for(SPK_A).len(), 1);
+    fn a_chained_mempool_spend_hides_the_parent_output() {
+        let src = Fake::default();
+        let parent = tx(op(1), None, 7, 900);
+        let child = tx(
+            OutPoint {
+                txid: parent.compute_txid(),
+                vout: 0,
+            },
+            Some(7),
+            8,
+            800,
+        );
+        src.set(1, vec![parent.clone(), child.clone()]);
+        let v = MempoolTracker::default().refresh(&src).unwrap().unwrap();
+        assert!(v.utxos_for(&prog(7)).is_empty());
+        let mut both = vec![parent.compute_txid(), child.compute_txid()];
+        both.sort();
+        assert_eq!(v.txids_for(&prog(7)), both);
+        assert_eq!(v.utxos_for(&prog(8)).len(), 1);
     }
 
     #[test]
-    fn hides_a_mempool_output_already_spent_by_another_mempool_tx() {
-        let m = indexed(&[
-            ("t1", raw("t1", json!([]), json!([vout_to(SPK_A, 1.0)]))),
-            ("t2", raw("t2", json!([vin_from("t1", 0, SPK_A)]), json!([vout_to(SPK_C, 0.9)]))),
-        ]);
-        assert!(m.utxos_for(SPK_A).next().is_none()); // t1:0 is spent by t2
-        assert_eq!(m.utxos_for(SPK_C).count(), 1);
+    fn replaced_tx_releases_its_spent_coin() {
+        let src = Fake::default();
+        let confirmed = op(5);
+        let tx1 = tx(confirmed, Some(3), 4, 100);
+        let tx2 = tx(op(6), None, 9, 50);
+        let mut tracker = MempoolTracker::default();
+        src.set(1, vec![tx1.clone()]);
+        let v = tracker.refresh(&src).unwrap().unwrap();
+        assert!(v.is_spent(&confirmed));
+        src.set(2, vec![tx2]);
+        let v = tracker.refresh(&src).unwrap().unwrap();
+        assert!(!v.is_spent(&confirmed));
+        assert!(v.utxos_for(&prog(4)).is_empty());
+        assert!(v.txids_for(&prog(3)).is_empty());
+        assert_eq!(
+            v.output_at(&OutPoint {
+                txid: tx1.compute_txid(),
+                vout: 0
+            }),
+            None
+        );
     }
 
     #[test]
-    fn output_at_resolves_an_outpoint_to_its_spk_and_value() {
-        let m = indexed(&[("t1", raw("t1", json!([]), json!([vout_to(SPK_A, 1.0), vout_to(SPK_B, 0.5)])))]);
-        assert_eq!(m.output_at("t1", 0), Some((SPK_A.to_string(), 100_000_000)));
-        assert_eq!(m.output_at("t1", 1), Some((SPK_B.to_string(), 50_000_000)));
-        assert_eq!(m.output_at("t1", 2), None);
-        assert_eq!(m.output_at("nope", 0), None);
+    fn unchanged_sequence_fetches_nothing() {
+        let src = Fake::default();
+        src.set(1, vec![tx(op(1), None, 7, 900)]);
+        let mut tracker = MempoolTracker::default();
+        assert!(tracker.refresh(&src).unwrap().is_some());
+        assert!(tracker.refresh(&src).unwrap().is_none());
+        assert_eq!(src.raw_calls.load(Ordering::SeqCst), 1);
     }
 
     #[test]
-    fn refresh_drops_txs_that_left_the_mempool() {
-        let mut m = indexed(&[("t1", raw("t1", json!([]), json!([vout_to(SPK_A, 1.0)])))]);
-        assert_eq!(m.len(), 1);
-        m.txs.retain(|k, _| k == "nope"); // simulate `refresh` seeing an empty mempool
-        m.reindex();
-        assert!(m.utxos_for(SPK_A).next().is_none());
+    fn txs_touching_nothing_are_fetched_once() {
+        let src = Fake::default();
+        let mut tracker = MempoolTracker::default();
+        src.set(1, vec![no_p2wpkh(1), no_p2wpkh(2)]);
+        assert_eq!(tracker.refresh(&src).unwrap().unwrap().len(), 0);
+        src.set(2, vec![no_p2wpkh(1), no_p2wpkh(2), tx(op(3), None, 7, 1)]);
+        assert_eq!(tracker.refresh(&src).unwrap().unwrap().len(), 1);
+        assert_eq!(src.fetched.load(Ordering::SeqCst), 3);
     }
 
     #[test]
-    fn ignores_non_p2wpkh_outputs_and_prevouts() {
-        // An OP_RETURN output alongside a real one: only the P2WPKH one is
-        // tracked, at its true vout (1, not 0 — same true-position rule as
-        // the persistent index's block_txs filter).
-        let m = indexed(&[(
-            "t1",
-            raw("t1", json!([]), json!([vout_to(SPK_OP_RETURN, 0.0), vout_to(SPK_A, 1.0)])),
-        )]);
-        assert!(m.utxos_for(SPK_OP_RETURN).next().is_none());
-        assert_eq!(m.output_at("t1", 0), None); // the OP_RETURN vout
-        assert_eq!(m.output_at("t1", 1), Some((SPK_A.to_string(), 100_000_000)));
+    fn a_tx_that_vanished_before_fetch_is_skipped() {
+        let src = Fake::default();
+        let t = tx(op(1), None, 7, 900);
+        src.vanished.lock().unwrap().insert(t.compute_txid());
+        src.set(1, vec![t]);
+        let v = MempoolTracker::default().refresh(&src).unwrap().unwrap();
+        assert!(v.is_empty());
+        assert!(v.utxos_for(&prog(7)).is_empty());
+    }
 
-        // A spend whose prevout is non-P2WPKH doesn't pollute txids — but the
-        // outpoint is still marked spent regardless (spend tracking doesn't
-        // depend on knowing the prevout's script type).
-        let m2 = indexed(&[(
-            "t2",
-            raw("t2", json!([vin_from("cc", 0, SPK_OP_RETURN)]), json!([vout_to(SPK_B, 0.9)])),
-        )]);
-        assert!(m2.is_spent("cc", 0));
-        assert!(m2.txs_for(SPK_OP_RETURN).is_empty());
+    #[test]
+    fn large_mempools_are_fetched_in_batches_of_500() {
+        let src = Fake::default();
+        src.set(
+            1,
+            (0..1001u32)
+                .map(|i| {
+                    tx(
+                        OutPoint {
+                            txid: Txid::all_zeros(),
+                            vout: i,
+                        },
+                        None,
+                        7,
+                        1,
+                    )
+                })
+                .collect(),
+        );
+        let v = MempoolTracker::default().refresh(&src).unwrap().unwrap();
+        assert_eq!(v.len(), 1001);
+        assert_eq!(src.raw_calls.load(Ordering::SeqCst), 3);
     }
 }

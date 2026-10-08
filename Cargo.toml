@@ -5,7 +5,7 @@ members = ["crates/*"]
 
 [workspace.package]
 edition = "2021"
-rust-version = "1.82"
+rust-version = "1.88"
 license = "MIT"
 repository = "https://github.com/fortistechlabs/fortis"
 

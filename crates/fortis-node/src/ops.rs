@@ -44,8 +44,14 @@ pub fn chain_status(rpc: &Rpc) -> Result<ChainStatus> {
         chain: get_str(&bci, "chain"),
         blocks: get_u64(&bci, "blocks"),
         headers: get_u64(&bci, "headers"),
-        progress: bci.get("verificationprogress").and_then(Value::as_f64).unwrap_or(0.0),
-        ibd: bci.get("initialblockdownload").and_then(Value::as_bool).unwrap_or(false),
+        progress: bci
+            .get("verificationprogress")
+            .and_then(Value::as_f64)
+            .unwrap_or(0.0),
+        ibd: bci
+            .get("initialblockdownload")
+            .and_then(Value::as_bool)
+            .unwrap_or(false),
         pruned: bci.get("pruned").and_then(Value::as_bool).unwrap_or(false),
         subversion: get_str(&net, "subversion"),
         blake2b_active: b2b_active,
@@ -216,8 +222,14 @@ pub fn collect_utxos(rpc: &Rpc, wallet: &str, min_conf: u32) -> Result<Vec<Utxo>
             .context("listunspent row without txid")?
             .parse()
             .context("listunspent txid")?;
-        let vout = r.get("vout").and_then(Value::as_u64).context("listunspent vout")? as u32;
-        let amount_btc = r.get("amount").and_then(Value::as_f64).context("listunspent amount")?;
+        let vout = r
+            .get("vout")
+            .and_then(Value::as_u64)
+            .context("listunspent vout")? as u32;
+        let amount_btc = r
+            .get("amount")
+            .and_then(Value::as_f64)
+            .context("listunspent amount")?;
         let value = Amount::from_sat((amount_btc * 1e8).round() as u64);
         let spk_hex = r
             .get("scriptPubKey")
@@ -296,7 +308,11 @@ pub fn history(rpc: &Rpc, wallet: &str, count: u32) -> Result<Vec<HistoryEntry>>
 
     let mut out: Vec<HistoryEntry> = Vec::new();
     for r in rows.iter().rev() {
-        let txid = r.get("txid").and_then(Value::as_str).unwrap_or_default().to_string();
+        let txid = r
+            .get("txid")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_string();
         if txid.is_empty() {
             continue;
         }
@@ -339,7 +355,11 @@ pub fn history(rpc: &Rpc, wallet: &str, count: u32) -> Result<Vec<HistoryEntry>>
 pub fn test_accept(rpc: &Rpc, raw_hex: &str) -> Result<()> {
     let res = rpc.call("testmempoolaccept", json!([[raw_hex]]))?;
     let first = res.get(0).cloned().unwrap_or(Value::Null);
-    if first.get("allowed").and_then(Value::as_bool).unwrap_or(false) {
+    if first
+        .get("allowed")
+        .and_then(Value::as_bool)
+        .unwrap_or(false)
+    {
         return Ok(());
     }
     let reason = first
@@ -376,7 +396,10 @@ fn parse_desc_path(desc: &str) -> Option<(bool, u32)> {
 }
 
 fn get_str(v: &Value, key: &str) -> String {
-    v.get(key).and_then(Value::as_str).unwrap_or("?").to_string()
+    v.get(key)
+        .and_then(Value::as_str)
+        .unwrap_or("?")
+        .to_string()
 }
 
 fn get_u64(v: &Value, key: &str) -> u64 {

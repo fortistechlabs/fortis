@@ -1,0 +1,46 @@
+# /etc/systemd/system/fortis-edge.service
+# Public front (via the Cloudflare tunnel → localhost:8098) for both indexes.
+# The BTC source lives in /etc/fortis/edge.env (BTC_ARGS) so it can move from a
+# public Esplora to the local fortis-btc-index once that has synced.
+
+[Unit]
+Description=fortis-edge (public wallet backend)
+After=network-online.target fortis-xbt-index.service fortis-btc-index.service
+Wants=network-online.target
+PartOf=bitcoin-core.service
+
+[Service]
+Type=simple
+User=fortis
+Group=fortis
+SupplementaryGroups=bitcoin-core
+EnvironmentFile=/etc/fortis/edge.env
+ExecStart=/usr/local/bin/fortis-edge \
+  --bind 127.0.0.1:8098 \
+  --xbt-upstream http://127.0.0.1:8094 \
+  $BTC_ARGS \
+  --btc-rpc-url http://127.0.0.1:8332 \
+  --btc-rpc-cookie /var/lib/bitcoin-core/.cookie \
+  --btc-price-url https://neoxa.exchange/api/exchange/ticker/BTC_USDC \
+  --xbt-price-url https://neoxa.exchange/api/exchange/ticker/BTCB2_USDC \
+  --secret-file /var/lib/fortis/edge/fortis-edge.secret \
+  --cache-dir /var/lib/fortis/edge/cache \
+  --btc-history-dir /var/lib/fortis/edge/btc-history \
+  --btc-scan-cache-dir /var/lib/fortis/edge/btc-scan-cache \
+  --require-token \
+  --trust-forwarded-for \
+  --allow-origin $ALLOW_ORIGIN \
+  --crash-log /var/log/fortis/crashes.ndjson \
+  $EXTRA_ARGS
+Restart=on-failure
+RestartSec=5
+StateDirectory=fortis fortis/edge
+LogsDirectory=fortis
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/var/lib/fortis /var/log/fortis
+
+[Install]
+WantedBy=multi-user.target
