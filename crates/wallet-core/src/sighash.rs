@@ -13,7 +13,7 @@ use bitcoin::{Script, Transaction, TxOut};
 
 use crate::error::{Result, WalletError};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum SighashVariant {
     /// BIP-143 segwit v0 (standard Bitcoin).
     SegwitV0,

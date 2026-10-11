@@ -18,18 +18,20 @@
 
 use bitcoin::hashes::{sha256, Hash};
 use bitcoin::opcodes::all as op;
-use bitcoin::script::Builder;
+use bitcoin::script::{Builder, Instruction};
 use bitcoin::secp256k1::PublicKey;
 use bitcoin::{
-    absolute, transaction, Amount, OutPoint, ScriptBuf, Sequence, Transaction, TxIn, TxOut, Witness,
+    absolute, transaction, Amount, OutPoint, Script, ScriptBuf, Sequence, Transaction, TxIn, TxOut,
+    Witness,
 };
+use serde::{Deserialize, Serialize};
 
 use crate::chain::ChainParams;
 use crate::error::{Result, WalletError};
 use crate::sighash::{sighash_all, SighashVariant};
 use crate::types::Preimage;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HtlcContract {
     pub witness_script: ScriptBuf,
     pub script_pubkey: ScriptBuf,
@@ -75,6 +77,16 @@ impl HtlcContract {
         })
     }
 
+    /// Find the output in `tx` that funds this exact contract with exactly `value`.
+    /// Swaps require an exact amount: redeem signing commits to the stored contract
+    /// value, so an over-funded output would make our redeem consensus-invalid.
+    pub fn find_exact_output(&self, tx: &Transaction, value: Amount) -> Option<u32> {
+        tx.output
+            .iter()
+            .position(|o| o.script_pubkey == self.script_pubkey && o.value == value)
+            .map(|i| i as u32)
+    }
+
     fn spend_skeleton(
         &self,
         prevout: OutPoint,
@@ -102,7 +114,7 @@ impl HtlcContract {
 
     /// Unsigned redeem transaction (hashlock path).
     pub fn redeem_tx(&self, prevout: OutPoint, to: ScriptBuf, fee: Amount) -> Result<Transaction> {
-        self.spend_skeleton(prevout, to, fee, absolute::LockTime::ZERO, Sequence::MAX)
+        self.spend_skeleton(prevout, to, fee, absolute::LockTime::ZERO, Sequence::ENABLE_RBF_NO_LOCKTIME)
     }
 
     /// Unsigned refund transaction (timelock path); `nLockTime` = the contract CLTV.
@@ -112,7 +124,7 @@ impl HtlcContract {
             to,
             fee,
             absolute::LockTime::from_consensus(self.locktime),
-            Sequence::ENABLE_LOCKTIME_NO_RBF,
+            Sequence::ENABLE_RBF_NO_LOCKTIME,
         )
     }
 
@@ -133,13 +145,8 @@ impl HtlcContract {
         redeem_pubkey: &PublicKey,
         preimage: &Preimage,
     ) {
-        let mut w = Witness::new();
-        w.push(sig);
-        w.push(redeem_pubkey.serialize());
-        w.push(preimage.as_slice());
-        w.push([1u8]);
-        w.push(self.witness_script.as_bytes());
-        tx.input[input_index].witness = w;
+        tx.input[input_index].witness =
+            redeem_witness(sig, redeem_pubkey, preimage, &self.witness_script);
     }
 
     /// Attach the refund witness in place.
@@ -157,6 +164,57 @@ impl HtlcContract {
         w.push(self.witness_script.as_bytes());
         tx.input[input_index].witness = w;
     }
+}
+
+/// The hashlock-path witness: `[sig, pubkey, preimage, 0x01, witnessScript]`.
+pub(crate) fn redeem_witness(
+    sig: &[u8],
+    redeem_pubkey: &PublicKey,
+    preimage: &Preimage,
+    witness_script: &Script,
+) -> Witness {
+    let mut w = Witness::new();
+    w.push(sig);
+    w.push(redeem_pubkey.serialize());
+    w.push(preimage.as_slice());
+    w.push([1u8]);
+    w.push(witness_script.as_bytes());
+    w
+}
+
+/// The hashlock committed in an HTLC witness script (the 32-byte push after `OP_SHA256`).
+pub(crate) fn script_hashlock(witness_script: &Script) -> Option<sha256::Hash> {
+    let mut it = witness_script.instructions();
+    while let Some(Ok(ins)) = it.next() {
+        if ins == Instruction::Op(op::OP_SHA256) {
+            return match it.next() {
+                Some(Ok(Instruction::PushBytes(b))) => sha256::Hash::from_slice(b.as_bytes()).ok(),
+                _ => None,
+            };
+        }
+    }
+    None
+}
+
+/// Fee for a single-input spend of `contract` (`redeem` = hashlock path, else
+/// refund) at `feerate_sat_vb`. Sized from the finished witness with a 72-byte
+/// signature and a 34-byte output script, so it never undershoots for P2WPKH,
+/// P2WSH or P2TR payouts.
+pub fn htlc_spend_fee(contract: &HtlcContract, redeem: bool, feerate_sat_vb: u64) -> Amount {
+    let to = ScriptBuf::from(vec![0u8; 34]);
+    let mut tx = if redeem {
+        contract.redeem_tx(OutPoint::null(), to, Amount::ZERO)
+    } else {
+        contract.refund_tx(OutPoint::null(), to, Amount::ZERO)
+    }
+    .expect("a zero fee never exceeds the contract value");
+    let (sig, pk, ws) = ([0u8; 72], [0u8; 33], contract.witness_script.as_bytes());
+    tx.input[0].witness = if redeem {
+        Witness::from_slice(&[&sig[..], &pk, &[0u8; 32], &[1u8], ws])
+    } else {
+        Witness::from_slice(&[&sig[..], &pk, &[], ws])
+    };
+    Amount::from_sat((tx.vsize() as u64).saturating_mul(feerate_sat_vb))
 }
 
 /// Extract the swap preimage from a redeem-path spend of an HTLC output.
@@ -246,12 +304,12 @@ mod tests {
         let spk = ScriptBuf::new();
         let redeem = c.redeem_tx(op, spk.clone(), Amount::from_sat(500)).unwrap();
         assert_eq!(redeem.lock_time, absolute::LockTime::ZERO);
-        assert_eq!(redeem.input[0].sequence, Sequence::MAX);
+        assert_eq!(redeem.input[0].sequence, Sequence::ENABLE_RBF_NO_LOCKTIME);
         assert_eq!(redeem.output[0].value, Amount::from_sat(99_500));
 
         let refund = c.refund_tx(op, spk, Amount::from_sat(500)).unwrap();
         assert_eq!(refund.lock_time, absolute::LockTime::from_consensus(1_800_000_000));
-        assert_eq!(refund.input[0].sequence, Sequence::ENABLE_LOCKTIME_NO_RBF);
+        assert_eq!(refund.input[0].sequence, Sequence::ENABLE_RBF_NO_LOCKTIME);
     }
 
     #[test]

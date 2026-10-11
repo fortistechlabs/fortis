@@ -8,6 +8,11 @@ import androidx.compose.runtime.setValue
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.fortis.wallet.data.*
+import com.fortis.wallet.swap.SwapService
+import com.fortis.wallet.ui.fmtCoin
+import com.fortis.wallet.ui.screens.SLIPPAGE_BPS
+import com.fortis.wallet.ui.screens.amountError
+import com.fortis.wallet.ui.screens.btcLeg
 import com.fortis.wallet.wallet.WalletSession
 import com.fortis.wallet.wallet.newMnemonic
 import com.fortis.wallet.wallet.sealSeed
@@ -18,11 +23,12 @@ import kotlinx.coroutines.withContext
 import okhttp3.Dispatcher
 import okhttp3.OkHttpClient
 import uniffi.wallet_ffi.FundingPlan
+import uniffi.wallet_ffi.ImportedAccount
 import java.net.Proxy
 import java.util.UUID
 import java.util.concurrent.TimeUnit
 
-enum class Phase { Loading, AppLock, Onboard, Gen, Create, Restore, Watch, Shell, RevealSeed }
+enum class Phase { Loading, AppLock, Onboard, Gen, Create, Restore, Watch, HwConnect, Shell, RevealSeed }
 
 /** The three top-level destinations inside [Phase.Shell]'s nav bar. */
 enum class NavTab { Home, Wallet, Settings }
@@ -52,6 +58,39 @@ data class PlanPreview(
 
 /** The result of setting up the app lock, produced by the UI for the first wallet. */
 data class LockSetup(val mode: String, val secret: String, val appWrapped: String?)
+
+/** The swap screens shown over the Shell (Home → Swap). */
+sealed interface SwapRoute {
+    data object List : SwapRoute
+    data object New : SwapRoute
+    data object Take : SwapRoute
+    data class Detail(val id: String) : SwapRoute
+}
+
+/** A taken share code's terms, shown before Accept. [ownPrice] is this phone's
+ *  NeoxEX price (`null` if unknown); [problem] why the terms fail our own check. */
+data class TakePreview(
+    val taken: Taken,
+    val termsJson: String,
+    val role: String,
+    val slippageBps: Int,
+    val ownPrice: Long?,
+    val problem: String?,
+) {
+    private val terms get() = org.json.JSONObject(termsJson)
+
+    /** The initiator sends XBT; the participant sends BTC. */
+    val sendChain: String get() = if (role == "initiator") "xbt" else "btc"
+    val sendSat: Long get() = terms.getLong(if (sendChain == "xbt") "xbt_sat" else "btc_sat")
+    val receiveSat: Long get() = terms.getLong(if (sendChain == "xbt") "btc_sat" else "xbt_sat")
+    val priceSatPerXbt: Long get() = terms.getLong("price_sat_per_xbt")
+    val acceptBy: Long get() = terms.getLong("accept_by")
+}
+
+private data class SwapKeys(
+    val index: Int, val wrappedXbt: String, val wrappedBtc: String,
+    val redeemAddress: String, val refundAddress: String,
+)
 
 class WalletViewModel(app: Application) : AndroidViewModel(app) {
     private val store = Store(app)
@@ -157,7 +196,14 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
     var lastSentTxid by mutableStateOf<String?>(null); private set
     var error by mutableStateOf<String?>(null)
 
+    /** The process's one swap engine and store live here (a service locator). */
+    private val fortis = app as FortisApplication
+
+    /** This ViewModel's funder, handed to the Application-level engine while it lives. */
+    private val funder = swapFunder(fortis.swapStore)
+
     init {
+        fortis.unlockedFunder = funder
         viewModelScope.launch {
             val s = store.load()
             wallets = s.wallets
@@ -239,22 +285,7 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
                 for (w in wallets.toList()) {
                     val s = ensureSession(w.id, quiet = true) ?: continue
                     val id = w.id
-                    val b = overviewBackends.getOrPut(id) {
-                        EsploraBackend(
-                            http, "$HOSTED_EDGE/${w.chain}", s.view,
-                            { (wallets.firstOrNull { it.id == id } ?: w).let { c -> c.nextReceive to c.nextChange } },
-                            w.backendToken ?: "",
-                            "$HOSTED_EDGE/pricing",
-                            bulkPrewarm = w.chain == "btc",
-                            chain = w.chain,
-                            txCache = txCache,
-                            batchScan = true,
-                        ) {
-                            val fresh = edgeRegister(http, HOSTED_EDGE)
-                            updateConfig(id) { it.copy(backendToken = fresh) }
-                            fresh
-                        }
-                    }
+                    val b = overviewBackend(w, s)
                     runCatching { b.prewarm() }
                     runCatching { b.balances() }.getOrNull()?.let { setWalletBalance(id, it.confirmedSat) }
                     // one price lookup per chain, reused across its wallets
@@ -266,6 +297,342 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
                 scanningAll = false
             }
         }
+    }
+
+    /** The hosted edge as an Esplora backend for any wallet (not just the one in
+     *  view), shared by the balance scan and the swap funder. */
+    private fun overviewBackend(w: WalletConfig, s: WalletSession): Backend {
+        val id = w.id
+        return overviewBackends.getOrPut(id) {
+            EsploraBackend(
+                http, "$HOSTED_EDGE/${w.chain}", s.view,
+                { (wallets.firstOrNull { it.id == id } ?: w).let { c -> c.nextReceive to c.nextChange } },
+                w.backendToken ?: "",
+                "$HOSTED_EDGE/pricing",
+                bulkPrewarm = w.chain == "btc",
+                chain = w.chain,
+                txCache = txCache,
+                batchScan = true,
+            ) {
+                val fresh = edgeRegister(http, HOSTED_EDGE)
+                updateConfig(id) { it.copy(backendToken = fresh) }
+                fresh
+            }
+        }
+    }
+
+    /**
+     * Funds a swap's HTLC from its from-wallet, over the ordinary send path:
+     * `plan_payment` to the HTLC address plus the 50 bps commission
+     * (`ServiceFee`, to the `/pricing` address — which the engine already checked
+     * is the terms' fee address), then `sign_funding_tx`, then broadcast. The
+     * txid (computed from the signed hex) and the signed hex are saved as
+     * `pendingFundingTxid` / `pendingFundingHex` before the broadcast, so a
+     * process death or lost answer in between can't fund twice: the engine
+     * re-sends that same tx. `null` while the app is locked (the engine then
+     * notifies NEED_FUNDING).
+     */
+    fun swapFunder(swaps: SwapStore): com.fortis.wallet.swap.Funder = com.fortis.wallet.swap.Funder { r, htlc ->
+        if (appSecret == null) return@Funder null
+        val w = wallets.firstOrNull { it.id == r.fromWalletId } ?: error("the swap's wallet was removed")
+        require(w.chain == r.sendChain) { "the swap's wallet is on the wrong chain" }
+        require(!w.watchOnly) { "a watch-only wallet can't fund a swap" }
+        val s = withContext(Dispatchers.Default) { ensureSession(w.id, quiet = true) } ?: return@Funder null
+        val b = overviewBackend(w, s)
+        val pricing = b.status().pricing ?: error("the edge advertises no commission address")
+        val terms = org.json.JSONObject(r.termsJson ?: error("no terms yet"))
+        require(pricing.address == terms.getString("fee_address")) { "the commission address changed" }
+        val fee = uniffi.wallet_ffi.ServiceFee(pricing.address, 50u, 0uL, 0uL)
+        val feerate = b.feerateSatVb(6).coerceAtLeast(1uL)
+        val utxos = b.utxos(1u)
+        require(utxos.isNotEmpty()) { str(R.string.error_no_coins) }
+        s.setIndices(w.nextReceive, w.nextChange)
+        val plan = s.view.planPayment(
+            utxos, listOf(uniffi.wallet_ffi.PayTo(htlc.address, htlc.amountSat)), feerate, 1u, null, fee, false,
+        )
+        val signed = s.sign(plan.txHex, plan.selected)
+        val txid = uniffi.wallet_ffi.txidOf(signed)
+        // Saved before the broadcast: the engine re-sends this exact tx until it is
+        // seen (or definitively rejected) and never plans a second funding meanwhile.
+        val rec = swaps.get(r.id) ?: error("the swap record is gone")
+        swaps.put(rec.copy(pendingFundingTxid = txid, pendingFundingHex = signed))
+        b.broadcast(signed)
+        val idx = s.view.nextIndices()
+        updateConfig(w.id) { it.copy(nextChange = maxOf(it.nextChange, idx.nextChange.toInt())) }
+        txid
+    }
+
+    // --- swaps (P2P BTC ⇄ XBT; the engine itself lives in FortisApplication) ---
+
+    /** The edge's swap quote; `null` while unknown, or when the edge has swaps off
+     *  (`/swap/quote` → 404) or can't price (503). The Home Swap button hides then. */
+    var swapQuote by mutableStateOf<Quote?>(null); private set
+
+    /** Every swap on this phone, newest first (re-read from the store). */
+    var swaps by mutableStateOf<List<SwapRecord>>(emptyList()); private set
+
+    /** Which swap screen is open over the Shell, or `null` for the nav tabs. */
+    var swapRoute by mutableStateOf<SwapRoute?>(null); private set
+
+    /** A create / take / accept is in flight: the screens disable their buttons. */
+    var swapBusy by mutableStateOf(false); private set
+
+    /** A taken share code whose terms are showing, awaiting Accept or Decline. */
+    var takePreview by mutableStateOf<TakePreview?>(null); private set
+
+    /** Wallets that may swap: seed wallets only (no watch-only, no hardware). */
+    val seedWallets: List<WalletConfig> get() = wallets.filter { !it.watchOnly && !it.hardware && it.sealed != null }
+
+    /** Show Home's Swap button: the edge quotes swaps (and there is a wallet to
+     *  swap from), or a swap is still running and must stay reachable. */
+    val showSwap: Boolean get() = (swapQuote != null && seedWallets.isNotEmpty()) || swaps.any { it.step.active }
+
+    fun openSwaps() { error = null; swapRoute = SwapRoute.List; refreshSwaps(); refreshQuote() }
+    fun openNewSwap() { error = null; swapRoute = SwapRoute.New; refreshQuote() }
+    fun openTakeCode() { error = null; takePreview = null; swapRoute = SwapRoute.Take }
+    fun openSwap(id: String) { error = null; swapRoute = SwapRoute.Detail(id) }
+
+    /** Back from a swap screen: to the list, and from the list to the tabs. A
+     *  taken code left without accepting is declined so the match ends at once. */
+    fun swapBack() {
+        error = null
+        if (swapRoute == SwapRoute.Take && takePreview != null) declineTaken()
+        swapRoute = when (swapRoute) {
+            null, SwapRoute.List -> null
+            else -> SwapRoute.List
+        }
+    }
+
+    fun refreshQuote() = viewModelScope.launch {
+        swapQuote = runCatching { fortis.swapApi.quote() }.getOrNull()
+    }
+
+    fun refreshSwaps() = viewModelScope.launch {
+        runCatching { fortis.swapStore.all() }.getOrNull()?.let { all ->
+            swaps = all.sortedByDescending { it.createdAt }
+        }
+    }
+
+    private fun nowSecs() = System.currentTimeMillis() / 1000
+
+    private fun seedWallet(id: String): WalletConfig =
+        seedWallets.firstOrNull { it.id == id } ?: throw Exception(str(R.string.swap_error_seed_only))
+
+    /**
+     * The swap's two signing secrets (XBT and BTC, both from the from-wallet's
+     * seed at [index]), wrapped by [SwapKeystore]; the plain copies are zeroed.
+     * Needs the app unlocked.
+     */
+    private suspend fun wrappedSwapSecrets(from: WalletSession, index: Int): Pair<String, String> =
+        withContext(Dispatchers.Default) {
+            val w = from.wallet ?: error(str(R.string.swap_error_seed_only))
+            fun wrapped(chain: String): String {
+                val secret = w.swapSecret(chain, 0u, index.toUInt())
+                return try { SwapKeystore.wrap(secret) } finally { secret.fill(0) }
+            }
+            wrapped("xbt") to wrapped("btc")
+        }
+
+    /**
+     * Everything a new swap record needs from the two wallets, while unlocked: a
+     * fresh random swap index, the wrapped secrets, the redeem address (the
+     * to-wallet's next receive, which is then advanced since the redeem always
+     * pays it) and the refund address (the from-wallet's next receive — only
+     * paid if the swap fails, so it isn't advanced).
+     */
+    private suspend fun swapKeys(from: WalletConfig, to: WalletConfig): SwapKeys {
+        if (appSecret == null) throw Exception(str(R.string.swap_error_locked))
+        if (from.chain == to.chain) throw Exception(str(R.string.swap_error_same_chain))
+        val (fs, ts) = withContext(Dispatchers.Default) {
+            ensureSession(from.id, quiet = true) to ensureSession(to.id, quiet = true)
+        }
+        if (fs == null || ts == null) throw Exception(str(R.string.error_open_wallet))
+        val index = fortis.swapStore.nextSwapIndex(from.id)
+        val (xbt, btc) = wrappedSwapSecrets(fs, index)
+        return SwapKeys(
+            index, xbt, btc,
+            redeemAddress = ts.receiveAddress(to.nextReceive).address,
+            refundAddress = fs.receiveAddress(from.nextReceive).address,
+        )
+    }
+
+    /** Persist first, then start the service (so its first pass sees the swap). */
+    private suspend fun startSwap(rec: SwapRecord) {
+        fortis.swapStore.put(rec)
+        updateConfig(rec.toWalletId) { it.copy(nextReceive = it.nextReceive + 1) }
+        showSwap(rec.id)
+    }
+
+    /**
+     * Post an offer to swap [amountSat] (on the from-wallet's chain) for the other
+     * chain: on the public book (**Find a match**), or [private] with a share code
+     * (**Swap with a person**).
+     *
+     * A provisional record (keys, addresses, the request and a random client id)
+     * is saved **before** the POST, so no offer can exist that no record follows:
+     * the engine re-posts with the same client id after a lost response or a
+     * crash, and the edge hands back the same offer. The POST then promotes it.
+     */
+    fun createOffer(fromId: String, toId: String, amountSat: Long, slippageBps: Int, private: Boolean) = swapWrap {
+        val from = seedWallet(fromId)
+        val to = seedWallet(toId)
+        val q = swapQuote ?: throw Exception(str(R.string.swap_unavailable))
+        require(slippageBps in SLIPPAGE_BPS) { "slippage must be 50, 100 or 200 bps" }
+        amountError(btcLeg(amountSat, from.chain, q.priceSatPerXbt), q.minBtcSat, q.maxBtcSat)?.let {
+            throw Exception(str(it, fmtCoin(q.minBtcSat), fmtCoin(q.maxBtcSat)))
+        }
+        val keys = swapKeys(from, to)
+        val clientId = newClientId()
+        val provisional = SwapRecord(
+            id = clientId, clientId = clientId, step = Step.PROVISIONAL, privateOffer = private,
+            fromWalletId = from.id, toWalletId = to.id, sendChain = from.chain,
+            amountSat = amountSat, slippageBps = slippageBps, ownerSecret = "",
+            swapIndex = keys.index, wrappedXbt = keys.wrappedXbt, wrappedBtc = keys.wrappedBtc,
+            redeemAddress = keys.redeemAddress, refundAddress = keys.refundAddress, createdAt = nowSecs(),
+        )
+        fortis.swapStore.put(provisional)
+        updateConfig(to.id) { it.copy(nextReceive = it.nextReceive + 1) }
+        val posted = try {
+            fortis.swapEngine.postOffer(clientId)
+        } catch (e: SwapHttpException) {
+            if (e.code != 400 && e.code != 429) {
+                // no answer we can trust: the engine re-posts (and adopts) in the background
+                showSwap(clientId)
+            } else {
+                // refused: the edge made no offer, so there is nothing to follow
+                fortis.swapStore.remove(clientId)
+                refreshSwaps()
+            }
+            throw e
+        } catch (e: Exception) {
+            showSwap(clientId)
+            throw e
+        }
+        showSwap(posted.id)
+    }
+
+    /** Start the service (it drives the saved record) and open the swap. */
+    private suspend fun showSwap(id: String) {
+        SwapService.start(getApplication())
+        swaps = fortis.swapStore.all().sortedByDescending { it.createdAt }
+        swapRoute = SwapRoute.Detail(id)
+    }
+
+    /** A fresh offer idempotency key: 16 random bytes, hex. */
+    private fun newClientId(): String =
+        ByteArray(16).also { java.security.SecureRandom().nextBytes(it) }.joinToString("") { "%02x".format(it) }
+
+    /**
+     * Take a share code: the edge matches us at once (we are the code's opposite
+     * direction). The terms and our own NeoxEX price check are shown before the
+     * user accepts; nothing is saved until then.
+     */
+    fun takeCode(code: String, slippageBps: Int) = swapWrap {
+        val clean = code.trim().uppercase().filter { it.isLetterOrDigit() }
+        if (clean.isEmpty()) throw Exception(str(R.string.swap_error_enter_code))
+        takePreview = null
+        val t = fortis.swapApi.take(clean, slippageBps)
+        val info = try {
+            fortis.swapApi.match(t.matchId, t.ownerSecret)
+        } catch (e: Exception) {
+            runCatching { fortis.swapApi.cancelOffer(t.offerId, t.ownerSecret) }
+            throw e
+        }
+        val termsJson = info.terms.toString()
+        val price = runCatching { fortis.ownSwapPrice() }
+        val problem = when {
+            price.isFailure -> str(R.string.swap_check_unreachable)
+            price.getOrNull() == null -> str(R.string.swap_check_refused)
+            else -> runCatching {
+                uniffi.wallet_ffi.validateSwapTerms(
+                    termsJson, price.getOrNull()!!.toULong(), slippageBps.toUInt(), info.role, nowSecs().toUInt(),
+                )
+            }.exceptionOrNull()?.let { it.message ?: it.toString() }
+        }
+        takePreview = TakePreview(t, termsJson, info.role, slippageBps, price.getOrNull(), problem)
+    }
+
+    /** Accept the shown terms: build and save the swap record, then start it. */
+    fun acceptTaken(fromId: String, toId: String) = swapWrap {
+        val p = takePreview ?: return@swapWrap
+        val from = seedWallet(fromId)
+        val to = seedWallet(toId)
+        if (from.chain != p.sendChain) throw Exception(str(R.string.swap_error_wrong_chain, p.sendChain.uppercase()))
+        val keys = swapKeys(from, to)
+        val rec = SwapRecord(
+            id = p.taken.offerId, matchId = p.taken.matchId, fromWalletId = from.id, toWalletId = to.id,
+            sendChain = p.sendChain, amountSat = p.sendSat, slippageBps = p.slippageBps,
+            ownerSecret = p.taken.ownerSecret, swapIndex = keys.index,
+            wrappedXbt = keys.wrappedXbt, wrappedBtc = keys.wrappedBtc,
+            redeemAddress = keys.redeemAddress, refundAddress = keys.refundAddress, createdAt = nowSecs(),
+        )
+        startSwap(rec)
+        takePreview = null
+    }
+
+    /** Turn the shown terms down: the match ends now and both offers come off the book. */
+    fun declineTaken() {
+        val p = takePreview ?: return
+        takePreview = null
+        fortis.appScope.launch {
+            runCatching {
+                fortis.swapApi.post(p.taken.matchId, p.taken.ownerSecret, org.json.JSONObject().put("type", "decline"))
+            }
+            runCatching { fortis.swapApi.cancelOffer(p.taken.offerId, p.taken.ownerSecret) }
+        }
+    }
+
+    /**
+     * Take an unmatched offer off the book; the engine then marks the swap
+     * cancelled. A record still provisional (its POST unanswered) keeps the
+     * cancel, and the engine adopts the offer and takes it down.
+     */
+    fun cancelOffer(id: String) = swapWrap {
+        if (fortis.swapEngine.cancelProvisional(id)) {
+            runCatching { fortis.swapEngine.step(id) }
+            refreshSwaps()
+            return@swapWrap
+        }
+        val r = fortis.swapStore.find(id) ?: return@swapWrap
+        if (r.step != Step.WAITING_MATCH) return@swapWrap
+        try {
+            fortis.swapApi.cancelOffer(r.id, r.ownerSecret)
+        } catch (e: SwapHttpException) {
+            if (e.code == 409) throw Exception(str(R.string.swap_error_already_matched))
+            throw e
+        }
+        fortis.swapEngine.step(r.id)
+        refreshSwaps()
+    }
+
+    /**
+     * Confirmations of the counterparty's funding, as the edge announced it, or
+     * `null` if it isn't announced yet (or can't be read now). For the detail
+     * screen's "they funded n/6".
+     */
+    suspend fun theirConfirmations(r: SwapRecord): Long? = runCatching {
+        val m = r.matchId ?: return null
+        val info = fortis.swapApi.match(m, r.ownerSecret)
+        val op = (if (r.recvChain == "btc") info.btcFunding else info.xbtFunding) ?: return null
+        fortis.swapChain.txout(r.recvChain, op.txid, op.vout)?.confirmations
+    }.getOrNull()
+
+    private fun swapWrap(block: suspend () -> Unit) = viewModelScope.launch {
+        if (swapBusy) return@launch
+        swapBusy = true
+        error = null
+        try {
+            runCatching { block() }.onFailure { error = it.message ?: it.toString() }
+        } finally {
+            swapBusy = false
+        }
+    }
+
+    override fun onCleared() {
+        // The engine outlives this ViewModel; with no unlocked wallet it gets
+        // `null` from the funder (→ NEED_FUNDING) until the next unlock.
+        if (fortis.unlockedFunder === funder) fortis.unlockedFunder = null
+        super.onCleared()
     }
 
     /** Drop the in-view backend + derived state — call when the selected wallet changes. */
@@ -288,6 +655,7 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
     /** Switch the Shell's top-nav tab. */
     fun go(tab: NavTab) {
         error = null
+        if (swapRoute != null) { declineTaken(); swapRoute = null }
         nav = tab
         if (phase == Phase.Shell) enterTab()
     }
@@ -314,6 +682,7 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
     }
     fun goRestore() { phase = Phase.Restore }
     fun goWatch() { phase = Phase.Watch }
+    fun goHwConnect() { error = null; phase = Phase.HwConnect }
 
     /** Is the next wallet the first one requiring an app lock? True until a
      *  signing wallet exists — a device holding only watch-only wallets has
@@ -337,6 +706,7 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
     fun appUnlockWithSecret(secret: String) = wrap {
         appSecret = secret
         resolvePhase()
+        fortis.onAppUnlocked()
     }
 
     /** Password mode: open a wallet with the password off the main thread (it
@@ -356,6 +726,7 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
         }
         appSecret = pw
         resolvePhase()
+        fortis.onAppUnlocked()
     }
 
     /** Lock the whole app — clears every seed and the app secret from memory. */
@@ -366,6 +737,8 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
         synchronized(balanceLock) { walletBalances = emptyMap(); coinUsd = emptyMap() }
         overviewBackends.clear()
         revealingId = null
+        declineTaken()
+        swapRoute = null
         resetView()
         nav = NavTab.Home
         phase = when {
@@ -429,10 +802,61 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
         finishWatchOnly(name, chain, trimmed)
     }
 
-    private suspend fun finishWatchOnly(name: String, chain: String, xpub: String) {
+    // --- hardware wallet ---
+
+    /** The BTC hardware wallet just connected, while its "open the matching XBT
+     *  wallet?" offer is showing. */
+    var hwOfferXbtFor by mutableStateOf<String?>(null); private set
+
+    /** Parse pasted / single-frame-scanned export text (zpub, `[fp/84h/0h/0h]xpub`,
+     *  single-part UR) as a BTC BIP-84 account. Throws with a user-facing message. */
+    fun importAccountText(text: String): ImportedAccount =
+        friendlyImportError { uniffi.wallet_ffi.importAccount(text, "btc", "mainnet") }
+
+    /** The finished result of an animated-QR scan, as [importAccountText]. */
+    fun importAccountScan(scanner: uniffi.wallet_ffi.UrAccountScanner): ImportedAccount =
+        friendlyImportError { scanner.result("btc", "mainnet") }
+
+    private fun <T> friendlyImportError(block: () -> T): T = try {
+        block()
+    } catch (e: Exception) {
+        val m = e.message.orEmpty()
+        throw Exception(when {
+            m.contains("Native SegWit") -> str(R.string.error_not_bip84)
+            m.contains("invalid account xpub", ignoreCase = true) -> str(R.string.error_invalid_xpub)
+            else -> m.ifBlank { str(R.string.error_invalid_xpub) }
+        })
+    }
+
+    /** Add the device's BTC account as a hardware watch-only wallet, then offer
+     *  the same addresses on XBT. */
+    fun connectHardware(name: String, account: ImportedAccount) = wrap {
+        if (!canAddWallet) throw Exception(str(R.string.error_wallet_max, MAX_WALLETS))
+        WalletSession.watchOnly("btc", "mainnet", account.xpub).close() // same check watchWallet makes
+        hwOfferXbtFor = finishWatchOnly(name, "btc", account.xpub, hardware = true, masterFingerprint = account.masterFingerprint)
+    }
+
+    fun acceptXbtOffer() {
+        val id = hwOfferXbtFor ?: return
+        hwOfferXbtFor = null
+        cloneToOtherChain(id)
+    }
+
+    fun dismissXbtOffer() { hwOfferXbtFor = null }
+
+    private suspend fun finishWatchOnly(
+        name: String,
+        chain: String,
+        xpub: String,
+        hardware: Boolean = false,
+        masterFingerprint: String? = null,
+    ): String {
         val id = UUID.randomUUID().toString()
         val cleanName = name.trim().take(MAX_WALLET_NAME).ifBlank { "Wallet" }
-        val c = WalletConfig(id, cleanName, chain, "mainnet", watchOnly = true, xpub = xpub)
+        val c = WalletConfig(
+            id, cleanName, chain, "mainnet", watchOnly = true, xpub = xpub,
+            hardware = hardware, masterFingerprint = masterFingerprint,
+        )
         store.save(c); store.setSelected(id)
         wallets = wallets + c
         selectedId = id
@@ -440,6 +864,7 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
         draftMnemonic = null
         nav = NavTab.Wallet
         resolvePhase()
+        return id
     }
 
     // --- manage ---

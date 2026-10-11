@@ -212,18 +212,14 @@ mod tests {
         Cached { status: 200, content_type: "application/json".into(), body: b.as_bytes().to_vec() }
     }
 
-    fn temp_dir(label: &str) -> std::path::PathBuf {
-        static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-        std::env::temp_dir().join(format!(
-            "fortis-edge-cache-test-{label}-{}-{}",
-            std::process::id(),
-            NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
-        ))
+    fn temp_dir(label: &str) -> crate::test_tmp::TempDir {
+        crate::test_tmp::TempDir::new(&format!("cache-test-{label}"))
     }
 
     #[test]
     fn hits_within_ttl_and_misses_after() {
-        let c = Cache::new(8, &temp_dir("ttl"));
+        let c_dir = temp_dir("ttl");
+        let c = Cache::new(8, &c_dir);
         c.put("k", Duration::from_secs(60), val("v"));
         assert_eq!(c.get("k").unwrap().body, b"v");
         c.put("k", Duration::from_secs(0), val("v")); // force-expire for the test
@@ -235,7 +231,8 @@ mod tests {
 
     #[test]
     fn evicts_when_full() {
-        let c = Cache::new(2, &temp_dir("evict"));
+        let c_dir = temp_dir("evict");
+        let c = Cache::new(2, &c_dir);
         c.put("a", Duration::from_secs(60), val("a"));
         c.put("b", Duration::from_secs(60), val("b"));
         c.put("c", Duration::from_secs(60), val("c"));

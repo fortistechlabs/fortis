@@ -86,13 +86,11 @@ mod tests {
 
     #[test]
     fn secret_is_persisted_and_reused() {
-        let dir = std::env::temp_dir().join(format!("fe-tok-{}", std::process::id()));
+        let dir = crate::test_tmp::TempDir::new("token-test");
         let path = dir.join("secret");
-        let _ = std::fs::remove_dir_all(&dir);
         let a = load_or_create_secret(&path).unwrap();
         let b = load_or_create_secret(&path).unwrap();
         assert_eq!(a, b);
         assert_eq!(a.len(), 32);
-        let _ = std::fs::remove_dir_all(&dir);
     }
 }

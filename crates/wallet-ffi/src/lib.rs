@@ -7,6 +7,9 @@
 
 uniffi::setup_scaffolding!();
 
+mod swap;
+pub use swap::*;
+
 use std::str::FromStr;
 use std::sync::Mutex;
 
@@ -247,6 +250,72 @@ pub fn bip39_wordlist() -> Vec<String> {
     wallet_core::bip39_wordlist().iter().map(|w| w.to_string()).collect()
 }
 
+// ---------------------------------------------------------------------------
+// hardware-wallet account import
+// ---------------------------------------------------------------------------
+
+/// A hardware wallet's account key, checked as a BIP-84 account.
+#[derive(uniffi::Record, Debug)]
+pub struct ImportedAccount {
+    /// Canonical `xpub…` (any `zpub`/origin wrapping removed) — what
+    /// `WalletView::new` takes.
+    pub xpub: String,
+    /// Device master fingerprint (8 hex chars), when the export carried it.
+    pub master_fingerprint: Option<String>,
+    /// e.g. `m/84'/0'/0'`, when the export carried it.
+    pub path: Option<String>,
+}
+
+fn checked_import(a: wallet_core::account_import::AccountImport, chain: &str, network: &str) -> Result<ImportedAccount> {
+    wallet_core::account_import::check_bip84_account(&a, &params(chain, network)?)?;
+    Ok(ImportedAccount {
+        xpub: a.xpub.to_string(),
+        master_fingerprint: a.master_fingerprint.map(|f| f.to_string()),
+        path: a.path.map(|p| format!("m/{p}")),
+    })
+}
+
+/// Parse pasted / single-frame-scanned account export text — `zpub…`,
+/// `[fp/84h/0h/0h]xpub…`, or a single-part `ur:crypto-account` /
+/// `ur:crypto-hdkey` — and check it's a BIP-84 account for `chain`.
+#[uniffi::export]
+pub fn import_account(text: String, chain: String, network: String) -> Result<ImportedAccount> {
+    checked_import(wallet_core::account_import::parse_account_import(&text)?, &chain, &network)
+}
+
+/// Collects the frames of an animated UR QR code as the camera sees them.
+#[derive(uniffi::Object)]
+pub struct UrAccountScanner {
+    inner: Mutex<wallet_core::account_import::UrAccountDecoder>,
+}
+
+#[uniffi::export]
+impl UrAccountScanner {
+    #[uniffi::constructor]
+    pub fn new() -> std::sync::Arc<Self> {
+        std::sync::Arc::new(Self { inner: Mutex::new(Default::default()) })
+    }
+
+    /// Feed one scanned frame; repeats and any order are fine.
+    pub fn receive(&self, frame: String) -> Result<()> {
+        Ok(self.inner.lock().unwrap().receive(&frame)?)
+    }
+
+    pub fn progress_percent(&self) -> u8 {
+        self.inner.lock().unwrap().progress_percent()
+    }
+
+    pub fn is_complete(&self) -> bool {
+        self.inner.lock().unwrap().is_complete()
+    }
+
+    /// The account, checked as BIP-84 for `chain`, once complete.
+    pub fn result(&self, chain: String, network: String) -> Result<ImportedAccount> {
+        let a = self.inner.lock().unwrap().result()?;
+        checked_import(a, &chain, &network)
+    }
+}
+
 /// Seal a mnemonic under a password (Argon2id → XChaCha20-Poly1305). `salt` ≥ 8
 /// bytes, `nonce` exactly 24 fresh random bytes — both stored beside the blob.
 #[uniffi::export]
@@ -315,6 +384,16 @@ impl Wallet {
             .key
             .swap_pubkey(&params(&chain, &self.network)?, account, swap_index)?;
         Ok(hex::encode(pk.serialize()))
+    }
+
+    /// The raw 32-byte swap secret for one swap leg, for a `SwapSession` that
+    /// must keep signing after the wallet locks. Store it wrapped; delete it
+    /// when the swap ends.
+    pub fn swap_secret(&self, chain: String, account: u32, swap_index: u32) -> Result<Vec<u8>> {
+        let secret = self
+            .key
+            .swap_secret(&params(&chain, &self.network)?, account, swap_index)?;
+        Ok(secret.to_vec())
     }
 
     /// DER signature + sighash-flag byte (hex) for an HTLC leg.

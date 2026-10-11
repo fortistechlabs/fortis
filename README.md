@@ -17,9 +17,9 @@ reimplementation of the crypto per platform.
 | [`crates/wallet-cli`](crates/wallet-cli) | `fortis` — desktop shell: watch-only reporting plus send / sweep (coin selection, `SIGHASH_UNIFIED` signing, fee estimation, broadcast). |
 | [`crates/fortisd`](crates/fortisd) | token-guarded local HTTP gateway over the node for the web wallet, or an Esplora CORS proxy (`--esplora-proxy`, no node). No keys. |
 | [`crates/fortis-index`](crates/fortis-index) | address index over a Knots / BLAKE2b node, served as the Esplora REST subset the wallet already speaks — stateless, so one instance serves many wallets. No keys. |
-| [`crates/fortis-edge`](crates/fortis-edge) | public front for the backends: per-install tokens, rate limiting, response caching, CORS, `/metrics` — in front of `fortis-index` (XBT) and an Esplora upstream (BTC). No keys. |
+| [`crates/fortis-edge`](crates/fortis-edge) | public front for the backends: per-install tokens, rate limiting, response caching, CORS, `/metrics` — in front of `fortis-index` (XBT) and an Esplora upstream (BTC). With `--swap`, it also runs P2P BTC ⇄ XBT HTLC swaps: matching, a message relay and a watchtower, with a 0.5% commission per side. No keys. |
 | [`web/`](web) | the browser wallet — a static PWA; keys stay in wasm, encrypted seed in IndexedDB. Reads the chain via a public Esplora explorer or your own node. |
-| [`android/`](android) | native Android wallet — Jetpack Compose; keys via `wallet-ffi`, encrypted seed in DataStore. Same design language and backends as `web/`. |
+| [`android/`](android) | native Android wallet — Jetpack Compose; keys via `wallet-ffi`, encrypted seed in DataStore. Same design language and backends as `web/`. Runs the P2P swap flow (offers, funding, redeem / refund, resume in the background). |
 | [`deploy/`](deploy) | running the hosted backend (`fortis-index` + `fortis-edge` + Caddy) — systemd units, a Docker Compose stack, and the Tailscale / public-DNS paths. |
 
 ## Tests
@@ -53,11 +53,15 @@ broadcast — is exercised against a real regtest node with BLAKE2b active in
 `fortis-edge` → `fortis-index` → node, including token auth and the mempool
 overlay). Both are opt-in via `FORTIS_BITCOIND`.
 
-## What it is *not*
+## Swaps
 
-fortis is the wallet. The exchange that coordinates swaps between fortis users —
-offer matching, the watchtower, the order book — is a separate service. fortis
-holds keys and signs; it never depends on that service to move funds (the swap
-escrow is an on-chain HTLC with a unilateral refund path).
-
-"# fortis" 
+BTC ⇄ XBT swaps between fortis users are a hashed-timelock contract (HTLC) on each
+chain. Each phone funds its own HTLC and signs its own spends; the escrow always
+has a unilateral refund path after its timelock, so no one holds anyone's coins.
+`fortis-edge --swap` is the coordinator: it matches offers, relays messages and
+runs a watchtower that broadcasts the refunds and redeems the phones hand it, so a
+phone that goes offline mid-swap is still covered. It holds no keys. The
+commission is 0.5% per side, paid to `--service-fee-address` inside the funding
+transaction. Swaps are off unless the edge is started with `--swap`. See
+[`crates/fortis-edge`](crates/fortis-edge) for the API and
+[`android/`](android) for the client and a manual test.

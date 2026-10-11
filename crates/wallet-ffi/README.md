@@ -6,8 +6,13 @@ iOS and Android shells. Same core the web app uses via `wallet-wasm`.
 ## Exposed so far
 
 `generateMnemonic(entropy)`, and a `Wallet` object: `fromMnemonic`, `accountXpub`,
-`swapPubkey`, `signSwap`. The full swap surface (`WalletView`, HTLC, `SwapSession`)
-mirrors `wallet-wasm` and is added as the mobile apps need it.
+`swapPubkey`, `swapSecret`, `signSwap`, plus `WalletView` and the P2P swap object
+`SwapSession` (one swap from one phone: both HTLCs, funding checks, signed refunds
+and redeems, presigned redeems; its secrets are never in its JSON), with the
+helpers `validateSwapTerms`, `participantFundLatest` and `txidOf`.
+
+Swaps: this `SwapSession` (P2P, one phone's half of a swap through `fortis-edge --swap`) exists only
+here; `wallet-wasm` has a different, older `SwapSession` and the web wallet has no P2P swap UI.
 
 ## Generating the bindings
 
@@ -33,4 +38,5 @@ cargo run -p wallet-ffi --bin uniffi-bindgen -- generate \
   with Face ID, then construct `Wallet`.
 - **Android** — Jetpack Compose; Keystore / StrongBox + BiometricPrompt.
 
-Both talk to the swap orchestrator over HTTP exactly as `apps/trade` does.
+Both talk to the swap coordinator (`fortis-edge --swap`) over HTTP; the Android
+client is in [`android/`](../../android).

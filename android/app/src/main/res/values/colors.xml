@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- QR scanner (zxing-android-embedded): Graphite signal instead of its red laser. -->
+    <color name="zxing_viewfinder_laser">#00FF41</color>
+    <color name="zxing_possible_result_points">#B300FF41</color>
+    <color name="zxing_viewfinder_mask">#990B0C0D</color>
+    <color name="zxing_result_view">#CC0B0C0D</color>
+</resources>

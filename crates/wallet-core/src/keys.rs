@@ -3,13 +3,15 @@
 
 use bip39::Mnemonic;
 use bitcoin::bip32::{DerivationPath, Xpriv, Xpub};
-use bitcoin::secp256k1::{Message, PublicKey, Secp256k1};
+use bitcoin::hashes::{hmac, sha256, Hash, HashEngine};
+use bitcoin::secp256k1::{Message, PublicKey, Secp256k1, SecretKey};
 use bitcoin::{CompressedPublicKey, NetworkKind, ScriptBuf, Transaction, TxOut, Witness};
 use zeroize::Zeroizing;
 
 use crate::chain::ChainParams;
 use crate::error::{Result, WalletError};
 use crate::sighash::sighash_all;
+use crate::types::Preimage;
 
 /// The wallet's master secret, derived from a BIP-39 mnemonic.
 pub struct MasterKey {
@@ -156,6 +158,12 @@ impl MasterKey {
         Ok(self.swap_xpriv(params, account, swap_index)?.private_key.public_key(&secp))
     }
 
+    /// The raw swap secret at `m/84'/<coin>'/<account>'/2'/<swap_index>'`, for a
+    /// [`SwapKey`] the swap engine can hold without the seed.
+    pub fn swap_secret(&self, params: &ChainParams, account: u32, swap_index: u32) -> Result<[u8; 32]> {
+        Ok(self.swap_xpriv(params, account, swap_index)?.private_key.secret_bytes())
+    }
+
     /// ECDSA-sign a 32-byte sighash message with the swap key. Returns the DER
     /// signature (low-s) with the sighash flag byte appended — `0x01` on Bitcoin,
     /// `0x21` (`ALL | UNIFIED`) on the BLAKE2b chain — ready for `Htlc::finalize_*`.
@@ -166,11 +174,7 @@ impl MasterKey {
         swap_index: u32,
         msg: &[u8; 32],
     ) -> Result<Vec<u8>> {
-        let secp = Secp256k1::new();
-        let sk = self.swap_xpriv(params, account, swap_index)?.private_key;
-        let mut out = secp.sign_ecdsa(&Message::from_digest(*msg), &sk).serialize_der().to_vec();
-        out.push(sighash_flag(params));
-        Ok(out)
+        Ok(SwapKey::from_secret(params, self.swap_secret(params, account, swap_index)?)?.sign(msg))
     }
 
     /// Public key for a wallet (P2WPKH) address at `m/84'/<coin>'/<account>'/<branch>/<index>`,
@@ -251,6 +255,62 @@ impl MasterKey {
             input.witness = witness;
         }
         Ok(())
+    }
+}
+
+/// One swap's signing key for one chain, held without the seed so a swap engine can
+/// keep signing (refunds, redeems) after the wallet is locked. `Debug` never prints
+/// the secret.
+#[derive(Clone)]
+pub struct SwapKey {
+    secret: SecretKey,
+    flag: u8,
+}
+
+impl std::fmt::Debug for SwapKey {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SwapKey")
+            .field("pubkey", &self.pubkey())
+            .field("flag", &self.flag)
+            .finish_non_exhaustive()
+    }
+}
+
+const PREIMAGE_TAG: &[u8] = b"fortis-swap-preimage-v1";
+
+impl SwapKey {
+    pub fn from_secret(params: &ChainParams, secret: [u8; 32]) -> Result<SwapKey> {
+        let secret = SecretKey::from_slice(&secret)
+            .map_err(|e| WalletError::InvalidInput(format!("swap secret: {e}")))?;
+        Ok(SwapKey { secret, flag: sighash_flag(params) })
+    }
+
+    pub fn pubkey(&self) -> PublicKey {
+        self.secret.public_key(&Secp256k1::new())
+    }
+
+    /// The sighash flag byte this key appends (`0x01`, or `0x21` on the BLAKE2b chain).
+    pub(crate) fn flag(&self) -> u8 {
+        self.flag
+    }
+
+    /// DER signature (low-s, RFC6979) over `msg`, with the chain's sighash flag appended.
+    pub fn sign(&self, msg: &[u8; 32]) -> Vec<u8> {
+        let mut out = Secp256k1::new()
+            .sign_ecdsa(&Message::from_digest(*msg), &self.secret)
+            .serialize_der()
+            .to_vec();
+        out.push(self.flag);
+        out
+    }
+
+    /// The swap preimage the initiator commits to: HMAC-SHA256 keyed by this secret
+    /// (the initiator's **XBT** swap key), so it is recoverable from the seed alone.
+    pub fn preimage(&self) -> Preimage {
+        let key = Zeroizing::new(self.secret.secret_bytes());
+        let mut engine = hmac::HmacEngine::<sha256::Hash>::new(key.as_ref());
+        engine.input(PREIMAGE_TAG);
+        hmac::Hmac::<sha256::Hash>::from_engine(engine).to_byte_array()
     }
 }
 
@@ -350,6 +410,35 @@ mod tests {
         let b = key.swap_pubkey(&p, 0, 1).unwrap();
         assert_eq!(a, a2);
         assert_ne!(a, b);
+    }
+
+    #[test]
+    fn swap_key_matches_master_sign_swap() {
+        let (_m, mk) = MasterKey::generate(&[7u8; 32]).unwrap();
+        for p in [ChainParams::bitcoin(), ChainParams::blake2b()] {
+            let k = SwapKey::from_secret(&p, mk.swap_secret(&p, 0, 7).unwrap()).unwrap();
+            assert_eq!(k.pubkey(), mk.swap_pubkey(&p, 0, 7).unwrap());
+            let msg = [0x5au8; 32];
+            assert_eq!(k.sign(&msg), mk.sign_swap(&p, 0, 7, &msg).unwrap());
+            assert_eq!(k.sign(&msg), k.sign(&msg)); // RFC6979: deterministic
+        }
+        // the secret never shows up in Debug output
+        let p = ChainParams::bitcoin();
+        let secret = mk.swap_secret(&p, 0, 7).unwrap();
+        let dbg = format!("{:?}", SwapKey::from_secret(&p, secret).unwrap());
+        assert!(!dbg.contains(&hex::encode(secret)));
+    }
+
+    #[test]
+    fn swap_preimage_is_deterministic_and_per_swap() {
+        let (_m, mk) = MasterKey::generate(&[7u8; 32]).unwrap();
+        let p = ChainParams::blake2b();
+        let k7 = SwapKey::from_secret(&p, mk.swap_secret(&p, 0, 7).unwrap()).unwrap();
+        let k7b = SwapKey::from_secret(&p, mk.swap_secret(&p, 0, 7).unwrap()).unwrap();
+        let k8 = SwapKey::from_secret(&p, mk.swap_secret(&p, 0, 8).unwrap()).unwrap();
+        assert_eq!(k7.preimage(), k7b.preimage());
+        assert_ne!(k7.preimage(), k8.preimage());
+        assert_ne!(k7.preimage(), mk.swap_secret(&p, 0, 7).unwrap());
     }
 
     #[test]

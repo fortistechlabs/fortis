@@ -100,6 +100,7 @@ It prints any mismatches and exits 0 only when there are none.
 | `GET /address/:addr/txs` | pending, then the newest 100 confirmed; Esplora tx shape (`vin[].prevout`, `vout`, `fee`, `status`) |
 | `POST /scan` | `{"addresses":[…≤1000], "history":≤100}` → `{ tip, used, utxos, txs, failed }` |
 | `GET /v1/fees/recommended` | `{ fastestFee, halfHourFee, hourFee, economyFee, minimumFee }` from the node |
+| `GET /txout/:txid/:vout[?mempool=false]` | node `gettxout` (mempool incl. unless `mempool=false`, which reads the confirmed UTXO set only), any script type → `{ value_sat, scriptpubkey_hex, confirmations }`; `404 {"error":"spent or unknown"}`, `400` on a bad txid |
 | `POST /tx` | broadcast (raw hex body → txid) |
 
 An address with more than 10 000 UTXOs answers `400 {"error":"address too heavy"}`.

@@ -242,6 +242,19 @@ fn get(idx: &Index, path: &str) -> Option<String> {
     r.into_string().ok()
 }
 
+/// Status code and body of a GET, whatever the status.
+fn get_status(idx: &Index, path: &str) -> (u16, String) {
+    let url = format!("http://127.0.0.1:{}{path}", idx.port);
+    let agent = ureq::AgentBuilder::new()
+        .timeout(Duration::from_secs(10))
+        .build();
+    match agent.get(&url).call() {
+        Ok(r) => (r.status(), r.into_string().unwrap_or_default()),
+        Err(ureq::Error::Status(c, r)) => (c, r.into_string().unwrap_or_default()),
+        Err(e) => panic!("GET {path}: {e}"),
+    }
+}
+
 fn get_json(idx: &Index, path: &str) -> Value {
     serde_json::from_str(&get(idx, path).unwrap_or_else(|| panic!("GET {path} failed"))).unwrap()
 }
@@ -432,6 +445,70 @@ fn kill_minus_nine_during_bulk_sync_recovers() {
             String::from_utf8_lossy(&out.stderr)
         );
         assert!(out.status.success(), "verify found mismatches");
+        drop(idx);
+        let _ = std::fs::remove_dir_all(&db);
+    });
+}
+
+#[test]
+fn txout_reports_unspent_then_404_after_spend() {
+    for_each_node(|_, node| {
+        node.mine(101);
+        let db = tmp_db("txout");
+        let idx = start_index(&node, &db);
+
+        // A fresh funding output: unspent, in the mempool (0 confirmations).
+        let addr = node.wallet("miner", &["getnewaddress", "", "bech32"]);
+        let txid = node.wallet("miner", &["sendtoaddress", &addr, "0.25"]);
+        let vout = {
+            let raw: Value =
+                serde_json::from_str(&node.cli(&["getrawtransaction", &txid, "true"])).unwrap();
+            raw["vout"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|o| o["scriptPubKey"]["address"] == addr.as_str())
+                .map(|o| o["n"].as_u64().unwrap())
+                .expect("funding output")
+        };
+        let path = format!("/txout/{txid}/{vout}");
+        let (code, body) = get_status(&idx, &path);
+        assert_eq!(code, 200, "{body}");
+        let v: Value = serde_json::from_str(&body).unwrap();
+        assert_eq!(v["value_sat"], 25_000_000);
+        assert_eq!(v["confirmations"], 0);
+        let spk = node.cli(&["getaddressinfo", &addr]);
+        let spk: Value = serde_json::from_str(&spk).unwrap();
+        assert_eq!(v["scriptpubkey_hex"], spk["scriptPubKey"]);
+
+        // Mined: one confirmation, same value.
+        node.mine(1);
+        let v: Value = serde_json::from_str(&get_status(&idx, &path).1).unwrap();
+        assert_eq!(v["confirmations"], 1);
+        assert_eq!(v["value_sat"], 25_000_000);
+
+        // Spend it: gone (the miner wallet may have picked another coin, so
+        // spend this one explicitly).
+        let dest = node.wallet("miner", &["getnewaddress"]);
+        let inputs = json!([{ "txid": txid, "vout": vout }]).to_string();
+        let outputs = json!([{ dest.clone(): 0.2499 }]).to_string();
+        let raw = node.wallet("miner", &["createrawtransaction", &inputs, &outputs]);
+        let funded = node.wallet("miner", &["signrawtransactionwithwallet", &raw]);
+        let signed: Value = serde_json::from_str(&funded).unwrap();
+        node.cli(&["sendrawtransaction", signed["hex"].as_str().unwrap()]);
+        let (code, body) = get_status(&idx, &path);
+        assert_eq!(code, 404, "{body}");
+        let v: Value = serde_json::from_str(&body).unwrap();
+        assert_eq!(v["error"], "spent or unknown");
+        // Confirmed UTXO set only: still there until the spend confirms.
+        let confirmed_only = format!("{path}?mempool=false");
+        let (code, body) = get_status(&idx, &confirmed_only);
+        assert_eq!(code, 200, "{body}");
+        node.mine(1);
+        assert_eq!(get_status(&idx, &confirmed_only).0, 404);
+
+        // Malformed txid.
+        assert_eq!(get_status(&idx, "/txout/zz/0").0, 400);
         drop(idx);
         let _ = std::fs::remove_dir_all(&db);
     });

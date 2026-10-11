@@ -43,7 +43,7 @@ implementation, one audit.
 
 ## Status
 
-Everything except mobile bindings is implemented and tested. `cargo test -p
+Everything is implemented and tested. `cargo test -p
 wallet-core` — 24 passing (BIP-32/39 vectors, the 142 non-taproot `SIGHASH_UNIFIED`
 reference vectors, a XBT redeem round-trip, coin selection, seed sealing).
 
@@ -55,7 +55,7 @@ libbitcoinconsensus can't verify) are checked for witness structure and signatur
 validity over the unified message.
 
 Web bindings incl. `SwapSession` are in [`../wallet-wasm`](../wallet-wasm).
-Remaining: `wallet-ffi` (UniFFI, mobile).
+Mobile bindings are in [`../wallet-ffi`](../wallet-ffi).
 
 `SIGHASH_UNIFIED` (Knots PR #357) covers script types 0 (bare/P2SH) and 1 (segwit
 v0) — all this wallet signs. Taproot is not implemented. Reference vectors are

@@ -9,8 +9,8 @@ chain backend — UTXOs, confirmations, fee estimation, broadcast. This crate is
 
 ## Status
 
-Send-capable. Not yet done: RBF fee bumps, PSBT import/export, the HTLC
-atomic-swap flow.
+Send-capable. Not yet done: RBF fee bumps, PSBT import/export. Swaps are not
+in the CLI (the Android app runs them).
 
 - generates / restores a BIP-84 wallet; the seed is shown once and only written to
   disk if you seal it (`import-seed` / `init --seal`)

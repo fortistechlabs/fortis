@@ -504,3 +504,56 @@ async fn pending_txs_rendered_per_request_are_capped() {
     let v: Value = serde_json::from_slice(&b).unwrap();
     assert_eq!(v["txs"].as_array().unwrap().len(), PENDING_MAX);
 }
+
+#[test]
+fn txout_null_is_404_spent_or_unknown() {
+    let e = txout_reply(&Value::Null).unwrap_err();
+    assert_eq!(e.0, StatusCode::NOT_FOUND);
+    assert_eq!(e.1, "spent or unknown");
+}
+
+#[test]
+fn txout_maps_gettxout_to_sats_and_script() {
+    let raw = json!({
+        "bestblock": "00",
+        "confirmations": 3,
+        "value": 0.00123457,
+        "scriptPubKey": { "asm": "x", "hex": "0014abcd", "type": "witness_v0_keyhash" },
+        "coinbase": false,
+    });
+    let Json(v) = txout_reply(&raw).unwrap();
+    assert_eq!(
+        v,
+        json!({ "value_sat": 123_457u64, "scriptpubkey_hex": "0014abcd", "confirmations": 3 })
+    );
+}
+
+#[test]
+fn txout_mempool_query_maps_to_gettxout_include_mempool() {
+    let t = txid(1);
+    let args = |q: Option<&str>| gettxout_args(&t, 2, q).unwrap();
+    // Default: mempool included, so a mempool spend reads as spent.
+    assert_eq!(args(None), json!([t.to_string(), 2, true]));
+    assert_eq!(args(Some("")), json!([t.to_string(), 2, true]));
+    assert_eq!(args(Some("mempool=true")), json!([t.to_string(), 2, true]));
+    // Confirmed chain only: still there while only a mempool spend exists.
+    assert_eq!(args(Some("mempool=false")), json!([t.to_string(), 2, false]));
+    assert_eq!(args(Some("x=1&mempool=false")), json!([t.to_string(), 2, false]));
+    let e = gettxout_args(&t, 2, Some("mempool=no")).unwrap_err();
+    assert_eq!(e.0, StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test]
+async fn txout_bad_mempool_param_is_400_without_asking_the_node() {
+    let r = rig_with(vec![], MempoolView::default(), Duration::ZERO);
+    let path = format!("/txout/{}/0?mempool=maybe", txid(1));
+    let (s, _, _) = call(&r.state, "GET", &path, "").await;
+    assert_eq!(s, StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test]
+async fn txout_bad_txid_is_400_without_asking_the_node() {
+    let r = rig_with(vec![], MempoolView::default(), Duration::ZERO);
+    let (s, _, _) = call(&r.state, "GET", "/txout/zz/0", "").await;
+    assert_eq!(s, StatusCode::BAD_REQUEST);
+}

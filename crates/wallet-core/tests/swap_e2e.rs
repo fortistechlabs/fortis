@@ -17,9 +17,9 @@ use wallet_core::bitcoin::{
 };
 use wallet_core::chain::ChainParams;
 use wallet_core::htlc::preimage_from_witness;
-use wallet_core::keys::MasterKey;
-use wallet_core::swap::{SwapMachine, SwapParams, SwapRole};
-use wallet_core::wallet::{Utxo, WalletView};
+use wallet_core::keys::{MasterKey, SwapKey};
+use wallet_core::swap::{finish_presigned_redeem, SwapMachine, SwapParams, SwapRole};
+use wallet_core::wallet::{ServiceFee, Utxo, WalletView};
 use wallet_core::Chain;
 
 const SWAP: u32 = 5;
@@ -73,7 +73,10 @@ fn full_swap_roundtrip() {
     let alice = key(0xa1);
     let bob = key(0xb0);
 
-    let preimage = [0x11u8; 32];
+    // The initiator's preimage comes from her XBT swap key, so it survives a reinstall.
+    let a_xbt_key = SwapKey::from_secret(&xbt, alice.swap_secret(&xbt, 0, SWAP).unwrap()).unwrap();
+    let b_xbt_key = SwapKey::from_secret(&xbt, bob.swap_secret(&xbt, 0, SWAP).unwrap()).unwrap();
+    let preimage = a_xbt_key.preimage();
     let hashlock = sha256::Hash::hash(&preimage);
 
     let a_xbt = alice.swap_pubkey(&xbt, 0, SWAP).unwrap();
@@ -135,10 +138,16 @@ fn full_swap_roundtrip() {
     let b_funding_txid = b_fund.tx.compute_txid();
     let b_htlc_op = OutPoint::new(b_funding_txid, htlc_vout(&b_fund.tx, &b_htlc.script_pubkey));
 
-    // ---- Alice funds her XBT HTLC (SIGHASH_UNIFIED) ----
+    // ---- Alice funds her XBT HTLC (SIGHASH_UNIFIED), paying the 50 bps swap fee ----
     let (a_coin, a_prevout) = p2wpkh_coin(&alice, &xbt, 0, 2_200_000, 0x02);
     let mut a_view = WalletView::new(xbt.clone(), alice.account_xpub(&xbt, 0).unwrap());
-    let mut a_fund = a_view.plan_htlc_funding(&[a_coin], &a_htlc, 4, 1).unwrap();
+    let fee_spk = ScriptBuf::new_p2wpkh(&CompressedPublicKey(bob.wallet_pubkey(&xbt, 0, false, 99).unwrap()).wpubkey_hash());
+    let service = ServiceFee { bps: 50, floor_sat: 0, cap_sat: 0, fee_spk: fee_spk.clone() };
+    let mut a_fund = a_view
+        .plan_payment(&[a_coin], vec![a_htlc.funding_output()], 4, 1, Some(&service), false)
+        .unwrap();
+    let swap_fee = Amount::from_sat(send_xbt.to_sat() * 50 / 10_000);
+    assert!(a_fund.tx.output.iter().any(|o| o.script_pubkey == fee_spk && o.value == swap_fee));
     alice.sign_p2wpkh_tx(&xbt, 0, &mut a_fund.tx, &[a_prevout], &[(false, 0)]).unwrap();
     assert_eq!(a_fund.tx.input[0].witness.nth(0).unwrap().last(), Some(&0x21)); // ALL|UNIFIED
     let a_funding_bytes = serialize(&a_fund.tx);
@@ -150,6 +159,9 @@ fn full_swap_roundtrip() {
     assert_eq!(a_op, OutPoint::new(a_funding_txid, a_htlc_vout));
     let b_op = am.verify_their_contract(&serialize(&b_fund.tx), &btc).unwrap();
     assert_eq!(b_op, b_htlc_op);
+
+    // ---- Bob pre-signs his XBT redeem before the preimage exists ----
+    let b_presigned = bm.presign_redeem(a_op, receive_spk(&bob, &xbt), &b_xbt_key, &[4]).unwrap();
 
     // ---- Alice redeems Bob's BTC HTLC with the preimage; consensus-verify ----
     let a_redeem = am.build_redeem(b_op, receive_spk(&alice, &btc), FEE).unwrap();
@@ -164,14 +176,16 @@ fn full_swap_roundtrip() {
     // the watchtower learns the secret from this transaction
     assert_eq!(preimage_from_witness(&a_redeem_tx.input[0].witness), Some(preimage));
 
-    // ---- Bob redeems Alice's XBT HTLC with the now-public preimage (unified) ----
-    let b_redeem = bm.build_redeem(a_op, receive_spk(&bob, &xbt), FEE).unwrap();
-    let b_sig = bob.sign_swap(&xbt, 0, SWAP, &b_redeem.sighash).unwrap();
+    // ---- Bob finishes his pre-signed XBT redeem with the preimage he learned ----
+    let learned = preimage_from_witness(&a_redeem_tx.input[0].witness).unwrap();
+    let b_redeem_tx = finish_presigned_redeem(&b_presigned[0], &learned).unwrap();
+    let w = &b_redeem_tx.input[0].witness;
+    assert_eq!(w.len(), 5);
+    assert_eq!(w.nth(4).unwrap(), a_htlc.witness_script.as_bytes());
+    let b_sig = w.nth(0).unwrap();
     assert_eq!(b_sig.last(), Some(&0x21));
-    ecdsa_verifies(&secp, &b_sig, b_redeem.sighash, &b_xbt);
-    let mut b_redeem_tx = b_redeem.tx.clone();
-    bm.finalize_their_redeem(&mut b_redeem_tx, &b_sig, &b_xbt, &preimage).unwrap();
-    assert_eq!(preimage_from_witness(&b_redeem_tx.input[0].witness), Some(preimage));
+    ecdsa_verifies(&secp, b_sig, a_htlc.spend_sighash(&b_redeem_tx, 0).unwrap(), &b_xbt);
+    assert_eq!(preimage_from_witness(w), Some(preimage));
 
     // ---- Refund paths ----
     // Bob refunds his own BTC HTLC after t_short: consensus enforces the CLTV.

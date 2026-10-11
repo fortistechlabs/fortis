@@ -3,6 +3,10 @@
 `wasm-bindgen` bindings over [`wallet-core`](../wallet-core). The master key lives in
 wasm linear memory; JS holds opaque handles and passes hex / JSON.
 
+Swaps: the `SwapSession` below is the single-party HTLC-contract session. The P2P swap session the
+Android app uses (offer matching through `fortis-edge --swap`) exists only in
+[`wallet-ffi`](../wallet-ffi), under the same name; the web wallet has no P2P swap UI.
+
 `cargo check -p wallet-wasm` builds on the host. Producing the `.wasm` needs a bit
 more toolchain (below).
 

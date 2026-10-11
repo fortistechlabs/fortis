@@ -13,9 +13,11 @@ path = "src/main.rs"
 
 [dependencies]
 fortis-node = { path = "../fortis-node" }
+wallet-core = { path = "../wallet-core" }
 anyhow = "1"
 bitcoin = { workspace = true }
 clap = { version = "4", features = ["derive"] }
+serde = { workspace = true }
 serde_json = { workspace = true }
 hex = { workspace = true }
 getrandom = "0.2"
@@ -26,7 +28,4 @@ ureq = { version = "2", default-features = false, features = ["json", "native-tl
 native-tls = "0.2"
 rocksdb = "0.25"
 tungstenite = { version = "0.24", default-features = false, features = ["handshake"] }
-
-[dev-dependencies]
-wallet-core = { path = "../wallet-core" }
 

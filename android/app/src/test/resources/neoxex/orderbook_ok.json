@@ -1,0 +1,516 @@
+{
+ "success": true,
+ "pair": "BTCB2_BTC",
+ "depth": 50,
+ "bids": [
+  {
+   "price": 0.01005,
+   "quantity": 0.1984614,
+   "orders": 1,
+   "isAmm": true
+  },
+  {
+   "price": 0.01004,
+   "quantity": 0.08625856,
+   "isAmm": true
+  },
+  {
+   "price": 0.01003,
+   "quantity": 0.17519251,
+   "isAmm": true
+  },
+  {
+   "price": 0.01002,
+   "quantity": 0.17878699,
+   "isAmm": true
+  },
+  {
+   "price": 0.01001,
+   "quantity": 0.36888406,
+   "isAmm": true
+  },
+  {
+   "price": 0.01,
+   "quantity": 1.08375393,
+   "orders": 1
+  },
+  {
+   "price": 0.00999,
+   "quantity": 1.87232532,
+   "orders": 2
+  },
+  {
+   "price": 0.00998,
+   "quantity": 0.58338849,
+   "isAmm": true
+  },
+  {
+   "price": 0.00997,
+   "quantity": 0.48272,
+   "orders": 1
+  },
+  {
+   "price": 0.00996,
+   "quantity": 0.22,
+   "orders": 1
+  },
+  {
+   "price": 0.00995,
+   "quantity": 6.217836999999999,
+   "orders": 2
+  },
+  {
+   "price": 0.00994,
+   "quantity": 0.51287,
+   "orders": 1
+  },
+  {
+   "price": 0.00993,
+   "quantity": 0.4582,
+   "orders": 1
+  },
+  {
+   "price": 0.00992,
+   "quantity": 0.83973996,
+   "isAmm": true
+  },
+  {
+   "price": 0.00991,
+   "quantity": 0.39921782,
+   "orders": 1
+  },
+  {
+   "price": 0.0099,
+   "quantity": 6.46505631,
+   "orders": 1
+  },
+  {
+   "price": 0.00989,
+   "quantity": 1,
+   "orders": 1
+  },
+  {
+   "price": 0.00988,
+   "quantity": 11.25379693,
+   "orders": 1
+  },
+  {
+   "price": 0.00987,
+   "quantity": 5.59642509,
+   "orders": 1
+  },
+  {
+   "price": 0.00986,
+   "quantity": 0.31154595,
+   "orders": 1
+  },
+  {
+   "price": 0.00985,
+   "quantity": 2.97606393,
+   "orders": 1
+  },
+  {
+   "price": 0.00984,
+   "quantity": 1.41319746,
+   "isAmm": true
+  },
+  {
+   "price": 0.00983,
+   "quantity": 0.5667241,
+   "orders": 1
+  },
+  {
+   "price": 0.00982,
+   "quantity": 2.5,
+   "orders": 1
+  },
+  {
+   "price": 0.00981,
+   "quantity": 2.31386217,
+   "orders": 1
+  },
+  {
+   "price": 0.0098,
+   "quantity": 0.08430496,
+   "orders": 1
+  },
+  {
+   "price": 0.00979,
+   "quantity": 0.01130517,
+   "orders": 1
+  },
+  {
+   "price": 0.00978,
+   "quantity": 0.08253009,
+   "orders": 1
+  },
+  {
+   "price": 0.00977,
+   "quantity": 1.54831,
+   "orders": 1
+  },
+  {
+   "price": 0.00976,
+   "quantity": 3.31,
+   "orders": 1
+  },
+  {
+   "price": 0.00975,
+   "quantity": 0.221788,
+   "orders": 1
+  },
+  {
+   "price": 0.00974,
+   "quantity": 1.93452818,
+   "isAmm": true
+  },
+  {
+   "price": 0.00973,
+   "quantity": 3.2022603700000003,
+   "orders": 2
+  },
+  {
+   "price": 0.00972,
+   "quantity": 1,
+   "orders": 1
+  },
+  {
+   "price": 0.00971,
+   "quantity": 13.31,
+   "orders": 2
+  },
+  {
+   "price": 0.0097,
+   "quantity": 3.34656393,
+   "orders": 1
+  },
+  {
+   "price": 0.00969,
+   "quantity": 3.39384073,
+   "orders": 1
+  },
+  {
+   "price": 0.00968,
+   "quantity": 3.44647458,
+   "orders": 1
+  },
+  {
+   "price": 0.00967,
+   "quantity": 2,
+   "orders": 1
+  },
+  {
+   "price": 0.00966,
+   "quantity": 1.2932461699999998,
+   "orders": 5
+  },
+  {
+   "price": 0.00965,
+   "quantity": 3.36679006,
+   "orders": 1
+  },
+  {
+   "price": 0.00964,
+   "quantity": 0.47727256,
+   "orders": 1
+  },
+  {
+   "price": 0.00963,
+   "quantity": 0.7694714,
+   "orders": 1
+  },
+  {
+   "price": 0.00962,
+   "quantity": 1,
+   "orders": 1
+  },
+  {
+   "price": 0.00961,
+   "quantity": 0.35642999,
+   "orders": 1
+  },
+  {
+   "price": 0.0096,
+   "quantity": 80.46319152000001,
+   "orders": 2
+  },
+  {
+   "price": 0.00959,
+   "quantity": 0.38431974,
+   "orders": 1
+  },
+  {
+   "price": 0.00958,
+   "quantity": 3.48639338,
+   "isAmm": true
+  },
+  {
+   "price": 0.00957,
+   "quantity": 9.04228119,
+   "orders": 1
+  },
+  {
+   "price": 0.00956,
+   "quantity": 1.32721231,
+   "orders": 1
+  }
+ ],
+ "asks": [
+  {
+   "price": 0.01012,
+   "quantity": 0.76946406,
+   "orders": 1
+  },
+  {
+   "price": 0.01013,
+   "quantity": 0.08429652,
+   "isAmm": true
+  },
+  {
+   "price": 0.01014,
+   "quantity": 0.08346959,
+   "isAmm": true
+  },
+  {
+   "price": 0.01015,
+   "quantity": 0.16448419,
+   "isAmm": true
+  },
+  {
+   "price": 0.01016,
+   "quantity": 0.5,
+   "orders": 1
+  },
+  {
+   "price": 0.01017,
+   "quantity": 0.16129033,
+   "isAmm": true
+  },
+  {
+   "price": 0.01018,
+   "quantity": 0.108,
+   "orders": 1
+  },
+  {
+   "price": 0.01019,
+   "quantity": 0.5,
+   "orders": 1
+  },
+  {
+   "price": 0.0102,
+   "quantity": 1.37431305,
+   "orders": 2
+  },
+  {
+   "price": 0.01021,
+   "quantity": 0.072,
+   "orders": 1
+  },
+  {
+   "price": 0.01022,
+   "quantity": 0.31336409,
+   "isAmm": true
+  },
+  {
+   "price": 0.01023,
+   "quantity": 1.99997619,
+   "orders": 1
+  },
+  {
+   "price": 0.01024,
+   "quantity": 16.26496358,
+   "orders": 1
+  },
+  {
+   "price": 0.01025,
+   "quantity": 0.00855989,
+   "orders": 1
+  },
+  {
+   "price": 0.01026,
+   "quantity": 0.06,
+   "orders": 1
+  },
+  {
+   "price": 0.01027,
+   "quantity": 0.44828479,
+   "isAmm": true
+  },
+  {
+   "price": 0.01028,
+   "quantity": 0.00855919,
+   "orders": 1
+  },
+  {
+   "price": 0.01029,
+   "quantity": 10,
+   "orders": 1
+  },
+  {
+   "price": 0.0103,
+   "quantity": 0.00856001,
+   "orders": 1
+  },
+  {
+   "price": 0.01031,
+   "quantity": 0.00855996,
+   "orders": 1
+  },
+  {
+   "price": 0.01032,
+   "quantity": 0.56035605,
+   "isAmm": true
+  },
+  {
+   "price": 0.01033,
+   "quantity": 3.1514,
+   "orders": 1
+  },
+  {
+   "price": 0.01034,
+   "quantity": 5,
+   "orders": 1
+  },
+  {
+   "price": 0.01035,
+   "quantity": 3.654,
+   "orders": 1
+  },
+  {
+   "price": 0.01036,
+   "quantity": 2.90825631,
+   "orders": 1
+  },
+  {
+   "price": 0.01037,
+   "quantity": 5,
+   "orders": 1
+  },
+  {
+   "price": 0.01038,
+   "quantity": 0.76930249,
+   "isAmm": true
+  },
+  {
+   "price": 0.01039,
+   "quantity": 1.9815,
+   "orders": 1
+  },
+  {
+   "price": 0.0104,
+   "quantity": 5,
+   "orders": 1
+  },
+  {
+   "price": 0.01041,
+   "quantity": 7.987654,
+   "orders": 1
+  },
+  {
+   "price": 0.01042,
+   "quantity": 2.69438872,
+   "orders": 1
+  },
+  {
+   "price": 0.01043,
+   "quantity": 8.70995153,
+   "orders": 1
+  },
+  {
+   "price": 0.01044,
+   "quantity": 5,
+   "orders": 1
+  },
+  {
+   "price": 0.01045,
+   "quantity": 0.5,
+   "orders": 1
+  },
+  {
+   "price": 0.01046,
+   "quantity": 10,
+   "orders": 1
+  },
+  {
+   "price": 0.01047,
+   "quantity": 1.321,
+   "orders": 1
+  },
+  {
+   "price": 0.01048,
+   "quantity": 5,
+   "orders": 1
+  },
+  {
+   "price": 0.01049,
+   "quantity": 0.28551206,
+   "orders": 1
+  },
+  {
+   "price": 0.0105,
+   "quantity": 1.321,
+   "orders": 1
+  },
+  {
+   "price": 0.01051,
+   "quantity": 5,
+   "orders": 1
+  },
+  {
+   "price": 0.01052,
+   "quantity": 0.8041884,
+   "isAmm": true
+  },
+  {
+   "price": 0.01053,
+   "quantity": 5.39390386,
+   "orders": 1
+  },
+  {
+   "price": 0.01054,
+   "quantity": 9.84561,
+   "orders": 1
+  },
+  {
+   "price": 0.01055,
+   "quantity": 4,
+   "orders": 1
+  },
+  {
+   "price": 0.01056,
+   "quantity": 8.516,
+   "orders": 1
+  },
+  {
+   "price": 0.01057,
+   "quantity": 0.11148812,
+   "orders": 1
+  },
+  {
+   "price": 0.01058,
+   "quantity": 7.64593663,
+   "orders": 1
+  },
+  {
+   "price": 0.01059,
+   "quantity": 0.03150076,
+   "orders": 1
+  },
+  {
+   "price": 0.0106,
+   "quantity": 0.62630078,
+   "orders": 6
+  },
+  {
+   "price": 0.01061,
+   "quantity": 0.5,
+   "orders": 1
+  }
+ ],
+ "pool": {
+  "reserveBase": 16.94518673,
+  "reserveQuote": 0.17097125,
+  "feeRate": 0.003,
+  "enabled": true
+ }
+}

@@ -537,13 +537,8 @@ mod tests {
         (HaskoinStore::new(&format!("http://{addr}"), None), Stub { hits })
     }
 
-    fn temp_dir(label: &str) -> std::path::PathBuf {
-        static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-        std::env::temp_dir().join(format!(
-            "fortis-edge-haskoin-scan-test-{label}-{}-{}",
-            std::process::id(),
-            NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
-        ))
+    fn temp_dir(label: &str) -> crate::test_tmp::TempDir {
+        crate::test_tmp::TempDir::new(&format!("haskoin-scan-test-{label}"))
     }
 
     fn haskoin_tx(txid: &str, addr: &str, confirmed: bool, height: i64) -> Value {
@@ -557,8 +552,10 @@ mod tests {
 
     #[test]
     fn a_cold_scan_fetches_everything_and_populates_both_caches() {
-        let bh = BtcHistory::new(&temp_dir("cold-bh")).unwrap();
-        let sc = ScanCache::new(&temp_dir("cold-sc")).unwrap();
+        let bh_dir = temp_dir("cold-bh");
+        let bh = BtcHistory::new(&bh_dir).unwrap();
+        let sc_dir = temp_dir("cold-sc");
+        let sc = ScanCache::new(&sc_dir).unwrap();
         let (store, stub) = stub(
             vec![bal("addr1", 1, 0, 0)],
             vec![],
@@ -575,8 +572,10 @@ mod tests {
 
     #[test]
     fn an_unchanged_signature_skips_the_transactions_fetch_entirely() {
-        let bh = BtcHistory::new(&temp_dir("warm-bh")).unwrap();
-        let sc = ScanCache::new(&temp_dir("warm-sc")).unwrap();
+        let bh_dir = temp_dir("warm-bh");
+        let bh = BtcHistory::new(&bh_dir).unwrap();
+        let sc_dir = temp_dir("warm-sc");
+        let sc = ScanCache::new(&sc_dir).unwrap();
         let (store, stub) = stub(
             vec![bal("addr1", 1, 0, 0)],
             vec![],
@@ -594,8 +593,10 @@ mod tests {
 
     #[test]
     fn a_changed_signature_triggers_a_fresh_fetch_for_just_that_address() {
-        let bh = BtcHistory::new(&temp_dir("changed-bh")).unwrap();
-        let sc = ScanCache::new(&temp_dir("changed-sc")).unwrap();
+        let bh_dir = temp_dir("changed-bh");
+        let bh = BtcHistory::new(&bh_dir).unwrap();
+        let sc_dir = temp_dir("changed-sc");
+        let sc = ScanCache::new(&sc_dir).unwrap();
         sc.update("addr1", crate::scan_cache::Signature { txs: 1, utxo: 0, unconfirmed: 0 }, &[]);
         bh.merge("addr1", &[haskoin_tx("t1", "addr1", true, 100)]);
 
@@ -613,8 +614,10 @@ mod tests {
 
     #[test]
     fn a_pending_entry_is_cached_and_reused_while_unchanged() {
-        let bh = BtcHistory::new(&temp_dir("pending-bh")).unwrap();
-        let sc = ScanCache::new(&temp_dir("pending-sc")).unwrap();
+        let bh_dir = temp_dir("pending-bh");
+        let bh = BtcHistory::new(&bh_dir).unwrap();
+        let sc_dir = temp_dir("pending-sc");
+        let sc = ScanCache::new(&sc_dir).unwrap();
         let (store, stub) = stub(
             vec![bal("addr1", 0, 0, 500)],
             vec![],

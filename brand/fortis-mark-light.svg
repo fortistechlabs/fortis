@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <title>fortis</title>
+  <path d="M32 7 53 14.5V30c0 13.5-8.8 21.6-21 26.5C19.8 51.6 11 43.5 11 30V14.5Z" fill="none" stroke="#0B0C0D" stroke-width="2.2" stroke-linejoin="round"/>
+  <g fill="#008F25"><circle cx="32" cy="27" r="5"/><path d="M29.2 30.5h5.6L36.5 42h-9Z"/></g>
+</svg>

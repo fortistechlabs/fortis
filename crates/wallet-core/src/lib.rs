@@ -18,6 +18,7 @@
 
 #![forbid(unsafe_code)]
 
+pub mod account_import;
 pub mod chain;
 pub mod crypto;
 pub mod entropy;
@@ -28,6 +29,7 @@ pub mod psbt;
 pub mod sighash;
 pub mod storage;
 pub mod swap;
+pub mod swap_terms;
 pub mod types;
 pub mod wallet;
 
@@ -36,8 +38,12 @@ pub use bitcoin;
 pub use chain::{Chain, ChainParams};
 pub use entropy::mix_entropy;
 pub use error::{Result, WalletError};
-pub use htlc::HtlcContract;
-pub use keys::{bip39_wordlist, parse_account_xpub, MasterKey};
+pub use htlc::{htlc_spend_fee, HtlcContract};
+pub use keys::{bip39_wordlist, parse_account_xpub, MasterKey, SwapKey};
 pub use psbt::{PsbtDestination, PsbtReview};
-pub use swap::{SwapEvent, SwapMachine, SwapParams, SwapRole, SwapState};
+pub use swap::{
+    finish_presigned_redeem, params_from_terms, swap_timelocks, PresignedRedeem, SwapEvent,
+    SwapMachine, SwapParams, SwapRole, SwapState, SwapTimelocks,
+};
+pub use swap_terms::{btc_for_xbt, network_params, validate_terms, SwapTerms};
 pub use wallet::{op_return_output, FundingPlan, ServiceFee, Utxo, WalletView};

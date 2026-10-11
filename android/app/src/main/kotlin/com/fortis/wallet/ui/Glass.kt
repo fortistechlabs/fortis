@@ -1,20 +1,20 @@
 package com.fortis.wallet.ui
 
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.Icon
@@ -31,7 +31,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -46,45 +48,42 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.fortis.wallet.ui.theme.Fx
+import com.fortis.wallet.ui.theme.FxType
+import com.fortis.wallet.ui.theme.caps
+import com.fortis.wallet.ui.theme.ghostLabel
+import com.fortis.wallet.ui.theme.Mono
 
-/** Full-screen ambient: gradient base + slowly-drifting blurred colour blobs. */
+/** Full-screen backdrop: flat graphite. */
 @Composable
 fun AmbientBackground(modifier: Modifier = Modifier) {
-    val t = rememberInfiniteTransition(label = "ambient")
-    val a by t.animateFloat(0f, 1f, infiniteRepeatable(tween(44_000), RepeatMode.Reverse), label = "a")
-    val b by t.animateFloat(0f, 1f, infiniteRepeatable(tween(56_000), RepeatMode.Reverse), label = "b")
-
-    Box(
-        modifier
-            .fillMaxSize()
-            .background(Brush.linearGradient(listOf(Fx.bg1, Fx.bg2)))
-            .drawBehind {
-                fun blob(color: Color, cx: Float, cy: Float, rad: Float) {
-                    val c = Offset(size.width * cx, size.height * cy)
-                    val r = size.minDimension * rad
-                    drawCircle(Brush.radialGradient(0f to color, 1f to Color.Transparent, center = c, radius = r), r, c)
-                }
-                blob(Fx.blobA, 0.5f + 0.08f * (a - 0.5f), 0.10f + 0.10f * a, 1.05f)
-                blob(Fx.blobB, 0.95f - 0.10f * b, 0.92f - 0.08f * b, 0.95f)
-                blob(Fx.blobC, 0.16f, 0.86f, 0.5f)
-            },
-    )
+    Box(modifier.fillMaxSize().background(Fx.bg0))
 }
 
-/** A frosted-glass panel. (Compose has no live backdrop blur below API 33; a
- *  translucent fill + hairline over the ambient reads as glass regardless.) */
+/** A flat panel with a 1 dp edge. `hero = true` (the balance card) swaps the
+ *  top edge for the green signal line. */
 @Composable
 fun GlassCard(
     modifier: Modifier = Modifier,
-    fill: Color = Fx.glass1,
+    fill: Color = Fx.panel,
     corner: Dp = Fx.r,
+    hero: Boolean = false,
     content: @Composable ColumnScope.() -> Unit,
 ) {
     Column(
         modifier
             .fillMaxWidth()
             .background(fill, RoundedCornerShape(corner))
-            .border(1.dp, Fx.hair, RoundedCornerShape(corner))
+            // Before .border so it paints over the border's top edge, inset by a
+            // half stroke so the whole 1 dp sits inside the card.
+            .then(
+                if (hero) Modifier.drawWithContent {
+                    drawContent()
+                    val stroke = 1.dp.toPx()
+                    val inset = corner.toPx()
+                    drawLine(Fx.signal, Offset(inset, stroke / 2), Offset(size.width - inset, stroke / 2), stroke)
+                } else Modifier,
+            )
+            .border(1.dp, Fx.line, RoundedCornerShape(corner))
             .padding(Fx.s4),
         verticalArrangement = Arrangement.spacedBy(Fx.s3),
         content = content,
@@ -95,35 +94,77 @@ fun GlassCard(
 fun PrimaryButton(
     text: String, modifier: Modifier = Modifier, enabled: Boolean = true,
     dense: Boolean = false, onClick: () -> Unit,
-) {
-    Box(
-        modifier
-            .fillMaxWidth()
-            .background(Brush.linearGradient(listOf(Fx.accent, Fx.accent2)), RoundedCornerShape(Fx.pill))
-            .clickable(enabled = enabled) { onClick() }
-            .padding(vertical = if (dense) 9.dp else 14.dp),
-        contentAlignment = Alignment.Center,
-    ) {
-        Text(text, color = Color(0xFF0A0C16), fontWeight = FontWeight.SemiBold,
-            fontSize = if (dense) 13.sp else 14.sp)
-    }
-}
+) = RaisedButton(
+    text, Fx.primaryTop, Fx.primaryBottom, Fx.primaryPressed, Fx.primaryLip, Color.White.copy(alpha = 0.45f), Fx.onPrimary,
+    modifier.alpha(if (enabled) 1f else 0.4f), enabled, dense, onClick,
+)
 
 @Composable
 fun GhostButton(
     text: String, modifier: Modifier = Modifier, tint: Color = Fx.text,
-    dense: Boolean = false, onClick: () -> Unit,
+    dense: Boolean = false, enabled: Boolean = true, onClick: () -> Unit,
+) = RaisedButton(
+    text, Fx.ghostTop, Fx.ghostBottom, Fx.ghostPressed, Fx.ghostLip, Color.White.copy(alpha = 0.12f), ghostLabel(tint),
+    modifier.alpha(if (enabled) 1f else 0.4f), enabled, dense, onClick,
+)
+
+/** A button that looks like one: a shaded face with a faint top highlight, standing
+ *  [Fx.lip] proud of a darker lip. Pressed, it sinks onto the lip, goes flat and
+ *  darker, and loses its highlight. Long labels wrap inside the face, which grows to fit. */
+@Composable
+private fun RaisedButton(
+    text: String, top: Color, bottom: Color, sunk: Color, lip: Color, highlight: Color, label: Color,
+    modifier: Modifier, enabled: Boolean, dense: Boolean, onClick: () -> Unit,
+) = Raised(top, bottom, sunk, lip, highlight, null, modifier, enabled, if (dense) Fx.btnHDense else Fx.btnH, onClick) {
+    Text(caps(text), color = label, style = FxType.button, textAlign = TextAlign.Center,
+        modifier = Modifier.padding(horizontal = Fx.s3, vertical = 8.dp))
+}
+
+/** A whole row you can press — e.g. a wallet on Home: a slate key with a green
+ *  chevron; [selected] adds a signal outline. */
+@Composable
+fun PressableTile(selected: Boolean, onClick: () -> Unit, content: @Composable RowScope.() -> Unit) = Raised(
+    Fx.ghostTop, Fx.ghostBottom, Fx.ghostPressed, Fx.ghostLip, Color.White.copy(alpha = 0.12f),
+    if (selected) Fx.signal else null, Modifier, true, 40.dp, onClick,
 ) {
-    Box(
-        modifier
-            .fillMaxWidth()
-            .background(Fx.glass2, RoundedCornerShape(Fx.pill))
-            .border(1.dp, Fx.hair, RoundedCornerShape(Fx.pill))
-            .clickable { onClick() }
-            .padding(vertical = if (dense) 8.dp else 13.dp),
-        contentAlignment = Alignment.Center,
+    Row(
+        Modifier.fillMaxWidth().padding(horizontal = Fx.s4, vertical = Fx.s3),
+        horizontalArrangement = Arrangement.spacedBy(Fx.s3),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(text, color = tint, fontSize = if (dense) 13.sp else 14.sp)
+        content()
+        Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, tint = Fx.signal)
+    }
+}
+
+@Composable
+private fun Raised(
+    top: Color, bottom: Color, sunk: Color, lip: Color, highlight: Color, outline: Color?,
+    modifier: Modifier, enabled: Boolean, minHeight: Dp, onClick: () -> Unit,
+    content: @Composable BoxScope.() -> Unit,
+) {
+    val source = remember { MutableInteractionSource() }
+    val down by source.collectIsPressedAsState()
+    val pressed = down && enabled
+    val drop by animateDpAsState(if (pressed) Fx.lip else 0.dp, tween(50), label = "press")
+    val shape = RoundedCornerShape(Fx.rBtn)
+    val face = if (pressed) Brush.verticalGradient(listOf(sunk, sunk)) else Brush.verticalGradient(listOf(top, bottom))
+    Box(modifier.fillMaxWidth().clickable(source, indication = null, enabled = enabled) { onClick() }) {
+        Box(Modifier.matchParentSize().padding(top = Fx.lip).background(lip, shape))
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .padding(top = drop, bottom = Fx.lip - drop)
+                .heightIn(min = minHeight)
+                .background(face, shape)
+                .then(
+                    if (pressed) Modifier
+                    else Modifier.border(1.dp, Brush.verticalGradient(0f to highlight, 0.35f to Color.Transparent), shape)
+                )
+                .then(if (outline != null) Modifier.border(1.5.dp, outline, shape) else Modifier),
+            contentAlignment = Alignment.Center,
+            content = content,
+        )
     }
 }
 
@@ -141,7 +182,7 @@ fun Field(
     var reveal by remember { mutableStateOf(false) }
     val hidden = password && !reveal
     Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(Fx.s1)) {
-        if (label != null) Text(label, color = Fx.textDim, style = MaterialTheme.typography.labelMedium)
+        if (label != null) Text(caps(label), style = FxType.label)
         OutlinedTextField(
             value = value,
             onValueChange = { if (maxLen == null || it.length <= maxLen) onValueChange(it) },
@@ -169,20 +210,21 @@ fun Field(
             } else null,
             textStyle = LocalTextStyle.current.copy(
                 color = Fx.text,
-                fontFamily = if (mono) FontFamily.Monospace else null,
+                fontFamily = Mono,
             ),
             colors = OutlinedTextFieldDefaults.colors(
                 focusedTextColor = Fx.text,
                 unfocusedTextColor = Fx.text,
                 disabledTextColor = Fx.text,
-                cursorColor = Fx.accent,
-                focusedBorderColor = Fx.accent,
-                unfocusedBorderColor = Fx.hair,
-                focusedContainerColor = Fx.glass1,
-                unfocusedContainerColor = Fx.glass1,
+                cursorColor = Fx.signal,
+                focusedBorderColor = Fx.signal,
+                unfocusedBorderColor = Fx.control,
+                focusedContainerColor = Fx.panel,
+                unfocusedContainerColor = Fx.panel,
                 focusedPlaceholderColor = Fx.textFaint,
                 unfocusedPlaceholderColor = Fx.textFaint,
             ),
+            shape = RoundedCornerShape(Fx.rSm),
             modifier = Modifier.fillMaxWidth(),
         )
     }
@@ -221,11 +263,11 @@ fun BrandMark(tagline: String? = null) {
         verticalArrangement = Arrangement.spacedBy(Fx.s3),
     ) {
         Image(
-            painter = painterResource(com.fortis.wallet.R.drawable.ic_launcher_foreground),
+            painter = painterResource(com.fortis.wallet.R.drawable.ic_mark),
             contentDescription = null,
             modifier = Modifier.size(96.dp),
         )
-        Text("fortis", fontSize = 38.sp, fontWeight = FontWeight.Bold, color = Fx.text)
+        Text("fortis", style = FxType.brand)
         if (tagline != null) Text(tagline, color = Fx.textDim, textAlign = TextAlign.Center)
     }
 }

@@ -328,7 +328,7 @@ pub fn esplora_tx(t: &Value, status: Value) -> Value {
     })
 }
 
-fn btc_to_sat(v: &Value) -> u64 {
+pub(crate) fn btc_to_sat(v: &Value) -> u64 {
     (v.as_f64().unwrap_or(0.0) * 1e8).round().max(0.0) as u64
 }
 

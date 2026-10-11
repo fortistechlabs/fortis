@@ -61,6 +61,26 @@
     <string name="restore_clone_hint">After it\'s added you can also list this wallet on %1$s from Manage wallets — same phrase, same addresses.</string>
     <string name="action_restore">Restore</string>
 
+    <!-- hardware wallet -->
+    <string name="onboard_hardware">Connect a hardware wallet</string>
+    <string name="hw_title">Connect a hardware wallet</string>
+    <string name="hw_body">On your device, show the Bitcoin account\'s public key as a QR code — the Native SegWit (BIP-84) account — and point the camera at it. Animated QR codes work too. fortis can see this wallet\'s balance and history; it can never spend from it.</string>
+    <string name="hw_scan_progress">Scanning… %1$d%%</string>
+    <string name="hw_found">Device %1$s · %2$s</string>
+    <string name="hw_found_bare">Account key found</string>
+    <string name="hw_or_paste">Or paste the key</string>
+    <string name="hw_camera_denied">Camera permission is off — paste the key below instead.</string>
+    <string name="action_add">Add</string>
+    <string name="onboard_hardware_default_name">Hardware wallet</string>
+    <string name="hw_scan_again">Scan again</string>
+    <string name="error_not_bip84">That isn\'t a Native SegWit (BIP-84) account. On your device, export the Native SegWit account\'s public key.</string>
+    <string name="hw_offer_xbt_title">Open the matching XBT wallet?</string>
+    <string name="hw_offer_xbt_body">Your device\'s addresses may also hold XBT. fortis can show it in a view-only XBT wallet with the same addresses.</string>
+    <string name="hw_offer_xbt_yes">Open XBT wallet</string>
+    <string name="action_not_now">Not now</string>
+    <string name="hw_btc_view_only">View only for now — sending with your hardware wallet isn\'t supported yet.</string>
+    <string name="hw_xbt_view_only">View only — your hardware wallet can\'t sign XBT transactions.</string>
+
     <!-- watch-only -->
     <string name="watch_title">Watch an address</string>
     <string name="watch_body">Paste an account-level extended public key (xpub). It can only ever see this wallet\'s addresses, balance, and history — it can never spend from it.</string>
@@ -227,8 +247,106 @@
     <string name="error_confirm_phrase">First confirm you\'ve written the recovery phrase down.</string>
     <string name="error_enter_phrase">Enter your recovery phrase first.</string>
 
+
+    <!-- P2P swap: notifications (English only) -->
+    <string name="swap_channel_progress">Swap progress</string>
+    <string name="swap_channel_progress_desc">Shown while a swap is running</string>
+    <string name="swap_channel_events">Swap alerts</string>
+    <string name="swap_channel_events_desc">When a swap needs you, or finishes</string>
+    <string name="swap_notification_title">Swap</string>
+    <string name="swap_in_progress">Swap in progress</string>
+    <string name="swap_event_matched_title">Swap matched</string>
+    <string name="swap_event_matched">Your offer was matched. The swap is under way.</string>
+    <string name="swap_event_they_funded_title">Counterparty funded</string>
+    <string name="swap_event_they_funded">The other side has funded the swap.</string>
+    <string name="swap_event_need_funding_title">Fund your swap</string>
+    <string name="swap_event_need_funding">Your turn: open to fund your swap · deadline %1$s</string>
+    <string name="swap_event_need_funding_plain">Your turn: open to fund your swap</string>
+    <string name="swap_event_done_title">Swap complete</string>
+    <string name="swap_event_done">Your swapped coins have arrived.</string>
+    <string name="swap_event_failed_title">Swap failed</string>
+    <string name="swap_event_failed">The swap could not go ahead. Open the app for details.</string>
+    <string name="swap_event_refunding_title">Swap refunding</string>
+    <string name="swap_event_refunding">The swap did not complete. Your coins are being refunded.</string>
+
     <plurals name="word_count">
         <item quantity="one">%1$d word</item>
         <item quantity="other">%1$d words</item>
     </plurals>
+
+    <!-- P2P swap: screens (English only) -->
+    <string name="swap_button">Swap</string>
+    <string name="swap_title">Swaps</string>
+    <string name="swap_unavailable">Swaps are unavailable right now.</string>
+    <string name="swap_new">New swap</string>
+    <string name="swap_take_code">Enter a code</string>
+    <string name="swap_none">No swaps yet.</string>
+    <string name="swap_active">Active</string>
+    <string name="swap_history">History</string>
+    <string name="swap_direction">%1$s → %2$s</string>
+    <string name="swap_need_seed_wallet">Swaps need a wallet with its recovery phrase on this phone (not watch-only or hardware).</string>
+    <string name="swap_need_wallet_on">Add a %1$s wallet with its recovery phrase on this phone to swap (Settings → Also add on %1$s).</string>
+    <string name="swap_from">From</string>
+    <string name="swap_to">To</string>
+    <string name="swap_amount">Amount (%1$s)</string>
+    <string name="swap_rate">Rate</string>
+    <string name="swap_rate_value">1 XBT = %1$s BTC</string>
+    <string name="swap_commission">Commission %1$s%%</string>
+    <string name="swap_you_send">You send</string>
+    <string name="swap_you_receive">You receive</string>
+    <string name="swap_commission_note">The commission is paid on top of the amount, plus the network fee.</string>
+    <string name="swap_slippage">Max slippage</string>
+    <string name="swap_error_below_min">Too small: swaps start at %1$s BTC (up to %2$s BTC).</string>
+    <string name="swap_error_above_cap">Too large: swaps are limited to %2$s BTC (from %1$s BTC).</string>
+    <string name="swap_find_match">Find a match</string>
+    <string name="swap_with_person">Swap with a person</string>
+    <string name="swap_code">Code</string>
+    <string name="swap_look_up">Look up</string>
+    <string name="swap_terms">Terms</string>
+    <string name="swap_own_price">Your price check</string>
+    <string name="swap_check_ok">Within your %1$s slippage</string>
+    <string name="swap_check_failed">Fails your own check: %1$s</string>
+    <string name="swap_check_unreachable">Could not reach NeoxEX to check the price.</string>
+    <string name="swap_check_refused">NeoxEX cannot give a price right now.</string>
+    <string name="swap_accept_within">Accept within %1$s</string>
+    <string name="swap_accept_expired">Too late to accept: the match has lapsed.</string>
+    <string name="swap_accept">Accept</string>
+    <string name="swap_decline">Decline</string>
+    <string name="swap_loading">Loading…</string>
+    <string name="swap_share_code">Share code</string>
+    <string name="swap_share_hint">The other person enters or scans this code under Swap → Enter a code.</string>
+    <string name="swap_stage_waiting">Waiting for a match</string>
+    <string name="swap_stage_matched">Matched</string>
+    <string name="swap_stage_you_funded">You funded</string>
+    <string name="swap_stage_they_funded">They funded</string>
+    <string name="swap_stage_confs">%1$s · %2$d/%3$d</string>
+    <string name="swap_stage_redeemed">Redeemed</string>
+    <string name="swap_stage_done">Done</string>
+    <string name="swap_deadline_accept">Accept by</string>
+    <string name="swap_deadline_fund">Fund within</string>
+    <string name="swap_deadline_refund">Refund opens in</string>
+    <string name="swap_tx_yours">Your funding</string>
+    <string name="swap_tx_theirs">Their funding</string>
+    <string name="swap_tx_redeem">Redeem</string>
+    <string name="swap_tx_refund">Refund</string>
+    <string name="swap_note">Note: %1$s</string>
+    <string name="swap_cancel">Cancel offer</string>
+    <string name="swap_step_posting">Posting the offer</string>
+    <string name="swap_step_waiting">Waiting for a match</string>
+    <string name="swap_step_matched">Matched</string>
+    <string name="swap_step_need_funding">Your turn to fund</string>
+    <string name="swap_step_funded">You funded</string>
+    <string name="swap_step_they_funded">They funded</string>
+    <string name="swap_step_redeemed">Redeemed</string>
+    <string name="swap_step_done">Done</string>
+    <string name="swap_step_refunding">Refunding</string>
+    <string name="swap_step_refunded">Refunded</string>
+    <string name="swap_step_cancelled">Cancelled</string>
+    <string name="swap_step_failed">Failed</string>
+    <string name="swap_error_seed_only">Only wallets with their recovery phrase on this phone can swap.</string>
+    <string name="swap_error_locked">Unlock the app to start a swap.</string>
+    <string name="swap_error_same_chain">Pick a wallet on the other chain to receive.</string>
+    <string name="swap_error_enter_code">Enter a code.</string>
+    <string name="swap_error_wrong_chain">This swap sends %1$s: pick a %1$s wallet to send from.</string>
+    <string name="swap_error_already_matched">Already matched: the swap is under way.</string>
 </resources>

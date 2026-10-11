@@ -25,6 +25,9 @@ pub enum WalletError {
     #[error("counterparty contract does not match agreed parameters")]
     ContractMismatch,
 
+    #[error("swap terms rejected: {0}")]
+    TermsRejected(String),
+
     #[error("storage: {0}")]
     Storage(String),
 

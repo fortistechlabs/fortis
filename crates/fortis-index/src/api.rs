@@ -13,7 +13,7 @@ use std::collections::HashSet;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 
-use axum::extract::{DefaultBodyLimit, Path, Request, State};
+use axum::extract::{DefaultBodyLimit, Path, RawQuery, Request, State};
 use axum::http::{header, HeaderValue, Method, StatusCode};
 use axum::middleware::{self, Next};
 use axum::response::{IntoResponse, Response};
@@ -60,6 +60,7 @@ pub struct AppState {
 }
 
 /// An error answered as `{"error": "<msg>"}` with its status.
+#[derive(Debug)]
 struct ApiError(StatusCode, String);
 
 impl ApiError {
@@ -104,6 +105,7 @@ pub fn router(state: AppState) -> Router {
         .route("/v1/fees/recommended", get(fees))
         .route("/tx", post(broadcast))
         .route("/scan", post(scan))
+        .route("/txout/{txid}/{vout}", get(txout))
         .route("/address/{addr}/utxo", get(address_utxo))
         .route("/address/{addr}/txs", get(address_txs))
         .fallback(no_route)
@@ -205,6 +207,56 @@ async fn broadcast(State(st): State<AppState>, body: String) -> Response {
         Ok(Err(e)) => text(StatusCode::BAD_REQUEST, format!("{e:#}")),
         Err(e) => text(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()),
     }
+}
+
+/// `GET /txout/{txid}/{vout}[?mempool=false]`: the node's `gettxout` for any
+/// output type — the index only knows P2WPKH, so the swap HTLC checks (phones,
+/// watchtower) ask the node directly. By default the mempool counts, so an
+/// output spent by an unconfirmed tx reads as spent; `mempool=false` asks the
+/// confirmed UTXO set only, so it stays until the spend confirms.
+async fn txout(
+    State(st): State<AppState>,
+    Path((txid, vout)): Path<(String, u32)>,
+    RawQuery(query): RawQuery,
+) -> ApiResult<Json<Value>> {
+    let txid: Txid = txid
+        .parse()
+        .map_err(|e| ApiError::bad_request(format!("bad txid: {e}")))?;
+    let args = gettxout_args(&txid, vout, query.as_deref())?;
+    let rpc = st.rpc.clone();
+    let res = tokio::task::spawn_blocking(move || rpc.call("gettxout", args))
+        .await
+        .map_err(|e| ApiError::new(StatusCode::INTERNAL_SERVER_ERROR, e))?
+        .map_err(ApiError::node)?;
+    txout_reply(&res)
+}
+
+/// `gettxout`'s params for the `/txout` query string: `include_mempool` is
+/// true unless `mempool=false`.
+fn gettxout_args(txid: &Txid, vout: u32, query: Option<&str>) -> ApiResult<Value> {
+    let mut include_mempool = true;
+    for pair in query.unwrap_or("").split('&') {
+        if let Some(v) = pair.strip_prefix("mempool=") {
+            include_mempool = match v {
+                "true" => true,
+                "false" => false,
+                _ => return Err(ApiError::bad_request("mempool must be true or false")),
+            };
+        }
+    }
+    Ok(json!([txid.to_string(), vout, include_mempool]))
+}
+
+/// Shape a `gettxout` result; `null` means spent or never existed.
+fn txout_reply(res: &Value) -> ApiResult<Json<Value>> {
+    if res.is_null() {
+        return Err(ApiError::new(StatusCode::NOT_FOUND, "spent or unknown"));
+    }
+    Ok(Json(json!({
+        "value_sat": crate::render::btc_to_sat(&res["value"]),
+        "scriptpubkey_hex": res["scriptPubKey"]["hex"],
+        "confirmations": res["confirmations"].as_u64().unwrap_or(0),
+    })))
 }
 
 /// The P2WPKH program of `addr`, `None` for a valid address of another type

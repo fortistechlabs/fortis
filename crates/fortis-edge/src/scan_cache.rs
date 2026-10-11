@@ -115,25 +115,22 @@ mod tests {
     use super::*;
     use serde_json::json;
 
-    fn temp_dir(label: &str) -> std::path::PathBuf {
-        static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-        std::env::temp_dir().join(format!(
-            "fortis-edge-scan-cache-test-{label}-{}-{}",
-            std::process::id(),
-            NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
-        ))
+    fn temp_dir(label: &str) -> crate::test_tmp::TempDir {
+        crate::test_tmp::TempDir::new(&format!("scan-cache-test-{label}"))
     }
 
     #[test]
     fn unknown_address_has_no_signature_and_no_pending() {
-        let c = ScanCache::new(&temp_dir("unknown")).unwrap();
+        let c_dir = temp_dir("unknown");
+        let c = ScanCache::new(&c_dir).unwrap();
         assert_eq!(c.signature("addr1"), None);
         assert!(c.pending("addr1").is_empty());
     }
 
     #[test]
     fn remembers_the_last_signature_and_pending_set() {
-        let c = ScanCache::new(&temp_dir("remember")).unwrap();
+        let c_dir = temp_dir("remember");
+        let c = ScanCache::new(&c_dir).unwrap();
         let sig = Signature { txs: 3, utxo: 1, unconfirmed: 500 };
         c.update("addr1", sig, &[json!({"txid": "p1"})]);
         assert_eq!(c.signature("addr1"), Some(sig));
@@ -143,7 +140,8 @@ mod tests {
 
     #[test]
     fn a_later_update_replaces_the_earlier_one_outright() {
-        let c = ScanCache::new(&temp_dir("replace")).unwrap();
+        let c_dir = temp_dir("replace");
+        let c = ScanCache::new(&c_dir).unwrap();
         c.update("addr1", Signature { txs: 1, utxo: 0, unconfirmed: 0 }, &[json!({"txid": "old"})]);
         c.update("addr1", Signature { txs: 2, utxo: 1, unconfirmed: 100 }, &[]);
         assert_eq!(c.signature("addr1"), Some(Signature { txs: 2, utxo: 1, unconfirmed: 100 }));
@@ -152,14 +150,16 @@ mod tests {
 
     #[test]
     fn addresses_are_independent() {
-        let c = ScanCache::new(&temp_dir("independent")).unwrap();
+        let c_dir = temp_dir("independent");
+        let c = ScanCache::new(&c_dir).unwrap();
         c.update("addr1", Signature { txs: 1, utxo: 0, unconfirmed: 0 }, &[]);
         assert_eq!(c.signature("addr2"), None);
     }
 
     #[test]
     fn forget_clears_the_entry_so_the_next_scan_treats_it_as_changed() {
-        let c = ScanCache::new(&temp_dir("forget")).unwrap();
+        let c_dir = temp_dir("forget");
+        let c = ScanCache::new(&c_dir).unwrap();
         c.update("addr1", Signature { txs: 1, utxo: 0, unconfirmed: 0 }, &[json!({"txid": "p1"})]);
         c.forget("addr1");
         assert_eq!(c.signature("addr1"), None);

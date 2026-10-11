@@ -5,4 +5,13 @@
      needs this. -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-permission android:name="android.permission.ACCESS_LOCAL_NETWORK" />
+
+    <application>
+        <!-- debug only: the swap screens with fake data, for layout checks
+             (exported so `adb shell am start` can open it) -->
+        <activity
+            android:name=".SwapPreviewActivity"
+            android:exported="true"
+            android:theme="@style/Theme.Fortis" />
+    </application>
 </manifest>

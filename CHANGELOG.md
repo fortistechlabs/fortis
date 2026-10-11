@@ -4,6 +4,21 @@ Fortis Wallet (Android). Versions are `versionName (versionCode)`.
 
 ## Unreleased
 
+- Swap BTC ⇄ XBT with other fortis users — atomic, non-custodial, 0.5% per side;
+  available once enabled on the server. Post an offer or take a private one by
+  code; each side funds its own escrow and either side can always get its coins
+  back after the timelock. Swaps keep going in the background (and after a
+  reboot), with notifications as they progress.
+- New look: a darker graphite design with much higher-contrast text, a
+  terminal-style typeface throughout, Matrix-green highlights, real tabs, and
+  buttons — including each wallet on the home screen — that look pressable and
+  press down when tapped. Larger amounts and dollar values, and a new app icon.
+- Connect a hardware wallet: scan the device's Bitcoin account key as a QR code
+  (plain or animated — Keystone, Passport, SeedSigner, Jade and others) or
+  paste it, and the app adds it as a view-only BTC wallet. It then offers to
+  open the same addresses on XBT. Only Native SegWit (BIP-84) accounts are
+  accepted. Your device can't sign XBT transactions, so the XBT wallet is
+  labelled view-only.
 - Backend build: minimum supported Rust version raised from 1.82 to 1.88
   (required by rocksdb 0.25).
 - Backend: the address index (`fortis-index`) is rewritten. A full sync from

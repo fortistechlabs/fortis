@@ -7,7 +7,7 @@ use bitcoin::Network;
 
 use crate::sighash::SighashVariant;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub enum Chain {
     /// Canonical Bitcoin (SHA256d proof-of-work).
     Btc,

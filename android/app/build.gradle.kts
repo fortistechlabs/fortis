@@ -48,6 +48,13 @@ android {
     }
 
     buildTypes {
+        // Debug builds install beside the store app (own id, own storage) — a
+        // debug-signed APK can't replace a release-signed one, and uninstalling
+        // the store app first would wipe its wallets (allowBackup=false).
+        getByName("debug") {
+            applicationIdSuffix = ".dev"
+            versionNameSuffix = "-dev"
+        }
         getByName("release") {
             isMinifyEnabled = true
             isShrinkResources = true
@@ -121,5 +128,8 @@ dependencies {
     implementation(libs.androidx.fragment)
     implementation(libs.okhttp)
     implementation(libs.zxing.android.embedded)
+    implementation(libs.work.runtime.ktx)
     debugImplementation(libs.compose.ui.tooling)
+    testImplementation(libs.junit)
+    testImplementation(libs.org.json)
 }

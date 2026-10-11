@@ -20,7 +20,58 @@ mod proxy;
 mod reconcile;
 mod scan;
 mod scan_cache;
+mod swap;
 mod token;
+
+#[cfg(test)]
+pub(crate) mod test_tmp {
+    //! Temp directories for tests that open RocksDB stores: each one is
+    //! removed on drop, so `cargo test` leaves nothing behind under /tmp.
+
+    use std::path::{Path, PathBuf};
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    /// A fresh path `fortis-edge-{label}-{pid}-{n}` under the system temp
+    /// dir (not created: the store opening it does that), removed with
+    /// everything in it on drop. Declare it before whatever opens a store in
+    /// it, so the store is closed first.
+    pub struct TempDir(PathBuf);
+
+    impl TempDir {
+        pub fn new(label: &str) -> TempDir {
+            static NEXT: AtomicU64 = AtomicU64::new(0);
+            TempDir(std::env::temp_dir().join(format!(
+                "fortis-edge-{label}-{}-{}",
+                std::process::id(),
+                NEXT.fetch_add(1, Ordering::Relaxed)
+            )))
+        }
+    }
+
+    impl std::ops::Deref for TempDir {
+        type Target = Path;
+        fn deref(&self) -> &Path {
+            &self.0
+        }
+    }
+
+    impl Drop for TempDir {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    #[test]
+    fn a_temp_dir_is_removed_on_drop() {
+        let d = TempDir::new("tmp-guard-test");
+        std::fs::create_dir_all(d.join("db")).unwrap();
+        std::fs::write(d.join("db").join("f"), b"x").unwrap();
+        let path = d.to_path_buf();
+        assert!(path.exists());
+        drop(d);
+        assert!(!path.exists());
+    }
+}
 
 use std::io::{Read, Write};
 use std::path::PathBuf;
@@ -232,6 +283,33 @@ struct Args {
     /// Maximum service fee per transaction, satoshis (0 = uncapped). Advertised only.
     #[arg(long, default_value_t = 0)]
     service_fee_cap_sat: u64,
+    /// Enable P2P BTC ⇄ XBT swaps (`/swap/*`). Needs `--service-fee-address`
+    /// (the swap commission goes there) and a `--network` of `bitcoin` or
+    /// `regtest`. Off → `/swap/*` 404s. Single instance only: the swap state is
+    /// one local RocksDB.
+    #[arg(long)]
+    swap: bool,
+    /// RocksDB directory for swap offers, matches, relay messages and watch jobs.
+    /// Default: <home>/fortis-edge-swap-rocksdb.
+    #[arg(long)]
+    swap_db: Option<PathBuf>,
+    /// Swap commission per side, basis points. The protocol fixes it at 50;
+    /// phones reject terms with any other value.
+    #[arg(long, default_value_t = 50)]
+    swap_fee_bps: u32,
+    /// Largest BTC leg of one swap, satoshis.
+    #[arg(long, default_value_t = 1_000_000)]
+    swap_max_sat: u64,
+    /// NeoxEX base URL, the swap price source.
+    #[arg(long, default_value = "https://neoxa.exchange")]
+    neoxex_url: String,
+    /// Test only: seconds between swap watchtower passes (default 60).
+    #[arg(long, default_value_t = swap::watchtower::TICK.as_secs(), hide = true)]
+    swap_tick_secs: u64,
+    /// Test only: run the swap watchtower's clock this many seconds ahead of
+    /// the wall clock, so an end-to-end test reaches refund times at once.
+    #[arg(long, default_value_t = 0, hide = true)]
+    swap_clock_offset_secs: u64,
 }
 
 struct State {
@@ -268,6 +346,8 @@ struct State {
     /// `mempool_ws`'s doc comment. `None` unless `--btc-mempool-ws-url` is set.
     btc_mempool_ws: Option<mempool_ws::MempoolWs>,
     metrics: Metrics,
+    /// P2P swaps; `None` unless `--swap`.
+    swap: Option<swap::Swap>,
 }
 
 fn main() -> ExitCode {
@@ -330,6 +410,8 @@ fn run() -> Result<()> {
         )?),
         None => None,
     };
+
+    let swap = if args.swap { Some(build_swap(&args, &secret)?) } else { None };
 
     let btc_broadcast = match &args.btc_rpc_url {
         None => None,
@@ -439,6 +521,25 @@ fn run() -> Result<()> {
         chain
     };
 
+    // The swap watchtower reads and broadcasts through its own instances of
+    // the same upstreams (`Upstream` isn't `Clone`; each chain fails over on
+    // its own) and skips the `/tx` fee check — see `swap::watchtower`. The
+    // watch route checks unrecorded HTLC outpoints through the same reader.
+    let swap_reader: Option<Arc<dyn swap::watchtower::ChainReader>> = swap.is_some().then(|| {
+        Arc::new(
+            swap::watchtower::UpstreamReader::new(
+                args.xbt_upstream.as_deref().map(Upstream::new),
+                build_btc_chain(),
+                btc_broadcast.clone(),
+            )
+            .with_clock_offset(args.swap_clock_offset_secs),
+        ) as Arc<dyn swap::watchtower::ChainReader>
+    });
+    let swap = match (swap, &swap_reader) {
+        (Some(sw), Some(r)) => Some(sw.with_chain_reader(Arc::clone(r))),
+        (sw, _) => sw,
+    };
+
     let state = Arc::new(State {
         secret,
         require_token: args.require_token,
@@ -488,6 +589,7 @@ fn run() -> Result<()> {
         btc_scan_cache: scan_cache::ScanCache::new(&btc_scan_cache_dir),
         btc_mempool_ws: args.btc_mempool_ws_url.clone().map(mempool_ws::MempoolWs::spawn),
         metrics: Metrics::default(),
+        swap,
     });
 
     let server = Arc::new(
@@ -566,6 +668,28 @@ fn run() -> Result<()> {
             None => "(disabled)".into(),
         },
     );
+    eprintln!(
+        "  swaps          {}",
+        if state.swap.is_some() {
+            format!(
+                "enabled ({}, max {} sat, neoxex {})",
+                swap_db_dir(&args).display(),
+                args.swap_max_sat,
+                args.neoxex_url
+            )
+        } else {
+            "(disabled)".into()
+        },
+    );
+
+    if let (Some(sw), Some(reader)) = (&state.swap, swap_reader) {
+        let tick = std::time::Duration::from_secs(args.swap_tick_secs.max(1));
+        swap::watchtower::spawn(sw.store(), reader, tick);
+        eprintln!("  swap watchtower every {}s", tick.as_secs());
+        if args.swap_clock_offset_secs > 0 {
+            eprintln!("  swap watchtower clock +{}s (test only)", args.swap_clock_offset_secs);
+        }
+    }
 
     let mut handles = Vec::new();
     for _ in 0..args.workers.max(1) {
@@ -591,6 +715,48 @@ fn run() -> Result<()> {
         let _ = h.join();
     }
     Ok(())
+}
+
+fn swap_db_dir(args: &Args) -> PathBuf {
+    args.swap_db.clone().unwrap_or_else(|| default_home().join("fortis-edge-swap-rocksdb"))
+}
+
+/// `token_key` is the install-token HMAC key; it also derives idempotent offers' owner secrets.
+fn build_swap(args: &Args, token_key: &[u8]) -> Result<swap::Swap> {
+    let Some(fee_address) = args.service_fee_address.clone() else {
+        return Err(anyhow!(
+            "--swap needs --service-fee-address: the swap commission is paid to it"
+        ));
+    };
+    let network = match args.network {
+        bitcoin::Network::Bitcoin => "bitcoin",
+        bitcoin::Network::Regtest => "regtest",
+        other => return Err(anyhow!("--swap supports --network bitcoin or regtest, not {other}")),
+    };
+    if args.swap_fee_bps != wallet_core::swap_terms::SWAP_FEE_BPS {
+        return Err(anyhow!(
+            "--swap-fee-bps must be {}: phones reject terms with any other fee",
+            wallet_core::swap_terms::SWAP_FEE_BPS
+        ));
+    }
+    if args.swap_max_sat < wallet_core::swap_terms::MIN_BTC_LEG_SAT {
+        return Err(anyhow!(
+            "--swap-max-sat must be at least the {} sat minimum swap",
+            wallet_core::swap_terms::MIN_BTC_LEG_SAT
+        ));
+    }
+    let store = swap::store::Store::open(&swap_db_dir(args))?;
+    Ok(swap::Swap::new(
+        store,
+        swap::neoxex::NeoxEx::new(args.neoxex_url.clone()),
+        args.swap_fee_bps,
+        args.swap_max_sat,
+        network.to_string(),
+        fee_address,
+        token_key.to_vec(),
+    )
+    // Each waiting long-poll holds a worker: keep half the pool free for the rest.
+    .with_long_poll_cap((args.workers / 2).max(1)))
 }
 
 enum Reply {
@@ -683,11 +849,29 @@ fn handle(req: &mut Request, st: &State) -> Reply {
             }
         }
         (Method::Post, "/crash") => crash_report(req, st),
+        (_, p) if p == "/swap" || p.starts_with("/swap/") => swap_route(req, st, &method, p),
         (_, p) if p.starts_with("/xbt/") || p.starts_with("/btc/") => {
             proxy_chain(req, st, &method, p, query)
         }
         _ => err(404, "no such route"),
     }
+}
+
+/// `/swap/*`: 404 unless `--swap`; always needs a valid install token, which
+/// is also what anti-griefing strikes are counted against.
+fn swap_route(req: &mut Request, st: &State, method: &Method, path: &str) -> Reply {
+    let Some(sw) = &st.swap else {
+        return err(404, "no such route");
+    };
+    let Some(tok) = bearer(req).filter(|t| token::verify(&st.secret, t)) else {
+        Metrics::inc(&st.metrics.unauthorized);
+        return err(401, "missing or invalid token — POST /register first");
+    };
+    if !st.limiter.check(&tok) {
+        Metrics::inc(&st.metrics.rate_limited);
+        return err(429, "rate limit exceeded");
+    }
+    swap::route(req, method, path, &tok, sw)
 }
 
 /// Append one crash report to the NDJSON log. Body is opaque client JSON, capped
@@ -934,11 +1118,21 @@ fn proxy_chain(req: &mut Request, st: &State, method: &Method, path: &str, query
 
     // Enforce the service fee on broadcast: the transaction must pay at least
     // the floor to the fee address (the client adds the exact percentage output).
+    // A swap HTLC refund/redeem (every input a recorded swap HTLC on this
+    // chain, spent with its witness script) is exempt: its commission was paid
+    // when the HTLC was funded.
     if method == &Method::Post && rest == "tx" {
         if let Some(p) = &st.pricing {
-            if let Err(msg) = p.check_tx_hex(&String::from_utf8_lossy(&body)) {
-                Metrics::inc(&st.metrics.fee_rejected);
-                return err(402, &msg);
+            let tx_hex = String::from_utf8_lossy(&body);
+            let swap_spend = match (&st.swap, swap::parse_chain(chain)) {
+                (Some(s), Some(c)) => swap::is_swap_spend(s, c, &tx_hex),
+                _ => false,
+            };
+            if !swap_spend {
+                if let Err(msg) = p.check_tx_hex(&tx_hex) {
+                    Metrics::inc(&st.metrics.fee_rejected);
+                    return err(402, &msg);
+                }
             }
         }
     }
@@ -1304,8 +1498,8 @@ fn respond(req: Request, reply: Reply, allow_origin: &str) -> std::io::Result<()
     let mut resp = Response::from_data(data).with_status_code(status);
     for (k, v) in [
         ("Access-Control-Allow-Origin", allow_origin),
-        ("Access-Control-Allow-Methods", "GET, POST, OPTIONS"),
-        ("Access-Control-Allow-Headers", "authorization, content-type"),
+        ("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS"),
+        ("Access-Control-Allow-Headers", "authorization, content-type, x-swap-secret"),
         ("Content-Type", ctype.as_str()),
     ] {
         if let Ok(h) = Header::from_bytes(k.as_bytes(), v.as_bytes()) {

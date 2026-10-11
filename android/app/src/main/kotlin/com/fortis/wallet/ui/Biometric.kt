@@ -30,6 +30,7 @@ import com.fortis.wallet.data.LOCK_PASSWORD
 import com.fortis.wallet.data.SeedKeystore
 import com.fortis.wallet.data.toHex
 import com.fortis.wallet.ui.theme.Fx
+import com.fortis.wallet.ui.theme.FxType
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
 import javax.crypto.Cipher
@@ -133,15 +134,15 @@ fun LockChoiceFields(choice: LockChoice) {
         }
         if (choice.useBiometric) Text(
             stringResource(R.string.lock_choice_biometric_note),
-            color = Fx.textFaint, fontSize = 12.sp,
+            style = FxType.meta, color = Fx.textFaint,
         )
     }
     if (!choice.useBiometric) {
-        Text(stringResource(R.string.lock_choice_password_note), color = Fx.textFaint, fontSize = 12.sp)
+        Text(stringResource(R.string.lock_choice_password_note), style = FxType.meta, color = Fx.textFaint)
         Field(choice.pw, { choice.pw = it }, stringResource(R.string.field_app_password), password = true)
         Field(choice.pw2, { choice.pw2 = it }, stringResource(R.string.field_confirm_password), password = true)
         choice.problemRes?.let {
-            Text(stringResource(it, LockChoice.MIN_PW), color = Fx.textFaint, fontSize = 12.sp)
+            Text(stringResource(it, LockChoice.MIN_PW), style = FxType.meta, color = Fx.textFaint)
         }
     }
 }
@@ -199,7 +200,7 @@ fun BiometricAppUnlock(vm: WalletViewModel) {
     LaunchedEffect(Unit) { go() }
 
     if (invalidated) {
-        Text(stringResource(R.string.biometric_invalidated), color = Fx.bad, fontSize = 13.sp)
+        Text(stringResource(R.string.biometric_invalidated), style = FxType.meta, color = Fx.bad)
     } else {
         PrimaryButton(stringResource(R.string.action_unlock)) { go() }
     }

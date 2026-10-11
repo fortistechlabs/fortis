@@ -36,6 +36,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.fortis.wallet.R
 import com.fortis.wallet.ui.theme.Fx
+import com.fortis.wallet.ui.theme.FxType
+import com.fortis.wallet.ui.theme.caps
+import com.fortis.wallet.ui.theme.Mono
 import uniffi.wallet_ffi.bip39Wordlist
 
 private val BIP39: List<String> by lazy(LazyThreadSafetyMode.PUBLICATION) { bip39Wordlist() }
@@ -80,7 +83,7 @@ fun MnemonicField(
     val ok = words.size == 12 || words.size == 24
 
     Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(Fx.s1)) {
-        Text(stringResource(R.string.reveal_title), color = Fx.textDim, style = MaterialTheme.typography.labelMedium)
+        Text(caps(stringResource(R.string.reveal_title)), style = FxType.label)
         OutlinedTextField(
             value = tfv,
             onValueChange = { push(it) },
@@ -91,16 +94,17 @@ fun MnemonicField(
                 capitalization = KeyboardCapitalization.None,
                 keyboardType = KeyboardType.Password,
             ),
-            textStyle = LocalTextStyle.current.copy(color = Fx.text, fontFamily = FontFamily.Monospace),
+            textStyle = LocalTextStyle.current.copy(color = Fx.text, fontFamily = Mono),
             colors = OutlinedTextFieldDefaults.colors(
                 focusedTextColor = Fx.text,
                 unfocusedTextColor = Fx.text,
-                cursorColor = Fx.accent,
-                focusedBorderColor = Fx.accent,
-                unfocusedBorderColor = Fx.hair,
-                focusedContainerColor = Fx.glass1,
-                unfocusedContainerColor = Fx.glass1,
+                cursorColor = Fx.signal,
+                focusedBorderColor = Fx.signal,
+                unfocusedBorderColor = Fx.control,
+                focusedContainerColor = Fx.panel,
+                unfocusedContainerColor = Fx.panel,
             ),
+            shape = RoundedCornerShape(Fx.rSm),
             modifier = Modifier.fillMaxWidth(),
         )
         if (suggestions.isNotEmpty() && !exactOnly) {
@@ -111,12 +115,12 @@ fun MnemonicField(
                 suggestions.forEach { w ->
                     Box(
                         Modifier
-                            .clip(RoundedCornerShape(Fx.pill))
-                            .background(Fx.glass2)
-                            .border(1.dp, Fx.hair, RoundedCornerShape(Fx.pill))
+                            .clip(RoundedCornerShape(Fx.rSm))
+                            .background(Fx.panelRaised)
+                            .border(1.dp, Fx.control, RoundedCornerShape(Fx.rSm))
                             .clickable { choose(w) }
                             .padding(horizontal = 12.dp, vertical = 7.dp),
-                    ) { Text(w, color = Fx.text, fontFamily = FontFamily.Monospace, fontSize = 13.sp) }
+                    ) { Text(w, style = FxType.fiatSmall, color = Fx.text) }
                 }
             }
         }
@@ -127,8 +131,8 @@ fun MnemonicField(
                 ok -> stringResource(R.string.mnemonic_status, count, stringResource(R.string.mnemonic_looks_good))
                 else -> count
             },
-            color = if (bad > 0) Fx.warn else Fx.textFaint,
-            fontSize = 12.sp,
+            style = FxType.meta,
+            color = if (bad > 0) Fx.warn else Fx.textDim,
         )
     }
 }

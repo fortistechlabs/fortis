@@ -43,9 +43,19 @@ data class WalletConfig(
      *  next live refresh lands, so re-opening the app doesn't always start
      *  from a blank/zero state. Null until the first refresh ever succeeds. */
     val lastKnownBalanceSat: Long? = null,
+    /** Watch-only wallet imported from a hardware wallet's account key — it
+     *  can't spend here, and (on XBT) not on the device either. */
+    val hardware: Boolean = false,
+    /** The device's master key fingerprint (8 hex), when its export carried
+     *  one — the key origin a PSBT for it needs. */
+    val masterFingerprint: String? = null,
 ) {
     /** e.g. `XBT · Savings` — the label the picker shows. */
-    val display: String get() = "${chain.uppercase()} · $name" + if (watchOnly) " · watch-only" else ""
+    val display: String get() = "${chain.uppercase()} · $name" + when {
+        hardware -> " · hardware"
+        watchOnly -> " · watch-only"
+        else -> ""
+    }
     val otherChain: String get() = if (chain == "btc") "xbt" else "btc"
 
     fun toJson(): JSONObject = JSONObject().apply {
@@ -56,6 +66,8 @@ data class WalletConfig(
         if (watchOnly) put("watch_only", true)
         xpub?.let { put("xpub", it) }
         lastKnownBalanceSat?.let { put("last_known_balance_sat", it) }
+        if (hardware) put("hardware", true)
+        masterFingerprint?.let { put("master_fingerprint", it) }
     }
 
     companion object {
@@ -72,6 +84,8 @@ data class WalletConfig(
             watchOnly = o.optBoolean("watch_only", false),
             xpub = o.optString("xpub").ifBlank { null },
             lastKnownBalanceSat = if (o.has("last_known_balance_sat")) o.getLong("last_known_balance_sat") else null,
+            hardware = o.optBoolean("hardware", false),
+            masterFingerprint = o.optString("master_fingerprint").ifBlank { null },
         )
     }
 }

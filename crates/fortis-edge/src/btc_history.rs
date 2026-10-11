@@ -121,18 +121,14 @@ mod tests {
         json!({ "txid": txid, "status": { "confirmed": confirmed, "block_height": height } })
     }
 
-    fn temp_dir(label: &str) -> std::path::PathBuf {
-        static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-        std::env::temp_dir().join(format!(
-            "fortis-edge-btc-history-test-{label}-{}-{}",
-            std::process::id(),
-            NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
-        ))
+    fn temp_dir(label: &str) -> crate::test_tmp::TempDir {
+        crate::test_tmp::TempDir::new(&format!("btc-history-test-{label}"))
     }
 
     #[test]
     fn merges_and_persists_confirmed_only() {
-        let h = BtcHistory::new(&temp_dir("merge")).unwrap();
+        let h_dir = temp_dir("merge");
+        let h = BtcHistory::new(&h_dir).unwrap();
         let first = h.merge("addr1", &[tx("a", true, 100), tx("b", false, 0)]);
         assert_eq!(first.len(), 2); // 1 confirmed + 1 pending
 
@@ -162,7 +158,8 @@ mod tests {
 
     #[test]
     fn unknown_address_is_empty_not_an_error() {
-        let h = BtcHistory::new(&temp_dir("unknown")).unwrap();
+        let h_dir = temp_dir("unknown");
+        let h = BtcHistory::new(&h_dir).unwrap();
         assert!(h.get("never-seen").is_empty());
     }
 
@@ -170,7 +167,8 @@ mod tests {
     fn addresses_sharing_a_textual_prefix_do_not_bleed_into_each_other() {
         // Without the DELIM terminator, a prefix scan for "addr1" could in
         // principle also match "addr10", "addr1x", etc.
-        let h = BtcHistory::new(&temp_dir("prefix")).unwrap();
+        let h_dir = temp_dir("prefix");
+        let h = BtcHistory::new(&h_dir).unwrap();
         h.merge("addr1", &[tx("a", true, 100)]);
         h.merge("addr10", &[tx("b", true, 100)]);
         h.merge("addr1x", &[tx("c", true, 100)]);
