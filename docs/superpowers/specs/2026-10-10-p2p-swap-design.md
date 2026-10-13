@@ -17,7 +17,7 @@ price, no app UI.
 |---|---|
 | Counterparty | **Other fortis users only.** No operator liquidity, no custody. Every swap is an HTLC atomic swap between two users. |
 | Modes | **Quick swap** (matched with any open offer) and **swap with a person** (private offer + share code). Both pay out into the user's own wallet on the other chain — the user picks *from* and *to* wallets, never pastes an address. |
-| Price | **NeoxEX `BTCB2_BTC` at match time.** Offers carry an amount and a max slippage, not a price. Each phone re-checks NeoxEX itself before accepting. |
+| Price | ~~NeoxEX `BTCB2_BTC` at match time.~~ **Superseded by Revision 2: each offer carries the user's own limit price; NeoxEX is a reference only.** |
 | Commission | **0.5% per side**, paid on the chain each user sends, to the service-fee address the edge already advertises at `GET /pricing` (one `bc1…` address — valid on both chains, since XBT shares Bitcoin's HRP and BIP-84 layout). |
 | Liveness | **Android foreground service** drives the swap while active; **a watchtower** on the edge broadcasts pre-signed refunds/redeems if a phone is offline. |
 | Where the service lives | New `swap/` modules in **`fortis-edge`**. |
@@ -27,7 +27,7 @@ price, no app UI.
 ## Non-goals
 
 Operator-provided liquidity or market making. Executing trades on NeoxEX.
-User-set prices / a real order book. Swaps in the web wallet (`wallet-wasm`) and
+A full order book (depth display, order editing); Revision 2 adds only limit prices. Swaps in the web wallet (`wallet-wasm`) and
 in self-hosted `fortisd`. Watch-only and hardware wallets as swap participants.
 Multi-instance edge deployments for swap state.
 
@@ -82,7 +82,7 @@ moved. Alice funds, Bob doesn't → Alice refunds after the XBT leg (144 h). Bob
 funds, Alice doesn't redeem → Bob refunds after the BTC leg (24 h); Alice after
 144 h. Refunds are broadcast by the phone or the watchtower, whichever is first.
 
-**Locktimes.** XBT leg = `xbt.htlc_initiator_locktime_secs` (144 h), BTC leg =
+**Locktimes.** XBT leg = `xbt.htlc_initiator_locktime_secs` (144 h; 48 h since 2026-10-12, see CHANGELOG), BTC leg =
 `btc.htlc_participant_locktime_secs` (24 h), both from match time.
 
 **Minimum swap.** The 0.5% on each leg must clear the edge's 400 sat fee floor,
@@ -297,6 +297,129 @@ before launch.
    deadline 1h 52m"); the app funds automatically as soon as it is unlocked. If
    the deadline passes, the match is cancelled (the no-show takes a strike; a
    funded initiator refunds after the XBT leg).
+
+## Revision 2: user-set prices (2026-10-11, approved by the owner)
+
+NeoxEX's `BTCB2_BTC` book is too thin to quote. At 0.05 BTC depth it is about
+10.6% wide against the 2% limit, so the edge would refuse every quote. The owner
+chose to let users set their own prices. This revision replaces the **Price** row
+under Decisions, the NeoxEX rules in `neoxex.rs`, the slippage check in
+`validate_terms`, and "User-set prices" under Non-goals. Everything else stands:
+HTLCs, locktimes, fees, the relay, the watchtower and the minimum and maximum
+legs.
+
+1. **Offers carry a limit price.** `POST /swap/offers` takes
+   `price_sat_per_xbt` (a whole number, > 0) in place of `max_slippage_bps`. For
+   XBT → BTC it is the *lowest* price the user accepts; for BTC → XBT, the
+   *highest*. An offer is stored with its price. A partly filled offer keeps
+   its price for the remainder. The minimum and maximum BTC legs are checked at
+   the offer's own price.
+2. **Matching.** Two opposite offers cross when the XBT seller's price is at or
+   below the BTC buyer's price. An incoming offer takes resting offers that
+   cross, best price first, and the oldest first among equal prices. The trade
+   is done **at the resting offer's price**, so neither side ever gets worse than
+   its own limit. Price ordering replaces plain first-come-first-served.
+   Otherwise an incoming offer could fill at a worse price than one already
+   available. Offers that don't cross wait until they expire, as now.
+3. **Private offers.** The maker's price is the price. `POST /swap/take/{code}`
+   takes no price. The taker sees the terms, including the price and the
+   difference from the reference price, on the existing take preview and accepts
+   or declines there.
+4. **NeoxEX becomes a reference only.** The edge and phones still compute the
+   depth-weighted mid, but nothing refuses when it is wide, stale or paused.
+   `GET /swap/quote` returns
+   `{reference_price | null, reference_ok, best: {xbt_to_btc, btc_to_xbt}, fee_bps, min_btc_sat, max_btc_sat, open}`.
+   `reference_ok` is false when the old rules (spread > 2%, data > 60 s old,
+   paused, or > 2% from the last trade) would have refused. `best` is the best
+   open public price on each side: the lowest XBT → BTC ask and the highest
+   BTC → XBT bid, each `null` when none is open. The quote is never `503`
+   because of NeoxEX.
+5. **Phone checks.** `validate_terms(&terms, limit_price, role, now)` replaces
+   the NeoxEX price and slippage arguments. It rejects a price worse than the
+   user's own limit: below it for the XBT sender, above it for the BTC sender.
+   All the other checks (amounts consistent with the price, fee, locktimes,
+   confirmations, deadlines) are unchanged. A take keeps the price the user
+   saw on the preview as its limit.
+6. **New-swap screen.** It gets a price field in BTC per XBT (8 decimals). The
+   field is prefilled with the best open price on the other side, or else the
+   reference. Below it, the screen shows the reference and how far your price is
+   from it ("NeoxEX mid 0.00405 · you +1.7%"), or "No reference price" when
+   there is none. The receive amount and fee update from the typed price. If
+   the price is more than 5% worse for you than the reference, or there is no
+   reference, posting asks for one confirmation ("Your price is 7.2% below the
+   market reference. Post anyway?"). The 50/100/200 bps slippage picker goes away.
+7. **Tests.**
+   - **Edge unit:** non-crossing offers don't match; trades run at the resting
+     price; best price is taken before the oldest; a partly filled remainder
+     keeps its price; `best` on the quote; quote works with NeoxEX down.
+   - **wallet-core:** each role rejects a price worse than its limit and accepts
+     one at or better than it.
+   - **Phone:** price-field maths; the warning threshold.
+   - **e2e:** scenario 4 becomes "offers whose prices don't cross never match".
+     A new scenario covers two crossing offers at different prices that settle
+     at the resting price.
+8. **Migration.** There is none. No swap has run in production, so offers and
+   matches change shape with no upgrade path.
+
+## Revision 3: minimum commission (2026-10-11, approved by the owner)
+
+The minimum swap of 80 000 sat existed only so that a 0.5% commission would reach
+the edge's 400 sat fee floor. The owner chose to charge a **minimum commission**
+instead of refusing small swaps. This revision replaces the 0.5%-only commission
+and the 80 000 sat minimum (Decisions, **Minimum swap**, `MIN_BTC_LEG_SAT`).
+Everything else stands, including Revision 2.
+
+1. **Commission.** Each side pays the larger of **0.5% of what it sends** and
+   **400 sat**, on its own chain, to the fee address. Together that is 1% of the
+   swap, or more on a small swap. The floor applies on both chains, because the
+   edge's `/tx` check enforces it on both. On the XBT side, 0.5% is far above 400
+   sat at any realistic price, so in practice only the BTC side reaches it.
+   - `wallet-core`: `SWAP_FEE_FLOOR_SAT = 400`. The phone funds with
+     `ServiceFee { bps: 50, floor_sat: SWAP_FEE_FLOOR_SAT, cap_sat: 0 }` in place of
+     today's floor of 0.
+   - The edge refuses to start with `--swap` if `--service-fee-floor-sat` is above
+     `SWAP_FEE_FLOOR_SAT`. Otherwise a swap's funding could pay less than the edge
+     demands and get rejected with 402.
+2. **New minimum swap.** It is now set by network fees, not by the commission.
+   `MIN_BTC_LEG_SAT` drops from 80 000 to **20 000 sat**. A BTC HTLC redeem is
+   about 150 vB, so at 50 sat/vB it costs about 7 500 sat. The phone signs each
+   refund and redeem at a ladder of feerates whose top variant is at least 2× the
+   6-block rate, and every variant's fee is clamped so the spend leaves a non-dust
+   output (variants the clamp makes identical are dropped). So a small leg always
+   stays redeemable and refundable; at extreme fees the top variant pays out only
+   a near-dust amount, rather than failing to sign. The XBT side has no
+   minimum of its own: it is whatever XBT is worth the BTC side at the trade price.
+   The edge advertises the minimum as `min_btc_sat` (as now), and phones check it
+   in `validate_terms`.
+3. **Screens.** The commission row shows the actual amount and how it was worked
+   out: "Commission 0.5%" when the percentage applies, and "Commission (minimum)"
+   when the 400 sat floor applies. The note under it, "paid on top of the amount,
+   plus the network fee", stays.
+4. **Tests.**
+   - **wallet-core:** the commission for a 20 000 sat BTC leg is 400, for 80 000 it
+     is 400, and for 200 000 it is 1 000. `validate_terms` accepts a 20 000 sat leg
+     and refuses 19 999.
+   - **Edge:** an offer worth 20 000 sat is accepted, and `--swap` with a floor of
+     500 refuses to start.
+   - **e2e:** a 20 000 sat swap completes, paying exactly 400 sat of commission on
+     the BTC chain and 0.5% on the XBT chain. The edge's fee check passes for both
+     fundings.
+   - **Android:** funding uses the 400 floor, and the commission row shows each of
+     its two forms.
+5. **Rollout.** The edge and app ship together. No swap app has been released, so
+   there is no compatibility concern. Today's 80 000 sat minimum still holds on the
+   live edge until it is redeployed.
+
+## Revision 4: smaller minimum, no maximum (2026-10-11, owner's decision)
+
+- `MIN_BTC_LEG_SAT` drops from 20 000 to **2 000 sat**. At today's fees (0.3–1 sat/vB)
+  an HTLC spend costs about 50–150 sat. When fees spike, spends are clamped to leave
+  a non-dust output (Revision 3), so a small swap still pays out.
+- **No maximum by default.** `--swap-max-sat` becomes optional; unset means no cap,
+  and `/swap/quote` reports `max_btc_sat: null`. This replaces Rollout's "start
+  with ≈ 0.01 BTC".
+- The app's limit messages name only the limit that applies: "Too small: the
+  smallest swap is … BTC." / "Too large: the largest swap is … BTC."
 
 ## Phase 2 (not in this spec)
 

@@ -39,7 +39,11 @@ done
 step "User"
 id fortis &>/dev/null || useradd --system --home-dir /var/lib/fortis --shell /usr/bin/nologin fortis
 usermod -aG bitcoin-core,bitcoin-knots fortis
-install -d -o fortis -g fortis -m 0750 /var/lib/fortis /var/lib/fortis/edge /var/log/fortis
+install -d -o fortis -g fortis -m 0700 /var/lib/fortis /var/lib/fortis/edge /var/log/fortis
+# Owner-only, including what older installs left readable (the edge's token
+# secret, the swap and index databases, the crash log). The units keep it so:
+# StateDirectoryMode / LogsDirectoryMode 0700 and UMask 0077.
+chmod -R go-rwx /var/lib/fortis /var/log/fortis
 
 if [[ -n $index_from ]]; then
   for c in xbt btc; do
@@ -85,7 +89,21 @@ if [[ -n $cf_from ]]; then
   systemctl restart cloudflared
 fi
 
+if [[ -e /etc/systemd/system/cloudflared.service ]]; then
+  step "Cloudflare tunnel: its own user, sandboxed"
+  id cloudflared &>/dev/null || useradd --system --no-create-home --home-dir /nonexistent --shell /usr/bin/nologin cloudflared
+  chown root:cloudflared /etc/cloudflared
+  chmod 0750 /etc/cloudflared
+  for f in /etc/cloudflared/*.json /etc/cloudflared/*.yml /etc/cloudflared/cert.pem; do
+    if [[ -e $f ]]; then chown root:cloudflared "$f"; chmod 0640 "$f"; fi
+  done
+  install -d -m 0755 /etc/systemd/system/cloudflared.service.d
+  install -m 0644 "$here/cloudflared-hardening.conf" /etc/systemd/system/cloudflared.service.d/10-fortis-hardening.conf
+  systemctl daemon-reload
+  systemctl restart cloudflared
+fi
+
 step "Status"
 sleep 3
-systemctl --no-pager --lines=5 status fortis-xbt-index fortis-btc-index fortis-edge || true
+systemctl --no-pager --lines=5 status fortis-xbt-index fortis-btc-index fortis-edge cloudflared || true
 for p in 8094 8095 8098; do printf '%s  ' "$p"; curl -s --max-time 3 "http://127.0.0.1:$p/" || echo "(not answering yet)"; echo; done

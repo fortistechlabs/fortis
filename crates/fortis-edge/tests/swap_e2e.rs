@@ -46,7 +46,7 @@ use wallet_core::bitcoin::hashes::{sha256, Hash};
 use wallet_core::bitcoin::secp256k1::PublicKey;
 use wallet_core::bitcoin::{consensus, Address, Amount, OutPoint, ScriptBuf, Transaction, TxOut, Txid};
 use wallet_core::htlc::preimage_from_witness;
-use wallet_core::swap_terms::participant_fund_latest;
+use wallet_core::swap_terms::{participant_fund_latest, swap_commission_sat, MIN_BTC_LEG_SAT, SWAP_FEE_FLOOR_SAT};
 use wallet_core::{
     btc_for_xbt, params_from_terms, validate_terms, Chain, ChainParams, MasterKey, ServiceFee, SwapEvent,
     SwapKey, SwapMachine, SwapRole, SwapTerms, Utxo, WalletView,
@@ -55,6 +55,8 @@ use wallet_core::{
 use common::{agent, bin, free_port, poll, req, spawn, start_node, wait_up, Flavor, Node, Rpc, Svc, TempDir};
 
 /// 0.01 BTC per XBT.
+/// The initiator's preimage nonce (the app draws a fresh one per swap).
+const PREIMAGE_NONCE: [u8; 16] = [0x5a; 16];
 const PRICE: u64 = 1_000_000;
 const XBT_AMT: u64 = 20_000_000;
 /// `btc_for_xbt(XBT_AMT, PRICE)`.
@@ -79,7 +81,7 @@ fn spk_of(addr: &str) -> ScriptBuf {
 }
 
 fn commission(sat: u64) -> u64 {
-    sat * 50 / 10_000
+    swap_commission_sat(sat)
 }
 
 // ==========================================================================
@@ -382,9 +384,13 @@ impl Edge {
 enum Step {
     /// `POST /swap/offers` (`direction`, `amount_sat`).
     Offer(&'static str, u64),
+    /// Take part of the other user's listed offer: find it in `GET /swap/book`
+    /// and `POST /swap/offers/{id}/take` (`amount_sat` on our send chain) at
+    /// its listed price.
+    TakeListed(&'static str, u64),
     /// Wait for the offer's match; read the terms and our role.
     AwaitMatch,
-    /// Check the terms against our own price and the edge's `/pricing`
+    /// Check the terms against our own limit price and the edge's `/pricing`
     /// address; accept and send our keys (the initiator also the hashlock),
     /// or decline.
     Review,
@@ -434,9 +440,8 @@ struct User {
     a: ureq::Agent,
     edge: String,
     token: String,
-    /// The user's own view of the price (the phone reads NeoxEX itself).
-    own_price: u64,
-    slippage: u32,
+    /// The user's limit price: lowest for the XBT sender, highest for the BTC sender.
+    limit: u64,
     swap_index: u32,
     coins: Vec<(Chain, Utxo)>,
     s: Session,
@@ -463,8 +468,7 @@ impl User {
             a: agent(),
             edge: String::new(),
             token: String::new(),
-            own_price,
-            slippage: 100,
+            limit: own_price,
             swap_index: 0,
             coins: Vec::new(),
             s: Session::default(),
@@ -600,7 +604,22 @@ fn step(u: &mut User, s: Step) {
             let v = u.json(
                 "POST",
                 "/swap/offers",
-                Some(json!({ "direction": direction, "amount_sat": amount_sat, "max_slippage_bps": u.slippage })),
+                Some(json!({ "direction": direction, "amount_sat": amount_sat, "price_sat_per_xbt": u.limit })),
+            );
+            u.s.offer_id = v["offer_id"].as_str().unwrap().to_string();
+            u.s.secret = v["owner_secret"].as_str().unwrap().to_string();
+        }
+        Step::TakeListed(side, amount_sat) => {
+            u.s = Session::default();
+            u.swap_index += 1;
+            let book = u.json("GET", "/swap/book", None);
+            let entry = book[side][0].clone();
+            assert!(entry.is_object(), "{}: nothing listed on {side}: {book}", u.name);
+            let v = u.json(
+                "POST",
+                &format!("/swap/offers/{}/take", entry["id"].as_str().unwrap()),
+                Some(json!({ "amount_sat": amount_sat, "price_sat_per_xbt": entry["price_sat_per_xbt"],
+                             "client_id": format!("{:x}", u.swap_index) })),
             );
             u.s.offer_id = v["offer_id"].as_str().unwrap().to_string();
             u.s.secret = v["owner_secret"].as_str().unwrap().to_string();
@@ -621,7 +640,7 @@ fn step(u: &mut User, s: Step) {
             // The commission must go to the edge's advertised fee address.
             let pricing = u.json("GET", "/pricing", None);
             let fee_ok = pricing["address"].as_str() == Some(t.fee_address.as_str());
-            let valid = validate_terms(&t, u.own_price, u.slippage, u.role(), unix_now() as u32);
+            let valid = validate_terms(&t, u.limit, u.role(), unix_now() as u32);
             if valid.is_ok() && fee_ok {
                 let (s, b) = u.message(json!({ "type": "accept" }));
                 assert_eq!(s, 200, "{}: accept: {b}", u.name);
@@ -629,8 +648,10 @@ fn step(u: &mut User, s: Step) {
                 let (s, body) = u.message(json!({ "type": "keys", "xbt": hex::encode(x.serialize()), "btc": hex::encode(b.serialize()) }));
                 assert_eq!(s, 200, "{}: keys: {body}", u.name);
                 if u.role() == SwapRole::Initiator {
-                    let h = sha256::Hash::hash(&u.swap_key(Chain::Xbt).preimage());
-                    let (s, body) = u.message(json!({ "type": "hashlock", "hex": hex::encode(h.to_byte_array()) }));
+                    let h = sha256::Hash::hash(&u.swap_key(Chain::Xbt).preimage(&t.match_id, &PREIMAGE_NONCE));
+                    let (s, body) = u.message(json!({
+                        "type": "hashlock", "hex": hex::encode(h.to_byte_array()), "nonce": hex::encode(PREIMAGE_NONCE),
+                    }));
                     assert_eq!(s, 200, "{}: hashlock: {body}", u.name);
                     u.s.hashlock = Some(h);
                 }
@@ -701,7 +722,7 @@ fn step(u: &mut User, s: Step) {
             }
             let params = u.params(chain).clone();
             let contract = u.machine().build_our_contract(&params).unwrap().clone();
-            let fee = ServiceFee { bps: t.fee_bps, floor_sat: 0, cap_sat: 0, fee_spk: spk_of(&t.fee_address) };
+            let fee = ServiceFee { bps: t.fee_bps, floor_sat: SWAP_FEE_FLOOR_SAT, cap_sat: 0, fee_spk: spk_of(&t.fee_address) };
             let (tx, s, body) = u.pay(chain, vec![contract.funding_output()], Some(&fee));
             assert_eq!(s, 200, "{}: funding broadcast: {body}", u.name);
             let txid = tx.compute_txid();
@@ -776,7 +797,7 @@ fn step(u: &mut User, s: Step) {
                     .expect("the BTC HTLC must match the agreed contract exactly");
                 let op = OutPoint::new(Txid::from_str(&txid).unwrap(), vout);
                 u.machine().set_their_outpoint(op);
-                let preimage = u.swap_key(Chain::Xbt).preimage();
+                let preimage = u.swap_key(Chain::Xbt).preimage(&u.s.terms.as_ref().unwrap().match_id, &PREIMAGE_NONCE);
                 let (payout, key) = (u.payout(Chain::Btc).script_pubkey(), u.swap_key(Chain::Btc));
                 let tx = u.s.machine.as_ref().unwrap().signed_redeem(op, payout, &key, &preimage, &[FEERATE]).unwrap().remove(0);
                 let (s, body) = u.broadcast(Chain::Btc, &tx);
@@ -792,11 +813,12 @@ fn step(u: &mut User, s: Step) {
                 let (s, h) = u.http("GET", &format!("/btc/tx/{spender}/hex"), None);
                 assert_eq!(s, 200, "{}: spender hex: {h}", u.name);
                 let redeem = decode_tx(&h);
+                let hashlock = u.s.hashlock.expect("the hashlock was relayed");
                 let preimage = redeem
                     .input
                     .iter()
                     .find(|i| i.previous_output == ours)
-                    .and_then(|i| preimage_from_witness(&i.witness))
+                    .and_then(|i| preimage_from_witness(&i.witness, &hashlock))
                     .expect("the BTC redeem reveals the preimage");
                 u.machine().on_event(SwapEvent::CounterpartyRedeemed { preimage });
                 let op = u.s.machine.as_ref().unwrap().their_outpoint().unwrap();
@@ -940,7 +962,7 @@ fn negotiate(alice: &mut User, bob: &mut User, xbt: u64, btc: u64) {
 }
 
 /// The funding pays the HTLC exactly the terms' amount and the commission
-/// exactly 50 bps of it to the fee address.
+/// exactly the swap commission (50 bps, at least the floor) to the fee address.
 fn assert_funding_pays_commission(tx: &Transaction, fee_spk: &ScriptBuf, htlc_spk: &ScriptBuf, amount: u64) {
     let paid = |spk: &ScriptBuf| tx.output.iter().filter(|o| &o.script_pubkey == spk).map(|o| o.value.to_sat()).sum::<u64>();
     assert_eq!(paid(htlc_spk), amount, "HTLC output");
@@ -980,24 +1002,54 @@ fn htlc_spk(u: &User) -> ScriptBuf {
 fn happy_path_both_ways_pays_commission_on_both_chains() {
     let Some(w) = world(PRICE) else { return };
     let (mut alice, mut bob) = w.users(PRICE);
-    negotiate(&mut alice, &mut bob, XBT_AMT, BTC_AMT);
+    let t = settle_both_ways(&w, &mut alice, &mut bob, (XBT_AMT, BTC_AMT));
+    assert_eq!(t.price_sat_per_xbt, PRICE);
+}
+
+/// The smallest swap: a `MIN_BTC_LEG_SAT` BTC leg pays the 400 sat minimum
+/// commission on BTC, and its XBT leg (2 000 000) still pays the 0.5%.
+#[test]
+fn small_swap_pays_the_minimum_commission() {
+    let Some(w) = world(PRICE) else { return };
+    let (mut alice, mut bob) = w.users(PRICE);
+    // The XBT leg that `MIN_BTC_LEG_SAT` buys at `PRICE`.
+    let xbt = MIN_BTC_LEG_SAT * 100_000_000 / PRICE;
+    assert_eq!(xbt, 200_000);
+    let t = settle_both_ways(&w, &mut alice, &mut bob, (xbt, MIN_BTC_LEG_SAT));
+    let paid = |tx: &Transaction| tx.output.iter().filter(|o| o.script_pubkey == w.fee_spk).map(|o| o.value.to_sat()).sum::<u64>();
+    assert_eq!(paid(bob.s.funding_tx.as_ref().unwrap()), 400, "BTC funding pays the floor");
+    assert_eq!(paid(alice.s.funding_tx.as_ref().unwrap()), 1_000, "XBT funding pays 0.5% of 200 000");
+    assert_eq!(t.btc_sat, MIN_BTC_LEG_SAT);
+}
+
+/// Offers, match, review, both fundings, both redeems and the closed match;
+/// checks the legs, the redeemed amounts and the commission on both chains.
+/// Returns the agreed terms.
+fn settle_both_ways(w: &World, alice: &mut User, bob: &mut User, legs: (u64, u64)) -> SwapTerms {
+    negotiate(alice, bob, legs.0, btc_for_xbt(legs.0, PRICE));
+    settle_negotiated(w, alice, bob, legs)
+}
+
+/// From both sides holding each other's keys: fund, redeem, and check every
+/// payout and commission, then the watchtower's close.
+fn settle_negotiated(w: &World, alice: &mut User, bob: &mut User, legs: (u64, u64)) -> SwapTerms {
     let t = alice.terms();
-    assert_eq!((t.xbt_sat, t.btc_sat), (XBT_AMT, BTC_AMT));
+    assert_eq!((t.xbt_sat, t.btc_sat), legs);
     assert_eq!(t.btc_sat, btc_for_xbt(t.xbt_sat, t.price_sat_per_xbt));
 
-    drive(&mut alice, &[Step::Fund, Step::WatchRefund]);
+    drive(alice, &[Step::Fund, Step::WatchRefund]);
     w.knots.mine(t.xbt_confs);
     // Both stay online: no watchtower redeem for Bob, which would race his own.
-    drive(&mut bob, &[Step::Fund]);
+    drive(bob, &[Step::Fund]);
     w.core.mine(t.btc_confs);
 
-    assert_funding_pays_commission(alice.s.funding_tx.as_ref().unwrap(), &w.fee_spk, &htlc_spk(&alice), t.xbt_sat);
-    assert_funding_pays_commission(bob.s.funding_tx.as_ref().unwrap(), &w.fee_spk, &htlc_spk(&bob), t.btc_sat);
+    assert_funding_pays_commission(alice.s.funding_tx.as_ref().unwrap(), &w.fee_spk, &htlc_spk(alice), t.xbt_sat);
+    assert_funding_pays_commission(bob.s.funding_tx.as_ref().unwrap(), &w.fee_spk, &htlc_spk(bob), t.btc_sat);
 
-    drive(&mut alice, &[Step::Redeem]);
+    drive(alice, &[Step::Redeem]);
     let (a_redeem, s, body) = alice.s.spend.clone().unwrap();
     assert_eq!(s, 200, "alice's BTC redeem through /btc/tx: {body}");
-    drive(&mut bob, &[Step::Redeem]);
+    drive(bob, &[Step::Redeem]);
     let (b_redeem, s, body) = bob.s.spend.clone().unwrap();
     assert_eq!(s, 200, "bob's XBT redeem through /xbt/tx: {body}");
     w.core.mine(1);
@@ -1009,7 +1061,7 @@ fn happy_path_both_ways_pays_commission_on_both_chains() {
     assert_eq!(a_redeem.output[0].script_pubkey, alice.payout(Chain::Btc).script_pubkey());
     let b_got = b_redeem.output[0].value.to_sat();
     assert!(b_got > t.xbt_sat - 2_000 && b_got < t.xbt_sat, "bob's XBT: {b_got}");
-    let utxo = poll("bob's XBT payout", 60, || xbt_utxo(&bob, &bob.payout(Chain::Xbt)));
+    let utxo = poll("bob's XBT payout", 60, || xbt_utxo(bob, &bob.payout(Chain::Xbt)));
     assert_eq!(utxo["value"].as_u64(), Some(b_got));
     let confirmed = poll("alice's BTC redeem to confirm", 60, || {
         let (s, b) = alice.http("GET", &format!("/btc/tx/{}", a_redeem.compute_txid()), None);
@@ -1031,6 +1083,30 @@ fn happy_path_both_ways_pays_commission_on_both_chains() {
 
     // The watchtower closes the match once both HTLCs are spent.
     poll("the match to close", 60, || (alice.get_match()["status"] == "closed").then_some(()));
+    t
+}
+
+/// Alice lists 2 XBT; Bob picks it from the book and takes half of it.
+#[test]
+fn a_swap_started_by_taking_a_listed_offer_runs_to_closed() {
+    let Some(w) = world(PRICE) else { return };
+    let (mut alice, mut bob) = w.users(PRICE);
+    let xbt = 100_000_000;
+    let btc = btc_for_xbt(xbt, PRICE);
+    drive(&mut alice, &[Step::Offer("xbt_to_btc", 2 * xbt)]);
+    drive(&mut bob, &[Step::TakeListed("xbt_to_btc", btc)]);
+    drive(&mut alice, &[Step::AwaitMatch]);
+    drive(&mut bob, &[Step::AwaitMatch]);
+    drive(&mut alice, &[Step::Review]);
+    drive(&mut bob, &[Step::Review]);
+    assert_eq!(alice.s.accepted, Some(true));
+    assert_eq!(bob.s.accepted, Some(true));
+    drive(&mut alice, &[Step::AwaitKeys]);
+    drive(&mut bob, &[Step::AwaitKeys]);
+    settle_negotiated(&w, &mut alice, &mut bob, (xbt, btc));
+    // The other half of Alice's offer is still on the book.
+    let left = bob.json("GET", "/swap/book", None)["xbt_to_btc"][0].clone();
+    assert_eq!(left["amount_sat"].as_u64(), Some(xbt));
 }
 
 #[test]
@@ -1090,33 +1166,89 @@ fn participant_never_funds_initiator_refunded_by_watchtower() {
     poll("the match to be cancelled", 30, || (alice.get_match()["status"] == "cancelled").then_some(()));
 }
 
+/// The participant never funds; the match is cancelled. Instead of waiting
+/// out the XBT locktime, the participant releases the initiator's XBT (v2's
+/// cooperative branch): the initiator asks, the participant signs, the
+/// initiator finishes and broadcasts — and a real XBT node mines it at once,
+/// long before the locktime.
 #[test]
-fn skewed_price_both_decline() {
-    // The edge quotes 5% above what both phones see on NeoxEX themselves.
-    let skewed = PRICE * 105 / 100;
-    let Some(w) = world(skewed) else { return };
+fn a_cancelled_swap_is_released_on_chain_before_the_locktime() {
+    let Some(mut w) = world(PRICE) else { return };
     let (mut alice, mut bob) = w.users(PRICE);
-    drive(&mut alice, &[Step::Offer("xbt_to_btc", XBT_AMT)]);
-    drive(&mut bob, &[Step::Offer("btc_to_xbt", btc_for_xbt(XBT_AMT, skewed))]);
-    // Both see the match before either reviews it (a decline hides it from the offer).
-    drive(&mut alice, &[Step::AwaitMatch]);
-    drive(&mut bob, &[Step::AwaitMatch]);
-    drive(&mut alice, &[Step::Review]);
-    drive(&mut bob, &[Step::Review]);
-    assert_declined_and_reopened(&alice, &bob);
+    negotiate(&mut alice, &mut bob, XBT_AMT, BTC_AMT);
+    let t = alice.terms();
+    assert_eq!(t.contract_version, wallet_core::htlc::CURRENT_CONTRACT);
+    drive(&mut alice, &[Step::Fund, Step::WatchRefund]);
+    w.knots.mine(t.xbt_confs);
+    let fund_by = poll("the participant's deadline", 60, || alice.get_match()["participant_fund_by"].as_u64());
+
+    // The edge's clock passes the participant's deadline (the chains' don't
+    // move: the release has no timelock).
+    let offset = fund_by + 60 - unix_now();
+    w.edge.restart(&["--swap-clock-offset-secs", &offset.to_string()]);
+    poll("the match to be cancelled", 30, || (alice.get_match()["status"] == "cancelled").then_some(()));
+
+    let xbt = alice.params(Chain::Xbt).clone();
+    let op = alice.s.machine.as_ref().unwrap().our_outpoint().unwrap();
+    let payout = alice.payout(Chain::Xbt);
+    let asks = alice.machine().release_txs(op, payout.script_pubkey(), &[3]).unwrap();
+    let (s, r) = alice.message(json!({ "type": "release_request", "txs": asks.iter().map(tx_hex).collect::<Vec<_>>() }));
+    assert_eq!(s, 200, "{r}");
+
+    let bob_key = bob.swap_key(Chain::Xbt);
+    let sigs: Vec<String> = asks
+        .iter()
+        .map(|tx| hex::encode(bob.machine().sign_their_release(tx, op, &bob_key, &xbt).unwrap()))
+        .collect();
+    let (s, r) = bob.message(json!({ "type": "release", "sigs": sigs }));
+    assert_eq!(s, 200, "{r}");
+
+    let alice_key = alice.swap_key(Chain::Xbt);
+    let released = alice
+        .machine()
+        .finish_release(&asks[0], op, &payout.script_pubkey(), &hex::decode(&sigs[0]).unwrap(), &alice_key)
+        .unwrap();
+    assert!(unix_now() < t.xbt_locktime as u64, "well before the locktime");
+    let (s, r) = alice.broadcast(Chain::Xbt, &released);
+    assert_eq!(s, 200, "the edge relays the release (a swap spend, no commission): {r}");
+    let utxo = mine_until(&w.knots, "the release", || {
+        xbt_utxo(&alice, &payout).filter(|u| u["status"]["confirmed"] == true)
+    });
+    let got = utxo["value"].as_u64().unwrap();
+    assert!(got > t.xbt_sat - 5_000 && got < t.xbt_sat, "alice's XBT back: {got}");
 }
 
-fn assert_declined_and_reopened(alice: &User, bob: &User) {
-    assert!(alice.terms().price_sat_per_xbt.abs_diff(PRICE * 105 / 100) <= 1, "the edge's skewed price");
-    assert_eq!(alice.s.accepted, Some(false), "alice declines");
-    assert_eq!(bob.s.accepted, Some(false), "bob declines");
-    assert_eq!(alice.s.decline_status, Some(200), "the first decline cancels the match");
-    assert!(matches!(bob.s.decline_status, Some(200 | 409)), "the second finds it already cancelled");
-    assert_eq!(alice.get_match()["status"], "cancelled");
-    for u in [alice, bob] {
+#[test]
+fn offers_whose_prices_do_not_cross_never_match() {
+    let Some(w) = world(PRICE) else { return };
+    let (mut alice, mut bob) = w.users(PRICE);
+    // Alice sells XBT for at least P + 1,000; Bob buys it for at most P.
+    alice.limit = PRICE + 1_000;
+    bob.limit = PRICE;
+    drive(&mut alice, &[Step::Offer("xbt_to_btc", XBT_AMT)]);
+    drive(&mut bob, &[Step::Offer("btc_to_xbt", BTC_AMT)]);
+    // Several watchtower ticks (1 s each, with a rematch pass) pass.
+    std::thread::sleep(Duration::from_secs(4));
+    for u in [&alice, &bob] {
         let o = u.json("GET", &format!("/swap/offers/{}", u.s.offer_id), None);
-        assert_eq!(o["status"], "open", "{}'s offer reopens", u.name);
+        assert_eq!(o["status"], "open", "{}'s offer stays open: {o}", u.name);
+        assert!(o["match_id"].is_null(), "{}: {o}", u.name);
     }
+    let q = alice.json("GET", "/swap/quote", None);
+    assert_eq!(q["best"]["xbt_to_btc"].as_u64(), Some(PRICE + 1_000), "{q}");
+    assert_eq!(q["best"]["btc_to_xbt"].as_u64(), Some(PRICE), "{q}");
+}
+
+#[test]
+fn crossing_offers_settle_at_the_resting_price() {
+    let Some(w) = world(PRICE) else { return };
+    let (mut alice, mut bob) = w.users(PRICE);
+    // Alice rests at P - 5,000; Bob, willing to pay up to P, takes it.
+    let resting = PRICE - 5_000;
+    alice.limit = resting;
+    bob.limit = PRICE;
+    let t = settle_both_ways(&w, &mut alice, &mut bob, (XBT_AMT, btc_for_xbt(XBT_AMT, resting)));
+    assert_eq!(t.price_sat_per_xbt, resting, "the resting offer's price");
 }
 
 #[test]
@@ -1185,12 +1317,12 @@ fn harness_stub_neoxex_price_reaches_the_edge_quote() {
     let edge = chainless_edge(&dir, &stub);
     let u = User::new("quoter", 1, &edge.url, PRICE);
     let q = u.json("GET", "/swap/quote", None);
-    assert!(q["price_sat_per_xbt"].as_u64().unwrap().abs_diff(PRICE) <= 1, "{q}");
+    assert!(q["reference_price"].as_u64().unwrap().abs_diff(PRICE) <= 1, "{q}");
     assert_eq!(q["fee_bps"], 50);
     // Settable: the edge sees the new price once its 10 s cache expires.
     stub.set_price(PRICE * 2);
     poll("the new price", 20, || {
-        let p = u.json("GET", "/swap/quote", None)["price_sat_per_xbt"].as_u64()?;
+        let p = u.json("GET", "/swap/quote", None)["reference_price"].as_u64()?;
         (p.abs_diff(PRICE * 2) <= 1).then_some(())
     });
 }
@@ -1219,20 +1351,31 @@ fn harness_driver_negotiates_identical_contracts_over_http() {
 }
 
 #[test]
-fn harness_driver_declines_a_skewed_price() {
+fn harness_driver_declines_terms_outside_its_limit() {
     let dir = TempDir::new("decline");
-    let stub = StubNeoxex::start(PRICE * 105 / 100);
+    let stub = StubNeoxex::start(PRICE);
     let edge = chainless_edge(&dir, &stub);
     let mut alice = User::new("alice", 0xa1, &edge.url, PRICE);
     let mut bob = User::new("bob", 0xb0, &edge.url, PRICE);
     drive(&mut alice, &[Step::Offer("xbt_to_btc", XBT_AMT)]);
-    drive(&mut bob, &[Step::Offer("btc_to_xbt", btc_for_xbt(XBT_AMT, PRICE * 105 / 100))]);
-    // Both see the match before either reviews it (a decline hides it from the offer).
+    drive(&mut bob, &[Step::Offer("btc_to_xbt", BTC_AMT)]);
+    // Both see the match before either reviews it (a decline hides it from the offers).
     drive(&mut alice, &[Step::AwaitMatch]);
     drive(&mut bob, &[Step::AwaitMatch]);
-    drive(&mut alice, &[Step::Review]);
+    // Alice's limit moved above the price she was matched at.
+    alice.limit = PRICE + 1_000;
+    // Bob accepts first: Alice's decline then cancels the match.
     drive(&mut bob, &[Step::Review]);
-    assert_declined_and_reopened(&alice, &bob);
+    drive(&mut alice, &[Step::Review]);
+    assert_eq!(alice.s.accepted, Some(false), "alice declines a price below her limit");
+    assert_eq!(bob.s.accepted, Some(true), "bob's limit still holds");
+    assert_eq!(alice.s.decline_status, Some(200), "the decline cancels the match");
+    assert_eq!(alice.get_match()["status"], "cancelled");
+    // The decliner's offer is off the book for good; the other side's reopens.
+    let o = alice.json("GET", &format!("/swap/offers/{}", alice.s.offer_id), None);
+    assert_eq!(o["status"], "cancelled", "alice's declined offer is cancelled");
+    let o = bob.json("GET", &format!("/swap/offers/{}", bob.s.offer_id), None);
+    assert_eq!(o["status"], "open", "bob's offer reopens");
 }
 
 #[test]

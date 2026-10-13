@@ -8,9 +8,10 @@ Implemented on Android in [`ui/theme/Theme.kt`](android/app/src/main/kotlin/com/
 (`Fx` tokens, `FxType` type scale) and [`ui/Glass.kt`](android/app/src/main/kotlin/com/fortis/wallet/ui/Glass.kt)
 (components). Names match across platforms.
 
-> **Not yet adopted by the web wallet or the site.** [`web/style.css`](web/style.css)
-> and [`site/`](site) still implement the previous "Glassy & layered" language
-> and castle-shield logo until their own restyles.
+> The site ([`site/style.css`](site/style.css)) uses it too, with JetBrains Mono
+> served from `site/fonts/`. **Not yet adopted by the web wallet:**
+> [`web/style.css`](web/style.css) still implements the previous "Glassy &
+> layered" language and castle-shield logo until its own restyle.
 
 ## Principles
 
@@ -92,11 +93,12 @@ ships in `android/app/src/main/assets/licenses/`.
   `dimOnSlate`.
 - **Field** — `panel` fill, 1 px `control`, `signal` when focused, `rSm`; label
   in `label` style above it; monospace fields in JetBrains Mono.
-- **Tabs** (nav bar, wallet tabs, segmented pickers) — folder tabs with `r`
-  top corners, 4 dp apart, on a 1 px `control` baseline. Selected: `panelRaised`
-  fill, `control` outline, 2 dp `signal` edge on top, `text` label, and open at
-  the bottom (no baseline under it). Others: `panel` fill, `line` outline,
-  `textDim` label.
+- **Tabs** (nav bar, wallet tabs, segmented pickers) — folder tabs with `rTab`
+  (10 dp) top corners, 4 dp apart, on a 1 px `control` baseline. Selected:
+  `panelRaised` fill, `control` outline, 2 dp `signal` edge on top, `text` label,
+  and open at the bottom (no baseline under it). Others are slate keys like the
+  secondary buttons: `ghostTop`→`ghostBottom` fill, `ghostLip` outline,
+  `dimOnSlate` label.
   Labels stay on one line, shrinking (down to 9 sp) when a translation is long.
 - **Sheets and dialogs** — `panel` container.
 - **Receive QR** — always on white, for scanners.

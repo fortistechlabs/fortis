@@ -64,7 +64,11 @@ impl ChainParams {
             bip44_coin_type: 0,
             // Wider than Bitcoin: BLAKE2b confirmations are slow and reorg-prone.
             htlc_participant_locktime_secs: 72 * 3600,
-            htlc_initiator_locktime_secs: 144 * 3600,
+            // The swap's XBT leg: 24 h past the BTC leg, the window in which
+            // the participant (or the watchtower) claims XBT once the BTC
+            // claim reveals the preimage. Was 144 h: a participant who never
+            // funds could tie up the initiator's XBT for six days, free.
+            htlc_initiator_locktime_secs: 48 * 3600,
             require_unified_sighash: true,
         }
     }

@@ -4,11 +4,62 @@ Fortis Wallet (Android). Versions are `versionName (versionCode)`.
 
 ## Unreleased
 
+- A swap the other side never locks its coins into no longer ties yours up for
+  two days: once the match is cancelled, their app signs your coins straight
+  back and they return within minutes — automatically, on both sides. (New
+  swaps only; needs the matching server update. If their phone is gone for
+  good, the refund at the 48-hour mark still happens on its own.)
+- Clearer cancelled swaps: you see when your coins come back, or that nothing
+  left your wallet; a running swap's status pulses green.
+- Swaps survive losing the phone: restore your recovery phrase (with both its
+  XBT and BTC wallets) and the app finds the swaps that still have your coins
+  locked, then refunds or completes them — also from Settings → Find my swaps.
+  Needs the matching server update.
 - Swap BTC ⇄ XBT with other fortis users — atomic, non-custodial, 0.5% per side;
   available once enabled on the server. Post an offer or take a private one by
   code; each side funds its own escrow and either side can always get its coins
   back after the timelock. Swaps keep going in the background (and after a
-  reboot), with notifications as they progress.
+  reboot), with notifications as they progress. Offers carry your own limit
+  price; NeoxEX is shown as a reference. Commission is 0.5% per side with a
+  400 sat minimum; swaps start at 2 000 sat.
+- Pick a swap from the list: the Swaps page shows the offers waiting for a
+  match, says for each whether you have enough to take it (all of it, or up to
+  how much), and lets you take all or part of one at its price.
+- Safer when you put the phone down: the app locks itself after a minute in
+  the background, asks for your fingerprint or password again before showing a
+  recovery phrase or sending, and keeps every screen out of screenshots and the
+  recent-apps preview. Swaps carry on while it's locked.
+- Swaps are tougher: a swap whose coins were locked in time is no longer lost
+  because the server didn't hear about it in time (it carries on, and nobody is
+  penalised); a stuck step is abandoned and retried instead of blocking the
+  swap; a cancelled match explains itself on screen; and the swap screen tells
+  you to keep your phone on and connected until it's done.
+- Every swap transaction is replay-protected: BTC fundings, claims and refunds
+  carry an OP_RETURN the XBT chain can't accept, and XBT ones are signed with
+  `SIGHASH_UNIFIED`, which Bitcoin rejects.
+- Swaps no longer rely on the fortis server alone for what is on chain: before
+  you fund or reveal the swap secret, the app checks the other side's coins with
+  an independent block explorer, and sends its claim through one as well.
+- The app and the web wallet are now fully translated into German, French,
+  Spanish, Portuguese (Brazil and Portugal) and Chinese (Simplified and
+  Traditional), swaps included.
+- A wallet someone floods with tiny "dust" payments still shows its whole
+  balance (it used to fail to load).
+- Swaps lock XBT for at most 2 days, not 6: if the other side never funds,
+  your XBT comes back after 48 hours.
+- Safer swaps and sends:
+  - a swap only counts as refunded or finished once an independent explorer
+    confirms it;
+  - a refund waiting to confirm follows the live network fee;
+  - the app refuses a service fee above 1% (or a minimum above 2,000 sat), and
+    swap terms for any network other than Bitcoin mainnet.
+- Your data stays on your phone: Android's device-to-device transfer no longer
+  copies it, copied addresses and keys are marked sensitive, and release builds
+  write nothing about your swaps to the system log.
+- Backend hardening: the swap server checks on chain that a side's escrow
+  really holds the agreed coins before it moves a swap on, relays each message
+  once and only in its checked form, limits each install to 10 open offers,
+  and keeps its crash log and caches to a fixed size on disk.
 - New look: a darker graphite design with much higher-contrast text, a
   terminal-style typeface throughout, Matrix-green highlights, real tabs, and
   buttons — including each wallet on the home screen — that look pressable and

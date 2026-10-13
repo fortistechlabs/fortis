@@ -1,6 +1,7 @@
 //! The swap watchtower: a background thread that keeps swaps moving while
 //! the phones are offline. Every [`TICK`] it
-//! - runs the matcher's deadline housekeeping ([`matcher::tick`]);
+//! - runs the matcher's deadline housekeeping ([`matcher::tick`]), then
+//!   pairs crossing offers left open together ([`matcher::rematch`]);
 //! - starts the participant's funding clock once the initiator's XBT HTLC
 //!   is really on chain (exact script and value) with enough confirmations;
 //! - closes matches whose funded HTLCs are all spent;
@@ -48,12 +49,19 @@ pub trait ChainReader: Send + Sync {
     /// The output if it exists and is unspent (mempool included: a spend
     /// still in the mempool counts); `None` if it is spent or unknown.
     fn txout(&self, chain: Chain, txid: &str, vout: u32) -> anyhow::Result<Option<TxOutInfo>>;
+    /// `txid`'s output `vout` as the transaction created it, spent or not
+    /// (mempool included); `None` if the transaction is unknown or has no
+    /// such output. `confirmations` is not read: always 0.
+    fn created_output(&self, chain: Chain, txid: &str, vout: u32) -> anyhow::Result<Option<TxOutInfo>>;
     /// The raw hex of the transaction spending `txid:vout`, if any. BTC only;
     /// always `Ok(None)` on XBT.
     fn spending_tx_hex(&self, chain: Chain, txid: &str, vout: u32) -> anyhow::Result<Option<String>>;
     /// Whether `txid:vout` is spent by a *confirmed* transaction. A spend
     /// still in the mempool can be evicted, so it doesn't count.
     fn spend_confirmed(&self, chain: Chain, txid: &str, vout: u32) -> anyhow::Result<bool>;
+    /// The block time (unix seconds) of the block that mined `txid`; `None`
+    /// while it is unconfirmed or unknown. BTC only; always `Ok(None)` on XBT.
+    fn tx_block_time(&self, chain: Chain, txid: &str) -> anyhow::Result<Option<u64>>;
     /// sat/vB for a 6-block target.
     fn feerate(&self, chain: Chain) -> anyhow::Result<u64>;
     /// Broadcasts `hex`; returns the txid.
@@ -62,11 +70,22 @@ pub trait ChainReader: Send + Sync {
     fn now(&self) -> u64;
 }
 
+/// The swap config [`matcher::rematch`] builds terms with.
+#[derive(Clone, Debug)]
+pub struct Matching {
+    pub max_btc_sat: u64,
+    /// Terms network: "bitcoin" | "regtest".
+    pub network: String,
+    pub fee_address: String,
+}
+
 /// Runs [`run_once`] every `tick` ([`TICK`] in production) forever, logging
 /// failures (panics included) without dying.
-pub fn spawn(store: Arc<Store>, r: Arc<dyn ChainReader>, tick: Duration) {
+pub fn spawn(store: Arc<Store>, matching: Matching, r: Arc<dyn ChainReader>, tick: Duration) {
     std::thread::spawn(move || loop {
-        let ok = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| run_once(&store, &*r)));
+        let ok = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            run_once(&store, &matching, &*r)
+        }));
         if ok.is_err() {
             eprintln!("fortis-edge: swap watchtower pass panicked; retrying next tick");
         }
@@ -74,11 +93,26 @@ pub fn spawn(store: Arc<Store>, r: Arc<dyn ChainReader>, tick: Duration) {
     });
 }
 
+/// Every watch job not yet done, once.
+fn run_jobs(store: &Store, r: &dyn ChainReader, now: u64) {
+    for job in store.watch_jobs().into_iter().filter(|j| !j.done) {
+        let what = format!("{} {} {}", job.match_id, job.chain.as_str(), job.kind.key_tag());
+        if let Err(e) = run_job(store, r, job, now) {
+            eprintln!("fortis-edge: watchtower: job {what}: {e:#}");
+        }
+    }
+}
+
 /// One watchtower pass. Errors are per match / per job: logged, then the
 /// next tick tries again.
-pub fn run_once(store: &Store, r: &dyn ChainReader) {
+pub fn run_once(store: &Store, matching: &Matching, r: &dyn ChainReader) {
     let now = r.now();
+    // Refunds and redeems first: they move coins against deadlines, so
+    // nothing else in the pass (matching takes the matching lock and reads
+    // every offer) may hold them up.
+    run_jobs(store, r, now);
     matcher::tick(store, now);
+    matcher::rematch(store, now, matching.max_btc_sat, &matching.network, &matching.fee_address);
     for m in store.all_matches() {
         let id = m.id.clone();
         let res = match m.status {
@@ -97,12 +131,7 @@ pub fn run_once(store: &Store, r: &dyn ChainReader) {
             eprintln!("fortis-edge: watchtower: closing match {id}: {e:#}");
         }
     }
-    for job in store.watch_jobs().into_iter().filter(|j| !j.done) {
-        let what = format!("{} {} {}", job.match_id, job.chain.as_str(), job.kind.key_tag());
-        if let Err(e) = run_job(store, r, job, now) {
-            eprintln!("fortis-edge: watchtower: job {what}: {e:#}");
-        }
-    }
+
     store.purge(now);
 }
 
@@ -150,6 +179,7 @@ fn start_participant_clock(
         cur.participant_fund_by = Some(fund_by);
         store.put_match(&cur)?;
     }
+    swap_event!(m.id, "XBT funding {txid}:{vout} confirmed ({} confs); the participant must fund BTC by {fund_by}", out.confirmations);
     relay::push(store, &m.id, "edge", json!({ "type": "deadline", "participant_fund_by": fund_by }))?;
     Ok(())
 }
@@ -178,6 +208,7 @@ fn close_if_spent(store: &Store, r: &dyn ChainReader, m: Match, now: u64) -> any
     }
     cur.status = MatchStatus::Closed;
     cur.closed_at = Some(now);
+    swap_event!(cur.id, "closed: every funded HTLC is spent");
     store.put_match(&cur)
 }
 
@@ -193,6 +224,7 @@ fn run_job(store: &Store, r: &dyn ChainReader, mut job: WatchJob, now: u64) -> a
         Some(out) => (out, false),
         None if r.spend_confirmed(job.chain, &txid, vout)? => {
             job.done = true;
+            swap_event!(job.match_id, "watch job {} on {} {txid}:{vout} done: its spend confirmed", kind_name(&job.kind), job.chain.as_str());
             return store.put_watch(&job);
         }
         None => match &job.sent_prevout {
@@ -248,11 +280,14 @@ fn run_job(store: &Store, r: &dyn ChainReader, mut job: WatchJob, now: u64) -> a
             };
             let spender = decode(&spender_hex)?;
             let other_op = OutPoint { txid: otxid.parse()?, vout: *ovout };
+            let Some(hashlock) = m.hashlock.as_deref().and_then(match_hashlock) else {
+                return Ok(()); // no hashlock relayed: nothing to open
+            };
             let Some(preimage) = spender
                 .input
                 .iter()
                 .find(|i| i.previous_output == other_op)
-                .and_then(|i| preimage_from_witness(&i.witness))
+                .and_then(|i| preimage_from_witness(&i.witness, &hashlock))
             else {
                 return Ok(()); // not spent yet, or refunded: no preimage
             };
@@ -296,12 +331,31 @@ fn run_job(store: &Store, r: &dyn ChainReader, mut job: WatchJob, now: u64) -> a
         u64::MAX
     });
     let tx = pick_variant(&txs, out.value_sat, feerate);
-    r.broadcast(job.chain, &hex::encode(bitcoin::consensus::serialize(tx)))?;
+    let sent = r.broadcast(job.chain, &hex::encode(bitcoin::consensus::serialize(tx)))?;
+    swap_event!(
+        job.match_id, "watchtower sent the {} of {} {txid}:{vout}: {sent}{}",
+        kind_name(&job.kind), job.chain.as_str(), if resend { " (re-sent)" } else { "" }
+    );
     if job.sent_prevout.is_none() {
         job.sent_prevout = Some((out.value_sat, out.scriptpubkey_hex));
         store.put_watch(&job)?;
     }
     Ok(())
+}
+
+/// A match's relayed hashlock (hex, byte order as `hex::encode` wrote it).
+fn match_hashlock(hex_str: &str) -> Option<sha256::Hash> {
+    let bytes: [u8; 32] = hex::decode(hex_str).ok()?.try_into().ok()?;
+    Some(sha256::Hash::from_byte_array(bytes))
+}
+
+/// A watch job's kind, for the journal.
+pub(super) fn kind_name(k: &WatchKind) -> &'static str {
+    match k {
+        WatchKind::Refund => "refund",
+        WatchKind::Redeem => "redeem",
+        WatchKind::WaitingRedeem { .. } => "presigned redeem",
+    }
 }
 
 /// For a BTC `Redeem` job whose HTLC is spent in the mempool by something
@@ -324,15 +378,15 @@ fn phone_sent_redeem(store: &Store, r: &dyn ChainReader, job: &WatchJob) -> anyh
         return Ok(None);
     };
     let htlc_op = OutPoint { txid: job.htlc.0.parse()?, vout: job.htlc.1 };
+    let Some(hashlock) = match_hashlock(hashlock) else {
+        return Ok(None);
+    };
     let revealed = decode(&spender_hex)?
         .input
         .iter()
         .find(|i| i.previous_output == htlc_op)
-        .and_then(|i| preimage_from_witness(&i.witness));
-    let Some(preimage) = revealed else {
-        return Ok(None);
-    };
-    if !hex::encode(sha256::Hash::hash(&preimage).to_byte_array()).eq_ignore_ascii_case(hashlock) {
+        .and_then(|i| preimage_from_witness(&i.witness, &hashlock));
+    if revealed.is_none() {
         return Ok(None);
     }
     Ok(Some(TxOutInfo {
@@ -546,6 +600,24 @@ impl ChainReader for UpstreamReader {
         }
     }
 
+    // Both indexes serve Esplora's `GET /tx/:txid`.
+    fn created_output(&self, chain: Chain, txid: &str, vout: u32) -> anyhow::Result<Option<TxOutInfo>> {
+        let Some(tx) = self.get_json(chain, &format!("tx/{txid}"))? else {
+            return Ok(None);
+        };
+        if tx["txid"].as_str() != Some(txid) {
+            bail!("{} tx {txid}: the upstream answered with another transaction", chain.as_str());
+        }
+        let Some(o) = tx["vout"].get(vout as usize) else {
+            return Ok(None);
+        };
+        Ok(Some(TxOutInfo {
+            value_sat: o["value"].as_u64().context("vout value")?,
+            scriptpubkey_hex: o["scriptpubkey"].as_str().context("vout scriptpubkey")?.to_string(),
+            confirmations: 0,
+        }))
+    }
+
     fn spend_confirmed(&self, chain: Chain, txid: &str, vout: u32) -> anyhow::Result<bool> {
         match chain {
             // fortis-index's confirmed-UTXO-set view: the output stays until
@@ -578,6 +650,25 @@ impl ChainReader for UpstreamReader {
             Got::Body(b) => Ok(Some(String::from_utf8_lossy(&b).trim().to_string())),
             Got::NotFound(_) => Ok(None),
         }
+    }
+
+    fn tx_block_time(&self, chain: Chain, txid: &str) -> anyhow::Result<Option<u64>> {
+        if chain == Chain::Xbt {
+            return Ok(None);
+        }
+        if let Some(rpc) = &self.btc_rpc {
+            // `blocktime` is absent while the tx is in the mempool.
+            if let Ok(v) = rpc.call("getrawtransaction", json!([txid, 1])) {
+                return Ok(v["blocktime"].as_u64());
+            }
+        }
+        let Some(tx) = self.get_json(Chain::Btc, &format!("tx/{txid}"))? else {
+            return Ok(None);
+        };
+        if tx["status"]["confirmed"].as_bool() != Some(true) {
+            return Ok(None);
+        }
+        Ok(Some(tx["status"]["block_time"].as_u64().context("block_time")?))
     }
 
     fn feerate(&self, chain: Chain) -> anyhow::Result<u64> {
@@ -628,7 +719,9 @@ mod tests {
     use bitcoin::{Transaction, TxIn, TxOut, Txid, Witness};
     use wallet_core::{network_params, HtlcContract, SwapKey, SwapTerms};
 
-    use crate::swap::store::{Match, MatchStatus, Store, WatchJob, WatchKind};
+    use crate::swap::store::{
+        Direction, Match, MatchStatus, Offer, OfferStatus, Store, WatchJob, WatchKind,
+    };
 
     const NOW: u64 = 1_900_000_000;
     const PREIMAGE: [u8; 32] = [7; 32];
@@ -670,6 +763,9 @@ mod tests {
         fn txout(&self, chain: Chain, txid: &str, vout: u32) -> anyhow::Result<Option<TxOutInfo>> {
             Ok(self.txouts.lock().unwrap().get(&(chain, txid.to_string(), vout)).cloned())
         }
+        fn created_output(&self, _: Chain, _: &str, _: u32) -> anyhow::Result<Option<TxOutInfo>> {
+            anyhow::bail!("not in these tests")
+        }
         fn spending_tx_hex(&self, chain: Chain, txid: &str, vout: u32) -> anyhow::Result<Option<String>> {
             if chain == Chain::Xbt {
                 return Ok(None);
@@ -678,6 +774,9 @@ mod tests {
         }
         fn spend_confirmed(&self, chain: Chain, txid: &str, vout: u32) -> anyhow::Result<bool> {
             Ok(self.confirmed_spends.lock().unwrap().contains(&(chain, txid.to_string(), vout)))
+        }
+        fn tx_block_time(&self, _chain: Chain, _txid: &str) -> anyhow::Result<Option<u64>> {
+            Ok(None)
         }
         fn feerate(&self, _chain: Chain) -> anyhow::Result<u64> {
             Ok(*self.feerate.lock().unwrap())
@@ -723,8 +822,9 @@ mod tests {
         serde_json::from_value(serde_json::json!({
             "match_id": "m1", "network": "bitcoin", "xbt_sat": 10_000_000, "btc_sat": 100_000,
             "price_sat_per_xbt": 1_000_000, "fee_bps": 50, "fee_address": "f",
-            "matched_at": NOW, "xbt_locktime": NOW + 144 * 3600, "btc_locktime": NOW + 24 * 3600,
-            "xbt_confs": 6, "btc_confs": 2, "accept_by": NOW + 120, "initiator_fund_by": NOW + 1920
+            "matched_at": NOW, "xbt_locktime": NOW + 48 * 3600, "btc_locktime": NOW + 24 * 3600,
+            "xbt_confs": 6, "btc_confs": 2, "accept_by": NOW + 120, "initiator_fund_by": NOW + 1920,
+            "contract_version": wallet_core::htlc::CURRENT_CONTRACT
         }))
         .unwrap()
     }
@@ -758,6 +858,9 @@ mod tests {
             closed_at: None,
             keys: (Some(keys_hex(&party(1))), Some(keys_hex(&party(3)))),
             hashlock: Some(hex::encode(sha256::Hash::hash(&PREIMAGE).to_byte_array())),
+            missed_participant_deadline: false,
+            release_txs: None,
+            release_sigs: None,
         }
     }
 
@@ -766,7 +869,7 @@ mod tests {
         let (_, xbt) = network_params(&t.network).unwrap();
         let (redeem, refund) = (party(3).xbt.pubkey(), party(1).xbt.pubkey());
         let h = sha256::Hash::hash(&PREIMAGE);
-        HtlcContract::build(&xbt, h, &redeem, &refund, t.xbt_locktime, Amount::from_sat(t.xbt_sat))
+        HtlcContract::build(&xbt, wallet_core::htlc::CURRENT_CONTRACT, h, &redeem, &refund, t.xbt_locktime, Amount::from_sat(t.xbt_sat))
     }
 
     fn btc_leg() -> HtlcContract {
@@ -774,7 +877,7 @@ mod tests {
         let (btc, _) = network_params(&t.network).unwrap();
         let (redeem, refund) = (party(1).btc.pubkey(), party(3).btc.pubkey());
         let h = sha256::Hash::hash(&PREIMAGE);
-        HtlcContract::build(&btc, h, &redeem, &refund, t.btc_locktime, Amount::from_sat(t.btc_sat))
+        HtlcContract::build(&btc, wallet_core::htlc::CURRENT_CONTRACT, h, &redeem, &refund, t.btc_locktime, Amount::from_sat(t.btc_sat))
     }
 
     fn info(c: &HtlcContract, confirmations: u32) -> TxOutInfo {
@@ -817,6 +920,42 @@ mod tests {
         jobs.into_iter().next().unwrap()
     }
 
+    fn matching() -> Matching {
+        Matching { max_btc_sat: 1_000_000, network: "bitcoin".into(), fee_address: "bc1qfee".into() }
+    }
+
+    fn open_offer(id: &str, direction: Direction, amount_sat: u64, price: u64, created_at: u64) -> Offer {
+        Offer {
+            id: id.into(),
+            token: format!("tok-{id}"),
+            secret_hash: [1; 32],
+            direction,
+            amount_sat,
+            price_sat_per_xbt: price,
+            created_at,
+            expires_at: created_at + 86_400,
+            private: false,
+            share_code: None,
+            status: OfferStatus::Open,
+            match_id: None,
+            client_id: None,
+            recovery_tag: None,
+        }
+    }
+
+    #[test]
+    fn a_pass_rematches_crossing_open_offers() {
+        let t = temp_store("rematch");
+        let s = &t.store;
+        s.put_offer(&open_offer("a", Direction::XbtToBtc, 20_000_000, 990_000, NOW - 20)).unwrap();
+        s.put_offer(&open_offer("b", Direction::BtcToXbt, 200_000, 1_000_000, NOW - 10)).unwrap();
+        run_once(s, &matching(), &chain_at(NOW));
+        let ms = s.all_matches();
+        assert_eq!(ms.len(), 1);
+        assert_eq!(ms[0].terms.price_sat_per_xbt, 990_000);
+        assert_eq!(ms[0].terms.fee_address, "bc1qfee");
+    }
+
     fn chain_at(now: u64) -> FakeChain {
         let c = FakeChain::default();
         c.set_now(now);
@@ -837,17 +976,17 @@ mod tests {
 
         let r = chain_at(not_before as u64 - 1);
         r.set_txout(Chain::Xbt, &xf, Some(info(&c, 10)));
-        run_once(s, &r);
+        run_once(s, &matching(), &r);
         assert!(r.broadcasts().is_empty(), "too early");
         assert!(!only_job(s).done);
 
         r.set_now(not_before as u64);
-        run_once(s, &r);
+        run_once(s, &matching(), &r);
         assert_eq!(r.broadcasts(), [refund]);
         assert!(!only_job(s).done, "still unspent: keep watching");
 
         r.spend_confirms(Chain::Xbt, &xf);
-        run_once(s, &r);
+        run_once(s, &matching(), &r);
         assert_eq!(r.broadcasts().len(), 1, "nothing more once spent");
         assert!(only_job(s).done);
     }
@@ -866,7 +1005,7 @@ mod tests {
 
         let r = chain_at(NOW + 200 * 3600);
         r.spend_confirms(Chain::Xbt, &xf);
-        run_once(s, &r);
+        run_once(s, &matching(), &r);
         assert!(r.broadcasts().is_empty());
         assert!(only_job(s).done);
     }
@@ -892,14 +1031,14 @@ mod tests {
 
         let r = chain_at(NOW + 3 * 3600);
         r.set_txout(Chain::Xbt, &xf, Some(info(&xc, 8)));
-        run_once(s, &r);
+        run_once(s, &matching(), &r);
         assert!(r.broadcasts().is_empty(), "no preimage on chain yet");
 
         // The initiator redeems the BTC HTLC, revealing the preimage.
         let bc = btc_leg();
         let btc_redeem = signed_redeem(&bc, op(&bf), &party(1).btc);
         r.spenders.lock().unwrap().insert(bf.clone(), tx_hex(&btc_redeem));
-        run_once(s, &r);
+        run_once(s, &matching(), &r);
         let sent = r.broadcasts();
         assert_eq!(sent.len(), 1);
         let tx = decode(&sent[0]);
@@ -913,7 +1052,7 @@ mod tests {
         assert!(!only_job(s).done);
 
         r.spend_confirms(Chain::Xbt, &xf);
-        run_once(s, &r);
+        run_once(s, &matching(), &r);
         assert!(only_job(s).done);
     }
 
@@ -940,7 +1079,7 @@ mod tests {
         r.set_txout(Chain::Xbt, &xf, Some(info(&xc, 8)));
         let btc_redeem = signed_redeem(&btc_leg(), op(&bf), &party(1).btc);
         r.spenders.lock().unwrap().insert(bf, tx_hex(&btc_redeem));
-        run_once(s, &r);
+        run_once(s, &matching(), &r);
         let sent = r.broadcasts();
         assert_eq!(sent.len(), 1);
         assert_eq!(decode(&sent[0]).output, signed.output);
@@ -964,7 +1103,7 @@ mod tests {
         r.set_txout(Chain::Xbt, &xf, Some(info(&xc, 8)));
         let refund = signed_refund(&btc_leg(), op(&bf), &party(3).btc, 1_000);
         r.spenders.lock().unwrap().insert(bf, tx_hex(&refund));
-        run_once(s, &r);
+        run_once(s, &matching(), &r);
         assert!(r.broadcasts().is_empty());
     }
 
@@ -981,15 +1120,15 @@ mod tests {
         let r = chain_at(NOW + 3 * 3600);
         r.set_txout(Chain::Xbt, &xf, Some(info(&xbt_leg(), 8)));
         r.set_txout(Chain::Btc, &bf, Some(info(&bc, 1)));
-        run_once(s, &r);
+        run_once(s, &matching(), &r);
         assert!(r.broadcasts().is_empty(), "btc_confs is 2");
 
         r.set_txout(Chain::Btc, &bf, Some(info(&bc, 2)));
-        run_once(s, &r);
+        run_once(s, &matching(), &r);
         assert_eq!(r.broadcasts(), [redeem]);
 
         r.spend_confirms(Chain::Btc, &bf);
-        run_once(s, &r);
+        run_once(s, &matching(), &r);
         assert!(only_job(s).done);
     }
 
@@ -1005,18 +1144,18 @@ mod tests {
         s.put_watch(&job(Chain::Xbt, WatchKind::Refund, &xf, not_before, vec![refund.clone()])).unwrap();
         let r = chain_at(not_before as u64);
         r.set_txout(Chain::Xbt, &xf, Some(info(&c, 10)));
-        run_once(s, &r);
+        run_once(s, &matching(), &r);
         assert_eq!(r.broadcasts(), std::slice::from_ref(&refund));
 
         // Spent in the mempool only (our refund, which may yet be evicted):
         // not done, and the refund goes out again.
         r.set_txout(Chain::Xbt, &xf, None);
-        run_once(s, &r);
+        run_once(s, &matching(), &r);
         assert!(!only_job(s).done, "a mempool spend is not final");
         assert_eq!(r.broadcasts(), [refund.clone(), refund.clone()]);
 
         r.spend_confirms(Chain::Xbt, &xf);
-        run_once(s, &r);
+        run_once(s, &matching(), &r);
         assert!(only_job(s).done);
         assert_eq!(r.broadcasts().len(), 2, "nothing more once the spend confirms");
     }
@@ -1033,17 +1172,17 @@ mod tests {
         let r = chain_at(NOW + 3 * 3600);
         r.set_txout(Chain::Xbt, &xf, Some(info(&xbt_leg(), 8)));
         r.set_txout(Chain::Btc, &bf, Some(info(&bc, 1)));
-        run_once(s, &r);
+        run_once(s, &matching(), &r);
         assert!(r.broadcasts().is_empty(), "btc_confs is 2");
 
         // Someone else's spend, in the mempool: nothing of ours to re-send.
         r.set_txout(Chain::Btc, &bf, None);
-        run_once(s, &r);
+        run_once(s, &matching(), &r);
         assert!(r.broadcasts().is_empty());
         assert!(!only_job(s).done);
 
         r.spend_confirms(Chain::Btc, &bf);
-        run_once(s, &r);
+        run_once(s, &matching(), &r);
         assert!(r.broadcasts().is_empty());
         assert!(only_job(s).done);
     }
@@ -1074,7 +1213,7 @@ mod tests {
         let r = chain_at(NOW + 3 * 3600);
         r.set_txout(Chain::Xbt, &xf, Some(info(&xbt_leg(), 8)));
         r.spenders.lock().unwrap().insert(bf.clone(), tx_hex(&low));
-        run_once(s, &r);
+        run_once(s, &matching(), &r);
         assert_eq!(
             only_job(s).sent_prevout,
             Some((bc.value.to_sat(), hex::encode(bc.script_pubkey.as_bytes()))),
@@ -1083,13 +1222,13 @@ mod tests {
 
         // Fees rise: the dearer variant replaces it.
         *r.feerate.lock().unwrap() = 100;
-        run_once(s, &r);
+        run_once(s, &matching(), &r);
         let sent: Vec<Transaction> = r.broadcasts().iter().map(|h| decode(h)).collect();
         assert_eq!(sent.last().unwrap().output, high.output, "re-sent at the current feerate");
         assert!(!only_job(s).done);
 
         r.spend_confirms(Chain::Btc, &bf);
-        run_once(s, &r);
+        run_once(s, &matching(), &r);
         assert!(only_job(s).done);
     }
 
@@ -1107,7 +1246,7 @@ mod tests {
         let r = chain_at(NOW + 30 * 3600);
         let refund = signed_refund(&bc, op(&bf), &party(3).btc, 1_000);
         r.spenders.lock().unwrap().insert(bf, tx_hex(&refund));
-        run_once(s, &r);
+        run_once(s, &matching(), &r);
         assert!(r.broadcasts().is_empty());
         assert_eq!(only_job(s).sent_prevout, None);
     }
@@ -1135,11 +1274,11 @@ mod tests {
         r.spenders.lock().unwrap().insert(bf, tx_hex(&btc_redeem));
 
         // Fees are low: the cheap variant.
-        run_once(s, &r);
+        run_once(s, &matching(), &r);
         // Fees rise while it sits in the mempool: the dearer one replaces it.
         r.set_txout(Chain::Xbt, &xf, None);
         *r.feerate.lock().unwrap() = 100;
-        run_once(s, &r);
+        run_once(s, &matching(), &r);
 
         let sent: Vec<Transaction> = r.broadcasts().iter().map(|h| decode(h)).collect();
         assert_eq!(sent.len(), 2);
@@ -1153,7 +1292,7 @@ mod tests {
         }
         assert!(!only_job(s).done);
         r.spend_confirms(Chain::Xbt, &xf);
-        run_once(s, &r);
+        run_once(s, &matching(), &r);
         assert!(only_job(s).done);
     }
 
@@ -1239,12 +1378,12 @@ mod tests {
         let r = chain_at(now);
 
         r.set_txout(Chain::Xbt, &xf, Some(info(&c, 5)));
-        run_once(s, &r);
+        run_once(s, &matching(), &r);
         assert_eq!(s.get_match("m1").unwrap().participant_fund_by, None);
         assert!(s.msgs_after("m1", 0).is_empty());
 
         r.set_txout(Chain::Xbt, &xf, Some(info(&c, 6)));
-        run_once(s, &r);
+        run_once(s, &matching(), &r);
         let m = s.get_match("m1").unwrap();
         assert_eq!(m.participant_fund_by, Some((now + 7200) as u32));
         assert_eq!(m.status, MatchStatus::InitiatorFunded);
@@ -1255,7 +1394,7 @@ mod tests {
 
         // Set once: a later tick neither moves it nor relays again.
         r.set_now(now + 600);
-        run_once(s, &r);
+        run_once(s, &matching(), &r);
         assert_eq!(s.get_match("m1").unwrap().participant_fund_by, Some((now + 7200) as u32));
         assert_eq!(s.msgs_after("m1", 0).len(), 1);
     }
@@ -1269,7 +1408,7 @@ mod tests {
         let now = NOW + 11 * 3600;
         let r = chain_at(now);
         r.set_txout(Chain::Xbt, &xf, Some(info(&xbt_leg(), 6)));
-        run_once(s, &r);
+        run_once(s, &matching(), &r);
         assert_eq!(s.get_match("m1").unwrap().participant_fund_by, Some(terms().btc_locktime - 12 * 3600));
     }
 
@@ -1285,11 +1424,11 @@ mod tests {
         s.put_match(&m).unwrap();
         let r = chain_at(NOW + 60);
         r.set_txout(Chain::Xbt, &xf, Some(info(&xbt_leg(), 6)));
-        run_once(s, &r);
+        run_once(s, &matching(), &r);
         assert_eq!(s.get_match("m1").unwrap().participant_fund_by, Some((NOW + 300) as u32));
         // Still the participant's turn on the next tick.
         r.set_now(NOW + 61);
-        run_once(s, &r);
+        run_once(s, &matching(), &r);
         assert_eq!(s.get_match("m1").unwrap().status, MatchStatus::InitiatorFunded);
     }
 
@@ -1304,7 +1443,7 @@ mod tests {
         store.put_watch(&job(Chain::Xbt, WatchKind::Refund, &xf, 0, vec![refund])).unwrap();
         let r = Arc::new(chain_at(NOW));
         r.set_txout(Chain::Xbt, &xf, Some(info(&c, 6)));
-        spawn(store, r.clone(), Duration::from_millis(50));
+        spawn(store, matching(), r.clone(), Duration::from_millis(50));
         std::thread::sleep(Duration::from_millis(400));
         let sent = r.broadcasts().len();
         assert!(sent >= 3, "a 50 ms tick resends the unspent refund every pass: {sent}");
@@ -1336,7 +1475,7 @@ mod tests {
             s.put_match(&a_match(MatchStatus::InitiatorFunded, Some(xf.clone()), None)).unwrap();
             let r = chain_at(NOW + 3600);
             r.set_txout(Chain::Xbt, &xf, Some(bad));
-            run_once(s, &r);
+            run_once(s, &matching(), &r);
             assert_eq!(s.get_match("m1").unwrap().participant_fund_by, None, "{label}");
             assert!(s.msgs_after("m1", 0).is_empty(), "{label}");
         }
@@ -1350,7 +1489,7 @@ mod tests {
         s.put_match(&m).unwrap();
         let r = chain_at(NOW + 3600);
         r.set_txout(Chain::Xbt, &xf, Some(info(&c, 6)));
-        run_once(s, &r);
+        run_once(s, &matching(), &r);
         assert_eq!(s.get_match("m1").unwrap().participant_fund_by, None);
     }
 
@@ -1363,15 +1502,15 @@ mod tests {
         let r = chain_at(NOW + 3 * 3600);
         r.set_txout(Chain::Xbt, &xf, Some(info(&xbt_leg(), 8)));
         r.set_txout(Chain::Btc, &bf, Some(info(&btc_leg(), 3)));
-        run_once(s, &r);
+        run_once(s, &matching(), &r);
         assert_eq!(s.get_match("m1").unwrap().status, MatchStatus::ParticipantFunded);
 
         r.set_txout(Chain::Btc, &bf, None);
-        run_once(s, &r);
+        run_once(s, &matching(), &r);
         assert_eq!(s.get_match("m1").unwrap().status, MatchStatus::ParticipantFunded, "one leg left");
 
         r.set_txout(Chain::Xbt, &xf, None);
-        run_once(s, &r);
+        run_once(s, &matching(), &r);
         let m = s.get_match("m1").unwrap();
         assert_eq!(m.status, MatchStatus::Closed);
         assert_eq!(m.closed_at, Some(NOW + 3 * 3600));

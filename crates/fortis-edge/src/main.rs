@@ -17,6 +17,7 @@ mod metrics;
 mod price;
 mod pricing;
 mod proxy;
+mod rdb;
 mod reconcile;
 mod scan;
 mod scan_cache;
@@ -37,8 +38,26 @@ pub(crate) mod test_tmp {
     /// it, so the store is closed first.
     pub struct TempDir(PathBuf);
 
+    /// Remove `fortis-edge-…-{pid}-{n}` dirs whose process is gone: what a
+    /// crashed or killed run left behind (a full /tmp quota makes RocksDB fail).
+    pub fn sweep_dead() {
+        let Ok(entries) = std::fs::read_dir(std::env::temp_dir()) else { return };
+        for e in entries.flatten() {
+            let name = e.file_name().to_string_lossy().into_owned();
+            let Some(rest) = name.strip_prefix("fortis-edge-") else { continue };
+            let mut parts = rest.rsplitn(3, '-');
+            let (Some(n), Some(pid), Some(_label)) = (parts.next(), parts.next(), parts.next()) else { continue };
+            let (Ok(_), Ok(pid)) = (n.parse::<u64>(), pid.parse::<u32>()) else { continue };
+            if pid != std::process::id() && !Path::new(&format!("/proc/{pid}")).exists() {
+                let _ = std::fs::remove_dir_all(e.path());
+            }
+        }
+    }
+
     impl TempDir {
         pub fn new(label: &str) -> TempDir {
+            static SWEEP: std::sync::Once = std::sync::Once::new();
+            SWEEP.call_once(sweep_dead);
             static NEXT: AtomicU64 = AtomicU64::new(0);
             TempDir(std::env::temp_dir().join(format!(
                 "fortis-edge-{label}-{}-{}",
@@ -59,6 +78,23 @@ pub(crate) mod test_tmp {
         fn drop(&mut self) {
             let _ = std::fs::remove_dir_all(&self.0);
         }
+    }
+
+    /// A run that crashed (or was killed) never dropped its dirs; the next
+    /// run removes them — dirs of processes that are gone, never a live one's.
+    #[test]
+    fn dirs_left_by_a_dead_run_are_swept() {
+        let base = std::env::temp_dir();
+        // 2^22 = the largest pid_max Linux allows: pids are always below it
+        let dead = base.join("fortis-edge-sweep-test-4194304-0");
+        let live = base.join(format!("fortis-edge-sweep-test-{}-999", std::process::id()));
+        for d in [&dead, &live] {
+            std::fs::create_dir_all(d.join("db")).unwrap();
+        }
+        sweep_dead();
+        assert!(!dead.exists(), "a dead run's dir is removed");
+        assert!(live.exists(), "this run's own dir is kept");
+        std::fs::remove_dir_all(&live).unwrap();
     }
 
     #[test]
@@ -222,8 +258,7 @@ struct Args {
     /// `POST /register` calls allowed per hour, per client IP.
     #[arg(long, default_value_t = 10)]
     register_per_hour: u32,
-    /// Max cached responses (the fast in-memory layer; the RocksDB directory
-    /// backing it has no such cap).
+    /// Max cached responses, in memory and in the RocksDB directory backing it.
     #[arg(long, default_value_t = 4096)]
     cache_entries: usize,
     /// RocksDB directory the response cache persists to, so a restart doesn't
@@ -254,8 +289,9 @@ struct Args {
     /// entirely — no outbound connection is made.
     #[arg(long)]
     btc_mempool_ws_url: Option<String>,
-    /// HTTP worker threads.
-    #[arg(long, default_value_t = 4)]
+    /// HTTP worker threads. Long-polls may hold half of them, and an
+    /// upstream call can take seconds: threads are cheap, waiting isn't.
+    #[arg(long, default_value_t = 32)]
     workers: usize,
     /// Append `POST /crash` reports to this file as NDJSON (one JSON object per
     /// line). Unset → `/crash` returns 404.
@@ -297,9 +333,9 @@ struct Args {
     /// phones reject terms with any other value.
     #[arg(long, default_value_t = 50)]
     swap_fee_bps: u32,
-    /// Largest BTC leg of one swap, satoshis.
-    #[arg(long, default_value_t = 1_000_000)]
-    swap_max_sat: u64,
+    /// Largest BTC leg of one swap, satoshis. Unset = no maximum.
+    #[arg(long)]
+    swap_max_sat: Option<u64>,
     /// NeoxEX base URL, the swap price source.
     #[arg(long, default_value = "https://neoxa.exchange")]
     neoxex_url: String,
@@ -672,9 +708,9 @@ fn run() -> Result<()> {
         "  swaps          {}",
         if state.swap.is_some() {
             format!(
-                "enabled ({}, max {} sat, neoxex {})",
+                "enabled ({}, max {}, neoxex {})",
                 swap_db_dir(&args).display(),
-                args.swap_max_sat,
+                args.swap_max_sat.map_or("none".to_string(), |m| format!("{m} sat")),
                 args.neoxex_url
             )
         } else {
@@ -684,7 +720,7 @@ fn run() -> Result<()> {
 
     if let (Some(sw), Some(reader)) = (&state.swap, swap_reader) {
         let tick = std::time::Duration::from_secs(args.swap_tick_secs.max(1));
-        swap::watchtower::spawn(sw.store(), reader, tick);
+        swap::watchtower::spawn(sw.store(), sw.matching(), reader, tick);
         eprintln!("  swap watchtower every {}s", tick.as_secs());
         if args.swap_clock_offset_secs > 0 {
             eprintln!("  swap watchtower clock +{}s (test only)", args.swap_clock_offset_secs);
@@ -739,10 +775,29 @@ fn build_swap(args: &Args, token_key: &[u8]) -> Result<swap::Swap> {
             wallet_core::swap_terms::SWAP_FEE_BPS
         ));
     }
-    if args.swap_max_sat < wallet_core::swap_terms::MIN_BTC_LEG_SAT {
+    if args.swap_max_sat.is_some_and(|m| m < wallet_core::swap_terms::MIN_BTC_LEG_SAT) {
         return Err(anyhow!(
             "--swap-max-sat must be at least the {} sat minimum swap",
             wallet_core::swap_terms::MIN_BTC_LEG_SAT
+        ));
+    }
+    if args.service_fee_floor_sat > wallet_core::swap_terms::SWAP_FEE_FLOOR_SAT {
+        return Err(anyhow!(
+            "--service-fee-floor-sat must be at most {floor} with --swap: a swap funding pays the {floor} sat minimum commission and would be refused (402)",
+            floor = wallet_core::swap_terms::SWAP_FEE_FLOOR_SAT
+        ));
+    }
+    let fee_spk = fee_address
+        .parse::<bitcoin::Address<bitcoin::address::NetworkUnchecked>>()
+        .ok()
+        .and_then(|a| a.require_network(args.network).ok())
+        .ok_or_else(|| anyhow!("--service-fee-address is not a valid {network} address"))?
+        .script_pubkey();
+    let dust = fee_spk.minimal_non_dust().to_sat();
+    if dust > wallet_core::swap_terms::SWAP_FEE_FLOOR_SAT {
+        return Err(anyhow!(
+            "--service-fee-address must be a SegWit address with --swap: its dust limit ({dust} sat) is above the {floor} sat minimum commission",
+            floor = wallet_core::swap_terms::SWAP_FEE_FLOOR_SAT
         ));
     }
     let store = swap::store::Store::open(&swap_db_dir(args))?;
@@ -768,40 +823,74 @@ fn err(status: u16, msg: &str) -> Reply {
     Reply::Json(status, json!({ "error": msg }))
 }
 
-fn client_ip(req: &Request, trust_xff: bool) -> String {
-    if trust_xff {
-        if let Some(xff) = req
-            .headers()
-            .iter()
-            .find(|h| h.field.equiv("X-Forwarded-For"))
-        {
-            if let Some(first) = xff.value.as_str().split(',').next() {
-                let ip = first.trim();
-                if !ip.is_empty() {
-                    return ip.to_string();
-                }
-            }
-        }
-    }
-    req.remote_addr()
-        .map(|a| a.ip().to_string())
-        .unwrap_or_else(|| "unknown".into())
+/// A failure behind the edge (an upstream, the node, Haskoin, the chain
+/// reader): logged in full, answered as "`what` is unavailable" — the detail
+/// names internal addresses and never reaches a client.
+pub(crate) fn unavailable(what: &str, e: impl std::fmt::Display) -> Reply {
+    eprintln!("fortis-edge: {what}: {e:#}");
+    err(502, &format!("{what} is unavailable"))
 }
 
-fn bearer(req: &Request) -> Option<String> {
-    if let Some(h) = req.headers().iter().find(|h| h.field.equiv("Authorization")) {
-        if let Some(t) = h.value.as_str().strip_prefix("Bearer ") {
-            return Some(t.to_string());
+fn client_ip(req: &Request, trust_xff: bool) -> String {
+    let header = |name: &'static str| {
+        req.headers()
+            .iter()
+            .find(|h| h.field.equiv(name))
+            .map(|h| h.value.as_str().to_string())
+    };
+    client_ip_from(
+        req.remote_addr().map(|a| a.ip()),
+        header("CF-Connecting-IP").as_deref(),
+        header("X-Forwarded-For").as_deref(),
+        trust_xff,
+    )
+}
+
+/// The client's IP for rate limits and `/register`, as a limiter key.
+///
+/// Forwarding headers are believed only with `--trust-forwarded-for` *and* a
+/// peer on this machine (cloudflared): then Cloudflare's `CF-Connecting-IP`
+/// (Cloudflare overwrites it; clients can't set it), else the **last**
+/// `X-Forwarded-For` entry — the one the proxy appended. Never the first: the
+/// client writes that, and choosing it let anyone pick their own IP and slip
+/// every per-IP limit. Values must parse as an IP. An IPv6 client counts as its
+/// /64, which one user typically holds.
+fn client_ip_from(
+    peer: Option<std::net::IpAddr>,
+    cf_connecting_ip: Option<&str>,
+    x_forwarded_for: Option<&str>,
+    trust_xff: bool,
+) -> String {
+    use std::net::IpAddr;
+    let key = |ip: IpAddr| match ip {
+        IpAddr::V4(v4) => v4.to_string(),
+        IpAddr::V6(v6) => match v6.to_ipv4_mapped() {
+            Some(v4) => v4.to_string(),
+            None => {
+                let s = v6.segments();
+                format!("{}/64", std::net::Ipv6Addr::new(s[0], s[1], s[2], s[3], 0, 0, 0, 0))
+            }
+        },
+    };
+    let Some(peer) = peer else {
+        return "unknown".into();
+    };
+    if trust_xff && peer.is_loopback() {
+        let forwarded = cf_connecting_ip
+            .and_then(|v| v.trim().parse::<IpAddr>().ok())
+            .or_else(|| x_forwarded_for?.rsplit(',').next()?.trim().parse::<IpAddr>().ok());
+        if let Some(ip) = forwarded {
+            return key(ip);
         }
     }
-    // fallback: ?token= in the query
-    let url = req.url();
-    let (_, query) = url.split_once('?')?;
-    query
-        .split('&')
-        .filter_map(|kv| kv.split_once('='))
-        .find(|(k, _)| *k == "token")
-        .map(|(_, v)| v.to_string())
+    key(peer)
+}
+
+/// The install token, from `Authorization: Bearer` only: one in the URL
+/// would end up in logs and cache keys.
+fn bearer(req: &Request) -> Option<String> {
+    let h = req.headers().iter().find(|h| h.field.equiv("Authorization"))?;
+    h.value.as_str().strip_prefix("Bearer ").map(str::to_string)
 }
 
 fn handle(req: &mut Request, st: &State) -> Reply {
@@ -897,21 +986,69 @@ fn crash_report(req: &mut Request, st: &State) -> Reply {
         .unwrap_or(0);
     let line = json!({ "ts": ts, "ip": ip, "report": report });
 
-    let ok = std::fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(path)
-        .and_then(|mut f| writeln!(f, "{line}"))
-        .is_ok();
-    if !ok {
+    if let Err(e) = append_capped(path, &line.to_string(), CRASH_LOG_CAP) {
+        eprintln!("crash log {}: {e}", path.display());
         return err(500, "could not record");
     }
     Metrics::inc(&st.metrics.crash_reports);
     Reply::Empty(204)
 }
 
+/// The crash log's size cap: past it the log moves to `<path>.1` (replacing
+/// an older one) and starts afresh, so it never takes much more than twice this.
+const CRASH_LOG_CAP: u64 = 10 * 1024 * 1024;
+
+/// Appends `line` and a newline to `path` (created owner-only: lines carry
+/// client IPs) in one write, first moving the log to `<path>.1` when the line
+/// would take it past `cap`. Serialised in-process, so concurrent reports
+/// never interleave or race a rotation.
+fn append_capped(path: &std::path::Path, line: &str, cap: u64) -> std::io::Result<()> {
+    use std::os::unix::fs::OpenOptionsExt;
+    static LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    let _g = LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let mut bytes = Vec::with_capacity(line.len() + 1);
+    bytes.extend_from_slice(line.as_bytes());
+    bytes.push(b'\n');
+    let len = match std::fs::metadata(path) {
+        Ok(m) => m.len(),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => 0,
+        Err(e) => return Err(e),
+    };
+    if len > 0 && len + bytes.len() as u64 > cap {
+        let mut older = path.as_os_str().to_owned();
+        older.push(".1");
+        std::fs::rename(path, older)?;
+    }
+    std::fs::OpenOptions::new().create(true).append(true).mode(0o600).open(path)?.write_all(&bytes)
+}
+
+/// Whether `rest` (the path after `/{chain}/`) may go upstream with `method`.
+///
+/// Refused: any empty, `.` or `..` segment, `%` (no encoded forms), backslashes
+/// and control characters — the upstream's URL handling would normalise them,
+/// so `POST /btc/./tx` used to reach the node's `/tx` while the service-fee
+/// check (which matches `rest == "tx"` exactly) never ran, and `..` could reach
+/// other upstream routes. And the only POSTs are `tx` (broadcast, fee-checked)
+/// and `scan`.
+fn upstream_path_ok(method: &Method, rest: &str) -> Result<(), Reply> {
+    let bad_segment = |seg: &str| seg.is_empty() || seg == "." || seg == "..";
+    if !rest.is_empty()
+        && (rest.split('/').any(bad_segment)
+            || rest.chars().any(|c| c == '%' || c == '\\' || c.is_control()))
+    {
+        return Err(err(400, "bad path"));
+    }
+    if method == &Method::Post && rest != "tx" && rest != "scan" {
+        return Err(err(405, "method not allowed"));
+    }
+    Ok(())
+}
+
 fn proxy_chain(req: &mut Request, st: &State, method: &Method, path: &str, query: &str) -> Reply {
     let (chain, rest) = path[1..].split_once('/').unwrap_or((&path[1..], ""));
+    if let Err(r) = upstream_path_ok(method, rest) {
+        return r;
+    }
 
     let tok = bearer(req);
     let token_ok = || matches!(&tok, Some(t) if token::verify(&st.secret, t));
@@ -1064,7 +1201,7 @@ fn proxy_chain(req: &mut Request, st: &State, method: &Method, path: &str, query
             }
             Err(e) => {
                 Metrics::inc(&st.metrics.upstream_errors);
-                err(502, &format!("haskoin: {e}"))
+                unavailable("the BTC history service", e)
             }
         };
     }
@@ -1150,8 +1287,10 @@ fn proxy_chain(req: &mut Request, st: &State, method: &Method, path: &str, query
                     return Reply::Raw(200, "text/plain".into(), txid.to_string().into_bytes())
                 }
                 Err(e) => {
-                    if rpc.call("getblockcount", json!([])).is_ok() {
-                        // node is up — it genuinely rejected the transaction
+                    // An answer from the node (a rejection) is passed on; the
+                    // node unreachable — typed, its text names the node's
+                    // address — falls through to the upstream instead.
+                    if !e.chain().any(|c| c.is::<fortis_node::Unreachable>()) {
                         Metrics::inc(&st.metrics.upstream_errors);
                         return err(400, &format!("node rejected the transaction: {e:#}"));
                     }
@@ -1330,7 +1469,7 @@ fn proxy_chain(req: &mut Request, st: &State, method: &Method, path: &str, query
                 }
             }
             Metrics::inc(&st.metrics.upstream_errors);
-            err(502, &format!("upstream {chain}: {e}"))
+            unavailable(&format!("the {chain} service"), e)
         }
     }
 }
@@ -1394,7 +1533,7 @@ fn scan_chain(req: &mut Request, st: &State, chain: &str, tok: Option<&str>, aut
             Ok(r) => Reply::Raw(r.status, r.content_type, r.body),
             Err(e) => {
                 Metrics::inc(&st.metrics.upstream_errors);
-                err(502, &format!("upstream {chain}: {e}"))
+                unavailable(&format!("the {chain} service"), e)
             }
         };
     }
@@ -1473,7 +1612,7 @@ fn scan_chain(req: &mut Request, st: &State, chain: &str, tok: Option<&str>, aut
                 }
             }
             if used.is_empty() {
-                return err(502, &format!("haskoin: {e}"));
+                return unavailable("the BTC history service", e);
             }
             // Same dedup + "pending first, then confirmed newest-first, cut
             // to the requested depth" ordering the healthy path uses — this
@@ -1512,6 +1651,183 @@ fn respond(req: Request, reply: Reply, allow_origin: &str) -> std::io::Result<()
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // ---- chain proxy paths: no dot segments, no encoding, POST only to tx/scan ----
+
+    #[test]
+    fn ordinary_upstream_paths_are_allowed() {
+        for rest in ["", "tx", "blocks/tip/height", "v1/fees/recommended",
+                     "address/bc1qxy2kgdygjrsqtzq2n0yrf2493p83kkfjhx0wlh/utxo",
+                     "tx/0af166a14c972ad1f2e0cb06953e7e63d67ce786d2142f2bca8823248f79990f/outspend/0",
+                     "txout/0af166a14c972ad1f2e0cb06953e7e63d67ce786d2142f2bca8823248f79990f/1"] {
+            assert!(upstream_path_ok(&Method::Get, rest).is_ok(), "{rest}");
+        }
+        assert!(upstream_path_ok(&Method::Post, "tx").is_ok());
+        assert!(upstream_path_ok(&Method::Post, "scan").is_ok());
+    }
+
+    /// `POST /btc/./tx` used to skip the service-fee check (it only ran for
+    /// `rest == "tx"`) while the upstream normalised it back to `/tx`.
+    #[test]
+    fn dot_segments_and_encodings_that_could_dodge_the_fee_check_are_refused() {
+        for rest in ["./tx", "a/../tx", "..", ".", "%2e/tx", "%2E%2E/tx", "tx/", "a//b", "a\\b", "tx\n", "tx%00"] {
+            assert!(upstream_path_ok(&Method::Post, rest).is_err(), "POST {rest:?}");
+            assert!(upstream_path_ok(&Method::Get, rest).is_err(), "GET {rest:?}");
+        }
+    }
+
+    #[test]
+    fn the_only_posts_forwarded_are_tx_and_scan() {
+        for rest in ["address/x/utxo", "txs", "tx/abc", "blocks/tip/height"] {
+            assert!(upstream_path_ok(&Method::Post, rest).is_err(), "{rest}");
+        }
+    }
+
+    // ---- client IP behind Cloudflare (rate limits, /register) ----
+
+    fn ip(s: &str) -> std::net::IpAddr {
+        s.parse().unwrap()
+    }
+
+    #[test]
+    fn behind_the_tunnel_the_ip_is_cloudflares_not_the_clients_own_claim() {
+        let local = Some(ip("127.0.0.1"));
+        // An attacker's X-Forwarded-For comes first; Cloudflare appends the real one.
+        assert_eq!(client_ip_from(local, Some("203.0.113.9"), Some("6.6.6.6, 203.0.113.9"), true), "203.0.113.9");
+        // Without CF-Connecting-IP, the last (proxy-appended) entry — never the first.
+        assert_eq!(client_ip_from(local, None, Some("6.6.6.6, 203.0.113.9"), true), "203.0.113.9");
+        // A malformed header is ignored, not trusted.
+        assert_eq!(client_ip_from(local, Some("not-an-ip"), Some("6.6.6.6, junk"), true), "127.0.0.1");
+    }
+
+    #[test]
+    fn forwarding_headers_count_only_from_this_machine() {
+        let remote = Some(ip("198.51.100.7"));
+        assert_eq!(client_ip_from(remote, Some("203.0.113.9"), Some("203.0.113.9"), true), "198.51.100.7");
+        assert_eq!(client_ip_from(Some(ip("127.0.0.1")), Some("203.0.113.9"), None, false), "127.0.0.1");
+        assert_eq!(client_ip_from(None, None, None, true), "unknown");
+    }
+
+    // ---- crash log: bounded on disk ----
+
+    fn crash_dir() -> (crate::test_tmp::TempDir, PathBuf) {
+        let d = crate::test_tmp::TempDir::new("crash-log-test");
+        std::fs::create_dir_all(&*d).unwrap();
+        let path = d.join("crashes.ndjson");
+        (d, path)
+    }
+
+    #[test]
+    fn crash_lines_are_appended_whole() {
+        let (_d, path) = crash_dir();
+        append_capped(&path, "{\"a\":1}", 1_000).unwrap();
+        append_capped(&path, "{\"b\":2}", 1_000).unwrap();
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "{\"a\":1}\n{\"b\":2}\n");
+    }
+
+    /// Past the cap the log moves to `<path>.1` (replacing an older one) and
+    /// starts afresh: at most two files of about `cap` bytes each.
+    #[test]
+    fn the_crash_log_rotates_at_its_cap() {
+        let (_d, path) = crash_dir();
+        let old = path.with_extension("ndjson.1");
+        let line = "x".repeat(99); // 100 bytes with the newline
+        for _ in 0..10 {
+            append_capped(&path, &line, 1_000).unwrap();
+        }
+        assert_eq!(std::fs::metadata(&path).unwrap().len(), 1_000);
+        assert!(!old.exists());
+        append_capped(&path, "first", 1_000).unwrap();
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "first\n");
+        assert_eq!(std::fs::metadata(&old).unwrap().len(), 1_000);
+        // 6 + 9 × 100 bytes fit; the tenth line would pass the cap.
+        for _ in 0..10 {
+            append_capped(&path, &line, 1_000).unwrap();
+        }
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), format!("{line}\n"));
+        let older = std::fs::read_to_string(&old).unwrap();
+        assert!(older.starts_with("first\n"), "the older .1 is replaced");
+        assert_eq!(older.len(), 906);
+    }
+
+    #[test]
+    fn concurrent_crash_lines_never_interleave() {
+        let (_d, path) = crash_dir();
+        let threads: Vec<_> = (0..8u8)
+            .map(|t| {
+                let path = path.clone();
+                std::thread::spawn(move || {
+                    let line = ((b'a' + t) as char).to_string().repeat(5_000);
+                    for _ in 0..20 {
+                        append_capped(&path, &line, 10_000_000).unwrap();
+                    }
+                })
+            })
+            .collect();
+        threads.into_iter().for_each(|t| t.join().unwrap());
+        let text = std::fs::read_to_string(&path).unwrap();
+        assert_eq!(text.lines().count(), 160);
+        for l in text.lines() {
+            assert_eq!(l.len(), 5_000);
+            assert!(l.chars().all(|c| c == l.chars().next().unwrap()), "interleaved line");
+        }
+    }
+
+    /// Long-polls may hold half the workers: with 4, two swaps' polls (or a
+    /// few slow upstream calls) left every other request waiting.
+    #[test]
+    fn the_default_worker_pool_has_room_for_long_polls_and_slow_calls() {
+        let args = Args::parse_from(["fortis-edge"]);
+        assert_eq!(args.workers, 32);
+    }
+
+    #[test]
+    fn an_ipv6_client_counts_as_its_slash_64() {
+        let local = Some(ip("::1"));
+        assert_eq!(client_ip_from(local, Some("2001:db8:1:2:3:4:5:6"), None, true), "2001:db8:1:2::/64");
+        assert_eq!(client_ip_from(local, Some("2001:db8:1:2:ffff::1"), None, true), "2001:db8:1:2::/64");
+    }
+
+    #[test]
+    fn build_swap_refuses_send_floor_above_swap_floor() {
+        let dir = std::env::temp_dir().join(format!("fortis-edge-main-test-{}", std::process::id()));
+        let addr = "bcrt1qw508d6qejxtdg4y5r3zarvary0c5xw7kygt080";
+        let run = |floor: &str| {
+            let args = Args::parse_from([
+                "fortis-edge", "--swap", "--service-fee-address", addr, "--network", "regtest",
+                "--service-fee-floor-sat", floor, "--swap-db", dir.to_str().unwrap(),
+            ]);
+            build_swap(&args, b"key").map(|_| ())
+        };
+        let e = run("500").unwrap_err().to_string();
+        assert!(e.contains("--service-fee-floor-sat"), "{e}");
+        assert!(run("400").is_ok());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn build_swap_refuses_a_fee_address_whose_dust_limit_is_above_the_swap_floor() {
+        let dir = std::env::temp_dir().join(format!("fortis-edge-main-test-dust-{}", std::process::id()));
+        let run = |addr: &str| {
+            let args = Args::parse_from([
+                "fortis-edge", "--swap", "--service-fee-address", addr, "--network", "regtest",
+                "--swap-db", dir.to_str().unwrap(),
+            ]);
+            build_swap(&args, b"key").map(|_| ())
+        };
+        let p2pkh = bitcoin::Address::p2pkh(
+            <bitcoin::PubkeyHash as bitcoin::hashes::Hash>::from_byte_array([7; 20]),
+            bitcoin::Network::Regtest,
+        )
+        .to_string();
+        let e = run(&p2pkh).unwrap_err().to_string();
+        assert_eq!(
+            e,
+            "--service-fee-address must be a SegWit address with --swap: its dust limit (546 sat) is above the 400 sat minimum commission"
+        );
+        assert!(run("bcrt1qw508d6qejxtdg4y5r3zarvary0c5xw7kygt080").is_ok());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 
     #[test]
     fn a_gateway_404_on_an_address_or_tip_route_means_try_the_next_provider() {

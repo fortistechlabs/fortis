@@ -32,6 +32,19 @@ class ContrastTest {
         }
     }
 
+    /** Text on slate keys (buttons, Home tiles, unselected tabs), judged on the
+     *  lighter top of the face. */
+    @Test
+    fun textOnSlateMeetsAA() {
+        val texts = mapOf(
+            "text" to Fx.text, "dimOnSlate" to Fx.dimOnSlate, "badOnSlate" to Fx.badOnSlate, "warn" to Fx.warn,
+        )
+        for ((name, fg) in texts) {
+            val r = contrastRatio(fg, Fx.ghostTop)
+            assertTrue("$name ${hex(fg)} on ghostTop is %.2f:1, needs 4.5".format(r), r >= 4.5)
+        }
+    }
+
     @Test
     fun controlBorderMeets3() {
         for (bg in listOf(Fx.bg0, Fx.panel)) {

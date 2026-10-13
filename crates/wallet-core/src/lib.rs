@@ -45,5 +45,8 @@ pub use swap::{
     finish_presigned_redeem, params_from_terms, swap_timelocks, PresignedRedeem, SwapEvent,
     SwapMachine, SwapParams, SwapRole, SwapState, SwapTimelocks,
 };
-pub use swap_terms::{btc_for_xbt, network_params, validate_terms, SwapTerms};
+pub use swap_terms::{
+    btc_for_xbt, network_params, swap_commission_sat, validate_terms, SwapTerms,
+    MAX_PRICE_SAT_PER_XBT, MIN_BTC_LEG_SAT, SWAP_FEE_FLOOR_SAT,
+};
 pub use wallet::{op_return_output, FundingPlan, ServiceFee, Utxo, WalletView};

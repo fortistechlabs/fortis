@@ -16,7 +16,7 @@ use wallet_core::bitcoin::{
     absolute, Amount, CompressedPublicKey, OutPoint, ScriptBuf, Transaction, TxOut, Txid,
 };
 use wallet_core::chain::ChainParams;
-use wallet_core::htlc::preimage_from_witness;
+use wallet_core::htlc::{preimage_from_witness, HtlcContract, CONTRACT_V1, CURRENT_CONTRACT};
 use wallet_core::keys::{MasterKey, SwapKey};
 use wallet_core::swap::{finish_presigned_redeem, SwapMachine, SwapParams, SwapRole};
 use wallet_core::wallet::{ServiceFee, Utxo, WalletView};
@@ -76,7 +76,7 @@ fn full_swap_roundtrip() {
     // The initiator's preimage comes from her XBT swap key, so it survives a reinstall.
     let a_xbt_key = SwapKey::from_secret(&xbt, alice.swap_secret(&xbt, 0, SWAP).unwrap()).unwrap();
     let b_xbt_key = SwapKey::from_secret(&xbt, bob.swap_secret(&xbt, 0, SWAP).unwrap()).unwrap();
-    let preimage = a_xbt_key.preimage();
+    let preimage = a_xbt_key.preimage("m1", &[1u8; 16]);
     let hashlock = sha256::Hash::hash(&preimage);
 
     let a_xbt = alice.swap_pubkey(&xbt, 0, SWAP).unwrap();
@@ -104,6 +104,7 @@ fn full_swap_roundtrip() {
         our_contract_locktime: t_long,
         their_contract_locktime: t_short,
         required_incoming_confs: 6,
+        contract_version: CURRENT_CONTRACT,
     });
     let mut bm = SwapMachine::new(SwapParams {
         swap_id: [1; 16],
@@ -120,6 +121,7 @@ fn full_swap_roundtrip() {
         our_contract_locktime: t_short,
         their_contract_locktime: t_long,
         required_incoming_confs: 100,
+        contract_version: CURRENT_CONTRACT,
     });
 
     let a_htlc = am.build_our_contract(&xbt).unwrap().clone();
@@ -174,10 +176,10 @@ fn full_swap_roundtrip() {
         .verify(0, b_htlc.value, &serialize(&a_redeem_tx))
         .expect("alice's redeem of bob's BTC HTLC must pass consensus");
     // the watchtower learns the secret from this transaction
-    assert_eq!(preimage_from_witness(&a_redeem_tx.input[0].witness), Some(preimage));
+    assert_eq!(preimage_from_witness(&a_redeem_tx.input[0].witness, &hashlock), Some(preimage));
 
     // ---- Bob finishes his pre-signed XBT redeem with the preimage he learned ----
-    let learned = preimage_from_witness(&a_redeem_tx.input[0].witness).unwrap();
+    let learned = preimage_from_witness(&a_redeem_tx.input[0].witness, &hashlock).unwrap();
     let b_redeem_tx = finish_presigned_redeem(&b_presigned[0], &learned).unwrap();
     let w = &b_redeem_tx.input[0].witness;
     assert_eq!(w.len(), 5);
@@ -185,7 +187,7 @@ fn full_swap_roundtrip() {
     let b_sig = w.nth(0).unwrap();
     assert_eq!(b_sig.last(), Some(&0x21));
     ecdsa_verifies(&secp, b_sig, a_htlc.spend_sighash(&b_redeem_tx, 0).unwrap(), &b_xbt);
-    assert_eq!(preimage_from_witness(w), Some(preimage));
+    assert_eq!(preimage_from_witness(w, &hashlock), Some(preimage));
 
     // ---- Refund paths ----
     // Bob refunds his own BTC HTLC after t_short: consensus enforces the CLTV.
@@ -207,6 +209,46 @@ fn full_swap_roundtrip() {
     let mut a_refund_tx = a_refund.tx.clone();
     am.finalize_our_refund(&mut a_refund_tx, &a_rsig, &a_xbt).unwrap();
     let w = &a_refund_tx.input[0].witness;
-    assert_eq!(w.len(), 4);
-    assert!(w.nth(2).unwrap().is_empty()); // refund path: empty branch selector
+    assert_eq!(w.len(), 5);
+    assert_eq!(w.nth(2).unwrap(), &[1u8]); // v2 refund path: inner branch …
+    assert!(w.nth(3).unwrap().is_empty()); // … under the outer ELSE
+
+    // ---- Release (v2): the match is cancelled before Alice claims; she
+    // releases Bob's BTC straight back to him, no timelock, no preimage ----
+    let release = bm.release_txs(b_htlc_op, receive_spk(&bob, &btc), &[4]).unwrap().remove(0);
+    let alice_sig = am.sign_their_release(&release, b_htlc_op, &a_btc_key(&alice, &btc), &btc).unwrap();
+    let b_btc_key = SwapKey::from_secret(&btc, bob.swap_secret(&btc, 0, SWAP).unwrap()).unwrap();
+    let released = bm
+        .finish_release(&release, b_htlc_op, &receive_spk(&bob, &btc), &alice_sig, &b_btc_key)
+        .unwrap();
+    assert_eq!(released.lock_time, absolute::LockTime::ZERO);
+    b_htlc
+        .script_pubkey
+        .verify(0, b_htlc.value, &serialize(&released))
+        .expect("the cooperative release of bob's BTC HTLC must pass consensus");
+    assert_eq!(preimage_from_witness(&released.input[0].witness, &hashlock), None);
+
+    // One signature is not enough: Bob alone can't use the release branch.
+    let mut alone = released.clone();
+    let w = alone.input[0].witness.to_vec();
+    alone.input[0].witness = wallet_core::bitcoin::Witness::from_slice(&[&w[1][..], &w[1][..], &[][..], &[][..], &w[4][..]]);
+    assert!(
+        b_htlc.script_pubkey.verify(0, b_htlc.value, &serialize(&alone)).is_err(),
+        "a release needs both parties' signatures"
+    );
+
+    // ---- v1 contracts (swaps funded before v2) still refund under consensus ----
+    let v1 = HtlcContract::build(&btc, CONTRACT_V1, hashlock, &a_btc, &b_btc, t_short, send_btc);
+    let v1_op = OutPoint::new(Txid::from_byte_array([9; 32]), 0);
+    let mut v1_refund = v1.refund_tx(v1_op, receive_spk(&bob, &btc), FEE).unwrap();
+    let v1_sig = b_btc_key.sign(&v1.spend_sighash(&v1_refund, 0).unwrap());
+    v1.finalize_refund(&mut v1_refund, 0, &v1_sig, &b_btc);
+    assert_eq!(v1_refund.input[0].witness.len(), 4);
+    v1.script_pubkey
+        .verify(0, v1.value, &serialize(&v1_refund))
+        .expect("a v1 refund must still pass consensus");
+}
+
+fn a_btc_key(k: &MasterKey, btc: &ChainParams) -> SwapKey {
+    SwapKey::from_secret(btc, k.swap_secret(btc, 0, SWAP).unwrap()).unwrap()
 }

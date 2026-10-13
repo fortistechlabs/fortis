@@ -7,7 +7,7 @@ use arc_swap::ArcSwap;
 use axum::body::Body;
 use axum::http::HeaderMap;
 use bitcoin::hashes::Hash;
-use bitcoin::{BlockHash, OutPoint, ScriptBuf, WPubkeyHash};
+use bitcoin::{Amount, BlockHash, OutPoint, ScriptBuf, WPubkeyHash};
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
 use tower::ServiceExt;
@@ -104,6 +104,7 @@ fn rig_with(blocks: Vec<ParsedBlock>, mp: MempoolView, tx_delay: Duration) -> Ri
         network: Network::Bitcoin,
         status: Arc::new(SyncStatus::default()),
         chain_id: "btc".into(),
+        spends: Arc::new(crate::spends::Spends::new(Box::new(TxNode::new()))),
     };
     Rig { _dir: dir, state }
 }
@@ -286,6 +287,49 @@ async fn scan_route_answers_the_full_shape() {
     );
 }
 
+/// Dusting an address past the row cap must not blank the wallet: the scan
+/// still answers, with the largest coins listed and the rest summed under
+/// `unlisted`, so the balance is whole.
+#[tokio::test]
+async fn a_dusted_address_still_scans_with_its_whole_balance() {
+    let a = prog(0xa1);
+    let mut outs = vec![(a, 0, 1_000_000)];
+    for v in 1..=(MAX_ROWS as u32 + 1) {
+        outs.push((a, v, 1));
+    }
+    let r = rig_with(vec![blk(100, vec![funds(txid(0xaa), &outs)])], MempoolView::default(), Duration::ZERO);
+    let body = json!({ "addresses": [addr(&a)] }).to_string();
+    let (s, _, b) = call(&r.state, "POST", "/scan", &body).await;
+    assert_eq!(s, StatusCode::OK, "{}", String::from_utf8_lossy(&b));
+    let v: Value = serde_json::from_slice(&b).unwrap();
+    let utxos = v["utxos"].as_array().unwrap();
+    assert_eq!(utxos.len(), MAX_ROWS);
+    assert!(utxos.iter().any(|u| u["value"] == 1_000_000), "the big coin is listed");
+    assert_eq!(v["unlisted"], json!([{ "address": addr(&a), "count": 2, "value": 2 }]));
+    let listed: u64 = utxos.iter().map(|u| u["value"].as_u64().unwrap()).sum();
+    assert_eq!(listed + 2, 1_000_000 + MAX_ROWS as u64 + 1, "the whole balance");
+    assert_eq!(v["failed"], json!([]));
+}
+
+/// Internal detail — the node's address, file paths — never reaches a
+/// client (the edge relays these bodies to the public); it goes to the log.
+/// The rig's node is unreachable (`127.0.0.1:1`).
+#[tokio::test]
+async fn an_unreachable_node_is_reported_without_its_address() {
+    let (r, _) = scan_fixture();
+    let tx = txid(0x77);
+    for (method, uri, body) in [
+        ("POST", "/tx".to_string(), "0200".to_string()),
+        ("GET", format!("/txout/{tx}/0"), String::new()),
+    ] {
+        let (s, _, b) = call(&r.state, method, &uri, &body).await;
+        let text = String::from_utf8_lossy(&b);
+        assert_eq!(s, StatusCode::BAD_GATEWAY, "{method} {uri}: {text}");
+        assert!(!text.contains("127.0.0.1") && !text.contains("http"), "{method} {uri}: {text}");
+        assert!(text.contains("node"), "{method} {uri}: {text}");
+    }
+}
+
 #[tokio::test]
 async fn utxo_route_has_the_v1_shape() {
     let (p1, p2) = (prog(1), prog(2));
@@ -331,28 +375,52 @@ async fn utxo_route_has_the_v1_shape() {
 }
 
 #[tokio::test]
-async fn every_response_carries_cors_headers_including_errors() {
+async fn no_response_carries_cors_headers_and_errors_stay_json() {
+    // Only the edge talks to the index; it adds its own CORS for the public.
+    // Without it here, a web page open on this machine can't read the index.
     let (r, _) = scan_fixture();
     for (method, uri, want) in [
         ("GET", "/nope", StatusCode::NOT_FOUND),
-        (
-            "GET",
-            "/address/not-an-address/utxo",
-            StatusCode::BAD_REQUEST,
-        ),
+        ("GET", "/address/not-an-address/utxo", StatusCode::BAD_REQUEST),
         ("DELETE", "/scan", StatusCode::NOT_FOUND),
-        ("OPTIONS", "/scan", StatusCode::NO_CONTENT),
+        ("OPTIONS", "/scan", StatusCode::NOT_FOUND),
         ("GET", "/blocks/tip/height", StatusCode::OK),
     ] {
         let (s, h, b) = call(&r.state, method, uri, "").await;
         assert_eq!(s, want, "{method} {uri}");
-        assert_eq!(h["access-control-allow-origin"], "*");
-        assert_eq!(h["access-control-allow-methods"], "GET, POST, OPTIONS");
-        assert_eq!(h["access-control-allow-headers"], "content-type");
+        assert!(h.keys().all(|k| !k.as_str().starts_with("access-control-")), "{method} {uri}: {h:?}");
         if s.is_client_error() {
             let v: Value = serde_json::from_slice(&b).unwrap();
             assert!(v["error"].is_string(), "{method} {uri}");
         }
+    }
+}
+
+/// DNS rebinding reaches 127.0.0.1 under a hostname a web page controls; the
+/// edge and local tools use an IP or `localhost`. A request for any other
+/// hostname is refused.
+#[tokio::test]
+async fn a_request_addressed_to_another_hostname_is_refused() {
+    let (r, _) = scan_fixture();
+    for (host, want) in [
+        ("127.0.0.1:8095", StatusCode::OK),
+        ("127.0.0.1", StatusCode::OK),
+        ("localhost:8094", StatusCode::OK),
+        ("LOCALHOST", StatusCode::OK),
+        ("[::1]:8095", StatusCode::OK),
+        ("192.168.0.124:8095", StatusCode::OK),
+        ("rebind.attacker.example:8095", StatusCode::FORBIDDEN),
+        ("localhost.attacker.example", StatusCode::FORBIDDEN),
+        ("127.0.0.1.nip.io", StatusCode::FORBIDDEN),
+    ] {
+        let req = Request::builder()
+            .method("GET")
+            .uri("/blocks/tip/height")
+            .header("host", host)
+            .body(Body::empty())
+            .unwrap();
+        let resp = router(r.state.clone()).oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), want, "{host}");
     }
 }
 
@@ -556,4 +624,179 @@ async fn txout_bad_txid_is_400_without_asking_the_node() {
     let r = rig_with(vec![], MempoolView::default(), Duration::ZERO);
     let (s, _, _) = call(&r.state, "GET", "/txout/zz/0", "").await;
     assert_eq!(s, StatusCode::BAD_REQUEST);
+}
+
+// ---- /tx/:txid, /tx/:txid/hex, /tx/:txid/outspend/:vout (swap HTLC lookups) ----
+
+/// A node that knows one mined funding tx (block 700, which is main-chain),
+/// whose vout 0 a mined spend took (block 702) and whose vout 1 is unspent.
+struct TxNode {
+    funding: bitcoin::Transaction,
+    spend: bitcoin::Transaction,
+    /// Mined in a block that is no longer on the main chain.
+    stale: bitcoin::Transaction,
+}
+
+impl TxNode {
+    fn new() -> Self {
+        use bitcoin::{absolute::LockTime, transaction::Version, Sequence, TxIn, TxOut, Witness};
+        let out = |sat: u64, spk: ScriptBuf| TxOut { value: Amount::from_sat(sat), script_pubkey: spk };
+        let funding = bitcoin::Transaction {
+            version: Version::TWO,
+            lock_time: LockTime::ZERO,
+            input: vec![TxIn {
+                previous_output: OutPoint::new(txid(0x11), 0),
+                script_sig: ScriptBuf::new(),
+                sequence: Sequence::MAX,
+                witness: Witness::new(),
+            }],
+            output: vec![
+                out(24_053, ScriptBuf::from_hex("00203c5b9955e14f8a35f2b8d7f2b394675e1fb26d342bb81024c86b81bdb7defdef").unwrap()),
+                out(400, ScriptBuf::new_p2wpkh(&WPubkeyHash::from_byte_array(prog(0x42)))),
+            ],
+        };
+        let spend = bitcoin::Transaction {
+            version: Version::TWO,
+            lock_time: LockTime::ZERO,
+            input: vec![TxIn {
+                previous_output: OutPoint::new(funding.compute_txid(), 0),
+                script_sig: ScriptBuf::new(),
+                sequence: Sequence::MAX,
+                witness: Witness::new(),
+            }],
+            output: vec![out(23_000, ScriptBuf::new())],
+        };
+        let mut stale = spend.clone();
+        stale.output[0].value = Amount::from_sat(22_000);
+        TxNode { funding, spend, stale }
+    }
+
+    fn verbose(&self, t: &bitcoin::Transaction, block: BlockHash) -> Value {
+        json!({
+            "txid": t.compute_txid().to_string(),
+            "blockhash": block.to_string(),
+            "blocktime": 1_791_761_376u64,
+            "vin": t.input.iter().map(|i| json!({
+                "txid": i.previous_output.txid.to_string(), "vout": i.previous_output.vout,
+            })).collect::<Vec<_>>(),
+            "vout": t.output.iter().map(|o| json!({
+                "value": o.value.to_btc(),
+                "scriptPubKey": { "hex": o.script_pubkey.to_hex_string() },
+            })).collect::<Vec<_>>(),
+        })
+    }
+}
+
+impl crate::spends::SpendNode for TxNode {
+    fn tx(&self, id: &Txid) -> anyhow::Result<Option<Value>> {
+        Ok(if *id == self.funding.compute_txid() {
+            Some(self.verbose(&self.funding, bhash(700)))
+        } else if *id == self.spend.compute_txid() {
+            Some(self.verbose(&self.spend, bhash(702)))
+        } else if *id == self.stale.compute_txid() {
+            Some(self.verbose(&self.stale, bhash(999))) // not on the main chain
+        } else {
+            None
+        })
+    }
+    fn raw_tx(&self, id: &Txid) -> anyhow::Result<Option<String>> {
+        Ok((*id == self.spend.compute_txid()).then(|| bitcoin::consensus::encode::serialize_hex(&self.spend)))
+    }
+    fn unspent(&self, op: &OutPoint) -> anyhow::Result<bool> {
+        Ok(*op == OutPoint::new(self.funding.compute_txid(), 1))
+    }
+    fn known_spender(&self, _: &OutPoint) -> anyhow::Result<Option<Txid>> {
+        Ok(None)
+    }
+    fn height_of(&self, h: &BlockHash) -> anyhow::Result<Option<u32>> {
+        Ok((700..=703).find(|&n| bhash(n) == *h))
+    }
+    fn tip(&self) -> anyhow::Result<u32> {
+        Ok(703)
+    }
+    fn block(&self, height: u32) -> anyhow::Result<(BlockHash, Vec<bitcoin::Transaction>)> {
+        Ok((bhash(height), if height == 702 { vec![self.spend.clone()] } else { vec![] }))
+    }
+}
+
+fn tx_rig() -> (Rig, TxNode) {
+    let mut r = rig_with(vec![], MempoolView::default(), Duration::ZERO);
+    r.state.spends = Arc::new(crate::spends::Spends::new(Box::new(TxNode::new())));
+    (r, TxNode::new())
+}
+
+#[tokio::test]
+async fn tx_route_gives_outputs_with_script_hex_and_the_confirmed_height() {
+    let (r, n) = tx_rig();
+    let (s, v) = get_json(&r.state, &format!("/tx/{}", n.funding.compute_txid())).await;
+    assert_eq!(s, StatusCode::OK);
+    assert_eq!(v["vout"][0]["value"], 24_053);
+    assert_eq!(
+        v["vout"][0]["scriptpubkey"],
+        "00203c5b9955e14f8a35f2b8d7f2b394675e1fb26d342bb81024c86b81bdb7defdef"
+    );
+    assert_eq!(v["status"]["confirmed"], true);
+    assert_eq!(v["status"]["block_height"], 700);
+}
+
+#[tokio::test]
+async fn tx_routes_404_an_unknown_tx() {
+    let (r, _) = tx_rig();
+    for path in ["", "/hex", "/outspend/0"] {
+        let (s, _) = get_json(&r.state, &format!("/tx/{}{path}", txid(0x77))).await;
+        assert_eq!(s, StatusCode::NOT_FOUND, "/tx/…{path}");
+    }
+}
+
+#[tokio::test]
+async fn hex_route_gives_the_raw_tx() {
+    let (r, n) = tx_rig();
+    let (s, _, b) = call(&r.state, "GET", &format!("/tx/{}/hex", n.spend.compute_txid()), "").await;
+    assert_eq!(s, StatusCode::OK);
+    assert_eq!(String::from_utf8(b).unwrap(), bitcoin::consensus::encode::serialize_hex(&n.spend));
+}
+
+#[tokio::test]
+async fn outspend_route_reports_unspent_spent_and_unknown_outputs() {
+    let (r, n) = tx_rig();
+    let f = n.funding.compute_txid();
+    let (s, v) = get_json(&r.state, &format!("/tx/{f}/outspend/1")).await;
+    assert_eq!((s, v), (StatusCode::OK, json!({ "spent": false })));
+    let (s, v) = get_json(&r.state, &format!("/tx/{f}/outspend/0")).await;
+    assert_eq!(s, StatusCode::OK);
+    assert_eq!(v["spent"], true);
+    assert_eq!(v["txid"], n.spend.compute_txid().to_string());
+    assert_eq!(v["status"], json!({ "confirmed": true, "block_height": 702, "block_hash": bhash(702).to_string() }));
+    let (s, _) = get_json(&r.state, &format!("/tx/{f}/outspend/5")).await;
+    assert_eq!(s, StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn a_tx_in_a_block_off_the_main_chain_reads_unconfirmed() {
+    let (r, n) = tx_rig();
+    let (s, v) = get_json(&r.state, &format!("/tx/{}", n.stale.compute_txid())).await;
+    assert_eq!(s, StatusCode::OK);
+    assert_eq!(v["status"], json!({ "confirmed": false }));
+}
+
+/// An outspend the index won't search (older than its window) is a final 422,
+/// not a 503 that callers would retry forever.
+#[tokio::test]
+async fn an_outspend_outside_the_search_window_is_a_final_422() {
+    struct OldNode(TxNode);
+    impl crate::spends::SpendNode for OldNode {
+        fn tx(&self, id: &Txid) -> anyhow::Result<Option<Value>> { self.0.tx(id) }
+        fn raw_tx(&self, id: &Txid) -> anyhow::Result<Option<String>> { self.0.raw_tx(id) }
+        fn unspent(&self, op: &OutPoint) -> anyhow::Result<bool> { self.0.unspent(op) }
+        fn known_spender(&self, op: &OutPoint) -> anyhow::Result<Option<Txid>> { self.0.known_spender(op) }
+        fn height_of(&self, h: &BlockHash) -> anyhow::Result<Option<u32>> { self.0.height_of(h) }
+        fn tip(&self) -> anyhow::Result<u32> { Ok(700 + crate::spends::MAX_SCAN_BLOCKS + 1) }
+        fn block(&self, h: u32) -> anyhow::Result<(BlockHash, Vec<bitcoin::Transaction>)> { self.0.block(h) }
+    }
+    let mut r = rig_with(vec![], MempoolView::default(), Duration::ZERO);
+    let n = TxNode::new();
+    let f = n.funding.compute_txid();
+    r.state.spends = Arc::new(crate::spends::Spends::new(Box::new(OldNode(n))));
+    let (s, _) = get_json(&r.state, &format!("/tx/{f}/outspend/0")).await;
+    assert_eq!(s, StatusCode::UNPROCESSABLE_ENTITY);
 }

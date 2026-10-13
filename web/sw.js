@@ -16,7 +16,7 @@ const ASSETS = [
   './vendor/qrcode.js',
   './src/app.js', './src/ui.js', './src/store.js', './src/gateway.js', './src/wallet.js',
   './src/esplora.js', './src/entropy.js', './src/i18n.js', './src/webauthn.js',
-  './src/theme.js', './src/preinit.js', './src/locales/en.json',
+  './src/theme.js', './src/preinit.js', './src/relock.js', './src/locales/en.json',
   './pkg/wallet_wasm.js', './pkg/wallet_wasm_bg.wasm',
 ];
 

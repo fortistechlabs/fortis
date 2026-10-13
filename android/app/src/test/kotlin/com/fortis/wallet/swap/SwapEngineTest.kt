@@ -1,5 +1,7 @@
 package com.fortis.wallet.swap
 
+import com.fortis.wallet.data.Book
+import com.fortis.wallet.data.ChainCheck
 import com.fortis.wallet.data.ChainWatch
 import com.fortis.wallet.data.MatchInfo
 import com.fortis.wallet.data.OfferCreated
@@ -34,6 +36,8 @@ private const val XBT_SAT = 10_000_000L
 private const val BTC_SAT = 112_000L // XBT_SAT * PRICE / 1e8
 private const val FEE_ADDR = "bcrt1qfee"
 private val PREIMAGE = "11".repeat(32)
+/** The initiator's preimage nonce the phones draw; the preimage is [PREIMAGE] only with it. */
+private val NONCE = "5a".repeat(16)
 private const val ACCEPTED_MARK = "accepted"
 private const val XBT_LOCKTIME = MATCHED_AT + 144 * 3600
 private const val BTC_LOCKTIME = MATCHED_AT + 24 * 3600
@@ -75,10 +79,22 @@ class FakeApi(private val chain: FakeChain, private val clock: () -> Long) : Swa
         var participantFundBy: Long? = null
         var xbtFunding: Outpoint? = null
         var btcFunding: Outpoint? = null
+        /** Cancelled by the deadline tick for the participant's funding (fortis-edge
+         *  reinstates it on a late `funded` mined in time; [reinstates] = false
+         *  models one mined too late). */
+        var missedDeadline = false
+        var reinstates = true
+        /** Mined after the deadline: the edge's final 410. */
+        var minedLate = false
         val msgs = mutableListOf<RelayMsg>()
         val keys = mutableMapOf<String, String>()
         var hashlock: String? = null
+        var releaseTxs: List<String>? = null
+        var releaseSigs: List<String>? = null
     }
+
+    /** The HTLC version new matches use (2: with the cooperative release). */
+    var contractVersion = 2
 
     val offers = mutableMapOf<String, Offer>()
     val matches = mutableMapOf<String, Match>()
@@ -90,6 +106,11 @@ class FakeApi(private val chain: FakeChain, private val clock: () -> Long) : Swa
 
     /** `funded` posts fail in transit. */
     var failFunded = false
+
+    /** Release requests answered with this status. */
+    var refuseRelease: Int? = null
+    /** `funded` posts answered with the final 410. */
+    var postedLateFunded = 0
 
     /** Watch posts matching this fail in transit. */
     var failWatch: (JSONObject) -> Boolean = { false }
@@ -153,6 +174,7 @@ class FakeApi(private val chain: FakeChain, private val clock: () -> Long) : Swa
             .put("xbt_locktime", XBT_LOCKTIME).put("btc_locktime", BTC_LOCKTIME)
             .put("xbt_confs", 6).put("btc_confs", 2)
             .put("accept_by", ACCEPT_BY).put("initiator_fund_by", INITIATOR_FUND_BY)
+            .put("contract_version", contractVersion)
         val m = Match(id, terms, a.secret, b.secret, a.id, b.id)
         matches[id] = m
         a.matchId = id; a.status = "matched"
@@ -171,14 +193,38 @@ class FakeApi(private val chain: FakeChain, private val clock: () -> Long) : Swa
     fun bodies(matchId: String, from: String, type: String) =
         matches.getValue(matchId).msgs.filter { it.from == from && it.body.getString("type") == type }.map { it.body }
 
-    override suspend fun quote() = Quote(PRICE, 50, 80_000, 1_000_000)
+    override suspend fun quote() = Quote(PRICE, true, PRICE, PRICE, 50, 20_000, 1_000_000)
     override suspend fun pricingAddress(): String? {
         if (pricingDown) throw IOException("GET /pricing: connection reset")
         return pricing
     }
 
+    /** Recovery tags sent with offers and takes: tag → offer id. */
+    val tags = mutableMapOf<String, String>()
+
+    /** Every `POST /swap/recover` call: (tags, claim). */
+    val recoverCalls = mutableListOf<Pair<List<String>, Boolean>>()
+
+    /** As the edge's `POST /swap/recover`: known tags; a secret when [claim]ed and our leg is funded. */
+    override suspend fun recover(tags: List<String>, claim: Boolean): List<com.fortis.wallet.data.Recovered> = tags.also { recoverCalls += it to claim }.mapNotNull { tag ->
+        val o = offers[this.tags[tag] ?: return@mapNotNull null]!!
+        val m = matches.values.firstOrNull { it.initiatorOffer == o.id || it.participantOffer == o.id }
+        val role = m?.let { if (it.initiatorOffer == o.id) "initiator" else "participant" }
+        val funded = when (role) {
+            "initiator" -> m.xbtFunding != null
+            "participant" -> m.btcFunding != null
+            else -> false
+        }
+        com.fortis.wallet.data.Recovered(
+            tag, o.id, o.direction,
+            m?.let { com.fortis.wallet.data.RecoveredMatch(it.id, role!!, it.status, it.terms, it.xbtFunding, it.btcFunding) },
+            if (funded && claim) o.secret else null,
+        )
+    }
+
     override suspend fun createOffer(
-        direction: String, amountSat: Long, slippageBps: Int, private: Boolean, clientId: String?,
+        direction: String, amountSat: Long, priceSatPerXbt: Long, private: Boolean, clientId: String?,
+        recoveryTag: String?,
     ): OfferCreated {
         if (createDown) throw IOException("POST /swap/offers: connection refused")
         createCalls++
@@ -186,10 +232,42 @@ class FakeApi(private val chain: FakeChain, private val clock: () -> Long) : Swa
         val o = clientId?.let { c -> offers.values.firstOrNull { it.clientId == c } } ?: run {
             refuseCreate?.let { throw SwapHttpException(it, "POST /swap/offers: refused") }
             val id = "offer-${++n}"
-            Offer(id, "secret-$id", direction, amountSat, clientId, private).also { offers[id] = it }
+            Offer(id, "secret-$id", direction, amountSat, clientId, private).also {
+                offers[id] = it
+                recoveryTag?.let { t -> tags[t] = id }
+            }
         }
         if (dropCreateResponse) throw IOException("POST /swap/offers: timeout")
         return OfferCreated(o.id, o.secret, if (o.private) "CODE-${o.id}" else null)
+    }
+
+    /** Lines each offer's phone logged (`POST /swap/offers/{id}/log`). */
+    val logs = mutableMapOf<String, MutableList<String>>()
+    var failLog = false
+
+    override suspend fun log(offerId: String, secret: String, lines: List<String>) {
+        if (failLog) throw IOException("POST log: connection reset")
+        check(offers.getValue(offerId).secret == secret) { "403" }
+        check(lines.size in 1..50) { "400" }
+        logs.getOrPut(offerId) { mutableListOf() } += lines
+    }
+
+    override suspend fun book(): Book = Book(emptyList(), emptyList())
+
+    /** As the edge's `POST /swap/offers/{id}/take`: the taker's side is a new
+     *  unlisted offer paired with exactly [offerId] (a repeat [clientId] takes once). */
+    override suspend fun takeOffer(
+        offerId: String, amountSat: Long, priceSatPerXbt: Long, clientId: String, recoveryTag: String?,
+    ): Taken {
+        offers.values.firstOrNull { it.clientId == clientId }?.let { o -> return Taken(o.matchId!!, o.secret, o.id) }
+        val maker = offers.getValue(offerId)
+        check(maker.status == "open") { "409 offer is no longer available" }
+        check(priceSatPerXbt == PRICE) { "409 price changed" }
+        val id = "offer-${++n}"
+        val direction = if (maker.direction == "xbt_to_btc") "btc_to_xbt" else "xbt_to_btc"
+        val taker = Offer(id, "secret-$id", direction, amountSat, clientId, private = true).also { offers[id] = it }
+        val m = if (direction == "btc_to_xbt") pair(maker.id, taker.id) else pair(taker.id, maker.id)
+        return Taken(m.id, taker.secret, taker.id)
     }
 
     override suspend fun offer(id: String, secret: String): OfferView {
@@ -211,7 +289,7 @@ class FakeApi(private val chain: FakeChain, private val clock: () -> Long) : Swa
         o.status = "cancelled"
         return OfferView(o.id, o.status, o.matchId, MATCHED_AT + 86_400)
     }
-    override suspend fun take(code: String, slippageBps: Int): Taken = error("unused")
+    override suspend fun take(code: String, recoveryTag: String?): Taken = error("unused")
 
     override suspend fun match(matchId: String, secret: String): MatchInfo {
         if (matchId in goneMatches) throw SwapHttpException(404, "no such match")
@@ -263,8 +341,28 @@ class FakeApi(private val chain: FakeChain, private val clock: () -> Long) : Swa
                 m.hashlock?.let { check(it == body.getString("hex")) { "409" }; return null }
                 m.hashlock = body.getString("hex")
             }
+            // as the edge: only for a cancelled match with only the XBT locked; each set once
+            "release_request", "release" -> {
+                refuseRelease?.let { throw SwapHttpException(it, "release refused") }
+                val releasable = m.status == "cancelled" && m.xbtFunding != null && m.btcFunding == null
+                if (!releasable) throw SwapHttpException(409, "a release is only for a cancelled match with only the XBT locked")
+                if (body.getString("type") == "release_request") {
+                    check(role == "initiator") { "403" }
+                    val txs = body.getJSONArray("txs").let { a -> (0 until a.length()).map { a.getString(it) } }
+                    m.releaseTxs?.let { if (it == txs) return null else throw SwapHttpException(409, "a different release request") }
+                    m.releaseTxs = txs
+                } else {
+                    check(role == "participant") { "403" }
+                    val txs = m.releaseTxs ?: throw SwapHttpException(409, "no release was asked for")
+                    val sigs = body.getJSONArray("sigs").let { a -> (0 until a.length()).map { a.getString(it) } }
+                    check(sigs.size == txs.size) { "400" }
+                    m.releaseSigs?.let { if (it == sigs) return null else throw SwapHttpException(409, "a different release") }
+                    m.releaseSigs = sigs
+                }
+            }
             "funded" -> {
                 if (failFunded) throw IOException("POST funded: connection reset")
+                if (role == "participant" && m.releaseSigs != null) throw SwapHttpException(409, "this match was released")
                 val op = Outpoint(body.getString("txid"), body.getInt("vout"))
                 if (role == "initiator") {
                     check(body.getString("chain") == "xbt") { "400" }
@@ -274,6 +372,19 @@ class FakeApi(private val chain: FakeChain, private val clock: () -> Long) : Swa
                     m.xbtFunding = op; m.status = "initiator_funded"
                 } else {
                     check(body.getString("chain") == "btc") { "400" }
+                    if (m.status == "cancelled" && m.missedDeadline) {
+                        if (m.minedLate) {
+                            postedLateFunded++
+                            throw SwapHttpException(410, "the match was cancelled: this funding was mined after its deadline")
+                        }
+                        if (!m.reinstates) {
+                            throw SwapHttpException(409, "the match was cancelled: this funding wasn't mined by its deadline")
+                        }
+                        m.btcFunding = op; m.status = "participant_funded"; m.missedDeadline = false
+                        val seq = m.msgs.size + 1L
+                        m.msgs += RelayMsg(seq, role, body)
+                        return seq
+                    }
                     m.btcFunding?.let { check(it == op) { "409" }; if (m.status != "initiator_funded") return null }
                     check(m.status == "initiator_funded") { "409 status ${m.status}" }
                     m.btcFunding = op; m.status = "participant_funded"
@@ -349,6 +460,15 @@ class FakeChain : ChainWatch {
 
     /** Txids the indexer doesn't show yet (lag). */
     val hidden = mutableSetOf<String>()
+
+    /** Outputs whose spender the edge hides (`txid`): a hostile edge withholding a redeem. */
+    val hiddenSpends = mutableSetOf<String>()
+
+    /** Outputs (`txid`) the edge falsely calls spent, by a confirmed refund. */
+    val claimedSpent = mutableSetOf<String>()
+
+    /** Outputs (`txid`) whose spend the edge falsely calls confirmed. */
+    val claimedConfirmed = mutableSetOf<String>()
     private var n = 0
 
     private fun key(chain: String, txid: String, vout: Int) = "$chain:$txid:$vout"
@@ -367,13 +487,17 @@ class FakeChain : ChainWatch {
     fun spenderOf(chain: String, txid: String, vout: Int) = outs[key(chain, txid, vout)]?.spender
 
     override suspend fun txout(chain: String, txid: String, vout: Int): TxOutInfo? =
-        if (txid in hidden) null else outs[key(chain, txid, vout)]?.takeIf { it.spender == null }?.let { TxOutInfo(it.value, it.spk, it.confs) }
+        if (txid in hidden || txid in claimedSpent) null else outs[key(chain, txid, vout)]?.takeIf { it.spender == null }?.let { TxOutInfo(it.value, it.spk, it.confs) }
 
-    override suspend fun spendingTxHex(chain: String, txid: String, vout: Int): String? =
-        if (chain == "btc") outs[key(chain, txid, vout)]?.spender else null
+    override suspend fun spendingTxHex(chain: String, txid: String, vout: Int): String? = when {
+        chain != "btc" || txid in hiddenSpends -> null
+        txid in claimedSpent -> "refund|$chain|$txid|$vout|fee=1"
+        else -> outs[key(chain, txid, vout)]?.spender
+    }
 
     override suspend fun spendConfirmed(chain: String, txid: String, vout: Int): Boolean =
-        outs[key(chain, txid, vout)]?.let { it.spender != null && it.spendConfs > 0 } ?: false
+        txid in claimedSpent || txid in claimedConfirmed ||
+            (outs[key(chain, txid, vout)]?.let { it.spender != null && it.spendConfs > 0 } ?: false)
 
     override suspend fun findFunding(chain: String, address: String, amountSat: Long): Pair<String, Int>? {
         if (chain != "btc") return null
@@ -409,12 +533,69 @@ class FakeChain : ChainWatch {
     }
 }
 
+/**
+ * An independent explorer over [FakeChain]'s true state: it doesn't share the
+ * edge's lag ([FakeChain.hidden]) or hidden spenders, and can be told an output
+ * isn't really on chain ([unseen]: the edge made it up), lag behind, or be down.
+ */
+class FakeChainCheck(private val chain: FakeChain) : ChainCheck {
+    var down = false
+
+    /** Txids the real chain doesn't have, whatever the edge says. */
+    val unseen = mutableSetOf<String>()
+
+    /** Blocks the explorer's confirmations trail by. */
+    var lag = 0L
+    val broadcasts = mutableListOf<Pair<String, String>>()
+
+    private fun up() {
+        if (down) throw IOException("explorer unreachable")
+    }
+
+    override suspend fun unspent(chain: String, txid: String, vout: Int): TxOutInfo? {
+        up()
+        if (txid in unseen) return null
+        val o = this.chain.outs["$chain:$txid:$vout"]?.takeIf { it.spender == null } ?: return null
+        return TxOutInfo(o.value, o.spk, maxOf(0L, o.confs - lag))
+    }
+
+    override suspend fun spendingTxHex(chain: String, txid: String, vout: Int): String? {
+        up()
+        return this.chain.outs["$chain:$txid:$vout"]?.spender
+    }
+
+    override suspend fun output(chain: String, txid: String, vout: Int): TxOutInfo? {
+        up()
+        if (txid in unseen) return null
+        val o = this.chain.outs["$chain:$txid:$vout"] ?: return null
+        return TxOutInfo(o.value, o.spk, 0)
+    }
+
+    override suspend fun spendConfirmed(chain: String, txid: String, vout: Int): Boolean {
+        up()
+        return this.chain.outs["$chain:$txid:$vout"]?.let { it.spender != null && it.spendConfs > 0 } ?: false
+    }
+
+    override suspend fun broadcast(chain: String, hex: String): String {
+        up()
+        broadcasts += chain to hex
+        val p = hex.split("|")
+        // Its own node: the edge's being down (FakeChain.down) doesn't matter here.
+        val o = this.chain.outs["$chain:${p[2]}:${p[3]}"] ?: error("missing input")
+        if (o.spender == null) o.spender = hex
+        return "explorer-${p[2]}"
+    }
+}
+
 /** `SwapSession` stand-in. Its whole state is its JSON, as with the real one. */
 class FakeCrypto private constructor(private val st: JSONObject) : SwapCrypto {
     companion object {
         fun open(r: SwapRecord) = FakeCrypto(
             r.sessionJson?.let(::JSONObject)
-                ?: JSONObject().put("role", r.role).put("terms", JSONObject(r.termsJson!!)),
+                ?: JSONObject().put("role", r.role).put("terms", JSONObject(r.termsJson!!)).apply {
+                    // as SwapSession.new: the initiator's preimage needs its nonce
+                    if (r.role == "initiator") put("nonce", r.preimageNonce ?: error("preimage nonce must be 16 bytes of hex"))
+                },
         )
     }
 
@@ -428,10 +609,12 @@ class FakeCrypto private constructor(private val st: JSONObject) : SwapCrypto {
         return HtlcInfo("addr-$chain-htlc", amount(chain).toULong(), "spk-$chain-htlc")
     }
 
-    override fun validateTerms(termsJson: String, ourPrice: Long, slippageBps: Int, role: String, now: Long) {
+    override fun validateTerms(termsJson: String, limitPrice: Long, role: String, now: Long) {
         val t = JSONObject(termsJson)
-        val diff = Math.abs(t.getLong("price_sat_per_xbt") - ourPrice)
-        check(ourPrice > 0 && diff * 10_000 <= ourPrice * slippageBps) { "price outside slippage" }
+        val price = t.getLong("price_sat_per_xbt")
+        check(limitPrice > 0) { "zero limit price" }
+        // as the Rust rule: the initiator sells XBT (price is a floor), the participant buys (a ceiling)
+        check(if (role == "initiator") price >= limitPrice else price <= limitPrice) { "price is worse than your limit" }
         check(now <= t.getLong("accept_by")) { "accept deadline passed" }
     }
 
@@ -442,10 +625,13 @@ class FakeCrypto private constructor(private val st: JSONObject) : SwapCrypto {
     }
 
     override fun ourPubkeys() = SwapPubkeys("xbt-$role", "btc-$role")
-    override fun hashlock(): String? = if (role == "initiator") hashOf(PREIMAGE) else null
-    override fun preimage(): String? = if (role == "initiator") PREIMAGE else null
+    /** [PREIMAGE] with the phones' [NONCE]; another nonce, another preimage. */
+    override fun preimage(): String? = if (role == "initiator") st.getString("nonce").let { if (it == NONCE) PREIMAGE else "p-$it" } else null
+    override fun hashlock(): String? = preimage()?.let(::hashOf)
+    override fun preimageNonce(): String? = if (role == "initiator") st.getString("nonce") else null
 
     override fun setCounterparty(their: SwapPubkeys, hashlockHex: String) {
+        preimage()?.let { check(hashOf(it) == hashlockHex) { "hashlock does not match our preimage" } }
         val v = JSONObject().put("xbt", their.xbt).put("btc", their.btc).put("hashlock", hashlockHex)
         if (st.has("their")) {
             check(st.getJSONObject("their").toString() == v.toString()) { "counterparty already set to different keys" }
@@ -486,6 +672,25 @@ class FakeCrypto private constructor(private val st: JSONObject) : SwapCrypto {
         return p.takeIf { hashOf(it) == st.getJSONObject("their").getString("hashlock") }
     }
 
+    override fun releaseTxs(feerates: List<Long>): List<String> {
+        check(terms.optInt("contract_version", 1) >= 2) { "this swap's contract has no release" }
+        val op = st.optString("our_op").ifEmpty { error("our funding outpoint is not recorded") }
+        return feerates.map { "release|$send|$op|fee=$it" }
+    }
+
+    override fun signRelease(txHex: String, txid: String, vout: Int): String {
+        check(terms.optInt("contract_version", 1) >= 2) { "this swap's contract has no release" }
+        check(role == "participant") { "only the participant signs" }
+        check(txHex.startsWith("release|xbt|$txid|$vout|")) { "the release doesn't spend their contract" }
+        return "rsig($txHex)"
+    }
+
+    override fun finishRelease(txHex: String, theirSigHex: String): String {
+        check(theirSigHex == "rsig($txHex)") { "the counterparty's release signature doesn't verify" }
+        check(txHex.startsWith("release|$send|${st.optString("our_op")}|")) { "not our release" }
+        return "$txHex|signed"
+    }
+
     override fun toJson(): String = st.toString()
 }
 
@@ -520,10 +725,9 @@ class SwapEngineTest {
     private var clock = MATCHED_AT + 10
     private val chain = FakeChain()
     private val edge = FakeApi(chain) { clock }
+    private val explorer = FakeChainCheck(chain)
 
-    inner class Phone(val sendChain: String, var price: Long? = PRICE) {
-        /** NeoxEX can't be reached (as opposed to refusing to quote). */
-        var priceDown = false
+    inner class Phone(val sendChain: String, var limit: Long = PRICE) {
         val store = SwapStore(MemoryBlob())
         val funder = FakeFunder(store, chain)
         val events = mutableListOf<Pair<Event, Long?>>()
@@ -531,20 +735,20 @@ class SwapEngineTest {
         lateinit var id: String
 
         fun engine(f: Funder) = SwapEngine(
-            edge, store, chain, { FakeCrypto.open(it) }, f, { clock },
+            edge, store, chain, explorer, { FakeCrypto.open(it) }, f, { clock },
             { r, e -> events += e to r.deadline },
-            ownPrice = { if (priceDown) throw IOException("neoxa.exchange unreachable") else price },
         )
 
         fun offer(): String = runBlocking {
             val (direction, amount) = if (sendChain == "xbt") "xbt_to_btc" to XBT_SAT else "btc_to_xbt" to BTC_SAT
-            val o = edge.createOffer(direction, amount, 100, false, null)
+            val o = edge.createOffer(direction, amount, limit, false, null)
             id = o.offerId
             store.put(
                 SwapRecord(
                     id = o.offerId, fromWalletId = "w-$sendChain", toWalletId = "w-other",
-                    sendChain = sendChain, amountSat = amount, slippageBps = 100,
+                    sendChain = sendChain, amountSat = amount, limitPrice = limit,
                     ownerSecret = o.ownerSecret, swapIndex = store.nextSwapIndex("w-$sendChain"), account = 0,
+                    preimageNonce = NONCE,
                     wrappedXbt = "wx", wrappedBtc = "wb",
                     redeemAddress = "redeem-$sendChain", refundAddress = "refund-$sendChain",
                 ),
@@ -560,8 +764,9 @@ class SwapEngineTest {
                 SwapRecord(
                     id = id, clientId = id, privateOffer = private, step = Step.PROVISIONAL,
                     fromWalletId = "w-$sendChain", toWalletId = "w-other",
-                    sendChain = sendChain, amountSat = amount, slippageBps = 100,
+                    sendChain = sendChain, amountSat = amount, limitPrice = limit,
                     ownerSecret = "", swapIndex = store.nextSwapIndex("w-$sendChain"), account = 0,
+                    preimageNonce = NONCE,
                     wrappedXbt = "wx", wrappedBtc = "wb",
                     redeemAddress = "redeem-$sendChain", refundAddress = "refund-$sendChain",
                 ),
@@ -611,6 +816,7 @@ class SwapEngineTest {
         // accept, keys and the hashlock were relayed
         assertEquals(1, edge.bodies(m.id, "initiator", "accept").size)
         assertEquals(hashOf(PREIMAGE), edge.bodies(m.id, "initiator", "hashlock").single().getString("hex"))
+        assertEquals("the nonce rides with it, for a restore", NONCE, edge.bodies(m.id, "initiator", "hashlock").single().getString("nonce"))
         // the XBT funding: the HTLC output, announced once
         val funded = edge.bodies(m.id, "initiator", "funded").single()
         assertEquals("xbt", funded.getString("chain"))
@@ -658,13 +864,36 @@ class SwapEngineTest {
     }
 
     @Test
-    fun slippage_rejection_declines() {
-        bob.price = PRICE * 105 / 100
+    fun declinesInitiatorTermsBelowItsLimit() {
+        alice.limit = PRICE + 1 // alice sells XBT for no less than this
+        val m = matched()
+        val r = alice.step()
+        assertEquals(Step.CANCELLED, r.step)
+        assertTrue(r.error!!.contains("price is worse than your limit"))
+        assertEquals(1, edge.bodies(m.id, "initiator", "decline").size)
+        assertTrue(edge.bodies(m.id, "initiator", "accept").isEmpty())
+    }
+
+    @Test
+    fun acceptsTermsAtLimit() {
+        // both limits sit exactly at the match's price: the floor and the ceiling are inclusive
+        val m = matched()
+        assertTrue(alice.step().step.active)
+        assertTrue(bob.step().step.active)
+        assertEquals(1, edge.bodies(m.id, "initiator", "accept").size)
+        assertEquals(1, edge.bodies(m.id, "participant", "accept").size)
+        assertTrue(edge.bodies(m.id, "initiator", "decline").isEmpty())
+        assertTrue(edge.bodies(m.id, "participant", "decline").isEmpty())
+    }
+
+    @Test
+    fun declinesTermsWorseThanLimit() {
+        bob.limit = PRICE - 1 // bob pays at most one sat less than the match's price
         val m = matched()
         alice.step() // alice follows the match (a phone that hadn't would just see its offer reopened)
         val r = bob.step()
         assertEquals(Step.CANCELLED, r.step)
-        assertTrue(r.error!!.contains("slippage"))
+        assertTrue(r.error!!.contains("price is worse than your limit"))
         assertEquals(1, edge.bodies(m.id, "participant", "decline").size)
         assertTrue(edge.bodies(m.id, "participant", "accept").isEmpty())
         assertTrue(edge.bodies(m.id, "participant", "keys").isEmpty())
@@ -803,6 +1032,78 @@ class SwapEngineTest {
         assertEquals("", r.wrappedXbt); assertEquals("", r.wrappedBtc)
     }
 
+    /** Past the XBT locktime the edge claims our HTLC is already spent by a
+     *  confirmed refund. Believed, the phone would never send its refund and
+     *  would wipe its keys while the coins sit in the HTLC — where the
+     *  counterparty, who knows the preimage, could take them later. */
+    @Test
+    fun a_refund_is_sent_and_settled_only_on_an_explorers_word() {
+        val m = negotiated()
+        assertEquals(Step.FUNDED, alice.step().step)
+        chain.mine(6)
+        clock = XBT_LOCKTIME
+        val htlc = m.xbtFunding!!
+        chain.claimedSpent += htlc.txid
+        repeat(3) { alice.step() }
+        val r = alice.record()
+        assertFalse("not refunded on the edge's word", r.step == Step.REFUNDED)
+        assertTrue("keys kept", r.wrappedXbt.isNotEmpty())
+        val refund = chain.spenderOf("xbt", htlc.txid, htlc.vout)
+        assertTrue("our refund really went out: $refund", refund?.startsWith("refund|xbt|${htlc.txid}") == true)
+        chain.mine(1)
+        assertEquals(Step.REFUNDED, alice.step().step)
+    }
+
+    /** Fees rise while our refund waits: re-signed at the live rate and sent
+     *  again (it signals RBF), so a stuck refund can't hand the counterparty —
+     *  who knows the preimage — time to take the coins. */
+    @Test
+    fun an_unconfirmed_refund_follows_the_live_feerate() {
+        val m = negotiated()
+        alice.step()
+        chain.mine(6)
+        clock = XBT_LOCKTIME
+        assertEquals(Step.REFUNDING, alice.step().step)
+        val htlc = m.xbtFunding!!
+        assertTrue(chain.spenderOf("xbt", htlc.txid, htlc.vout)!!.endsWith("fee=2"))
+        val sent = chain.broadcasts.size
+        alice.step()
+        assertEquals("no re-send at the same feerate", sent, chain.broadcasts.size)
+        chain.fees = listOf(40L, 80L)
+        alice.step()
+        assertTrue(chain.spenderOf("xbt", htlc.txid, htlc.vout)!!.endsWith("fee=40"))
+        chain.mine(1)
+        assertEquals(Step.REFUNDED, alice.step().step)
+    }
+
+    /** The edge calls our BTC redeem confirmed while it isn't: not DONE yet. */
+    @Test
+    fun done_waits_for_an_explorer_to_see_the_spend_confirmed() {
+        val m = negotiated()
+        alice.step()
+        chain.mine(6)
+        bob.step()
+        chain.mine(2)
+        assertEquals(Step.REDEEMED, alice.step().step)
+        chain.claimedConfirmed += m.btcFunding!!.txid
+        repeat(2) { alice.step() }
+        assertEquals(Step.REDEEMED, alice.record().step)
+        assertTrue("keys kept", alice.record().wrappedBtc.isNotEmpty())
+        chain.mine(1)
+        assertEquals(Step.DONE, alice.step().step)
+    }
+
+    /** Only the edge sets the participant's funding deadline: a "deadline"
+     *  the initiator relays (to rush the participant into giving up) is ignored. */
+    @Test
+    fun a_deadline_relayed_by_the_counterparty_is_ignored() {
+        val m = matched()
+        // Before bob has the keys: he is still reading the relay.
+        m.msgs += RelayMsg(m.msgs.size + 1L, "initiator", JSONObject().put("type", "deadline").put("participant_fund_by", MATCHED_AT + 1))
+        bob.step()
+        assertNull(bob.record().deadline)
+    }
+
     @Test
     fun participant_redeems_from_initiator_btc_redeem() {
         val m = negotiated()
@@ -819,6 +1120,366 @@ class SwapEngineTest {
         assertTrue(xbt.startsWith("redeem|xbt|${m.xbtFunding!!.txid}|1|preimage=$PREIMAGE"))
         chain.mine(1)
         assertEquals(Step.DONE, bob.step().step)
+    }
+
+    // ---- swap-key recovery: a restored phone rebuilds a funded swap from the edge ----
+
+    /** The phone of [old]'s seed after a reinstall: an empty store, and the swap
+     *  rebuilt (as `WalletViewModel.recoverSwaps`) from `POST /swap/recover`. */
+    private fun restored(old: Phone, edit: (com.fortis.wallet.data.SwapRecord) -> com.fortis.wallet.data.SwapRecord = { it }): Phone {
+        val tag = "tag-${old.id}"
+        edge.tags[tag] = old.id
+        val found = runBlocking { edge.recover(listOf(tag), claim = true) }.single()
+        val other = if (old.sendChain == "xbt") "btc" else "xbt"
+        val rec = recoveredRecord(
+            3, found, "f00dbabe",
+            com.fortis.wallet.data.WalletConfig("w-${old.sendChain}", "W", old.sendChain, "regtest"),
+            com.fortis.wallet.data.WalletConfig("w-$other", "W", other, "regtest"),
+            "wx", "wb", "redeem-$other", "refund-${old.sendChain}", now = clock,
+        )!!
+        return Phone(old.sendChain).also { p ->
+            runBlocking { p.store.put(edit(rec)) }
+            p.id = rec.id
+        }
+    }
+
+    @Test
+    fun a_recovered_initiator_refunds_and_never_funds_again() {
+        val m = negotiated()
+        assertEquals(Step.FUNDED, alice.step().step)
+        chain.mine(6)
+        val phone = restored(alice)
+        // bob never funds; before the locktime the rebuilt swap only waits
+        assertEquals(Step.FUNDED, phone.step().step)
+        assertNull(phone.record().error)
+        assertEquals("its preimage nonce, read back from the relay", NONCE, phone.record().preimageNonce)
+        clock = XBT_LOCKTIME
+        assertEquals(Step.REFUNDING, phone.step().step)
+        val htlc = m.xbtFunding!!
+        assertTrue(chain.spenderOf("xbt", htlc.txid, htlc.vout)!!.startsWith("refund|xbt|${htlc.txid}|${htlc.vout}"))
+        chain.mine(1)
+        assertEquals(Step.REFUNDED, phone.step().step)
+        assertEquals(0, phone.funder.calls)
+        assertEquals("accepted once, by the old phone", 1, edge.bodies(m.id, "initiator", "accept").size)
+        assertEquals("funding announced once, by the old phone", 1, edge.bodies(m.id, "initiator", "funded").size)
+    }
+
+    @Test
+    fun a_recovered_participant_redeems_from_the_btc_redeem() {
+        val m = negotiated()
+        alice.step() // alice funds XBT
+        chain.mine(6)
+        assertEquals(Step.THEY_FUNDED, bob.step().step) // bob funds BTC, then his phone is lost
+        chain.mine(2)
+        val phone = restored(bob)
+        val btc = m.btcFunding!!
+        runBlocking { chain.broadcast("btc", "redeem|btc|${btc.txid}|${btc.vout}|preimage=$PREIMAGE|fee=7") }
+        repeat(3) { if (phone.record().step != Step.REDEEMED) phone.step() }
+        assertEquals(Step.REDEEMED, phone.record().step)
+        val xbt = chain.spenderOf("xbt", m.xbtFunding!!.txid, m.xbtFunding!!.vout)
+        assertTrue("$xbt", xbt!!.contains("preimage=$PREIMAGE") || xbt.startsWith("presigned|xbt|"))
+        chain.mine(1)
+        assertEquals(Step.DONE, phone.step().step)
+        assertEquals(0, phone.funder.calls)
+    }
+
+    /** Terms that don't build the contract our funding pays (wrong keys, or an
+     *  edge serving other terms): the rebuilt swap stops, and signs nothing. */
+    @Test
+    fun a_recovered_swap_whose_contract_is_not_its_funding_stops() {
+        negotiated()
+        alice.step()
+        chain.mine(6)
+        val phone = restored(alice) { r ->
+            r.copy(termsJson = org.json.JSONObject(r.termsJson!!).put("xbt_sat", XBT_SAT + 1).toString())
+        }
+        val sent = chain.broadcasts.size
+        clock = XBT_LOCKTIME
+        val r = phone.step()
+        assertEquals(Step.FAILED, r.step)
+        assertTrue(r.error!!, r.error!!.contains("does not match"))
+        assertEquals(sent, chain.broadcasts.size)
+        assertTrue("keys kept", r.wrappedXbt.isNotEmpty())
+    }
+
+    /** An edge relaying another nonce (to make the phone build a preimage it
+     *  chose) is caught by the hashlock: the swap stops, nothing signed. */
+    @Test
+    fun a_recovered_initiator_with_a_forged_nonce_stops() {
+        val m = negotiated()
+        alice.step()
+        chain.mine(6)
+        val i = m.msgs.indexOfFirst { it.body.getString("type") == "hashlock" }
+        m.msgs[i] = RelayMsg(m.msgs[i].seq, "initiator", JSONObject(m.msgs[i].body.toString()).put("nonce", "77".repeat(16)))
+        val phone = restored(alice)
+        val sent = chain.broadcasts.size
+        clock = XBT_LOCKTIME
+        val r = phone.step()
+        assertEquals(Step.FAILED, r.step)
+        assertEquals(sent, chain.broadcasts.size)
+        assertTrue("keys kept", r.wrappedXbt.isNotEmpty())
+    }
+
+    /** A funding the explorer doesn't know (spent or not) can't be checked:
+     *  the recovered swap waits rather than take the relay's word. */
+    @Test
+    fun a_recovered_swap_waits_while_the_explorer_does_not_know_its_funding() {
+        val m = negotiated()
+        alice.step()
+        chain.mine(6)
+        assertEquals(Step.THEY_FUNDED, bob.step().step)
+        chain.mine(2)
+        val phone = restored(bob)
+        explorer.unseen += m.btcFunding!!.txid
+        val r = phone.step()
+        assertEquals(Step.THEY_FUNDED, r.step)
+        assertTrue(r.error!!, r.error!!.contains("not found at an independent explorer"))
+        assertFalse("not rebuilt yet", r.marks.contains("counterparty"))
+        explorer.unseen.clear()
+        phone.step()
+        assertTrue(phone.record().marks.contains("counterparty"))
+    }
+
+    /** The rebuilt contract is checked against an independent explorer only:
+     *  while none answers, the recovered swap waits (an edge alone can't pass
+     *  it, nor fail it). */
+    @Test
+    fun a_recovered_swap_waits_for_an_explorer_to_check_its_funding() {
+        val m = negotiated()
+        alice.step()
+        chain.mine(6)
+        val phone = restored(alice)
+        explorer.down = true
+        clock = XBT_LOCKTIME
+        repeat(2) { phone.step() }
+        val r = phone.record()
+        assertEquals(Step.FUNDED, r.step)
+        assertTrue(r.error!!, r.error!!.contains("no independent explorer"))
+        assertNull(chain.spenderOf("xbt", m.xbtFunding!!.txid, m.xbtFunding!!.vout))
+        explorer.down = false
+        assertEquals(Step.REFUNDING, phone.step().step)
+    }
+
+    // ---- the cooperative release (v2): a cancelled match hands the XBT back at once ----
+
+    /** Alice funds; bob never does and the edge cancels the match at his deadline. */
+    private fun cancelledWithXbtLocked(): FakeApi.Match {
+        val m = negotiated()
+        assertEquals(Step.FUNDED, alice.step().step)
+        chain.mine(6)
+        m.missedDeadline = true
+        edge.lapse(m, reopenInitiator = false, reopenParticipant = false)
+        return m
+    }
+
+    @Test
+    fun a_cancelled_match_hands_the_initiators_xbt_back_at_once() {
+        val m = cancelledWithXbtLocked()
+        assertEquals(Step.CANCELLED, bob.step().step)
+        alice.step() // asks for the release
+        assertEquals("one per feerate, as refunds", chain.fees.size, m.releaseTxs!!.size)
+        bob.step() // cancelled, never funded: signs it
+        assertTrue(bob.record().marks.contains("release_signed"))
+        assertEquals(Step.REFUNDING, alice.step().step)
+        val htlc = m.xbtFunding!!
+        val spender = chain.spenderOf("xbt", htlc.txid, htlc.vout)!!
+        assertTrue(spender, spender.startsWith("release|xbt|${htlc.txid}|${htlc.vout}|") && spender.endsWith("|signed"))
+        chain.mine(1)
+        assertEquals(Step.REFUNDED, alice.step().step)
+        assertTrue("long before the locktime", clock < XBT_LOCKTIME - 24 * 3600)
+        assertEquals(0, bob.funder.calls)
+        // and bob can no longer fund this match
+        assertEquals(Step.CANCELLED, bob.step().step)
+    }
+
+    /** A participant whose own coins are (or may be) in the swap never signs a release. */
+    @Test
+    fun a_participant_with_a_funding_in_flight_never_releases() {
+        val m = cancelledWithXbtLocked()
+        bob.step()
+        runBlocking { bob.store.put(bob.record().copy(pendingFundingTxid = "maybe-sent")) }
+        alice.step()
+        bob.step()
+        assertNull(m.releaseSigs)
+        assertFalse(bob.record().marks.contains("release_signed"))
+    }
+
+    /** A release whose signature doesn't verify is never broadcast: the refund at the locktime stays. */
+    @Test
+    fun a_forged_release_is_not_broadcast() {
+        val m = cancelledWithXbtLocked()
+        bob.step()
+        alice.step()
+        m.releaseSigs = m.releaseTxs!!.map { "forged" }
+        m.msgs += RelayMsg(m.msgs.size + 1L, "participant", JSONObject().put("type", "release").put("sigs", org.json.JSONArray(m.releaseSigs)))
+        val r = alice.step()
+        assertEquals(Step.FUNDED, r.step)
+        assertNull(chain.spenderOf("xbt", m.xbtFunding!!.txid, m.xbtFunding!!.vout))
+        clock = XBT_LOCKTIME
+        assertEquals(Step.REFUNDING, alice.step().step)
+        assertTrue(chain.spenderOf("xbt", m.xbtFunding!!.txid, m.xbtFunding!!.vout)!!.startsWith("refund|"))
+    }
+
+    /** Cancelled before the initiator ever funded: no release can ever be
+     *  owed, so the participant's record stops being stepped. */
+    @Test
+    fun a_participant_owed_no_release_stops_being_stepped() {
+        val m = negotiated()
+        edge.lapse(m, reopenInitiator = false, reopenParticipant = false) // alice never funded
+        assertEquals(Step.CANCELLED, bob.step().step)
+        clock = INITIATOR_FUND_BY + 2 * 3600 // past the grace for a late funding
+        bob.step()
+        assertFalse(releaseDue(bob.record(), clock))
+        // while the initiator might still fund (before its deadline), it stays due
+        val fresh = bob.record().copy(marks = bob.record().marks - "release_none")
+        assertTrue(releaseDue(fresh, INITIATOR_FUND_BY - 1))
+    }
+
+    /** A release that can't be asked for now never holds up the rest of the step. */
+    @Test
+    fun a_failing_release_request_does_not_stop_the_refund_watch() {
+        val m = negotiated()
+        edge.failWatch = { true }
+        assertEquals(Step.FUNDED, alice.step().step)
+        assertFalse(alice.record().marks.contains("refund_watched"))
+        chain.mine(6)
+        edge.lapse(m, reopenInitiator = false, reopenParticipant = false)
+        edge.refuseRelease = 503
+        edge.failWatch = { false }
+        alice.step()
+        assertTrue(alice.record().marks.contains("refund_watched"))
+    }
+
+    /** A phone that lost its release request (restored) adopts the one the
+     *  edge recorded, so the participant's signatures still fit. */
+    @Test
+    fun the_initiator_adopts_the_release_request_the_edge_recorded() {
+        val m = cancelledWithXbtLocked()
+        bob.step()
+        alice.step() // asks, at today's fees
+        val asked = m.releaseTxs!!
+        runBlocking {
+            alice.store.put(alice.record().copy(releaseTxs = emptyList(), marks = alice.record().marks - "release_asked", relaySeq = 0))
+        }
+        chain.fees = listOf(9L, 99L)
+        alice.step() // asks again at other fees: refused, adopts the recorded one
+        assertEquals(asked, alice.record().releaseTxs)
+        bob.step()
+        assertEquals(Step.REFUNDING, alice.step().step)
+    }
+
+    /** A swap on the v1 contract has no release: it waits for its locktime, as before. */
+    @Test
+    fun a_v1_swap_waits_for_its_locktime() {
+        edge.contractVersion = 1
+        val m = cancelledWithXbtLocked()
+        bob.step()
+        alice.step()
+        assertNull(m.releaseTxs)
+        assertEquals(Step.FUNDED, alice.record().step)
+    }
+
+    // ---- C1: chain facts that cost coins are checked with an independent explorer ----
+
+    /** The edge shows the initiator's XBT HTLC with 6 confirmations; the real
+     *  chain doesn't have it. The participant must not fund. */
+    @Test
+    fun participant_does_not_fund_against_a_funding_no_explorer_shows() {
+        val m = negotiated()
+        alice.step() // alice funds XBT
+        chain.mine(6)
+        explorer.unseen += m.xbtFunding!!.txid
+        repeat(3) { bob.step() }
+        assertEquals(0, bob.funder.calls)
+        assertNull(bob.record().theirTxid)
+        assertFalse(Event.THEY_FUNDED in bob.names)
+        // Once the explorer shows it, the swap goes on.
+        explorer.unseen.clear()
+        assertEquals(Step.THEY_FUNDED, bob.step().step)
+        assertEquals(1, bob.funder.calls)
+    }
+
+    @Test
+    fun participant_waits_while_no_explorer_answers() {
+        negotiated()
+        alice.step()
+        chain.mine(6)
+        explorer.down = true
+        bob.step()
+        assertEquals(0, bob.funder.calls)
+        assertNull(bob.record().theirTxid)
+        explorer.down = false
+        bob.step()
+        assertEquals(1, bob.funder.calls)
+    }
+
+    @Test
+    fun participant_waits_for_the_explorers_own_confirmations() {
+        negotiated()
+        alice.step()
+        chain.mine(6)
+        explorer.lag = 1 // the explorer counts 5
+        bob.step()
+        assertEquals(0, bob.funder.calls)
+        explorer.lag = 0
+        bob.step()
+        assertEquals(1, bob.funder.calls)
+    }
+
+    /** The edge shows the participant's BTC HTLC; the real chain doesn't have
+     *  it. The initiator must not reveal the preimage. */
+    @Test
+    fun initiator_does_not_reveal_against_a_funding_no_explorer_shows() {
+        val m = negotiated()
+        alice.step()
+        chain.mine(6)
+        bob.step() // bob funds BTC
+        chain.mine(2)
+        explorer.unseen += m.btcFunding!!.txid
+        repeat(3) { alice.step() }
+        assertNull(alice.record().theirTxid)
+        assertTrue("no BTC spend at all", chain.broadcasts.none { it.first == "btc" })
+        assertTrue(explorer.broadcasts.isEmpty())
+    }
+
+    /** The redeem revealing the preimage goes out through the explorer too, so
+     *  the edge alone can't hold it back. */
+    @Test
+    fun initiator_redeem_is_also_sent_through_an_explorer() {
+        val m = negotiated()
+        runToEnd()
+        assertEquals(Step.DONE, alice.record().step)
+        val viaExplorer = explorer.broadcasts.single { it.first == "btc" }.second
+        assertTrue(viaExplorer.startsWith("redeem|btc|${m.btcFunding!!.txid}|1|preimage=$PREIMAGE"))
+    }
+
+    @Test
+    fun initiator_redeem_goes_out_through_the_explorer_when_the_edge_refuses_it() {
+        negotiated()
+        alice.step()
+        chain.mine(6)
+        bob.step()
+        chain.mine(2)
+        chain.down = true // the edge refuses every broadcast
+        val r = alice.step() // sees bob's funding confirmed, and redeems
+        assertEquals(Step.REDEEMED, r.step)
+        assertTrue(explorer.broadcasts.any { it.first == "btc" })
+    }
+
+    /** The edge hides the initiator's BTC redeem from the participant: the
+     *  participant still finds the preimage through an explorer and redeems. */
+    @Test
+    fun participant_finds_the_preimage_through_an_explorer_when_the_edge_hides_it() {
+        val m = negotiated()
+        alice.step()
+        chain.mine(6)
+        assertEquals(Step.THEY_FUNDED, bob.step().step)
+        chain.mine(2)
+        val btc = m.btcFunding!!
+        runBlocking { chain.broadcast("btc", "redeem|btc|${btc.txid}|${btc.vout}|preimage=$PREIMAGE|fee=7") }
+        chain.hiddenSpends += btc.txid
+        assertEquals(Step.REDEEMED, bob.step().step)
+        assertTrue(chain.spenderOf("xbt", m.xbtFunding!!.txid, m.xbtFunding!!.vout)!!.contains("preimage=$PREIMAGE"))
     }
 
     @Test
@@ -841,7 +1502,7 @@ class SwapEngineTest {
         val s = SwapStore(MemoryBlob())
         val r = SwapRecord(
             id = "o1", matchId = "m1", role = "initiator", fromWalletId = "a", toWalletId = "b",
-            sendChain = "xbt", amountSat = 5, slippageBps = 50, ownerSecret = "s", swapIndex = 2, account = 0,
+            sendChain = "xbt", amountSat = 5, limitPrice = PRICE, ownerSecret = "s", swapIndex = 2, account = 0,
             sessionJson = "{}", wrappedXbt = "x", wrappedBtc = "y", relaySeq = 4, pendingFundingTxid = "p",
             fundingTxid = "f", fundingVout = 1, presigned = listOf("v1", "v2"), step = Step.FUNDED,
             deadline = 9, error = "e", redeemAddress = "ra", refundAddress = "rf", termsJson = "{\"a\":1}",
@@ -861,34 +1522,6 @@ class SwapEngineTest {
     }
 
     // --- fix round 1 -------------------------------------------------------
-
-    /** [Critical 1] A reinstall (empty store) must not reuse swap index 0: the
-     *  keys and the initiator's preimage are seed-deterministic per index. */
-    @Test
-    fun fresh_stores_draw_random_swap_indices() = runBlocking {
-        val first = SwapStore(MemoryBlob()).nextSwapIndex("a")
-        val afterReinstall = SwapStore(MemoryBlob()).nextSwapIndex("a")
-        assertTrue("a fresh store must not start at 0", first != 0)
-        assertTrue("two fresh stores must not draw the same index", first != afterReinstall)
-        assertTrue(first >= 0 && afterReinstall >= 0)
-    }
-
-    @Test
-    fun swap_index_redraws_on_collision_with_records_and_earlier_draws() = runBlocking {
-        val draws = ArrayDeque(listOf(5, 5, 9, 9, 5, 11))
-        val s = SwapStore(MemoryBlob()) { draws.removeFirst() }
-        s.put(
-            SwapRecord(
-                id = "o1", fromWalletId = "a", toWalletId = "b", sendChain = "xbt", amountSat = 5,
-                slippageBps = 50, ownerSecret = "s", swapIndex = 5, wrappedXbt = "x", wrappedBtc = "y",
-                redeemAddress = "ra", refundAddress = "rf",
-            ),
-        )
-        // 5 is a record's: redrawn
-        assertEquals(9, s.nextSwapIndex("a"))
-        // 9 was handed out already (its record not saved yet), 5 is a record's: redrawn — on any wallet
-        assertEquals(11, s.nextSwapIndex("b"))
-    }
 
     /** [Important 2] The edge takes keys while the match is still `proposed`;
      *  the initiator must not fund until both sides have accepted. */
@@ -1187,7 +1820,7 @@ class SwapEngineTest {
      *  takes its offer down; the other side follows its reopened offer. */
     @Test
     fun decline_ends_the_decliner_and_the_other_side_refollows() {
-        bob.price = PRICE * 105 / 100
+        bob.limit = PRICE - 1
         matched()
         alice.step() // alice follows (and accepts) the match
         assertEquals(Step.CANCELLED, bob.step().step)
@@ -1230,24 +1863,21 @@ class SwapEngineTest {
         assertTrue(r.step.active)
     }
 
-    /** [Important 7] NeoxEX unreachable: retry; decline only as accept_by closes in. */
+    /** The accept-deadline grace: terms that can't be checked retry, then decline near accept_by. */
     @Test
-    fun neoxex_unreachable_retries_then_declines_near_accept_by() {
-        alice.priceDown = true
+    fun pricing_unreachable_retries_then_declines_near_accept_by() {
+        edge.pricingDown = true
         val m = matched()
-        assertTrue(alice.step().step.active)
+        var r = alice.step()
+        assertTrue(r.step.active)
         assertTrue(edge.bodies(m.id, "initiator", "decline").isEmpty())
         clock = ACCEPT_BY - 5
-        assertEquals(Step.CANCELLED, alice.step().step)
+        r = alice.step()
+        assertEquals(Step.CANCELLED, r.step)
         assertEquals(1, edge.bodies(m.id, "initiator", "decline").size)
-    }
-
-    /** [Important 7] NeoxEX answering but refusing to quote is a definite decline. */
-    @Test
-    fun neoxex_refusal_declines() {
-        alice.price = null
-        val m = matched()
-        assertEquals(Step.CANCELLED, alice.step().step)
+        assertTrue(edge.bodies(m.id, "initiator", "accept").isEmpty())
+        assertEquals(Step.CANCELLED, alice.record().step)
+        alice.step()
         assertEquals(1, edge.bodies(m.id, "initiator", "decline").size)
     }
 
@@ -1258,7 +1888,7 @@ class SwapEngineTest {
     fun crash_after_post_before_promote_adopts_the_same_offer() {
         val cid = alice.provisional()
         // the POST reached the edge; the phone never saw (or saved) the reply
-        runBlocking { edge.createOffer("xbt_to_btc", XBT_SAT, 100, false, cid) }
+        runBlocking { edge.createOffer("xbt_to_btc", XBT_SAT, PRICE, false, cid) }
         assertEquals(1, edge.offers.size)
 
         val r = alice.step()
@@ -1342,7 +1972,7 @@ class SwapEngineTest {
     @Test
     fun cancel_while_provisional_declines_a_match_made_meanwhile() {
         val cid = alice.provisional()
-        runBlocking { edge.createOffer("xbt_to_btc", XBT_SAT, 100, false, cid) }
+        runBlocking { edge.createOffer("xbt_to_btc", XBT_SAT, PRICE, false, cid) }
         bob.offer()
         val m = edge.pair(edge.offers.values.first { it.clientId == cid }.id, bob.id)
         assertTrue(runBlocking { alice.engine.cancelProvisional(cid) })
@@ -1378,7 +2008,7 @@ class SwapEngineTest {
     fun provisional_fields_round_trip() {
         val r = SwapRecord(
             id = "c1", clientId = "c1", privateOffer = true, step = Step.PROVISIONAL,
-            fromWalletId = "a", toWalletId = "b", sendChain = "btc", amountSat = 1, slippageBps = 50,
+            fromWalletId = "a", toWalletId = "b", sendChain = "btc", amountSat = 1, limitPrice = PRICE,
             ownerSecret = "", swapIndex = 3, wrappedXbt = "x", wrappedBtc = "y",
             redeemAddress = "r", refundAddress = "f",
         )
@@ -1556,7 +2186,7 @@ class SwapEngineTest {
         // bob's phone posted its accept but died before saving that it had
         runBlocking { edge.post(m.id, m.participantSecret, JSONObject().put("type", "accept")) }
         assertEquals("accepted", m.status)
-        bob.price = PRICE * 105 / 100 // and the price moved meanwhile
+        runBlocking { bob.store.put(bob.record().copy(limitPrice = PRICE - 1)) } // and the limit moved meanwhile
         var r = bob.step()
         assertTrue(r.step.active)
         assertTrue(r.error!!, r.error.contains("too late to decline"))
@@ -1578,7 +2208,7 @@ class SwapEngineTest {
     fun record_to_string_redacts_secrets() {
         val r = SwapRecord(
             id = "o1", fromWalletId = "a", toWalletId = "b", sendChain = "xbt", amountSat = 5,
-            slippageBps = 50, ownerSecret = "OWNER-SECRET", swapIndex = 2,
+            limitPrice = PRICE, ownerSecret = "OWNER-SECRET", swapIndex = 2,
             wrappedXbt = "WRAPPED-XBT", wrappedBtc = "WRAPPED-BTC", pendingFundingHex = "SIGNED-FUNDING-HEX",
             pendingFundingTxid = "ptx", redeemAddress = "ra", refundAddress = "rf",
         )
@@ -1589,4 +2219,151 @@ class SwapEngineTest {
         assertTrue(s, "o1" in s && "ptx" in s)
         assertTrue(s, "redacted" in s)
     }
+
+    /** Bob funded, but neither his refund watch nor his `funded` reached the
+     *  edge before his deadline (as when his phone couldn't see its own funding):
+     *  the deadline tick cancelled the match. */
+    private fun bobFundedButUnannounced(): FakeApi.Match {
+        val m = negotiated()
+        alice.step() // alice funds XBT
+        chain.mine(6)
+        edge.failFunded = true
+        edge.failWatch = { true }
+        bob.step() // bob funds BTC; nothing about it reaches the edge
+        edge.failFunded = false
+        edge.failWatch = { false }
+        assertEquals(null, m.btcFunding)
+        m.status = "cancelled"; m.missedDeadline = true
+        return m
+    }
+
+    @Test
+    fun participant_announces_its_funding_on_a_deadline_cancelled_match_and_the_swap_completes() {
+        val m = bobFundedButUnannounced()
+        assertEquals("cancelled", alice.step().matchStatus)
+        bob.step() // announces anyway; the edge reinstates the match
+        assertEquals("participant_funded", m.status)
+        assertTrue("funded_posted" in bob.record().marks)
+        runToEnd()
+        assertEquals(Step.DONE, alice.record().step)
+        assertEquals(Step.DONE, bob.record().step)
+    }
+
+    @Test
+    fun a_refused_late_funded_is_kept_as_an_error_and_retried_and_the_refund_stays_due() {
+        val m = bobFundedButUnannounced()
+        m.reinstates = false
+        val r = bob.step()
+        assertEquals("cancelled", r.matchStatus)
+        assertTrue(r.error, r.error!!.contains("wasn't mined by its deadline"))
+        assertFalse("funded_posted" in r.marks)
+        assertTrue("the refund is still with the watchtower", "refund_watched" in r.marks)
+        m.reinstates = true // e.g. the edge's reinstatement check succeeds on a retry
+        bob.step()
+        assertTrue("funded_posted" in bob.record().marks)
+        assertEquals("participant_funded", m.status)
+    }
+
+    @Test
+    fun the_record_carries_the_edges_match_status() {
+        val m = negotiated()
+        // Each step stores the status it read: "accepted" when alice funds…
+        assertEquals("accepted", alice.step().matchStatus)
+        assertEquals("initiator_funded", m.status)
+        // …and the edge's new status on the step after.
+        assertEquals("initiator_funded", alice.step().matchStatus)
+    }
+
+
+    @Test
+    fun each_step_sends_its_trace_to_the_edge_under_its_offer() {
+        negotiated()
+        val lines = edge.logs.getValue(alice.id)
+        assertTrue(lines.toString(), lines.any { "step" in it })
+        assertTrue(lines.toString(), lines.any { "match " in it })
+        // what the step ended in
+        assertTrue(lines.toString(), lines.any { it.contains("→ ") })
+        // never the owner secret
+        assertFalse(lines.any { alice.record().ownerSecret in it })
+    }
+
+    @Test
+    fun a_failed_log_upload_never_fails_the_step_and_its_lines_go_with_the_next() {
+        val m = negotiated()
+        edge.logs.clear()
+        edge.failLog = true
+        val r = alice.step() // alice funds XBT
+        assertEquals(null, r.error)
+        assertEquals(Step.FUNDED, r.step)
+        assertTrue(edge.logs.isEmpty())
+        edge.failLog = false
+        alice.step()
+        val lines = edge.logs.getValue(alice.id)
+        assertEquals("both steps' traces, the earlier first", 2, lines.count { "step " in it && "role=initiator" in it })
+        assertEquals("initiator_funded", m.status)
+    }
+
+    @Test
+    fun a_provisional_swap_keeps_its_trace_until_it_has_an_offer_to_log_under() {
+        val cid = alice.provisional()
+        alice.step() // posts the offer; from now on it has an id and secret
+        val id = runBlocking { alice.store.find(cid)!!.id }
+        assertTrue(id != cid)
+        assertTrue(edge.logs.getValue(id).isNotEmpty())
+    }
+
+
+    @Test
+    fun a_funding_mined_after_the_deadline_is_announced_once_not_forever() {
+        val m = bobFundedButUnannounced()
+        m.minedLate = true
+        val r = bob.step()
+        assertEquals(1, edge.postedLateFunded)
+        assertTrue(r.error, r.error!!.contains("mined after its deadline"))
+        assertTrue("no more re-announcing", "funded_posted" in r.marks)
+        bob.step(); bob.step()
+        assertEquals(1, edge.postedLateFunded)
+        assertTrue("the refund is still with the watchtower", "refund_watched" in bob.record().marks)
+    }
+
+
+    /** A refund that went out, but whose save was cut off (the step's time limit,
+     *  or the process dying): the record must not stay active forever. */
+    @Test
+    fun a_refund_sent_but_not_saved_is_still_followed_to_refunded() {
+        val m = negotiated()
+        assertEquals(Step.FUNDED, alice.step().step)
+        chain.mine(6)
+        clock = XBT_LOCKTIME
+        val xbt = m.xbtFunding!!
+        // Our refund is in the mempool; the record never learned of it.
+        chain.outs["xbt:${xbt.txid}:${xbt.vout}"]!!.spender = "refund|xbt|${xbt.txid}|${xbt.vout}|fee=2"
+        assertEquals(Step.REFUNDING, alice.step().step)
+        chain.mine(1)
+        assertEquals(Step.REFUNDED, alice.step().step)
+    }
+
+
+    @Test
+    fun a_swap_started_by_taking_a_listed_offer_runs_to_done() {
+        alice.offer() // listed: alice sells XBT
+        // Bob takes it as the app does: takeOffer, then a record carrying the match.
+        val t = runBlocking { edge.takeOffer(alice.id, BTC_SAT, PRICE, "c11e47") }
+        assertEquals(t, runBlocking { edge.takeOffer(alice.id, BTC_SAT, PRICE, "c11e47") }) // a retry takes once
+        bob.id = t.offerId
+        runBlocking {
+            bob.store.put(
+                SwapRecord(
+                    id = t.offerId, matchId = t.matchId, fromWalletId = "w-btc", toWalletId = "w-other",
+                    sendChain = "btc", amountSat = BTC_SAT, limitPrice = PRICE, ownerSecret = t.ownerSecret,
+                    swapIndex = bob.store.nextSwapIndex("w-btc"), account = 0, wrappedXbt = "wx", wrappedBtc = "wb",
+                    redeemAddress = "redeem-btc", refundAddress = "refund-btc",
+                ),
+            )
+        }
+        runToEnd()
+        assertEquals(Step.DONE, alice.record().step)
+        assertEquals(Step.DONE, bob.record().step)
+    }
+
 }

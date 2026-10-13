@@ -1,43 +1,10 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1500 500">
-  <defs>
-    <linearGradient id="bg" x1="0" y1="0" x2="1500" y2="500" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#151E34"/>
-      <stop offset="0.5" stop-color="#0D1322"/>
-      <stop offset="1" stop-color="#080A12"/>
-    </linearGradient>
-    <radialGradient id="glow" cx="1120" cy="250" r="640" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#39519E" stop-opacity="0.5"/>
-      <stop offset="0.6" stop-color="#26386A" stop-opacity="0.16"/>
-      <stop offset="1" stop-color="#26386A" stop-opacity="0"/>
-    </radialGradient>
-    <linearGradient id="sh" x1="900" y1="-60" x2="1450" y2="560" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#5E7FCB"/>
-      <stop offset="1" stop-color="#2E447F"/>
-    </linearGradient>
-    <clipPath id="gate"><path d="M44,81 V51 a10,10 0 0 1 20,0 V81 Z"/></clipPath>
-  </defs>
-  <rect width="1500" height="500" fill="url(#bg)"/>
-  <rect width="1500" height="500" fill="url(#glow)"/>
-
-  <!-- oversized faint shield watermark, bleeding off the right edge -->
-  <g transform="translate(1000 -70) scale(9.2)" opacity="0.22">
-    <path d="M22,22 h8 v8 h6 v-8 h8 v8 h6 v-8 h8 v8 h6 v-8 h8 v8 h6 v-8 h8 V58 C86,72 73,82 54,89 C35,82 22,72 22,58 Z"
-          fill="#8FBCFF"/>
-    <path d="M44,81 V51 a10,10 0 0 1 20,0 V81 Z" fill="#0C1322"/>
-    <g clip-path="url(#gate)" stroke="#0C1322" stroke-width="2.4" stroke-linecap="round">
-      <path d="M49,49 V82 M54,47 V82 M59,49 V82"/>
-      <path d="M43,56 H65 M43,64 H65 M43,72 H65"/>
-    </g>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1500 500" width="1500" height="500">
+  <title>fortis</title>
+  <rect width="1500" height="500" fill="#0B0C0D"/>
+  <rect x="0" y="0" width="1500" height="3" fill="#00FF41"/>
+  <g transform="translate(470 138) scale(2.5)">
+  <path d="M32 7 53 14.5V30c0 13.5-8.8 21.6-21 26.5C19.8 51.6 11 43.5 11 30V14.5Z" fill="none" stroke="#E9ECEF" stroke-width="3.5" stroke-linejoin="round"/>
+  <g fill="#00FF41"><circle cx="32" cy="27" r="5.5"/><path d="M29 31h6l1.8 11h-9.6Z"/></g>
+  <path fill="#E9ECEF" d="M84.44 44.0V28.6H78.12V25.0H84.44V20.56Q84.44 17.919999999999998 86.16 16.36Q87.88 14.8 90.84 14.8H97.28V18.36H90.84Q88.4 18.36 88.4 20.599999999999998V25.0H97.28V28.6H88.4V44.0ZM112.0 44.32Q107.96 44.32 105.58 42.0Q103.2 39.68 103.2 35.519999999999996V30.48Q103.2 26.32 105.58 24.0Q107.96 21.68 112.0 21.68Q116.03999999999999 21.68 118.41999999999999 24.0Q120.8 26.32 120.8 30.48V35.519999999999996Q120.8 39.68 118.41999999999999 42.0Q116.03999999999999 44.32 112.0 44.32ZM112.0 40.84Q114.24 40.84 115.53999999999999 39.58Q116.84 38.32 116.84 35.879999999999995V30.119999999999997Q116.84 27.68 115.53999999999999 26.42Q114.24 25.16 112.0 25.16Q109.76 25.16 108.46000000000001 26.42Q107.16 27.68 107.16 30.119999999999997V35.879999999999995Q107.16 38.32 108.46000000000001 39.58Q109.76 40.84 112.0 40.84ZM128.32 44.0V22.0H132.24V26.24H132.28Q132.6 24.08 134.14 22.839999999999996Q135.68 21.599999999999998 138.24 21.599999999999998Q141.64 21.599999999999998 143.51999999999998 23.7Q145.4 25.8 145.4 29.6V31.52H141.44V29.64Q141.44 25.04 136.92 25.04Q134.64 25.04 133.45999999999998 26.36Q132.28 27.68 132.28 30.119999999999997V44.0ZM162.2 44.0Q159.36 44.0 157.7 42.36Q156.04 40.72 156.04 38.0V25.599999999999998H149.76V22.0H156.04V15.8H160.0V22.0H168.92000000000002V25.599999999999998H160.0V37.96Q160.0 39.04 160.62 39.72Q161.24 40.4 162.28 40.4H168.72V44.0ZM175.32 44.0V40.4H183.04V25.599999999999998H176.12V22.0H187.0V40.4H194.24V44.0ZM184.64 18.12Q183.27999999999997 18.12 182.47999999999996 17.42Q181.67999999999998 16.72 181.67999999999998 15.52Q181.67999999999998 14.280000000000001 182.47999999999996 13.56Q183.27999999999997 12.84 184.64 12.84Q186.0 12.84 186.8 13.56Q187.6 14.280000000000001 187.6 15.52Q187.6 16.72 186.8 17.42Q186.0 18.12 184.64 18.12ZM207.12 44.32Q203.36 44.32 201.28 42.64Q199.2 40.96 199.2 37.92H203.12Q203.12 39.36 204.18 40.18Q205.24 41.0 207.12 41.0H208.88Q210.84 41.0 211.9 40.16Q212.96 39.32 212.96 37.8Q212.96 35.12 210.32 34.8L204.4 33.96Q202.04 33.6 200.76 32.019999999999996Q199.48 30.439999999999998 199.48 27.919999999999998Q199.48 24.96 201.48 23.32Q203.48 21.68 207.08 21.68H208.84Q212.2 21.68 214.28 23.28Q216.36 24.88 216.48 27.52H212.48Q212.4 26.4 211.44 25.659999999999997Q210.48 24.919999999999998 208.84 24.919999999999998H207.08Q205.28 24.919999999999998 204.3 25.72Q203.32 26.52 203.32 27.88Q203.32 30.08 205.52 30.36L211.08 31.16Q216.8 31.92 216.8 37.8Q216.8 40.92 214.74 42.620000000000005Q212.68 44.32 208.88 44.32Z"/>
   </g>
-
-  <!-- wordmark, left -->
-  <text x="110" y="232" fill="#EDF1FB"
-        font-family="'Segoe UI', system-ui, -apple-system, Roboto, sans-serif"
-        font-size="90" font-weight="600" letter-spacing="0.5">Fortis Tech Labs</text>
-  <text x="114" y="296" fill="#A2AEC9"
-        font-family="'Segoe UI', system-ui, -apple-system, Roboto, sans-serif"
-        font-size="35" font-weight="400" letter-spacing="0.4">Tools for Bitcoin self-custody</text>
-  <text x="114" y="350" fill="#6E7A97"
-        font-family="'Segoe UI', system-ui, -apple-system, Roboto, sans-serif"
-        font-size="26" font-weight="400" letter-spacing="0.3">fortistechlabs.com</text>
 </svg>

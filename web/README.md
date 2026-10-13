@@ -124,6 +124,10 @@ authenticator ("quick unlock" — enable/disable it any time from Settings →
 Security). PRF support is inconsistent across browsers today; the password
 always works regardless.
 
+The wallet locks itself once the tab has been hidden for a minute (another tab,
+the browser minimised), and asks for the password — or the passkey, with quick
+unlock — again before revealing a recovery phrase or sending.
+
 Settings → a wallet's card → **Also add on BTC/XBT** clones a wallet onto the
 other chain from the *same* recovery phrase (same derivation, just a different
 chain code) — no new phrase to write down.
@@ -149,6 +153,7 @@ the language picker, and wallet management actions against the hosted edge.
 | `src/app.js` | controller + screens (no framework) |
 | `src/wallet.js` | `wallet-wasm` wrapper — the only file that touches keys |
 | `src/webauthn.js` | WebAuthn PRF registration/assertion for quick unlock |
+| `src/relock.js` | auto-lock after a minute hidden, and the constant-time secret check behind "confirm it's you" (`node --test src/relock.test.js`) |
 | `src/i18n.js`, `src/locales/*.json` | translation loader + per-locale strings |
 | `src/gateway.js` | `fortisd` gateway client (your own node) |
 | `src/esplora.js` | Esplora/edge client — address-gap-limit scan, USD price, same interface as the gateway |

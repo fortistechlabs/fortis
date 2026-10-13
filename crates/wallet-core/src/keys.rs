@@ -158,6 +158,20 @@ impl MasterKey {
         Ok(self.swap_xpriv(params, account, swap_index)?.private_key.public_key(&secp))
     }
 
+    /// A swap's recovery tag: `HMAC-SHA256(k_rec, index as 4 bytes big-endian)`,
+    /// `k_rec` the private key at `m/84'/0'/<account>'/3'` — a hardened branch
+    /// of its own, used for nothing else. The edge stores it with the swap's
+    /// offer; a restored phone derives tags 0, 1, 2, … again to find its swaps.
+    /// Reveals nothing: unlinkable to the wallet, its keys or other tags.
+    pub fn swap_recovery_tag(&self, account: u32, index: u32) -> Result<[u8; 32]> {
+        let secp = Secp256k1::new();
+        let path = parse_path(&format!("m/84h/0h/{account}h/3h"))?;
+        let key = Zeroizing::new(self.xpriv.derive_priv(&secp, &path)?.private_key.secret_bytes());
+        let mut e = hmac::HmacEngine::<sha256::Hash>::new(&key[..]);
+        e.input(&index.to_be_bytes());
+        Ok(hmac::Hmac::<sha256::Hash>::from_engine(e).to_byte_array())
+    }
+
     /// The raw swap secret at `m/84'/<coin>'/<account>'/2'/<swap_index>'`, for a
     /// [`SwapKey`] the swap engine can hold without the seed.
     pub fn swap_secret(&self, params: &ChainParams, account: u32, swap_index: u32) -> Result<[u8; 32]> {
@@ -276,7 +290,7 @@ impl std::fmt::Debug for SwapKey {
     }
 }
 
-const PREIMAGE_TAG: &[u8] = b"fortis-swap-preimage-v1";
+const PREIMAGE_TAG: &[u8] = b"fortis-swap-preimage-v2";
 
 impl SwapKey {
     pub fn from_secret(params: &ChainParams, secret: [u8; 32]) -> Result<SwapKey> {
@@ -304,12 +318,20 @@ impl SwapKey {
         out
     }
 
-    /// The swap preimage the initiator commits to: HMAC-SHA256 keyed by this secret
-    /// (the initiator's **XBT** swap key), so it is recoverable from the seed alone.
-    pub fn preimage(&self) -> Preimage {
+    /// The swap preimage the initiator commits to in match `match_id`:
+    /// HMAC-SHA256 keyed by this secret (the initiator's **XBT** swap key) over
+    /// the tag, the match id (length-prefixed) and `nonce` — random bytes the
+    /// phone draws for the swap and relays with the hashlock. Recoverable from
+    /// the seed, the match id and the relayed nonce, and never repeated even if
+    /// a swap index were used twice: the edge picks match ids, but not the
+    /// phone's nonce (a published preimage must never be reused).
+    pub fn preimage(&self, match_id: &str, nonce: &[u8]) -> Preimage {
         let key = Zeroizing::new(self.secret.secret_bytes());
         let mut engine = hmac::HmacEngine::<sha256::Hash>::new(key.as_ref());
         engine.input(PREIMAGE_TAG);
+        engine.input(&(match_id.len() as u32).to_be_bytes());
+        engine.input(match_id.as_bytes());
+        engine.input(nonce);
         hmac::Hmac::<sha256::Hash>::from_engine(engine).to_byte_array()
     }
 }
@@ -436,9 +458,18 @@ mod tests {
         let k7 = SwapKey::from_secret(&p, mk.swap_secret(&p, 0, 7).unwrap()).unwrap();
         let k7b = SwapKey::from_secret(&p, mk.swap_secret(&p, 0, 7).unwrap()).unwrap();
         let k8 = SwapKey::from_secret(&p, mk.swap_secret(&p, 0, 8).unwrap()).unwrap();
-        assert_eq!(k7.preimage(), k7b.preimage());
-        assert_ne!(k7.preimage(), k8.preimage());
-        assert_ne!(k7.preimage(), mk.swap_secret(&p, 0, 7).unwrap());
+        let n = [9u8; 16];
+        assert_eq!(k7.preimage("m1", &n), k7b.preimage("m1", &n));
+        assert_ne!(k7.preimage("m1", &n), k8.preimage("m1", &n));
+        assert_ne!(k7.preimage("m1", &n), mk.swap_secret(&p, 0, 7).unwrap());
+        // One key (a swap index used twice) in two matches: two preimages, so a
+        // repeated index can never reuse a preimage an earlier swap published.
+        assert_ne!(k7.preimage("m1", &n), k7.preimage("m2", &n));
+        // Nor with the same match id (the edge picks it): the phone's own nonce
+        // differs, so a reused index never repeats a preimage.
+        assert_ne!(k7.preimage("m1", &n), k7.preimage("m1", &[8u8; 16]));
+        // The nonce can't be shifted into the match id.
+        assert_ne!(k7.preimage("m1", &[]), k7.preimage("m", b"1"));
     }
 
     #[test]

@@ -279,5 +279,7 @@
     "one": "%1$d word",
     "other": "%1$d words"
   },
-  "xpub_loading": "still loading — try again"
+  "xpub_loading": "still loading — try again",
+  "reauth_title": "Confirm it's you",
+  "reauth_password": "Your app password"
 }

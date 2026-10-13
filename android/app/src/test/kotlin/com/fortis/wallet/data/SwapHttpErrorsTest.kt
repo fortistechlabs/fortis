@@ -4,7 +4,6 @@ import kotlinx.coroutines.runBlocking
 import okhttp3.OkHttpClient
 import org.junit.After
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.net.InetAddress
@@ -12,7 +11,7 @@ import java.net.ServerSocket
 import kotlin.concurrent.thread
 
 /**
- * A network or HTTP failure is not an answer: `NeoxEx.price` and
+ * A network or HTTP failure is not an answer: `NeoxEx.reference` and
  * `EdgeSwapApi.pricingAddress` throw (the engine retries) and return `null` only
  * for a definite refusal — so a flaky connection never turns into a decline.
  */
@@ -67,28 +66,28 @@ class SwapHttpErrorsTest {
     }
 
     @Test
-    fun neoxex_price_quotes() = runBlocking {
+    fun neoxex_reference_quotes() = runBlocking {
         neoxex("orderbook_ok")
-        assertEquals(1_008_980L, NeoxEx.price(http, base, computed + 10))
+        assertEquals(NeoxEx.Reference(1_008_980L, true), NeoxEx.reference(http, base, computed + 10))
     }
 
     @Test
-    fun neoxex_price_is_null_when_it_refuses_to_quote() = runBlocking {
+    fun neoxex_reference_is_not_ok_when_it_would_refuse_to_quote() = runBlocking {
         neoxex("orderbook_wide")
-        assertNull(NeoxEx.price(http, base, computed + 10))
+        assertEquals(false, NeoxEx.reference(http, base, computed + 10)?.ok)
     }
 
     @Test
-    fun neoxex_price_throws_when_the_exchange_errors() {
+    fun neoxex_reference_throws_when_the_exchange_errors() {
         neoxex("orderbook_ok", code = 502)
-        val r = runCatching { runBlocking { NeoxEx.price(http, base, computed + 10) } }
+        val r = runCatching { runBlocking { NeoxEx.reference(http, base, computed + 10) } }
         assertTrue("an HTTP error must throw, not read as a refusal", r.isFailure)
     }
 
     @Test
-    fun neoxex_price_throws_when_unreachable() {
+    fun neoxex_reference_throws_when_unreachable() {
         server.close()
-        val r = runCatching { runBlocking { NeoxEx.price(http, base, computed + 10) } }
+        val r = runCatching { runBlocking { NeoxEx.reference(http, base, computed + 10) } }
         assertTrue(r.isFailure)
     }
 

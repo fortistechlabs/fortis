@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::chain::{Chain, ChainParams};
 use crate::error::{Result, WalletError};
-use crate::htlc::{htlc_spend_fee, redeem_witness, script_hashlock, HtlcContract};
+use crate::htlc::{htlc_spend_fee, redeem_witness, script_hashlock, HtlcContract, HtlcPath, CONTRACT_V1};
 use crate::keys::SwapKey;
 use crate::sighash::SighashVariant;
 use crate::swap_terms::SwapTerms;
@@ -52,6 +52,15 @@ pub struct SwapParams {
     /// Confirmations we require on the counterparty's funding tx before we fund.
     /// Deep on the BLAKE2b leg — see the reorg policy.
     pub required_incoming_confs: u32,
+
+    /// Both legs' HTLC script version (from the terms). Sessions saved before
+    /// versions existed hold v1 swaps.
+    #[serde(default = "contract_v1")]
+    pub contract_version: u8,
+}
+
+fn contract_v1() -> u8 {
+    CONTRACT_V1
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -126,14 +135,15 @@ impl SwapMachine {
     /// Our HTLC on the send chain: redeemable by the counterparty with the preimage,
     /// refundable to us after `our_contract_locktime`.
     pub fn build_our_contract(&mut self, send_params: &ChainParams) -> Result<&HtlcContract> {
-        let c = HtlcContract::build(
+        let c = HtlcContract::try_build(
             send_params,
+            self.params.contract_version,
             self.params.hashlock,
             &self.params.their_pubkey_send,
             &self.params.our_pubkey_send,
             self.params.our_contract_locktime,
             self.params.send_amount,
-        );
+        )?;
         Ok(self.our_contract.insert(c))
     }
 
@@ -141,6 +151,7 @@ impl SwapMachine {
     pub fn expected_their_contract(&self, recv_params: &ChainParams) -> HtlcContract {
         HtlcContract::build(
             recv_params,
+            self.params.contract_version,
             self.params.hashlock,
             &self.params.our_pubkey_recv,
             &self.params.their_pubkey_recv,
@@ -281,11 +292,10 @@ impl SwapMachine {
             actual: "none".into(),
         })?;
         check_key(key, &self.params.our_pubkey_send, c)?;
-        check_feerates(feerates)?;
-        feerates
-            .iter()
-            .map(|&rate| {
-                let mut tx = c.refund_tx(outpoint, to.clone(), htlc_spend_fee(c, false, rate))?;
+        spend_fees(c, HtlcPath::Refund, &to, feerates)?
+            .into_iter()
+            .map(|fee| {
+                let mut tx = c.refund_tx(outpoint, to.clone(), fee)?;
                 let sig = key.sign(&c.spend_sighash(&tx, 0)?);
                 c.finalize_refund(&mut tx, 0, &sig, &key.pubkey());
                 Ok(tx)
@@ -311,6 +321,97 @@ impl SwapMachine {
             .collect()
     }
 
+    /// Releases of our contract (v2) at `feerates`, unsigned, paying `to`
+    /// (our refund address): the counterparty signs one when the match is
+    /// cancelled before it funded, and [`Self::finish_release`] completes it.
+    pub fn release_txs(&self, outpoint: OutPoint, to: ScriptBuf, feerates: &[u64]) -> Result<Vec<Transaction>> {
+        let c = self.our_contract.as_ref().ok_or(WalletError::SwapState {
+            expected: "our contract built".into(),
+            actual: "none".into(),
+        })?;
+        if !c.has_release() {
+            return Err(WalletError::InvalidSwapParams("this swap's contract has no release".into()));
+        }
+        spend_fees(c, HtlcPath::Release, &to, feerates)?
+            .into_iter()
+            .map(|fee| c.release_tx(outpoint, to.clone(), fee))
+            .collect()
+    }
+
+    /// Our signature (as the redeem party) on `tx`, a release of the
+    /// counterparty's contract at `outpoint` back to them: we give up claiming
+    /// it. Only a single-input spend of that very outpoint is signed — the
+    /// signature then moves nothing else. The caller must never fund this swap
+    /// afterwards: with the release, the counterparty has its coins back.
+    pub fn sign_their_release(
+        &self,
+        tx: &Transaction,
+        outpoint: OutPoint,
+        key: &SwapKey,
+        recv_params: &ChainParams,
+    ) -> Result<Vec<u8>> {
+        let c = self.expected_their_contract(recv_params);
+        if !c.has_release() {
+            return Err(WalletError::InvalidSwapParams("this swap's contract has no release".into()));
+        }
+        check_key(key, &self.params.our_pubkey_recv, &c)?;
+        let [input] = tx.input.as_slice() else {
+            return Err(WalletError::InvalidInput("a release spends exactly one input".into()));
+        };
+        if input.previous_output != outpoint {
+            return Err(WalletError::InvalidInput("the release doesn't spend their contract".into()));
+        }
+        Ok(key.sign(&c.spend_sighash(tx, 0)?))
+    }
+
+    /// Complete `tx`, one of our [`Self::release_txs`], with the counterparty's
+    /// signature `their_sig` and ours. Refused unless it spends exactly our
+    /// contract at `outpoint`, pays `to` at no more than the highest release
+    /// fee, and `their_sig` verifies.
+    pub fn finish_release(
+        &self,
+        tx: &Transaction,
+        outpoint: OutPoint,
+        to: &ScriptBuf,
+        their_sig: &[u8],
+        key: &SwapKey,
+    ) -> Result<Transaction> {
+        let c = self.our_contract.as_ref().ok_or(WalletError::SwapState {
+            expected: "our contract built".into(),
+            actual: "none".into(),
+        })?;
+        check_key(key, &self.params.our_pubkey_send, c)?;
+        let max_fee = htlc_spend_fee(c, HtlcPath::Release, MAX_SWAP_FEERATE_SAT_VB);
+        let ours = c.release_tx(outpoint, to.clone(), Amount::ZERO)?;
+        let paid = tx.output.first().map(|o| o.value).unwrap_or(Amount::ZERO);
+        let same_shape = tx.input.len() == 1
+            && tx.input[0].previous_output == outpoint
+            && tx.lock_time == ours.lock_time
+            && tx.input[0].sequence == ours.input[0].sequence
+            && tx.output.len() == ours.output.len()
+            && tx.output[0].script_pubkey == *to
+            && tx.output[1..] == ours.output[1..];
+        if !same_shape || paid + max_fee < c.value {
+            return Err(WalletError::InvalidInput("not our release".into()));
+        }
+        let msg = c.spend_sighash(tx, 0)?;
+        let flag = key.flag();
+        let verified = their_sig.last() == Some(&flag)
+            && bitcoin::secp256k1::ecdsa::Signature::from_der(&their_sig[..their_sig.len() - 1])
+                .ok()
+                .is_some_and(|s| {
+                    bitcoin::secp256k1::Secp256k1::verification_only()
+                        .verify_ecdsa(&bitcoin::secp256k1::Message::from_digest(msg), &s, &self.params.their_pubkey_send)
+                        .is_ok()
+                });
+        if !verified {
+            return Err(WalletError::InvalidInput("the counterparty's release signature doesn't verify".into()));
+        }
+        let mut done = tx.clone();
+        c.finalize_release(&mut done, 0, their_sig, &key.sign(&msg))?;
+        Ok(done)
+    }
+
     /// Redeems of the counterparty's contract signed now, before the preimage is
     /// known; [`finish_presigned_redeem`] completes one once the preimage appears
     /// on chain. Lets the participant redeem without the seed being unlocked.
@@ -326,11 +427,10 @@ impl SwapMachine {
             actual: "none".into(),
         })?;
         check_key(key, &self.params.our_pubkey_recv, c)?;
-        check_feerates(feerates)?;
-        feerates
-            .iter()
-            .map(|&rate| {
-                let tx = c.redeem_tx(outpoint, to.clone(), htlc_spend_fee(c, true, rate))?;
+        spend_fees(c, HtlcPath::Redeem, &to, feerates)?
+            .into_iter()
+            .map(|fee| {
+                let tx = c.redeem_tx(outpoint, to.clone(), fee)?;
                 let sig = key.sign(&c.spend_sighash(&tx, 0)?);
                 Ok(PresignedRedeem {
                     tx_hex: serialize_hex(&tx),
@@ -414,11 +514,34 @@ fn check_key(key: &SwapKey, expected: &PublicKey, c: &HtlcContract) -> Result<()
     Ok(())
 }
 
-fn check_feerates(feerates: &[u64]) -> Result<()> {
+/// The highest feerate (sat/vB) a swap claim or refund is signed at. Feerates
+/// come from the edge; one above this (a hostile or broken edge) is clamped to
+/// it, so a spend can't be turned into a gift to miners. Well above any
+/// sustained BTC fee level, and far above XBT's.
+pub const MAX_SWAP_FEERATE_SAT_VB: u64 = 500;
+
+/// The fee of each spend variant, one per feerate (cheapest first, as given). A fee
+/// that would leave less than `to`'s dust limit is clamped to `value - dust`, so on
+/// a small leg the top variant becomes "everything but dust" rather than an error;
+/// variants made identical by the clamp are dropped (order kept). Refund, redeem and
+/// presigned redeem all use this list, so presigned sigs and finished txs match.
+fn spend_fees(c: &HtlcContract, path: HtlcPath, to: &ScriptBuf, feerates: &[u64]) -> Result<Vec<Amount>> {
     if feerates.is_empty() {
         return Err(WalletError::InvalidInput("no feerates given".into()));
     }
-    Ok(())
+    let dust = to.minimal_non_dust();
+    let mut fees: Vec<Amount> = Vec::with_capacity(feerates.len());
+    for &rate in feerates {
+        let fee = htlc_spend_fee(c, path, rate.min(MAX_SWAP_FEERATE_SAT_VB));
+        let max_fee = c.value.checked_sub(dust).filter(|m| *m > Amount::ZERO).ok_or(
+            WalletError::InsufficientFunds { need: (fee + dust).to_sat(), have: c.value.to_sat() },
+        )?;
+        let fee = fee.min(max_fee);
+        if !fees.contains(&fee) {
+            fees.push(fee);
+        }
+    }
+    Ok(fees)
 }
 
 /// Swap parameters for our side of `t`. `ours` / `theirs` are `(xbt_pubkey,
@@ -450,6 +573,7 @@ pub fn params_from_terms(
             our_contract_locktime: t.xbt_locktime,
             their_contract_locktime: t.btc_locktime,
             required_incoming_confs: t.btc_confs,
+            contract_version: t.contract_version,
         },
         SwapRole::Participant => SwapParams {
             swap_id,
@@ -466,6 +590,7 @@ pub fn params_from_terms(
             our_contract_locktime: t.btc_locktime,
             their_contract_locktime: t.xbt_locktime,
             required_incoming_confs: t.xbt_confs,
+            contract_version: t.contract_version,
         },
     }
 }
@@ -514,6 +639,7 @@ mod tests {
             our_contract_locktime: 1_800_000_000,
             their_contract_locktime: 1_800_100_000,
             required_incoming_confs: 3,
+            contract_version: crate::htlc::CURRENT_CONTRACT,
         }
     }
 
@@ -648,12 +774,13 @@ mod tests {
             fee_bps: 50,
             fee_address: "bc1qfee".into(),
             matched_at: MATCHED_AT,
-            xbt_locktime: MATCHED_AT + 144 * 3600,
+            xbt_locktime: MATCHED_AT + 48 * 3600,
             btc_locktime: MATCHED_AT + 24 * 3600,
             xbt_confs: 6,
             btc_confs: 2,
             accept_by: MATCHED_AT + 120,
             initiator_fund_by: MATCHED_AT + 1920,
+            contract_version: crate::htlc::CURRENT_CONTRACT,
         }
     }
 
@@ -679,7 +806,7 @@ mod tests {
     /// (alice = initiator, bob = participant, their machines, the preimage)
     fn pair() -> (Party, Party, SwapMachine, SwapMachine, Preimage) {
         let (alice, bob) = (Party::new(0xa1), Party::new(0xb0));
-        let preimage = alice.xbt.preimage();
+        let preimage = alice.xbt.preimage("m1", &[1u8; 16]);
         let hashlock = sha256::Hash::hash(&preimage);
         let t = terms();
         let am = SwapMachine::new(params_from_terms(
@@ -715,7 +842,7 @@ mod tests {
 
         let a_xbt = am.build_our_contract(&xbt).unwrap().clone();
         assert_eq!(a_xbt.witness_script, bm.expected_their_contract(&xbt).witness_script);
-        assert_eq!(a_xbt.locktime, MATCHED_AT + 144 * 3600);
+        assert_eq!(a_xbt.locktime, MATCHED_AT + 48 * 3600);
         assert_eq!(a_xbt.value, Amount::from_sat(10_000_000));
 
         let b_btc = bm.build_our_contract(&btc).unwrap().clone();
@@ -739,15 +866,35 @@ mod tests {
         let txs = am.signed_refund(op, to.clone(), &alice.xbt, &[2, 20]).unwrap();
         assert_eq!(txs.len(), 2);
         assert!(fee_of(&c, &txs[1]) > fee_of(&c, &txs[0]));
-        assert_eq!(fee_of(&c, &txs[0]), htlc_spend_fee(&c, false, 2).to_sat());
+        assert_eq!(fee_of(&c, &txs[0]), htlc_spend_fee(&c, HtlcPath::Refund, 2).to_sat());
         for tx in &txs {
-            assert_eq!(tx.input[0].witness.len(), 4);
+            assert_eq!(tx.input[0].witness.len(), 5, "a v2 refund: [sig, pubkey, 0x01, <empty>, ws]");
             assert_eq!(tx.lock_time, bitcoin::absolute::LockTime::from_consensus(c.locktime));
             assert_eq!(tx.input[0].sequence, bitcoin::Sequence::ENABLE_RBF_NO_LOCKTIME);
             assert_eq!(tx.input[0].witness.nth(0).unwrap().last(), Some(&0x21));
         }
         // the wrong key is refused rather than producing an unspendable refund
         assert!(am.signed_refund(op, to, &alice.btc, &[2]).is_err());
+    }
+
+    /// Feerates come from the edge: an absurd one (a hostile or broken edge)
+    /// must not turn a claim or refund into "all but dust" to miners. Above
+    /// the ceiling they are clamped to it — never refused, so a spend stays possible.
+    #[test]
+    fn swap_spend_feerates_are_capped() {
+        let (_btc, xbt) = network_params("bitcoin").unwrap();
+        let (alice, _b, mut am, _bm, _p) = pair();
+        let c = am.build_our_contract(&xbt).unwrap().clone();
+        let op = OutPoint::new(Txid::all_zeros(), 0);
+        let to = ScriptBuf::from(vec![0u8; 22]);
+        let txs = am.signed_refund(op, to, &alice.xbt, &[100_000]).unwrap();
+        assert_eq!(fee_of(&c, &txs[0]), htlc_spend_fee(&c, HtlcPath::Refund, MAX_SWAP_FEERATE_SAT_VB).to_sat());
+        assert!(MAX_SWAP_FEERATE_SAT_VB <= 1_000);
+        // Two absurd rates collapse to one capped variant.
+        let (alice, _b, mut am, _bm, _p) = pair();
+        am.build_our_contract(&xbt).unwrap();
+        let txs = am.signed_refund(op, ScriptBuf::from(vec![0u8; 22]), &alice.xbt, &[50_000, 100_000]).unwrap();
+        assert_eq!(txs.len(), 1);
     }
 
     #[test]
@@ -767,10 +914,81 @@ mod tests {
         let direct = bm.signed_redeem(op, to, &bob.xbt, &preimage, &[3]).unwrap();
         assert_eq!(done.input[0].witness, direct[0].input[0].witness);
         assert_eq!(done, direct[0]);
-        assert_eq!(preimage_from_witness(&done.input[0].witness), Some(preimage));
+        let hashlock = <bitcoin::hashes::sha256::Hash as bitcoin::hashes::Hash>::hash(&preimage);
+        assert_eq!(preimage_from_witness(&done.input[0].witness, &hashlock), Some(preimage));
 
         // a preimage that does not open the hashlock is refused
         assert!(finish_presigned_redeem(&pre0, &[0u8; 32]).is_err());
+    }
+
+    /// Machines over a `sat`-sat leg on each chain (alice = initiator, bob = participant).
+    fn small_pair(sat: u64) -> (Party, Party, SwapMachine, SwapMachine, Preimage) {
+        let (alice, bob) = (Party::new(0xa1), Party::new(0xb0));
+        let preimage = alice.xbt.preimage("m1", &[1u8; 16]);
+        let hashlock = sha256::Hash::hash(&preimage);
+        let t = SwapTerms { xbt_sat: sat, btc_sat: sat, ..terms() };
+        let am = SwapMachine::new(params_from_terms(
+            &t, SwapRole::Initiator, alice.pks(), bob.pks(), hashlock, [1; 16],
+        ));
+        let bm = SwapMachine::new(params_from_terms(
+            &t, SwapRole::Participant, bob.pks(), alice.pks(), hashlock, [1; 16],
+        ));
+        (alice, bob, am, bm, preimage)
+    }
+
+    fn p2wpkh() -> ScriptBuf {
+        ScriptBuf::new_p2wpkh(&bitcoin::WPubkeyHash::all_zeros())
+    }
+
+    #[test]
+    fn small_leg_spends_clamp_instead_of_failing() {
+        let (_btc, xbt) = network_params("bitcoin").unwrap();
+        let (alice, bob, mut am, mut bm, preimage) = small_pair(20_000);
+        let c = am.build_our_contract(&xbt).unwrap().clone();
+        let op = bm.verify_their_contract(&serialize(&funding_paying(&c)), &xbt).unwrap();
+        let to = p2wpkh();
+        let dust = to.minimal_non_dust();
+        assert_eq!(dust.to_sat(), 294);
+
+        let refunds = am.signed_refund(op, to.clone(), &alice.xbt, &[70, 140]).unwrap();
+        let redeems = bm.signed_redeem(op, to.clone(), &bob.xbt, &preimage, &[70, 140]).unwrap();
+        let presigned = bm.presign_redeem(op, to.clone(), &bob.xbt, &[70, 140]).unwrap();
+        for txs in [&refunds, &redeems] {
+            assert_eq!(txs.len(), 2);
+            assert!(txs.iter().all(|tx| tx.output[0].value >= dust));
+            assert_eq!(txs[1].output[0].value, dust);
+            assert!(txs[0].output[0].value > dust);
+        }
+        assert_eq!(fee_of(&c, &refunds[0]), htlc_spend_fee(&c, HtlcPath::Refund, 70).to_sat());
+        assert_eq!(fee_of(&c, &redeems[0]), htlc_spend_fee(&c, HtlcPath::Redeem, 70).to_sat());
+        assert_eq!(presigned.len(), redeems.len());
+        for (p, tx) in presigned.iter().zip(&redeems) {
+            assert_eq!(&finish_presigned_redeem(p, &preimage).unwrap(), tx);
+        }
+
+        // a leg that cannot even leave a non-dust output is still refused
+        let (alice, _bob, mut am, _bm, _p) = small_pair(294);
+        am.build_our_contract(&xbt).unwrap();
+        assert!(am.signed_refund(op, to, &alice.xbt, &[1]).is_err());
+    }
+
+    #[test]
+    fn clamped_duplicates_are_dropped() {
+        let (_btc, xbt) = network_params("bitcoin").unwrap();
+        let (alice, bob, mut am, mut bm, preimage) = small_pair(20_000);
+        let c = am.build_our_contract(&xbt).unwrap().clone();
+        let op = bm.verify_their_contract(&serialize(&funding_paying(&c)), &xbt).unwrap();
+        let to = p2wpkh();
+        let dust = to.minimal_non_dust();
+
+        let refunds = am.signed_refund(op, to.clone(), &alice.xbt, &[200, 400]).unwrap();
+        let redeems = bm.signed_redeem(op, to.clone(), &bob.xbt, &preimage, &[200, 400]).unwrap();
+        let presigned = bm.presign_redeem(op, to, &bob.xbt, &[200, 400]).unwrap();
+        assert_eq!(refunds.len(), 1);
+        assert_eq!(redeems.len(), 1);
+        assert_eq!(presigned.len(), 1);
+        assert_eq!(refunds[0].output[0].value, dust);
+        assert_eq!(redeems[0].output[0].value, dust);
     }
 
     #[test]
@@ -810,5 +1028,91 @@ mod tests {
         assert!(matches!(m.state(), SwapState::Redeemed { .. }));
         m.on_event(SwapEvent::OurOutputConfirmed { confirmations: 3 });
         assert_eq!(m.state(), &SwapState::Settled);
+    }
+
+    // ---- the cooperative release (v2 contracts) ----
+
+    fn verifies(sig: &[u8], msg: [u8; 32], pk: &PublicKey) -> bool {
+        let secp = Secp256k1::verification_only();
+        bitcoin::secp256k1::ecdsa::Signature::from_der(&sig[..sig.len() - 1])
+            .is_ok_and(|s| secp.verify_ecdsa(&bitcoin::secp256k1::Message::from_digest(msg), &s, pk).is_ok())
+    }
+
+    /// The match is cancelled before the participant funded: it signs the
+    /// initiator's XBT straight back, and the initiator finishes the release
+    /// with its own signature. No preimage anywhere.
+    #[test]
+    fn a_cancelled_swap_is_released_back_to_the_funder() {
+        let (_btc, xbt) = network_params("bitcoin").unwrap();
+        let (alice, bob, mut am, bm, preimage) = pair();
+        let c = am.build_our_contract(&xbt).unwrap().clone();
+        assert!(c.has_release());
+        let op = OutPoint::new(Txid::from_byte_array([7; 32]), 1);
+        let to = ScriptBuf::from(vec![0u8; 22]);
+
+        let asks = am.release_txs(op, to.clone(), &[2, 20]).unwrap();
+        assert_eq!(asks.len(), 2);
+        for ask in &asks {
+            let their = bm.sign_their_release(ask, op, &bob.xbt, &xbt).unwrap();
+            let done = am.finish_release(ask, op, &to, &their, &alice.xbt).unwrap();
+            let w = &done.input[0].witness;
+            assert_eq!(w.len(), 5);
+            let msg = c.spend_sighash(&done, 0).unwrap();
+            assert!(verifies(w.nth(0).unwrap(), msg, &bob.xbt.pubkey()), "bob's (redeem) signature");
+            assert!(verifies(w.nth(1).unwrap(), msg, &alice.xbt.pubkey()), "alice's (refund) signature");
+            assert_eq!(done.output[0].script_pubkey, to);
+            assert_eq!(preimage_from_witness(w, &sha256::Hash::hash(&preimage)), None);
+        }
+    }
+
+    /// The participant signs a release of that one contract only: a single
+    /// input, the contract's own outpoint.
+    #[test]
+    fn the_counterparty_signs_a_release_of_that_contract_only() {
+        let (_btc, xbt) = network_params("bitcoin").unwrap();
+        let (_alice, bob, mut am, bm, _p) = pair();
+        am.build_our_contract(&xbt).unwrap();
+        let op = OutPoint::new(Txid::from_byte_array([7; 32]), 1);
+        let ask = am.release_txs(op, ScriptBuf::from(vec![0u8; 22]), &[2]).unwrap().remove(0);
+        let elsewhere = OutPoint::new(Txid::from_byte_array([8; 32]), 1);
+        assert!(bm.sign_their_release(&ask, elsewhere, &bob.xbt, &xbt).is_err(), "another outpoint");
+        let mut two = ask.clone();
+        two.input.push(two.input[0].clone());
+        two.input[1].previous_output = elsewhere;
+        assert!(bm.sign_their_release(&two, op, &bob.xbt, &xbt).is_err(), "a second input");
+        assert!(bm.sign_their_release(&ask, op, &bob.btc, &xbt).is_err(), "the wrong key");
+    }
+
+    /// The funder broadcasts only a release paying itself, with a counterparty
+    /// signature that verifies.
+    #[test]
+    fn the_funder_finishes_only_a_good_release_to_itself() {
+        let (_btc, xbt) = network_params("bitcoin").unwrap();
+        let (alice, bob, mut am, bm, _p) = pair();
+        am.build_our_contract(&xbt).unwrap();
+        let op = OutPoint::new(Txid::from_byte_array([7; 32]), 1);
+        let to = ScriptBuf::from(vec![0u8; 22]);
+        let ask = am.release_txs(op, to.clone(), &[2]).unwrap().remove(0);
+        let their = bm.sign_their_release(&ask, op, &bob.xbt, &xbt).unwrap();
+
+        let forged = alice.btc.sign(&[3u8; 32]);
+        assert!(am.finish_release(&ask, op, &to, &forged, &alice.xbt).is_err(), "a signature that doesn't verify");
+        let mut elsewhere = ask.clone();
+        elsewhere.output[0].script_pubkey = ScriptBuf::from(vec![1u8; 22]);
+        assert!(am.finish_release(&elsewhere, op, &to, &their, &alice.xbt).is_err(), "not paying us");
+        let mut pricey = ask.clone();
+        pricey.output[0].value = Amount::from_sat(1);
+        assert!(am.finish_release(&pricey, op, &to, &their, &alice.xbt).is_err(), "a fee over the cap");
+    }
+
+    #[test]
+    fn a_v1_swap_has_no_release() {
+        let (_btc, xbt) = network_params("bitcoin").unwrap();
+        let (alice, bob) = (Party::new(0xa1), Party::new(0xb0));
+        let t = SwapTerms { contract_version: crate::htlc::CONTRACT_V1, ..terms() };
+        let h = sha256::Hash::hash(b"p");
+        let mut am = SwapMachine::new(params_from_terms(&t, SwapRole::Initiator, alice.pks(), bob.pks(), h, [1; 16]));
+        am.build_our_contract(&xbt).unwrap();
+        assert!(am.release_txs(OutPoint::null(), ScriptBuf::new(), &[2]).is_err());
     }
 }

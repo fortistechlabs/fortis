@@ -122,6 +122,8 @@ fn start_node(bitcoind: &Path, extra: &[&str]) -> Node {
         ])
         .args([
             "-server=1",
+            // as in production: `/tx/:txid…` reads any transaction from the node
+            "-txindex=1",
             "-fallbackfee=0.0002",
             "-printtoconsole=0",
             "-listen=0",
@@ -386,6 +388,76 @@ fn receive_spend_and_reorg_over_real_nodes() {
                     .then_some(())
             },
         );
+        drop(idx);
+        let _ = std::fs::remove_dir_all(&db);
+    });
+}
+
+/// The swap routes: `/tx/:txid`, `/tx/:txid/hex` and `/tx/:txid/outspend/:vout`
+/// for any output (a swap HTLC is P2WSH, which the address index never
+/// stores): unspent → spent in the mempool → spent in a block mined several
+/// blocks after the funding (found by the block scan once the mempool no
+/// longer has it).
+#[test]
+fn tx_hex_and_outspend_routes_over_real_nodes() {
+    for_each_node(|_, node| {
+        node.mine(101);
+        node.cli(&["createwallet", "a"]);
+        let x = node.wallet("a", &["getnewaddress", "", "bech32"]);
+        let db = tmp_db("outspend");
+        let idx = start_index(&node, &db);
+
+        let fund = node.wallet("miner", &["sendtoaddress", &x, "1.0"]);
+        node.mine(1);
+        let funded_at = node.height();
+        let raw: Value = serde_json::from_str(&node.cli(&["getrawtransaction", &fund, "1"])).unwrap();
+        let vout = raw["vout"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .position(|o| o["scriptPubKey"]["address"] == x.as_str())
+            .unwrap();
+        let spk = raw["vout"][vout]["scriptPubKey"]["hex"].as_str().unwrap().to_string();
+
+        // /tx: outputs with value and script hex, confirmed at its height
+        let t = poll(Duration::from_secs(10), "tx", || {
+            let v = get_json(&idx, &format!("/tx/{fund}"));
+            (v["status"]["confirmed"] == true).then_some(v)
+        });
+        assert_eq!(t["vout"][vout]["value"], 100_000_000);
+        assert_eq!(t["vout"][vout]["scriptpubkey"], spk.as_str());
+        assert_eq!(t["status"]["block_height"], funded_at);
+        let outspend = format!("/tx/{fund}/outspend/{vout}");
+        assert_eq!(get_json(&idx, &outspend), json!({ "spent": false }));
+        assert_eq!(get_status(&idx, &format!("/tx/{fund}/outspend/99")).0, 404);
+        assert_eq!(get_status(&idx, &format!("/tx/{}", "00".repeat(32))).0, 404);
+
+        // A few blocks later, spend it: in the mempool first…
+        node.mine(3);
+        let dest = node.wallet("miner", &["getnewaddress"]);
+        let spend = node.wallet("a", &["sendtoaddress", &dest, "0.5"]);
+        let v = poll(Duration::from_secs(10), "mempool spend", || {
+            let v = get_json(&idx, &outspend);
+            (v["spent"] == true).then_some(v)
+        });
+        assert_eq!(v["txid"], spend.as_str());
+        assert_eq!(v["status"]["confirmed"], false);
+        assert_eq!(
+            get(&idx, &format!("/tx/{spend}/hex")).unwrap().trim(),
+            node.cli(&["getrawtransaction", &spend]).trim()
+        );
+
+        // …then mined: found in its block, with the block's height.
+        node.mine(1);
+        let spent_at = node.height();
+        let v = poll(Duration::from_secs(10), "mined spend", || {
+            let v = get_json(&idx, &outspend);
+            (v["status"]["confirmed"] == true).then_some(v)
+        });
+        assert_eq!(v["spent"], true);
+        assert_eq!(v["txid"], spend.as_str());
+        assert_eq!(v["status"]["block_height"], spent_at);
+        assert!(spent_at > funded_at + 3);
         drop(idx);
         let _ = std::fs::remove_dir_all(&db);
     });

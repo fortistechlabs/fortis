@@ -1,6 +1,7 @@
 package com.fortis.wallet.swap
 
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.plus
 import kotlinx.coroutines.runBlocking
@@ -62,4 +63,32 @@ class SwapRunnerTest {
         assertEquals(setOf("a", "b"), steps.toSet())
         assertTrue(runner.idle)
     }
+
+    @Test
+    fun a_step_that_never_finishes_is_abandoned_and_retried_next_pass() = runBlocking {
+        val steps = Collections.synchronizedList(mutableListOf<String>())
+        val runner = SwapRunner(active = { listOf("a") }, stepTimeoutMs = 200) { id ->
+            steps += id
+            awaitCancellation() // e.g. a call that never returns
+        }
+        // The pass ends (it doesn't hang), and the swap is free to step again.
+        withTimeout(5_000) { runner.launchActive(this@runBlocking + Dispatchers.Default).join() }
+        assertTrue(runner.idle)
+        withTimeout(5_000) { runner.launchActive(this@runBlocking + Dispatchers.Default).join() }
+        assertEquals(listOf("a", "a"), steps.toList())
+    }
+
+    @Test
+    fun a_timed_out_step_does_not_cancel_the_pass_or_the_other_swaps() = runBlocking {
+        val bDone = CompletableDeferred<Unit>()
+        val runner = SwapRunner(active = { listOf("a", "b") }, stepTimeoutMs = 200) { id ->
+            if (id == "a") awaitCancellation() else bDone.complete(Unit)
+        }
+        val pass = runner.launchActive(this + Dispatchers.Default)
+        withTimeout(5_000) { pass.join() }
+        assertFalse("a's timeout must not cancel the pass", pass.isCancelled)
+        assertTrue(bDone.isCompleted)
+        assertTrue(runner.idle)
+    }
+
 }

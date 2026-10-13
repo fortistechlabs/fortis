@@ -268,6 +268,12 @@ fn wallet_flow_through_the_edge() {
     let (s, body) = req(&a, "POST", &format!("{edge}/register"), None, Some(""));
     assert_eq!(s, 200, "register failed: {body}");
     let token = serde_json::from_str::<serde_json::Value>(&body).unwrap()["token"].as_str().unwrap().to_string();
+    // Only in the Authorization header: a token in the URL ends up in logs and cache keys.
+    assert_eq!(
+        req(&a, "GET", &format!("{edge}/xbt/blocks/tip/height?token={token}"), None, None).0,
+        401,
+        "a token in the URL is not accepted"
+    );
 
     // --- wallet from the phrase ---
     let params = ChainParams::resolve(Chain::Xbt, "regtest").unwrap();
@@ -434,9 +440,28 @@ fn wallet_flow_through_the_edge() {
     let limited_cached = (0..300).filter(|_| req(&a, "GET", &tip_url, Some(&token), None).0 == 429).count();
     assert_eq!(limited_cached, 0, "cached responses must not spend rate budget");
 
-    // --- distinct uncached requests do: burst 100, fire 160 -> some 429s ---
-    let limited = (0..160)
-        .filter(|i| req(&a, "GET", &format!("{edge}/xbt/address/{recv0}/txs?x={i}"), Some(&token), None).0 == 429)
-        .count();
-    assert!(limited > 0, "expected the limiter to reject some of a 160-request burst of distinct queries");
+    // --- distinct uncached requests do spend it. A second edge (same secret, so
+    // the same token) with a budget no request rate can outrun — 5 at once,
+    // refilled 1 a minute — makes this exact, not a race against the refill:
+    // of 10 distinct queries, exactly 5 pass ---
+    let tight_port = free_port();
+    let _tight = spawn(
+        &edge_bin,
+        &[
+            "--bind", &format!("127.0.0.1:{tight_port}"),
+            "--xbt-upstream", &format!("http://127.0.0.1:{idx_port}"),
+            "--secret-file", node.datadir.join("edge.secret").to_str().unwrap(),
+            "--require-token",
+            "--rate-per-min", "1",
+            "--rate-burst", "5",
+            "--cache-dir", node.datadir.join("tight-cache").to_str().unwrap(),
+            "--btc-history-dir", node.datadir.join("tight-btc-history").to_str().unwrap(),
+        ],
+    );
+    wait_up(&a, &format!("http://127.0.0.1:{tight_port}/"));
+    let codes: Vec<u16> = (0..10)
+        .map(|i| req(&a, "GET", &format!("http://127.0.0.1:{tight_port}/xbt/address/{recv0}/txs?x={i}"), Some(&token), None).0)
+        .collect();
+    assert_eq!(codes.iter().filter(|c| **c == 429).count(), 5, "5 of 10 distinct queries past a burst of 5: {codes:?}");
+    assert!(codes[..5].iter().all(|c| *c == 200), "the first 5 pass: {codes:?}");
 }

@@ -443,3 +443,48 @@ fn undo_record_round_trips() {
     assert_eq!(Undo::decode(&u.encode()).unwrap(), u);
     assert!(Undo::decode(&u.encode()[..30]).is_err());
 }
+
+/// Every rendered transaction is cached, so the cache is capped: past its cap
+/// the oldest half (the lowest txnums) goes. A dropped one is just rendered
+/// from the node again when asked for.
+#[test]
+fn the_render_cache_keeps_to_its_cap() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = open(&dir).with_render_cap(10);
+    for n in 0..25u64 {
+        db.render_put(n, format!("tx{n}").as_bytes()).unwrap();
+    }
+    let r = db.reader();
+    let kept: Vec<u64> = (0..25).filter(|n| r.render_get(*n).unwrap().is_some()).collect();
+    assert!(kept.len() <= 10, "{kept:?}");
+    assert!(kept.contains(&24), "the newest stays: {kept:?}");
+    assert!(!kept.contains(&0), "the oldest goes: {kept:?}");
+    assert_eq!(r.render_get(24).unwrap().as_deref(), Some(&b"tx24"[..]));
+}
+
+/// An address dusted past the row cap still has a full balance: the largest
+/// coins are listed, the rest are counted and summed (streamed, so memory
+/// stays bounded however much dust there is), and a coin `skip` names (one
+/// the mempool is spending) is in neither.
+#[test]
+fn past_the_cap_the_largest_coins_are_listed_and_the_rest_summed() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = open(&dir);
+    let mut txs = Vec::new();
+    for n in 0..10u8 {
+        // values 10, 20, …, 100
+        txs.push(fund(txid(n + 1), P1, 0, (u64::from(n) + 1) * 10));
+    }
+    db.apply(&[blk(100, txs)], 0, Durability::Durable, false).unwrap();
+    let r = db.reader();
+    let spent_in_mempool = OutPoint { txid: txid(10), vout: 0 }; // the 100
+    let (listed, rest) = r.utxos_largest(&P1, 3, |op| *op != spent_in_mempool).unwrap();
+    let mut values: Vec<u64> = listed.iter().map(|(_, u)| u.value).collect();
+    values.sort_unstable();
+    assert_eq!(values, [70, 80, 90]);
+    assert_eq!(rest, Unlisted { count: 6, value: 10 + 20 + 30 + 40 + 50 + 60 });
+    // Under the cap: everything listed, nothing unlisted.
+    let (all, none) = r.utxos_largest(&P1, 100, |_| true).unwrap();
+    assert_eq!(all.len(), 10);
+    assert_eq!(none, Unlisted::default());
+}

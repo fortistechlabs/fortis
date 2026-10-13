@@ -31,7 +31,8 @@ Copy-Item app\build\outputs\apk\release\app-release.apk `
   ..\fortis-wallet.apk           # stable asset name — the site links to /latest/download/fortis-wallet.apk
 ```
 
-Universal APK (arm64-v8a + x86_64), signed with `fortis-upload.jks`. **That key
+Without `android/keystore.properties` the build stops at once (it used to fall
+back to the debug key). Universal APK (arm64-v8a + x86_64), signed with `fortis-upload.jks`. **That key
 is the app's permanent identity for direct installs** — if Play ever happens,
 hand Play *this* key as the app signing key so website users can cross-update.
 

@@ -1,0 +1,200 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>How swaps work — Fortis Wallet</title>
+<meta name="description" content="Swap BTC for XBT, or XBT for BTC, with another person in Fortis Wallet: atomic and non-custodial. What you see, what you do, and what happens if something goes wrong.">
+<meta property="og:title" content="How swaps work — Fortis Wallet">
+<meta property="og:description" content="Swap BTC ↔ XBT with another person. Nobody holds your coins in the middle.">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://fortistechlabs.com/swaps">
+<meta property="og:image" content="https://fortistechlabs.com/video/how-swaps-work-poster.jpg">
+<link rel="icon" href="/icon.svg">
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+
+<div class="wrap">
+  <nav>
+    <a class="brand" href="/"><img src="/icon.svg" alt=""> Fortis Tech Labs</a>
+    <span class="links">
+      <a href="/#wallet">Wallet</a>
+      <a href="/swaps" aria-current="page">Swaps</a>
+      <a href="https://github.com/fortistechlabs/fortis" target="_blank" rel="noopener">Source</a>
+      <a href="/privacy">Privacy</a>
+    </span>
+  </nav>
+</div>
+
+<header class="hero">
+  <div class="wrap">
+    <div class="eyebrow">Fortis Wallet · swaps</div>
+    <h1>Swap BTC ↔ XBT with another person</h1>
+    <p>Trade your BTC for XBT, or your XBT for BTC, directly with someone else. Both of you lock your coins in a contract on chain: either you both get paid, or you both get your coins back. Nobody holds your coins in the middle — not the other person, and not us.</p>
+    <p class="warn" style="margin-top:16px; font-size:14px">Swaps arrive in Fortis Wallet for Android in the next release.</p>
+  </div>
+</header>
+
+<section>
+  <div class="wrap">
+    <h2>See it in under two minutes</h2>
+    <p class="lead">A real swap between two phones, start to finish — narrated, with captions on screen.</p>
+    <div class="video">
+      <video controls playsinline preload="metadata" poster="/video/how-swaps-work-poster.jpg" width="720" height="1730">
+        <source src="/video/how-swaps-work.webm" type="video/webm">
+        <source src="/video/how-swaps-work.mp4" type="video/mp4">
+        Your browser can't play this video. <a href="/video/how-swaps-work.mp4">Download it (MP4)</a>.
+      </video>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <h2>Step by step</h2>
+    <p class="lead">What you see, and the few things you do. Everything else the app does for you.</p>
+
+    <div class="step">
+      <img src="/img/swaps/swaps.jpg" alt="The Swaps page: New swap, Enter a code, active swaps and history" loading="lazy" width="540" height="1125">
+      <div>
+        <div class="n">1 · Start</div>
+        <h3>Open Swaps</h3>
+        <p>You need two wallets from your recovery phrase: one on the chain you pay with, one on the chain you receive on. Then:</p>
+        <ul class="steps-list">
+          <li><strong>New swap</strong> — put up an offer and wait for someone to take it;</li>
+          <li><strong>take an offer</strong> that's already waiting, at its price;</li>
+          <li><strong>Enter a code</strong> — swap with someone you know, using the code they send you.</li>
+        </ul>
+        <p><span class="tag go">You</span> pick one.</p>
+      </div>
+    </div>
+
+    <div class="step">
+      <img src="/img/swaps/new-amount.jpg" alt="New swap: from and to wallets, amount with a slider marked Min, 25%, 50%, 75%, Max" loading="lazy" width="540" height="1125">
+      <div>
+        <div class="n">2 · Amount</div>
+        <h3>How much</h3>
+        <p>Choose the wallet you pay from and the one your new coins go into. Slide, or tap <strong>Min</strong>, 25–75% or <strong>Max</strong> — Max is everything that wallet can swap after the commission and the network fee.</p>
+        <p><span class="tag go">You</span> set the amount.</p>
+      </div>
+    </div>
+
+    <div class="step">
+      <img src="/img/swaps/new-price.jpg" alt="New swap: price, the NeoxEX reference, commission and what happens next" loading="lazy" width="540" height="1125">
+      <div>
+        <div class="n">3 · Price</div>
+        <h3>The worst price you'll take</h3>
+        <p>Your price is a limit: you'll never get less. The app shows it against the NeoxEX market price, and warns you when it's far off. The commission is 0.5% of what you send (at least 400 sat), plus the network fee.</p>
+        <p><span class="tag go">You</span> tap <strong>Find a match</strong>, or <strong>Swap with a person</strong> to get a code to share.</p>
+      </div>
+    </div>
+
+    <div class="step">
+      <img src="/img/swaps/take.jpg" alt="Taking a code: the terms, the reference price, and Accept" loading="lazy" width="540" height="1125">
+      <div>
+        <div class="n">Taking an offer or a code</div>
+        <h3>Check the terms, then go</h3>
+        <p>You see exactly what you send, the commission and what you receive before you commit. For an offer from the list, that's on the Take screen at the offer's own price; for a code, the terms show once you look it up. Either way your app checks the match itself — anything that doesn't match what you saw is declined.</p>
+        <p><span class="tag go">You</span> tap <strong>Take</strong> (an offer) or <strong>Accept</strong> (a code).</p>
+      </div>
+    </div>
+
+    <div class="step">
+      <img src="/img/swaps/funded.jpg" alt="A matched swap: You funded, waiting for their funding, refund opens in 47 hours" loading="lazy" width="540" height="1125">
+      <div>
+        <div class="n">4 · Matched</div>
+        <h3>Your coins go into the swap</h3>
+        <p>Whoever sends XBT goes first: the app locks the XBT in the contract as soon as both have accepted. You can close the app — it carries on in the background, and the swap shows on Home and on both wallets.</p>
+        <p><span class="tag">Nothing to do</span> while the app is unlocked.</p>
+      </div>
+    </div>
+
+    <div class="step">
+      <img src="/img/swaps/turn-soon.jpg" alt="Waiting for their coins to confirm, with a countdown: your turn in about 20 minutes, until about 1:47 PM" loading="lazy" width="540" height="1125">
+      <div>
+        <div class="n">5 · Their turn, then yours</div>
+        <h3>A countdown tells you when</h3>
+        <p>If you send BTC, you go second: once their XBT has 6 confirmations (about an hour), it's your turn, and you have about 2 hours. The swap screen counts down to it and shows the deadline.</p>
+        <p><span class="tag">Nothing to do</span> yet.</p>
+      </div>
+    </div>
+
+    <div class="step">
+      <img src="/img/swaps/your-turn.jpg" alt="Your turn to fund: open Fortis to put your coins in before the deadline" loading="lazy" width="540" height="1125">
+      <div>
+        <div class="n">6 · Your turn</div>
+        <h3>Open Fortis when it tells you</h3>
+        <p>Putting your coins in needs the app unlocked. If it is, it happens by itself. If it has locked itself, a notification asks you to open it — do, before the time shown.</p>
+        <p><span class="tag go">You</span> open Fortis and unlock it.</p>
+      </div>
+    </div>
+
+    <div class="step">
+      <img src="/img/swaps/done.jpg" alt="Done: all steps complete, your new coins are in your wallet" loading="lazy" width="540" height="1125">
+      <div>
+        <div class="n">7 · Done</div>
+        <h3>Both sides collect</h3>
+        <p>Each side collects the other's coins; the app does it for you, even while locked. When the swap says <strong>Done</strong>, your new coins are in your wallet.</p>
+        <p><span class="tag">Nothing to do</span>.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <h2>If something goes wrong</h2>
+    <p class="lead">The contract on chain decides, not a person, and not us.</p>
+
+    <div class="step">
+      <img src="/img/swaps/released.jpg" alt="Cancelled: the other side didn't lock their coins in time and released yours; they're on their way back" loading="lazy" width="540" height="1125">
+      <div>
+        <div class="n">They back out</div>
+        <h3>Your coins come back</h3>
+        <p>If the other side doesn't lock their coins in time, the match is cancelled. Their app then releases yours straight back to you — within minutes, automatically. If their phone is gone for good, your coins come back on their own at the refund time instead (48 hours for XBT, 24 hours for BTC).</p>
+        <p><span class="tag">Nothing to do</span>.</p>
+      </div>
+    </div>
+
+    <div class="step">
+      <img src="/img/swaps/recover.jpg" alt="Settings: the Swaps card with Find my swaps" loading="lazy" width="540" height="713">
+      <div>
+        <div class="n">You lose your phone</div>
+        <h3>Restore your phrase, then Find my swaps</h3>
+        <p>Restore your recovery phrase on a new phone, with both its XBT and BTC wallets. The app looks for your swaps that still have coins locked and finishes them — refunding or collecting. It also runs on its own after a restore, and from <strong>Settings → Find my swaps</strong>.</p>
+        <p><span class="tag go">You</span> restore your phrase.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <h2>Good to know</h2>
+    <dl class="facts">
+      <div><dt>Fees</dt><dd>0.5% of what you send, at least 400 sat, plus the network fee for locking your coins. The smallest swap is worth 2,000 sat of BTC.</dd></div>
+      <div><dt>Time</dt><dd>About an hour when both sides are quick: the XBT needs 6 confirmations, the BTC 2.</dd></div>
+      <div><dt>Keep your phone on</dt><dd>Keep it on and online until the swap says Done. The app works in the background; it needs to be unlocked only to put your coins in.</dd></div>
+      <div><dt>Nobody in the middle</dt><dd>Each side's coins sit in a contract only the two of you can spend: claiming them reveals the key that lets the other side claim theirs. Our server only introduces you and passes messages; it can't move your coins.</dd></div>
+      <div><dt>A watchtower, just in case</dt><dd>When your coins are locked, the app hands our server a refund signed in advance. It can only pay you, and is sent for you if your phone is off when the refund time comes.</dd></div>
+      <div><dt>Replay-protected</dt><dd>Every swap transaction is valid on one chain only: BTC ones carry a marker XBT rejects, and XBT ones are signed in a way Bitcoin rejects.</dd></div>
+    </dl>
+    <p class="warn" style="font-size:14px; margin-top:26px">Swaps are new. Start with small amounts.</p>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap row">
+    <span>&copy; Fortis Tech Labs 2026</span>
+    <span>
+      <a href="/">Home</a> &nbsp;·&nbsp;
+      <a href="https://github.com/fortistechlabs/fortis" target="_blank" rel="noopener">Source</a> &nbsp;·&nbsp;
+      <a href="/privacy">Privacy Policy</a> &nbsp;·&nbsp;
+      <a href="mailto:support@fortistechlabs.com">support@fortistechlabs.com</a>
+    </span>
+  </div>
+</footer>
+
+</body>
+</html>

@@ -17,6 +17,7 @@ import {
 import * as bitbox from './bitbox.js';
 import { EntropyPool } from './entropy.js';
 import { registerPrf, unlockPrf, prfPossible } from './webauthn.js';
+import { AutoLock, AUTO_LOCK_MS, sameSecret } from './relock.js';
 import { storedTheme, setTheme, initThemeWatcher } from './theme.js';
 import {
   init as i18nInit, t, tPlural, setLocale, overrideTag, localeLabel, SUPPORTED_LOCALES,
@@ -1199,7 +1200,7 @@ function renderConfirm() {
           : w.watchOnly
             ? el('button', { class: 'primary', id: 'send', disabled: noFingerprint, onclick: onExportOffline },
                 t('action_export_offline'))
-            : el('button', { class: 'primary', id: 'send', onclick: onSend }, t('action_sign_send'))))));
+            : el('button', { class: 'primary', id: 'send', onclick: () => confirmIdentity(onSend) }, t('action_sign_send'))))));
 }
 const row = (k, v) => el('div', { class: 'kv' }, el('span', {}, k), v?.nodeType ? v : el('span', {}, v));
 
@@ -1565,7 +1566,7 @@ function actionReveal(id) {
   ui.dialog = {
     kind: 'confirm', title: t('dialog_reveal_title', w.name), body: t('dialog_reveal_body_web'),
     confirmLabel: t('action_view'),
-    onConfirm: () => {
+    onConfirm: () => confirmIdentity(() => {
       try {
         const { mnemonic, passphrase } = unsealWithAppSecret(w.sealed, w.salt, appSecret);
         ui.dialog = { kind: 'reveal', words: mnemonic.split(/\s+/), passphrase };
@@ -1573,9 +1574,55 @@ function actionReveal(id) {
       } catch {
         toast(t('reveal_failed'));
       }
-    },
+    }),
   };
   renderDialogSheet();
+}
+
+/** Run `onOk` once the user has proved it's them: the passkey (quick unlock)
+ *  if set up, else the app password. Either must unwrap the same app secret
+ *  this unlocked session holds (compared in constant time). */
+async function confirmIdentity(onOk) {
+  if (state.lock.prf && prfPossible()) {
+    try {
+      const secret = await unlockPrf(state.lock.prf.credentialId, state.lock.prf.prfSalt);
+      if (sameSecret(unwrapAppSecretWithKey(state.lock.prf.wrapped, secret), appSecret)) return onOk();
+    } catch {
+      /* fall through to the password */
+    }
+  }
+  ui.dialog = { kind: 'reauth', onConfirm: onOk };
+  renderDialogSheet();
+}
+
+function renderReauthSheet() {
+  const onYes = () => {
+    const { onConfirm } = ui.dialog;
+    let ok = false;
+    try {
+      ok = sameSecret(unwrapAppSecretWithPassword(state.lock.password.wrapped, state.lock.password.salt, val('reauth-pw')), appSecret);
+    } catch {
+      ok = false;
+    }
+    if (!ok) {
+      document.getElementById('reauth-err').textContent = t('error_wrong_password');
+      return;
+    }
+    closeDialog();
+    onConfirm();
+  };
+  mount(el('div', { class: 'sheet-wrap' },
+    el('div', { class: 'scrim', onclick: closeDialog }),
+    el('div', { class: 'sheet' },
+      el('div', { class: 'grabber' }),
+      el('h2', {}, t('reauth_title')),
+      el('label', {}, t('reauth_password')),
+      el('input', { id: 'reauth-pw', type: 'password', autocomplete: 'current-password',
+        onkeydown: (e) => e.key === 'Enter' && onYes() }),
+      el('div', { id: 'reauth-err', class: 'err' }),
+      el('div', { class: 'row' },
+        el('button', { class: 'ghost', onclick: closeDialog }, t('action_cancel')),
+        el('button', { class: 'primary', onclick: onYes }, t('action_unlock'))))));
 }
 
 async function actionEnableQuickUnlock() {
@@ -1605,6 +1652,7 @@ function renderDialogSheet() {
   if (ui.dialog.kind === 'locale') return renderLocaleSheet();
   if (ui.dialog.kind === 'confirm') return renderConfirmSheet();
   if (ui.dialog.kind === 'prompt') return renderPromptSheet();
+  if (ui.dialog.kind === 'reauth') return renderReauthSheet();
   if (ui.dialog.kind === 'export-blob') return renderExportBlobSheet();
   if (ui.dialog.kind === 'import-signed') return renderImportSignedSheet();
   if (ui.dialog.kind === 'psbt-paste') return renderPsbtPasteSheet();
@@ -2040,6 +2088,14 @@ function offerUpdate(reg) {
       el('button', { class: 'primary', onclick: () => reg.waiting.postMessage('SKIP_WAITING') }, t('action_refresh'))));
   document.body.append(bar);
 }
+
+// Hidden for a minute or more (another tab, the browser minimised): lock, so a
+// session left open doesn't stay unlocked.
+const autoLock = new AutoLock(AUTO_LOCK_MS);
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) autoLock.wentToBackground();
+  else if (autoLock.shouldLockOnReturn() && appSecret) onLock();
+});
 
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('./sw.js').then((reg) => {

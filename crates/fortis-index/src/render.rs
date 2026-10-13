@@ -312,6 +312,7 @@ pub fn esplora_tx(t: &Value, status: Value) -> Value {
             a.iter()
                 .map(|o| {
                     json!({
+                        "scriptpubkey": o["scriptPubKey"]["hex"],
                         "scriptpubkey_address": o["scriptPubKey"]["address"],
                         "value": btc_to_sat(&o["value"]),
                     })

@@ -57,6 +57,8 @@ object Fx {
     val rSm = 4.dp
     val r = 6.dp
     val rLg = 8.dp
+    /** Folder-tab top corners: rounder than panels, so tabs read as tabs. */
+    val rTab = 10.dp
     /** Buttons: rounder than panels, and raised on a [lip] that the face presses down onto. */
     val rBtn = 10.dp
     val lip = 3.dp

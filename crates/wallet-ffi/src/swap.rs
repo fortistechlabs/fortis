@@ -58,6 +58,22 @@ struct Persisted {
     their: Option<(PublicKey, PublicKey)>,
     hashlock: Option<sha256::Hash>,
     machine: Option<SwapMachine>,
+    /// The initiator's preimage nonce (hex, 16 bytes), drawn by the phone.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    preimage_nonce: Option<String>,
+}
+
+/// The initiator's 16-byte preimage nonce from hex; the participant has none.
+fn parse_nonce(role: SwapRole, hex_nonce: &str) -> Result<Option<[u8; 16]>> {
+    match role {
+        SwapRole::Participant if hex_nonce.is_empty() => Ok(None),
+        SwapRole::Participant => Err(err("the participant has no preimage nonce")),
+        SwapRole::Initiator => hex::decode(hex_nonce)
+            .ok()
+            .and_then(|b| <[u8; 16]>::try_from(b).ok())
+            .map(Some)
+            .ok_or_else(|| err("preimage nonce must be 16 bytes of hex")),
+    }
 }
 
 fn parse_terms(terms_json: &str) -> Result<SwapTerms> {
@@ -72,18 +88,22 @@ fn parse_role(role: &str) -> Result<SwapRole> {
     }
 }
 
-/// Check matched terms against our own price view (`wallet_core::validate_terms`).
+/// Check matched terms against the user's limit price (`wallet_core::validate_terms`),
+/// and that they are for `network` — the phone's own ("bitcoin" | "regtest"): the
+/// edge chooses the terms' network. `role` decides the direction: "initiator" (XBT
+/// sender) accepts prices at or above the limit, "participant" (BTC sender) prices
+/// at or below it.
 #[uniffi::export]
 pub fn validate_swap_terms(
     terms_json: String,
-    our_price_sat_per_xbt: u64,
-    max_slippage_bps: u32,
+    limit_price_sat_per_xbt: u64,
     role: String,
     now: u32,
+    network: String,
 ) -> Result<()> {
     let terms = parse_terms(&terms_json)?;
     let role = parse_role(&role)?;
-    wallet_core::swap_terms::validate_terms(&terms, our_price_sat_per_xbt, max_slippage_bps, role, now)?;
+    wallet_core::swap_terms::validate_terms_on(&terms, &network, limit_price_sat_per_xbt, role, now)?;
     Ok(())
 }
 
@@ -92,6 +112,22 @@ pub fn validate_swap_terms(
 #[uniffi::export]
 pub fn participant_fund_latest(terms_json: String) -> Result<u32> {
     Ok(wallet_core::swap_terms::participant_fund_latest(&parse_terms(&terms_json)?))
+}
+
+/// The commission one side pays on `send_sat`: 0.5%, but at least 400 sat
+/// (`wallet_core::swap_terms::swap_commission_sat`).
+#[uniffi::export]
+pub fn swap_commission_sat(send_sat: u64) -> u64 {
+    wallet_core::swap_terms::swap_commission_sat(send_sat)
+}
+
+/// The highest feerate (sat/vB) a swap transaction is built at: claims and
+/// refunds are capped here by the core, and the phone clamps the edge's fee
+/// estimates and its swap funding to it too
+/// (`wallet_core::swap::MAX_SWAP_FEERATE_SAT_VB`).
+#[uniffi::export]
+pub fn max_swap_feerate_sat_vb() -> u64 {
+    wallet_core::swap::MAX_SWAP_FEERATE_SAT_VB
 }
 
 /// The txid of a raw transaction (hex): what a funding broadcast will return,
@@ -107,6 +143,10 @@ pub struct SwapSession {
     /// Copied out of `inner`: it never changes, and the key/params helpers that
     /// read it run while `inner` is locked.
     role: SwapRole,
+    /// The terms' match id (fixed): the initiator's preimage is bound to it.
+    match_id: String,
+    /// The initiator's preimage nonce (fixed); `None` for the participant.
+    nonce: Option<[u8; 16]>,
     xbt_key: SwapKey,
     btc_key: SwapKey,
     btc_params: ChainParams,
@@ -118,6 +158,9 @@ pub struct SwapSession {
 impl SwapSession {
     /// `role` is `"initiator"` (sends XBT) or `"participant"` (sends BTC). The
     /// secrets come from `Wallet::swap_secret` for this swap's index.
+    /// `preimage_nonce`: the initiator's 16 random bytes (hex) that go into its
+    /// preimage — fresh for a new swap, or as relayed with the hashlock for one
+    /// rebuilt after a restore; empty for the participant.
     #[uniffi::constructor]
     pub fn new(
         terms_json: String,
@@ -126,9 +169,11 @@ impl SwapSession {
         btc_secret: Vec<u8>,
         redeem_address: String,
         refund_address: String,
+        preimage_nonce: String,
     ) -> Result<Arc<Self>> {
         let terms = parse_terms(&terms_json)?;
         let role = parse_role(&role)?;
+        let nonce = parse_nonce(role, &preimage_nonce)?;
         let (btc_params, xbt_params) = network_params(&terms.network)?;
         let xbt_key = swap_key(&xbt_params, xbt_secret)?;
         let btc_key = swap_key(&btc_params, btc_secret)?;
@@ -149,8 +194,18 @@ impl SwapSession {
             their: None,
             hashlock: None,
             machine: None,
+            preimage_nonce: nonce.map(hex::encode),
         };
-        Ok(Arc::new(SwapSession { role: inner.role, xbt_key, btc_key, btc_params, xbt_params, inner: Mutex::new(inner) }))
+        Ok(Arc::new(SwapSession {
+            role: inner.role,
+            match_id: inner.terms.match_id.clone(),
+            nonce,
+            xbt_key,
+            btc_key,
+            btc_params,
+            xbt_params,
+            inner: Mutex::new(inner),
+        }))
     }
 
     /// Resume from `to_json`. The secrets must be the ones the session was made with.
@@ -164,7 +219,22 @@ impl SwapSession {
         if xbt_key.pubkey() != inner.our_xbt || btc_key.pubkey() != inner.our_btc {
             return Err(err("swap secrets do not match this swap session"));
         }
-        Ok(Arc::new(SwapSession { role: inner.role, xbt_key, btc_key, btc_params, xbt_params, inner: Mutex::new(inner) }))
+        // A session saved before nonces existed still opens (its refund needs
+        // no preimage); only a new one must have its nonce.
+        let nonce = match inner.preimage_nonce.as_deref() {
+            None => None,
+            Some(h) => parse_nonce(inner.role, h)?,
+        };
+        Ok(Arc::new(SwapSession {
+            role: inner.role,
+            match_id: inner.terms.match_id.clone(),
+            nonce,
+            xbt_key,
+            btc_key,
+            btc_params,
+            xbt_params,
+            inner: Mutex::new(inner),
+        }))
     }
 
     /// Everything but the secrets.
@@ -184,6 +254,12 @@ impl SwapSession {
         self.our_preimage().map(|p| sha256::Hash::hash(&p).to_string())
     }
 
+    /// The initiator's preimage nonce (hex), relayed with the hashlock so a
+    /// restore can rebuild the preimage; `None` for the participant.
+    pub fn preimage_nonce(&self) -> Option<String> {
+        self.nonce.map(hex::encode)
+    }
+
     /// The initiator's preimage (hex); `None` for the participant.
     pub fn preimage(&self) -> Option<String> {
         self.our_preimage().map(hex::encode)
@@ -200,6 +276,10 @@ impl SwapSession {
             }
         }
         let mut s = self.lock();
+        let ours = [s.our_xbt, s.our_btc];
+        if ours.contains(&their.0) || ours.contains(&their.1) {
+            return Err(err("the counterparty's keys are our own"));
+        }
         if s.machine.is_some() {
             return if s.their == Some(their) && s.hashlock == Some(hashlock) {
                 Ok(())
@@ -282,6 +362,47 @@ impl SwapSession {
         Ok(txs.iter().map(serialize_hex).collect())
     }
 
+    /// Releases of our HTLC (hex, unsigned) at `feerates`, paying our refund
+    /// address: asked of the counterparty when the match is cancelled before
+    /// it funded. Fails for a contract without a release (v1).
+    pub fn release_txs(&self, feerates: Vec<u64>) -> Result<Vec<String>> {
+        let send = self.send_params().clone();
+        let mut s = self.lock();
+        let to = self.address_spk(&s.refund_address, &send)?;
+        let m = machine(&mut s)?;
+        let op = m.our_outpoint().ok_or_else(|| err("our funding outpoint is not recorded"))?;
+        m.build_our_contract(&send)?;
+        Ok(m.release_txs(op, to, &feerates)?.iter().map(serialize_hex).collect())
+    }
+
+    /// Our signature (hex) on `tx_hex`, a release of their HTLC at
+    /// `txid:vout` back to them. Sign only once this swap can never be funded
+    /// by us: the counterparty then has its coins back.
+    pub fn sign_release(&self, tx_hex: String, txid: String, vout: u32) -> Result<String> {
+        let tx: Transaction = deserialize_hex(&tx_hex).map_err(|e| err(format!("bad release: {e}")))?;
+        let op = outpoint(&txid, vout)?;
+        let recv = self.recv_params().clone();
+        let mut s = self.lock();
+        let sig = machine(&mut s)?.sign_their_release(&tx, op, self.recv_key(), &recv)?;
+        Ok(hex::encode(sig))
+    }
+
+    /// `tx_hex` (one of [`Self::release_txs`]) completed with the
+    /// counterparty's signature and ours (hex). Refused unless it is exactly
+    /// a release of our HTLC to our refund address and their signature
+    /// verifies.
+    pub fn finish_release(&self, tx_hex: String, their_sig_hex: String) -> Result<String> {
+        let tx: Transaction = deserialize_hex(&tx_hex).map_err(|e| err(format!("bad release: {e}")))?;
+        let sig = hex::decode(&their_sig_hex).map_err(|_| err("bad signature"))?;
+        let send = self.send_params().clone();
+        let mut s = self.lock();
+        let to = self.address_spk(&s.refund_address, &send)?;
+        let m = machine(&mut s)?;
+        let op = m.our_outpoint().ok_or_else(|| err("our funding outpoint is not recorded"))?;
+        m.build_our_contract(&send)?;
+        Ok(serialize_hex(&m.finish_release(&tx, op, &to, &sig, self.send_key())?))
+    }
+
     /// Redeems of their HTLC signed now, finished later once the preimage appears.
     pub fn presigned_redeem(&self, feerates: Vec<u64>) -> Result<Vec<FfiPresignedRedeem>> {
         let recv = self.recv_params();
@@ -308,8 +429,7 @@ impl SwapSession {
         let tx: Transaction = deserialize_hex(&tx_hex).ok()?;
         tx.input
             .iter()
-            .filter_map(|i| preimage_from_witness(&i.witness))
-            .find(|p| sha256::Hash::hash(p) == hashlock)
+            .find_map(|i| preimage_from_witness(&i.witness, &hashlock))
             .map(hex::encode)
     }
 
@@ -333,7 +453,8 @@ impl SwapSession {
     }
 
     fn our_preimage(&self) -> Option<[u8; 32]> {
-        (self.role == SwapRole::Initiator).then(|| self.xbt_key.preimage())
+        let nonce = self.nonce?;
+        (self.role == SwapRole::Initiator).then(|| self.xbt_key.preimage(&self.match_id, &nonce))
     }
 
     fn send_params(&self) -> &ChainParams {

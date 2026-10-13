@@ -18,7 +18,9 @@ const CF_MATCHES: &str = "matches";
 const CF_MSGS: &str = "msgs";
 const CF_WATCH: &str = "watch";
 const CF_STRIKES: &str = "strikes";
-const ALL_CFS: [&str; 5] = [CF_OFFERS, CF_MATCHES, CF_MSGS, CF_WATCH, CF_STRIKES];
+/// Recovery tag → offer id. Kept when the offer is purged: a tag is used once, ever.
+const CF_TAGS: &str = "tags";
+const ALL_CFS: [&str; 6] = [CF_OFFERS, CF_MATCHES, CF_MSGS, CF_WATCH, CF_STRIKES, CF_TAGS];
 
 pub const STRIKE_WINDOW_SECS: u64 = 24 * 3600;
 pub const PURGE_AFTER_SECS: u64 = 7 * 24 * 3600;
@@ -59,7 +61,9 @@ pub struct Offer {
     pub direction: Direction,
     /// On the user's own send chain (XBT sats for `XbtToBtc`, BTC sats for `BtcToXbt`).
     pub amount_sat: u64,
-    pub max_slippage_bps: u32,
+    /// The limit price, BTC sat per 1 XBT: the least an `XbtToBtc` seller
+    /// accepts, the most a `BtcToXbt` buyer pays.
+    pub price_sat_per_xbt: u64,
     pub created_at: u64,
     pub expires_at: u64,
     pub private: bool,
@@ -70,6 +74,12 @@ pub struct Offer {
     /// /swap/offers` with the same token and key returns this offer.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub client_id: Option<String>,
+    /// [`tag_hash`] of the swap's recovery tag (`HMAC(k_rec, swap index)` from
+    /// the owner's seed). Unique across all offers, for ever; a restored phone
+    /// finds its swap by the tag (`POST /swap/recover`). Only the hash is kept,
+    /// so the database alone never hands anyone a tag.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub recovery_tag: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
@@ -111,6 +121,19 @@ pub struct Match {
     /// The initiator's relayed hashlock, hex. Fixed once set.
     #[serde(default)]
     pub hashlock: Option<String>,
+    /// Cancelled only because the participant's BTC funding wasn't recorded by
+    /// `participant_fund_by` — the one cancel that a funding mined in time can
+    /// undo (see `reinstate_if_funded_in_time`).
+    #[serde(default)]
+    pub missed_participant_deadline: bool,
+    /// A cancelled match's cooperative release (v2): the initiator's unsigned
+    /// releases of its XBT HTLC (hex), and the participant's signatures on
+    /// them, one each. Each set once; with the signatures the participant has
+    /// given its claim up and can no longer fund this match.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub release_txs: Option<Vec<String>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub release_sigs: Option<Vec<String>>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
@@ -152,11 +175,22 @@ pub struct WatchJob {
 }
 
 pub struct Store {
-    db: DB,
+    db: crate::rdb::Db,
     /// Serialises read-modify-write sequences (message seq numbers, strike lists).
     rmw: Mutex<()>,
     /// Serialises matcher operations so one offer can't be paired twice.
     matching: Mutex<()>,
+    /// Serialises claiming a recovery tag, so two offers never share one.
+    tags: Mutex<()>,
+}
+
+/// Refused: a recovery tag (so a swap index, so its keys) is used once, ever.
+pub const TAG_USED: &str = "this swap index was used before";
+
+/// What the store keys a recovery tag (64 lowercase hex) by: SHA-256 of it, hex.
+pub fn tag_hash(tag: &str) -> String {
+    use sha2::{Digest, Sha256};
+    hex::encode(Sha256::digest(tag.as_bytes()))
 }
 
 fn lock(m: &Mutex<()>) -> MutexGuard<'_, ()> {
@@ -168,9 +202,9 @@ impl Store {
         let mut opts = Options::default();
         opts.create_if_missing(true);
         opts.create_missing_column_families(true);
-        let db = DB::open_cf(&opts, dir, ALL_CFS)
+        let db = crate::rdb::Db::open(|| DB::open_cf(&opts, dir, ALL_CFS))
             .with_context(|| format!("opening swap db at {dir:?}"))?;
-        Ok(Store { db, rmw: Mutex::new(()), matching: Mutex::new(()) })
+        Ok(Store { db, rmw: Mutex::new(()), matching: Mutex::new(()), tags: Mutex::new(()) })
     }
 
     /// Held by the matcher for the whole of each operation.
@@ -210,8 +244,39 @@ impl Store {
 
     // ---- offers ----
 
+    /// Save `o`. A tag (hash) claims its index for this offer for ever: an
+    /// offer whose tag another offer holds is refused ([`TAG_USED`]) — the
+    /// last word on uniqueness, however the routes' early checks raced.
     pub fn put_offer(&self, o: &Offer) -> anyhow::Result<()> {
+        if let Some(tag) = &o.recovery_tag {
+            let _g = lock(&self.tags);
+            match self.db.get_cf(self.cf(CF_TAGS), tag.as_bytes())? {
+                Some(id) if id != o.id.as_bytes() => anyhow::bail!(TAG_USED),
+                Some(_) => {}
+                None => self.db.put_cf(self.cf(CF_TAGS), tag.as_bytes(), o.id.as_bytes())?,
+            }
+        }
         self.put_json(CF_OFFERS, &o.id, o)
+    }
+
+    /// Whether some offer, now or ever (purged since), held tag hash `hash`.
+    pub fn tag_used(&self, hash: &str) -> bool {
+        self.db.get_cf(self.cf(CF_TAGS), hash.as_bytes()).ok().flatten().is_some()
+    }
+
+    /// The offer that carries tag hash `hash`, if it is still kept.
+    pub fn offer_by_tag(&self, hash: &str) -> Option<Offer> {
+        let id = self.db.get_cf(self.cf(CF_TAGS), hash.as_bytes()).ok().flatten()?;
+        self.offer(std::str::from_utf8(&id).ok()?)
+    }
+
+    /// Replace `offer_id`'s owner secret (its SHA-256): the old secret stops
+    /// working. For a swap recovered by its tag on a restored phone.
+    pub fn set_secret_hash(&self, offer_id: &str, hash: [u8; 32]) -> anyhow::Result<()> {
+        let _g = lock(&self.rmw);
+        let mut o = self.offer(offer_id).ok_or_else(|| anyhow::anyhow!("no offer {offer_id}"))?;
+        o.secret_hash = hash;
+        self.put_offer(&o)
     }
 
     pub fn offer(&self, id: &str) -> Option<Offer> {
@@ -339,6 +404,17 @@ impl Store {
         self.put_json(CF_STRIKES, token, &times)
     }
 
+    /// Lift the strike recorded against `token` at `at` (one, if several).
+    pub fn remove_strike(&self, token: &str, at: u64) -> anyhow::Result<()> {
+        let _g = lock(&self.rmw);
+        let mut times = self.strike_times(token);
+        let Some(i) = times.iter().position(|t| *t == at) else {
+            return Ok(());
+        };
+        times.remove(i);
+        self.put_json(CF_STRIKES, token, &times)
+    }
+
     /// Strikes against `token` within the last 24 h.
     pub fn strikes(&self, token: &str, now: u64) -> u32 {
         self.strike_times(token).into_iter().filter(|t| in_window(*t, now)).count() as u32
@@ -370,7 +446,17 @@ impl Store {
             }
         }
 
+        // An offer stays while any match of it does: a restore finds a funded
+        // swap through its offer's tag.
+        let in_matches: std::collections::HashSet<String> = self
+            .all_matches()
+            .into_iter()
+            .flat_map(|m| [m.initiator_offer, m.participant_offer])
+            .collect();
         for o in self.all_offers() {
+            if in_matches.contains(&o.id) {
+                continue;
+            }
             let drop = match o.status {
                 OfferStatus::Cancelled | OfferStatus::Expired | OfferStatus::Filled => true,
                 OfferStatus::Matched => o
@@ -423,9 +509,72 @@ mod tests {
         }
     }
 
+    /// RocksDB's shared environment races when databases open and close on
+    /// several threads at once (a segfault in `UnregisterDbPaths` on close,
+    /// seen in this suite). Stores serialise their open and close.
+    #[test]
+    fn stores_open_and_close_on_many_threads_at_once() {
+        let threads: Vec<_> = (0..8)
+            .map(|t| {
+                std::thread::spawn(move || {
+                    for i in 0..40 {
+                        let s = temp_store(&format!("race-{t}-{i}"));
+                        s.put_offer(&tagged(&format!("o{t}-{i}"), None)).unwrap();
+                    }
+                })
+            })
+            .collect();
+        for t in threads {
+            t.join().unwrap();
+        }
+    }
+
     fn temp_store(label: &str) -> TempStore {
         let dir = crate::test_tmp::TempDir::new(&format!("swap-store-test-{label}"));
         TempStore { store: Store::open(&dir).unwrap(), _dir: dir }
+    }
+
+    fn tagged(id: &str, tag: Option<&str>) -> Offer {
+        Offer {
+            id: id.into(),
+            token: "tok".into(),
+            secret_hash: [1; 32],
+            direction: Direction::XbtToBtc,
+            amount_sat: 1_000_000,
+            price_sat_per_xbt: 1_000_000,
+            created_at: 1,
+            expires_at: 2,
+            private: false,
+            share_code: None,
+            status: OfferStatus::Open,
+            match_id: None,
+            client_id: None,
+            recovery_tag: tag.map(str::to_string),
+        }
+    }
+
+    #[test]
+    fn an_offer_is_found_by_its_tag() {
+        let s = temp_store("tags");
+        s.put_offer(&tagged("o1", Some(&"ab".repeat(32)))).unwrap();
+        s.put_offer(&tagged("o2", Some(&"cd".repeat(32)))).unwrap();
+        assert_eq!(s.offer_by_tag(&"ab".repeat(32)).unwrap().id, "o1");
+        assert_eq!(s.offer_by_tag(&"cd".repeat(32)).unwrap().id, "o2");
+        assert!(s.offer_by_tag(&"ef".repeat(32)).is_none());
+        // Re-saving an offer (a status change) keeps its tag found.
+        let mut o = s.offer("o1").unwrap();
+        o.status = OfferStatus::Matched;
+        s.put_offer(&o).unwrap();
+        assert_eq!(s.offer_by_tag(&"ab".repeat(32)).unwrap().status, OfferStatus::Matched);
+    }
+
+    #[test]
+    fn an_offers_secret_can_be_replaced() {
+        let s = temp_store("rekey");
+        s.put_offer(&tagged("o1", None)).unwrap();
+        s.set_secret_hash("o1", [9; 32]).unwrap();
+        assert_eq!(s.offer("o1").unwrap().secret_hash, [9; 32]);
+        assert!(s.set_secret_hash("nope", [9; 32]).is_err());
     }
 
     #[test]
@@ -500,6 +649,9 @@ mod tests {
             closed_at: None,
             keys: (None, None),
             hashlock: None,
+            missed_participant_deadline: false,
+            release_txs: None,
+            release_sigs: None,
         };
         s.put_match(&m).unwrap();
         assert_eq!(s.matches_funded_by(Chain::Xbt, "aa", 1).into_iter().map(|m| m.id).collect::<Vec<_>>(), ["m1"]);
@@ -540,6 +692,9 @@ mod tests {
             closed_at: Some(now - 8 * 24 * 3600),
             keys: (None, None),
             hashlock: None,
+            missed_participant_deadline: false,
+            release_txs: None,
+            release_sigs: None,
         };
         s.put_match(&m).unwrap();
         s.push_msg("m1", "initiator", serde_json::json!(1)).unwrap();

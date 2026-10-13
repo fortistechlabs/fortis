@@ -35,7 +35,7 @@ struct Entry {
 pub struct Cache {
     max_entries: usize,
     map: Mutex<HashMap<String, Entry>>,
-    db: DB,
+    db: crate::rdb::Db,
 }
 
 fn now_secs() -> u64 {
@@ -77,63 +77,82 @@ impl Cache {
     /// directory rather than refusing to start — caching is a performance
     /// nicety, not a correctness requirement, so a degraded (non-persistent
     /// across restarts, but still working) cache beats not starting at all.
+    ///
+    /// The disk mirrors the in-memory map, so it is capped by `max_entries`
+    /// too: opening drops expired, unreadable and over-the-cap entries from
+    /// disk, and every eviction deletes there as well.
     pub fn new(max_entries: usize, dir: &Path) -> Self {
+        let max_entries = max_entries.max(1);
         let db = open_or_scratch(dir, "fortis-edge-cache");
         let now = now_secs();
         let mut map = HashMap::new();
+        let mut drop = Vec::new();
         for item in db.iterator(IteratorMode::Start) {
             let Ok((key, value)) = item else { continue };
-            let Some((until, cached)) = decode(&value) else { continue };
-            if until > now {
-                if let Ok(key) = String::from_utf8(key.to_vec()) {
-                    map.insert(key, Entry { until, value: cached });
+            let live = decode(&value).filter(|(until, _)| *until > now);
+            match (live, String::from_utf8(key.to_vec())) {
+                (Some((until, cached)), Ok(k)) if map.len() < max_entries => {
+                    map.insert(k, Entry { until, value: cached });
                 }
+                _ => drop.push(key),
             }
         }
-        Self { max_entries: max_entries.max(1), map: Mutex::new(map), db }
+        for key in drop {
+            let _ = db.delete(key);
+        }
+        Self { max_entries, map: Mutex::new(map), db }
     }
 
     pub fn get(&self, key: &str) -> Option<Cached> {
-        let map = self.map.lock().unwrap();
+        let map = self.map.lock().unwrap_or_else(|e| e.into_inner());
         map.get(key).filter(|e| e.until > now_secs()).map(|e| e.value.clone())
     }
 
     /// A fresh-or-recently-expired value — for serving stale data when the
     /// upstream is failing. `grace` is how far past the TTL is still acceptable.
     pub fn get_stale(&self, key: &str, grace: Duration) -> Option<Cached> {
-        let map = self.map.lock().unwrap();
+        let map = self.map.lock().unwrap_or_else(|e| e.into_inner());
         map.get(key).filter(|e| e.until + grace.as_secs() > now_secs()).map(|e| e.value.clone())
     }
 
+    /// The disk writes happen under the map's lock, so the disk holds
+    /// exactly the map's keys (a write failure only means an entry doesn't
+    /// survive a restart, never that the request fails).
     pub fn put(&self, key: &str, ttl: Duration, value: Cached) {
         let until = now_secs() + ttl.as_secs();
-        {
-            let mut map = self.map.lock().unwrap();
-            if map.len() >= self.max_entries && !map.contains_key(key) {
-                let now = now_secs();
-                map.retain(|_, e| e.until > now);
-                if map.len() >= self.max_entries {
-                    // still full of live entries — drop an arbitrary one
-                    if let Some(k) = map.keys().next().cloned() {
-                        map.remove(&k);
-                    }
-                }
+        let mut map = self.map.lock().unwrap_or_else(|e| e.into_inner());
+        if map.len() >= self.max_entries && !map.contains_key(key) {
+            let now = now_secs();
+            let mut evicted: Vec<String> = map.iter().filter(|(_, e)| e.until <= now).map(|(k, _)| k.clone()).collect();
+            if evicted.is_empty() {
+                // still full of live entries — drop an arbitrary one
+                evicted.extend(map.keys().next().cloned());
             }
-            map.insert(key.to_string(), Entry { until, value: value.clone() });
+            for k in evicted {
+                map.remove(&k);
+                let _ = self.db.delete(k.as_bytes());
+            }
         }
-        // Best-effort: a write failure here just means this entry doesn't
-        // survive a restart, not that the request fails.
         let _ = self.db.put(key.as_bytes(), encode(until, &value));
+        map.insert(key.to_string(), Entry { until, value });
+    }
+}
+
+#[cfg(test)]
+impl Cache {
+    /// Keys on disk.
+    fn disk_keys(&self) -> usize {
+        self.db.iterator(IteratorMode::Start).count()
     }
 }
 
 /// `DB::open` at `dir`, falling back to a fresh OS temp directory on any
 /// failure (see `Cache::new`'s doc comment for why this degrades instead
 /// of refusing to start).
-fn open_or_scratch(dir: &Path, label: &str) -> DB {
+fn open_or_scratch(dir: &Path, label: &str) -> crate::rdb::Db {
     let mut opts = Options::default();
     opts.create_if_missing(true);
-    match DB::open(&opts, dir) {
+    match crate::rdb::Db::open(|| DB::open(&opts, dir)) {
         Ok(db) => db,
         Err(e) => {
             eprintln!(
@@ -142,7 +161,7 @@ fn open_or_scratch(dir: &Path, label: &str) -> DB {
             );
             let scratch = std::env::temp_dir()
                 .join(format!("{label}-scratch-{}-{}", std::process::id(), now_secs()));
-            DB::open(&opts, &scratch).unwrap_or_else(|e2| {
+            crate::rdb::Db::open(|| DB::open(&opts, &scratch)).unwrap_or_else(|e2| {
                 panic!("fortis-edge: {label} scratch db at {scratch:?} also failed: {e2}")
             })
         }
@@ -238,6 +257,45 @@ mod tests {
         c.put("c", Duration::from_secs(60), val("c"));
         let live = ["a", "b", "c"].iter().filter(|k| c.get(k).is_some()).count();
         assert!(live <= 2);
+    }
+
+    /// The disk holds what the memory map holds: every request for a new
+    /// address writes a key, so an uncapped disk grows without end.
+    #[test]
+    fn evicted_entries_leave_the_disk_too() {
+        let c_dir = temp_dir("evict-disk");
+        let c = Cache::new(2, &c_dir);
+        for k in ["a", "b", "c", "d", "e"] {
+            c.put(k, Duration::from_secs(60), val(k));
+        }
+        assert_eq!(c.disk_keys(), 2);
+    }
+
+    #[test]
+    fn expired_entries_leave_the_disk_when_evicted() {
+        let c_dir = temp_dir("expired-disk");
+        let c = Cache::new(2, &c_dir);
+        c.put("old1", Duration::from_secs(0), val("x"));
+        c.put("old2", Duration::from_secs(0), val("x"));
+        c.put("new", Duration::from_secs(60), val("n"));
+        assert_eq!(c.disk_keys(), 1);
+        assert!(c.get("new").is_some());
+    }
+
+    #[test]
+    fn reopening_drops_expired_and_extra_entries_from_disk() {
+        let c_dir = temp_dir("reopen-disk");
+        {
+            let c = Cache::new(10, &c_dir);
+            c.put("gone", Duration::from_secs(0), val("x"));
+            for k in ["a", "b", "c", "d"] {
+                c.put(k, Duration::from_secs(60), val(k));
+            }
+            assert_eq!(c.disk_keys(), 5);
+        }
+        let c = Cache::new(3, &c_dir);
+        assert_eq!(c.disk_keys(), 3);
+        assert_eq!(["a", "b", "c", "d"].iter().filter(|k| c.get(k).is_some()).count(), 3);
     }
 
     #[test]

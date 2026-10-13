@@ -206,3 +206,75 @@ fun BiometricAppUnlock(vm: WalletViewModel) {
     }
     ErrorText(vm.error)
 }
+
+
+/**
+ * Ask the user to confirm it's them — the fingerprint (biometric lock) or
+ * their app password — then run the action. Returns the function to call;
+ * render its dialog with [ConfirmIdentityDialog]. The view-model checks the
+ * proof itself ([WalletViewModel.confirmIdentity]); this only collects it.
+ */
+class IdentityGate {
+    var pending by mutableStateOf<(() -> Unit)?>(null)
+    var asking by mutableStateOf(false)
+}
+
+@Composable
+fun rememberIdentityGate(): IdentityGate = remember { IdentityGate() }
+
+/** Run [action] once the user has confirmed it's them. */
+fun IdentityGate.require(vm: WalletViewModel, act: FragmentActivity?, scope: kotlinx.coroutines.CoroutineScope, action: () -> Unit) {
+    if (vm.lockMode == LOCK_BIOMETRIC) {
+        val a = act ?: return
+        val wrapped = vm.appWrappedSecret ?: return
+        scope.launch {
+            try {
+                val title = a.getString(R.string.reauth_title)
+                val cipher = authenticate(a, title, "", SeedKeystore.decryptCipher(wrapped))
+                if (vm.confirmIdentity(SeedKeystore.unwrap(cipher, wrapped).toHex())) action()
+            } catch (e: BiometricCancelled) {
+                // stays as it was
+            } catch (e: Throwable) {
+                vm.error = e.message
+            }
+        }
+    } else {
+        pending = action
+        asking = true
+    }
+}
+
+/** The password half of [IdentityGate]: shown while it's asking. */
+@Composable
+fun ConfirmIdentityDialog(gate: IdentityGate, vm: WalletViewModel) {
+    if (!gate.asking) return
+    var pw by remember { mutableStateOf("") }
+    var wrong by remember { mutableStateOf(false) }
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = { gate.asking = false; gate.pending = null },
+        containerColor = Fx.panel,
+        title = { Text(stringResource(R.string.reauth_title), color = Fx.text) },
+        text = {
+            androidx.compose.foundation.layout.Column {
+                com.fortis.wallet.ui.Field(pw, { pw = it; wrong = false }, stringResource(R.string.reauth_password), password = true)
+                if (wrong) com.fortis.wallet.ui.ErrorText(stringResource(R.string.reauth_wrong))
+            }
+        },
+        confirmButton = {
+            androidx.compose.material3.TextButton({
+                if (vm.confirmIdentity(pw)) {
+                    val action = gate.pending
+                    gate.asking = false; gate.pending = null
+                    action?.invoke()
+                } else {
+                    wrong = true
+                }
+            }) { Text(stringResource(R.string.action_confirm), color = Fx.signal) }
+        },
+        dismissButton = {
+            androidx.compose.material3.TextButton({ gate.asking = false; gate.pending = null }) {
+                Text(stringResource(R.string.action_cancel), color = Fx.text)
+            }
+        },
+    )
+}

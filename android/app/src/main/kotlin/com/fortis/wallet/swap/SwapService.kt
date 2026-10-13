@@ -72,7 +72,7 @@ class SwapService : Service() {
         while (scope.isActive) {
             val seen = starts.latest
             val active = try {
-                app.swapStore.active()
+                app.swapStore.due(System.currentTimeMillis() / 1000)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -135,7 +135,7 @@ class SwapService : Service() {
         fun stopIfIdle(ctx: Context) {
             val app = ctx.applicationContext as FortisApplication
             app.appScope.launch {
-                val idle = runCatching { app.swapStore.active().isEmpty() }.getOrDefault(false)
+                val idle = runCatching { app.swapStore.due(System.currentTimeMillis() / 1000).isEmpty() }.getOrDefault(false)
                 if (idle && app.swapRunner.idle) ctx.stopService(Intent(ctx, SwapService::class.java))
             }
         }

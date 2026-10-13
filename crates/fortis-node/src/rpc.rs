@@ -12,6 +12,21 @@ use anyhow::{anyhow, Context, Result};
 use base64::Engine as _;
 use serde_json::{json, Value};
 
+/// The node couldn't be reached, or didn't answer as a node (connection
+/// refused, a non-RPC HTTP error, rejected credentials): an outage, not an
+/// answer. The text names the node's address, so it is for logs only — a
+/// public API says "the node is unavailable" instead.
+#[derive(Debug)]
+pub struct Unreachable(pub String);
+
+impl std::fmt::Display for Unreachable {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+impl std::error::Error for Unreachable {}
+
 #[derive(Clone)]
 pub struct Rpc {
     base_url: String,
@@ -161,10 +176,12 @@ impl Rpc {
                 }
             }
         }
-        Err(anyhow!(
+        Err(Unreachable(
             "RPC auth rejected (HTTP 401) — the cookie is stale or the \
              credentials are wrong. Restarting the node rewrites `.cookie`."
-        ))
+                .into(),
+        )
+        .into())
     }
 
     fn attempt(&self, path: &str, payload: &Value, label: &str) -> Result<Attempt> {
@@ -201,13 +218,14 @@ impl Rpc {
                 } else if code == 401 {
                     return Ok(Attempt::Unauthorized);
                 } else {
-                    return Err(anyhow!("RPC `{label}` failed: HTTP {code} {text}"));
+                    return Err(Unreachable(format!("RPC `{label}` failed: HTTP {code} {text}")).into());
                 }
             }
             Err(e) => {
-                return Err(anyhow!(
+                return Err(Unreachable(format!(
                     "cannot reach the node at {url}: {e}\nIs bitcoind running with `server=1`?"
                 ))
+                .into())
             }
         };
         Ok(Attempt::Body(body))

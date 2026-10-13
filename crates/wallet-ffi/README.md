@@ -9,7 +9,7 @@ iOS and Android shells. Same core the web app uses via `wallet-wasm`.
 `swapPubkey`, `swapSecret`, `signSwap`, plus `WalletView` and the P2P swap object
 `SwapSession` (one swap from one phone: both HTLCs, funding checks, signed refunds
 and redeems, presigned redeems; its secrets are never in its JSON), with the
-helpers `validateSwapTerms`, `participantFundLatest` and `txidOf`.
+helpers `validateSwapTerms` (checks matched terms against the user's limit price: the lowest price for the XBT sender, the highest for the BTC sender), `participantFundLatest`, `swapCommissionSat` (the commission one side pays: 0.5%, at least 400 sat) and `txidOf`.
 
 Swaps: this `SwapSession` (P2P, one phone's half of a swap through `fortis-edge --swap`) exists only
 here; `wallet-wasm` has a different, older `SwapSession` and the web wallet has no P2P swap UI.

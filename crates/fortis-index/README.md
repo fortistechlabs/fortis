@@ -98,16 +98,29 @@ It prints any mismatches and exits 0 only when there are none.
 | `GET /blocks/tip/height` | indexed tip height (plain text) |
 | `GET /address/:addr/utxo` | `[{ txid, vout, value, status:{ confirmed, block_height } }]` |
 | `GET /address/:addr/txs` | pending, then the newest 100 confirmed; Esplora tx shape (`vin[].prevout`, `vout`, `fee`, `status`) |
-| `POST /scan` | `{"addresses":[…≤1000], "history":≤100}` → `{ tip, used, utxos, txs, failed }` |
+| `POST /scan` | `{"addresses":[…≤1000], "history":≤100}` → `{ tip, used, utxos, unlisted, txs, failed }` |
 | `GET /v1/fees/recommended` | `{ fastestFee, halfHourFee, hourFee, economyFee, minimumFee }` from the node |
 | `GET /txout/:txid/:vout[?mempool=false]` | node `gettxout` (mempool incl. unless `mempool=false`, which reads the confirmed UTXO set only), any script type → `{ value_sat, scriptpubkey_hex, confirmations }`; `404 {"error":"spent or unknown"}`, `400` on a bad txid |
+| `GET /tx/:txid` | any transaction, from the node (needs `-txindex`) → Esplora shape: `vout[]` with `value`, `scriptpubkey` (hex) and `scriptpubkey_address`; `status: { confirmed, block_height, block_hash, block_time }`. `404` if the node doesn't know it |
+| `GET /tx/:txid/hex` | the raw transaction (plain text); `404` if unknown |
+| `GET /tx/:txid/outspend/:vout` | who spent the output → `{ spent: false }` or `{ spent: true, txid, vin, status: { confirmed, block_height, block_hash } }`. The mempool (or the node's spender index, if it keeps `-txospenderindex`) is asked first; a spend already mined is found by scanning blocks forward from the funding block (at most 2016 blocks; found spends and scan progress are cached, and dropped if a reorg removes their block). `404` for an unknown transaction or output; `503` if it is spent but the spend isn't found yet (retry) |
 | `POST /tx` | broadcast (raw hex body → txid) |
 
-An address with more than 10 000 UTXOs answers `400 {"error":"address too heavy"}`.
-`503` means the index is between two states (retry). CORS is open (`*`).
+An address with more than 10 000 UTXOs answers `400 {"error":"address too heavy"}`
+on `/address/…/utxo`. `/scan` never fails for it: it lists that address's
+10 000 largest coins and sums the rest under `unlisted`
+(`[{address, count, value}]`), so a wallet dusted by anyone still shows its
+whole balance (the clients add `unlisted` to the confirmed balance; those coins
+are not spendable from the app).
+`503` means the index is between two states (retry). There are no CORS headers (only the edge calls the index; it adds its own), and a request addressed to a hostname other than `localhost` is refused with `403` (DNS rebinding): use an IP address or `localhost`.
 
 Public data only — no auth. Bind to localhost / a trusted network, or front it
 with `fortis-edge`.
+
+The three `/tx/:txid…` routes are what swaps read their HTLCs with: an HTLC
+is P2WSH, which the address index never stores, so these go to the node (run it
+with `-txindex`). They are the routes `fortis-edge`'s watchtower and the wallet
+call through the edge's `/btc/…`.
 
 ## Tests
 

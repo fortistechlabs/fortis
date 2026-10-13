@@ -43,10 +43,16 @@ fn cbor_err(e: minicbor::decode::Error) -> WalletError {
     bad(format!("malformed CBOR: {e}"))
 }
 
+/// Starts with `ur:` (any case) and has more after it. By `get`, never a byte
+/// slice: a multi-byte character there is "no", not a panic.
+fn is_ur(text: &str) -> bool {
+    text.len() > 3 && text.get(..3).is_some_and(|p| p.eq_ignore_ascii_case("ur:"))
+}
+
 /// Parse a pasted or single-frame-scanned export.
 pub fn parse_account_import(text: &str) -> Result<AccountImport> {
     let text = text.trim();
-    if text.len() > 3 && text[..3].eq_ignore_ascii_case("ur:") {
+    if is_ur(text) {
         let (kind, payload) = ur::ur::decode(text).map_err(|e| bad(format!("invalid UR: {e}")))?;
         if kind != ur::ur::Kind::SinglePart {
             return Err(bad("this is one frame of an animated QR code — scan it with the camera"));
@@ -297,7 +303,7 @@ impl UrAccountDecoder {
     /// animated QR loops until the decoder has enough.
     pub fn receive(&mut self, part: &str) -> Result<()> {
         let part = part.trim();
-        if !(part.len() > 3 && part[..3].eq_ignore_ascii_case("ur:")) {
+        if !is_ur(part) {
             return Err(bad("not a UR QR code"));
         }
         let (kind, payload) = ur::ur::decode(part).map_err(|e| bad(format!("invalid UR: {e}")))?;
@@ -358,6 +364,16 @@ impl UrAccountDecoder {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Text whose third byte falls inside a multi-byte character (a pasted
+    /// "ab€…", a hostile QR) is an error, never a panic.
+    #[test]
+    fn a_multi_byte_character_near_the_start_is_an_error_not_a_panic() {
+        for text in ["ab€def", "a€", "€€€€", "ur€:x"] {
+            assert!(parse_account_import(text).is_err(), "{text}");
+            assert!(UrAccountDecoder::new().receive(text).is_err(), "{text}");
+        }
+    }
     use std::str::FromStr;
 
     // BCR-2020-015 test vector: account #0 of "shield group erode awake lock

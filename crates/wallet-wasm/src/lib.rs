@@ -491,8 +491,10 @@ impl Htlc {
         locktime: u32,
         value_sat: u64,
     ) -> Result<Htlc, JsError> {
+        // The web wallet runs no swaps; its HTLC helpers keep the v1 script.
         let inner = HtlcContract::build(
             &params(chain)?,
+            wallet_core::htlc::CONTRACT_V1,
             sha256::Hash::from_byte_array(bytes32(hashlock_hex)?),
             &pubkey(redeem_pubkey_hex)?,
             &pubkey(refund_pubkey_hex)?,
@@ -710,6 +712,7 @@ fn to_swap_params(j: dto::JsSwapParams) -> Result<SwapParams, JsError> {
         our_contract_locktime: j.our_contract_locktime,
         their_contract_locktime: j.their_contract_locktime,
         required_incoming_confs: j.required_incoming_confs,
+        contract_version: wallet_core::htlc::CONTRACT_V1,
     })
 }
 

@@ -19,6 +19,7 @@ mod keys;
 mod mempool;
 mod render;
 mod source;
+mod spends;
 mod sync;
 mod verify;
 
@@ -221,6 +222,7 @@ fn run(args: Args) -> Result<()> {
     // Calls made for an API client get a short timeout: a wedged node must not
     // hold a request (and its concurrency slot) for the syncer's 10 minutes.
     let api_rpc = rpc.with_timeout(std::time::Duration::from_secs(30));
+    let api_rpc_spends = api_rpc.clone();
     let renderer = Arc::new(Renderer::new(
         Arc::new(RpcSource::new(api_rpc.clone())) as Arc<dyn TxSource>,
         db.clone(),
@@ -272,6 +274,10 @@ fn run(args: Args) -> Result<()> {
         network,
         status,
         chain_id,
+        spends: Arc::new(spends::Spends::new(Box::new(spends::RpcSpendNode {
+            rpc: api_rpc_spends,
+            fmt,
+        }))),
     };
     let rt = tokio::runtime::Builder::new_multi_thread()
         .enable_all()

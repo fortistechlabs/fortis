@@ -52,14 +52,21 @@ android {
         // debug-signed APK can't replace a release-signed one, and uninstalling
         // the store app first would wipe its wallets (allowBackup=false).
         getByName("debug") {
-            applicationIdSuffix = ".dev"
-            versionNameSuffix = "-dev"
+            // `-Pdev2` builds a second debug copy (own id, wallets and swap
+            // keys) so a P2P swap can be tested between two apps on one phone.
+            // A property, not a build type: Gobley only maps debug/release.
+            val dev2 = project.hasProperty("dev2")
+            applicationIdSuffix = if (dev2) ".dev2" else ".dev"
+            versionNameSuffix = if (dev2) "-dev2" else "-dev"
+            manifestPlaceholders["devLabel"] = if (dev2) "fortis dev2" else "fortis dev"
         }
         getByName("release") {
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-            signingConfig = signingConfigs.getByName(if (hasReleaseKeystore) "release" else "debug")
+            // The release key or nothing: a release is never signed with the
+            // debug key (preReleaseBuild below refuses to start without one).
+            signingConfig = if (hasReleaseKeystore) signingConfigs.getByName("release") else null
         }
     }
     compileOptions {
@@ -132,4 +139,15 @@ dependencies {
     debugImplementation(libs.compose.ui.tooling)
     testImplementation(libs.junit)
     testImplementation(libs.org.json)
+}
+
+// A release built without android/keystore.properties used to be signed with
+// the debug key — and the APK is also sideloaded from GitHub. Refuse instead,
+// at the very start of any release build.
+tasks.matching { it.name == "preReleaseBuild" }.configureEach {
+    doFirst {
+        check(hasReleaseKeystore) {
+            "release builds need android/keystore.properties (the release signing key): refusing to build an unsigned or debug-signed release"
+        }
+    }
 }

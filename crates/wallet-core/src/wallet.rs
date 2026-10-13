@@ -26,6 +26,14 @@ pub fn op_return_output(data: &[u8]) -> Result<TxOut> {
     Ok(TxOut { value: Amount::ZERO, script_pubkey: ScriptBuf::new_op_return(push) })
 }
 
+/// The most a hosted backend may charge per send: 1% (it asks 1%, and 0.5% on
+/// swaps), and a floor of at most 2,000 sat (it asks 400). The fee comes from
+/// the backend's `/pricing`; above these nothing is planned, so a hostile
+/// backend can't turn a send into a payment to itself. Raising them takes an
+/// app release.
+pub const MAX_SERVICE_FEE_BPS: u32 = 100;
+pub const MAX_SERVICE_FEE_FLOOR_SAT: u64 = 2_000;
+
 /// A service fee for a hosted backend, charged as a percentage of the amount
 /// moved and added as an extra output on `plan_payment` / `plan_sweep`. Clamped to
 /// `[floor_sat, cap_sat]` (`cap_sat == 0` means uncapped). Self-hosted backends
@@ -66,6 +74,23 @@ impl ServiceFee {
         // transaction non-standard — bump it up to a spendable output.
         let value = Amount::from_sat(sat).max(self.fee_spk.minimal_non_dust());
         Some(TxOut { value, script_pubkey: self.fee_spk.clone() })
+    }
+}
+
+/// Refuses a service fee above [`MAX_SERVICE_FEE_BPS`] or with a floor above
+/// [`MAX_SERVICE_FEE_FLOOR_SAT`].
+fn check_service_fee(sf: Option<&ServiceFee>) -> Result<()> {
+    match sf {
+        Some(sf) if sf.bps > MAX_SERVICE_FEE_BPS || sf.floor_sat > MAX_SERVICE_FEE_FLOOR_SAT => {
+            Err(WalletError::InvalidInput(format!(
+                "the server asks for a service fee of {}% with a {} sat minimum: more than this app allows ({}%, {} sat)",
+                f64::from(sf.bps) / 100.0,
+                sf.floor_sat,
+                f64::from(MAX_SERVICE_FEE_BPS) / 100.0,
+                MAX_SERVICE_FEE_FLOOR_SAT
+            )))
+        }
+        _ => Ok(()),
     }
 }
 
@@ -254,6 +279,7 @@ impl WalletView {
         fee_from_amount: bool,
     ) -> Result<FundingPlan> {
         check_feerate(feerate_sat_vb)?;
+        check_service_fee(service_fee)?;
         check_not_dust(&outputs)?;
 
         if fee_from_amount {
@@ -472,6 +498,7 @@ impl WalletView {
         service_fee: Option<&ServiceFee>,
     ) -> Result<FundingPlan> {
         check_feerate(feerate_sat_vb)?;
+        check_service_fee(service_fee)?;
         let selected: Vec<Utxo> = utxos
             .iter()
             .filter(|u| u.confirmations >= min_confirmations)
@@ -868,11 +895,23 @@ mod tests {
         assert!(matches!(r2, Err(WalletError::InvalidInput(_))));
     }
 
+    /// The fee comes from the edge's `/pricing`: a hostile edge could set the
+    /// floor just under a wallet's balance and take nearly all of a send. Above
+    /// the app's limits (1%, a 2,000 sat floor) nothing is planned at all.
     #[test]
-    fn service_fee_bps_is_clamped_to_a_sane_maximum() {
-        // A backend advertising a 500% fee is capped at 10% of the amount.
-        let sf = ServiceFee { bps: 50_000, floor_sat: 0, cap_sat: 0, fee_spk: fee_addr_spk() };
-        assert_eq!(sf.amount_sat(1_000_000), 100_000);
+    fn a_service_fee_above_the_apps_limits_is_refused() {
+        let mut v = view();
+        let utxos = [utxo(1_000_000, 3, 1)];
+        let dest = ScriptBuf::from(vec![1u8; 22]);
+        let fee = |bps, floor_sat| ServiceFee { bps, floor_sat, cap_sat: 0, fee_spk: fee_addr_spk() };
+        for bad in [fee(MAX_SERVICE_FEE_BPS + 1, 400), fee(100, MAX_SERVICE_FEE_FLOOR_SAT + 1), fee(50_000, 0)] {
+            let pay = v.plan_payment(&utxos, vec![htlc_out(200_000)], 10, 1, Some(&bad), false);
+            assert!(matches!(pay, Err(WalletError::InvalidInput(_))), "{:?}", bad.bps);
+            assert!(matches!(v.plan_sweep(&utxos, dest.clone(), 10, 1, Some(&bad)), Err(WalletError::InvalidInput(_))));
+        }
+        let ok = fee(MAX_SERVICE_FEE_BPS, MAX_SERVICE_FEE_FLOOR_SAT);
+        assert!(v.plan_payment(&utxos, vec![htlc_out(200_000)], 10, 1, Some(&ok), false).is_ok());
+        assert!(v.plan_sweep(&utxos, dest, 10, 1, Some(&ok)).is_ok());
     }
 
     #[test]

@@ -186,4 +186,32 @@
         <item quantity="one">%1$d mot</item>
         <item quantity="other">%1$d mots</item>
     </plurals>
+    <string name="swap_recover_title">Échanges</string>
+    <string name="swap_recover_body">Après une restauration depuis votre phrase de récupération : retrouver les échanges où vos fonds sont encore bloqués, et les rembourser ou les terminer sur ce téléphone.</string>
+    <string name="swap_recover_action">Retrouver mes échanges</string>
+    <string name="swap_recover_searching">Recherche…</string>
+    <string name="swap_recover_none">Aucun échange à récupérer.</string>
+    <string name="swap_recover_failed">Impossible de rechercher les échanges : %1$s</string>
+    <string name="swap_recover_retry">Impossible de rechercher les échanges à récupérer. Une fois connecté, relancez la recherche avec « Retrouver mes échanges ».</string>
+    <string name="swap_pending_they_confirming">Leurs fonds dans l’échange</string>
+    <string name="swap_hint_they_confirming_first">Leurs fonds sont dans l’échange. Dès que le réseau les confirme, l’app y place les vôtres. L’app doit être déverrouillée pour cela : une notification vous préviendra le moment venu.</string>
+    <string name="swap_hint_they_confirming_after_you">Leurs fonds sont bloqués. Dès que le réseau les confirme, l’app récupère les vôtres automatiquement. Vous n’avez rien à faire.</string>
+    <string name="swap_status_cancelled_refund">Annulé · remboursement à venir</string>
+    <string name="swap_cancelled_refund_on">L’autre partie n’a pas bloqué ses fonds à temps, le match a donc été annulé. Vos fonds vous reviennent automatiquement le %1$s. Vous n’avez rien à faire.</string>
+    <string name="swap_cancelled_nothing_spent">Le match a été annulé avant que vos fonds soient bloqués. Rien n’a quitté votre portefeuille.</string>
+    <string name="swap_cancelled_released">L’autre partie n’a pas bloqué ses fonds à temps : le match a été annulé et vos fonds ont été libérés. Ils sont en train de vous revenir. Vous n’avez rien à faire.</string>
+    <string name="swap_amount_min">Min</string>
+    <string name="swap_amount_max">Max</string>
+    <string name="swap_fund_turn_soon">Votre tour dans environ %1$s : Fortis vous préviendra d’ouvrir l’app et d’y placer vos fonds. Vous aurez ensuite jusqu’à environ %2$s.</string>
+    <string name="swap_fund_turn_now">C’est votre tour : ouvrez Fortis pour placer vos fonds avant %1$s.</string>
+    <string name="swap_hint_you_funding">L’app place vos fonds dès que c’est votre tour, tant qu’elle est déverrouillée.</string>
+    <string name="swap_hint_open_to_fund">C’est votre tour : ouvrez Fortis pour qu’elle place vos fonds.</string>
+    <plurals name="swap_recovered">
+        <item quantity="one">%1$d échange récupéré. Il se poursuit dans Échanges.</item>
+        <item quantity="other">%1$d échanges récupérés. Ils se poursuivent dans Échanges.</item>
+    </plurals>
+    <plurals name="swap_recover_need_wallets">
+        <item quantity="one">%1$d échange nécessite les deux portefeuilles : ajoutez celui de l’autre chaîne (Ajouter aussi sur…), puis relancez la recherche.</item>
+        <item quantity="other">%1$d échanges nécessitent les deux portefeuilles : ajoutez celui de l’autre chaîne (Ajouter aussi sur…), puis relancez la recherche.</item>
+    </plurals>
 </resources>

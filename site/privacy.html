@@ -5,38 +5,35 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Fortis Wallet — Privacy Policy</title>
 <meta name="robots" content="index,follow">
+<link rel="icon" href="/icon.svg">
+<link rel="stylesheet" href="/style.css">
 <style>
-  :root { color-scheme: dark; }
-  * { box-sizing: border-box; }
-  body {
-    margin: 0; background: #0a1420; color: #eaf6ff;
-    font: 16px/1.65 -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-    -webkit-text-size-adjust: 100%;
-  }
-  .wrap { max-width: 760px; margin: 0 auto; padding: 48px 22px 96px; }
-  header { display: flex; align-items: center; gap: 14px; margin-bottom: 8px; }
-  header img { width: 44px; height: 44px; }
-  header .name { font-size: 20px; font-weight: 700; letter-spacing: .2px; color: #fff; }
-  h1 { font-size: 28px; margin: 28px 0 4px; color: #fff; }
-  .meta { color: #7fa0b8; font-size: 14px; margin-bottom: 32px; }
-  h2 { font-size: 19px; margin: 40px 0 10px; color: #fff; }
-  h3 { font-size: 16px; margin: 22px 0 6px; color: #bcdcf0; }
-  p, li { color: #cfe4f0; }
-  a { color: #5ad4ff; }
-  ul { padding-left: 22px; }
-  li { margin: 5px 0; }
-  code { background: #0d1e2c; padding: 1px 5px; border-radius: 2px; font-size: 13px; }
-  hr { border: 0; border-top: 1px solid rgba(90,212,255,.28); margin: 40px 0; }
-  .fill { color: #ffcf7a; }
-  footer { margin-top: 56px; color: #7fa0b8; font-size: 14px; }
+  .legal { max-width: 760px; padding: 8px 0 80px; }
+  .legal h1 { font-size: 26px; margin: 24px 0 4px; font-weight: 600; }
+  .legal .meta { color: var(--faint); font-size: 13px; margin-bottom: 28px; }
+  .legal h2 { font-size: 17px; margin: 36px 0 10px; font-weight: 600; }
+  .legal h3 { font-size: 15px; margin: 22px 0 6px; font-weight: 600; color: var(--text); }
+  .legal p, .legal li { color: var(--dim); }
+  .legal ul { padding-left: 22px; }
+  .legal li { margin: 5px 0; }
+  .legal hr { border: 0; border-top: 1px solid var(--line); margin: 36px 0; }
+  .legal .fill { color: var(--warn); }
+  .legal footer { margin-top: 48px; padding: 0; }
 </style>
 </head>
 <body>
 <div class="wrap">
-  <header>
-    <img src="/icon.svg" alt="">
-    <span class="name">Fortis Wallet</span>
-  </header>
+  <nav>
+    <a class="brand" href="/"><img src="/icon.svg" alt=""> Fortis Tech Labs</a>
+    <span class="links">
+      <a href="/#wallet">Wallet</a>
+      <a href="/swaps">Swaps</a>
+      <a href="https://github.com/fortistechlabs/fortis" target="_blank" rel="noopener">Source</a>
+      <a href="/privacy" aria-current="page">Privacy</a>
+    </span>
+  </nav>
+</div>
+<div class="wrap legal">
 
   <h1>Privacy Policy</h1>
   <p class="meta">Effective 10 Sept 2026 · applies to the Fortis&nbsp;Wallet mobile app and its backend service, operated by Fortis&nbsp;Tech&nbsp;Labs.</p>
@@ -122,7 +119,37 @@
   before you sign. It is part of the transaction you approve — not something we
   can charge afterwards.</p>
 
-  <h2>8. Data retention and your choices</h2>
+  <!-- DRAFT (swaps) — for the owner's review before publishing -->
+  <h2>8. Swaps</h2>
+  <p>Swaps (BTC ⇄ XBT with another person) are optional. They are atomic and
+  non-custodial: your coins sit in a contract on chain that only you and the
+  other person can spend, never with us. To arrange and follow a swap, the app
+  sends the backend:</p>
+  <ul>
+    <li><strong>Your offer:</strong> direction, amount, your limit price, whether it
+      is private, a random request ID, and a <em>recovery tag</em> derived from your
+      recovery phrase (we store only a hash of it), so a phone restored from your
+      phrase can find a swap that still has your coins locked.</li>
+    <li><strong>The swap itself:</strong> the swap's public keys, the hashed secret
+      that locks both contracts (and a random value that lets your phrase rebuild
+      it), the transactions that fund the contracts, refund and claim transactions
+      signed in advance for our watchtower (they can only pay you), and, if a match
+      is cancelled, the release that returns the other side's coins. None of it can
+      move your coins anywhere but to you.</li>
+    <li><strong>Swap step logs:</strong> the steps your phone took (for example
+      "funded", "waiting for confirmations") with the transaction IDs involved, to
+      diagnose a swap that goes wrong. They contain no keys, balances or other
+      addresses.</li>
+  </ul>
+  <p>Offers and matches are deleted 7 days after a swap ends, except what a
+  pending refund still needs; the hashed recovery tags are kept so a swap index is
+  never reused. To check prices and the other side's coins without relying on us
+  alone, the app also contacts NeoxEX (<code>neoxa.exchange</code>, for a price
+  reference) and the public explorers mempool.space, blockstream.info,
+  mempool.kilombino.com and mempool.guide (transaction lookups); they see your IP
+  address and the transactions looked up.</p>
+
+  <h2>9. Data retention and your choices</h2>
   <ul>
     <li>On-device data: removed on uninstall or <em>Forget this wallet</em>.</li>
     <li>Backend: no per-user account exists; per-install tokens are random and
@@ -131,15 +158,15 @@
       <a href="mailto:support@fortistechlabs.com">support@fortistechlabs.com</a>.</li>
   </ul>
 
-  <h2>9. Security</h2>
+  <h2>10. Security</h2>
   <p>Keys are encrypted at rest with a key derived from your password. Screens that
   show the recovery phrase or a password block screenshots and screen recording.</p>
 
-  <h2>10. Children</h2>
+  <h2>11. Children</h2>
   <p>Fortis Wallet is not directed to children under 13, or under the age of digital consent
   where you live.</p>
 
-  <h2>11. Changes</h2>
+  <h2>12. Changes</h2>
   <p>We will post any changes on this page and update the effective date above.</p>
 
   <hr>

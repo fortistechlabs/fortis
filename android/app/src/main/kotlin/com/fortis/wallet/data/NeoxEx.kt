@@ -8,15 +8,16 @@ import org.json.JSONObject
 import java.io.IOException
 
 /**
- * NeoxEX `BTCB2_BTC` price: sat of BTC per 1 XBT — the phone's own view, checked
- * against a match's terms before accepting it.
+ * NeoxEX `BTCB2_BTC` reference price: sat of BTC per 1 XBT — the phone's own view,
+ * shown next to the price the user sets. It never blocks a swap.
  *
  * A port of fortis-edge's `swap::neoxex` (same rule, same constants, same test
  * fixtures): per side, the volume-weighted price of the best levels up to
- * [DEPTH_BTC] of notional; `mid` of the two. `null` wherever the edge refuses to
- * quote — paused (ticker flag or `/pairs` `tradingPaused`), stale (ticker
- * `computedAt` more than [MAX_AGE_SECS] old; missing → refuse), an empty side, a
- * spread over [MAX_SPREAD], or a mid more than [MAX_FROM_LAST] from the last trade.
+ * [DEPTH_BTC] of notional; `mid` of the two. [Reference.ok] is false wherever the
+ * edge would call the reference unreliable — paused (ticker flag or `/pairs`
+ * `tradingPaused`), stale (ticker `computedAt` more than [MAX_AGE_SECS] old;
+ * missing → not ok), a spread over [MAX_SPREAD], or a mid more than
+ * [MAX_FROM_LAST] from the last trade. No price (`null`) only without book data.
  */
 object NeoxEx {
     const val DEPTH_BTC = 0.05
@@ -77,40 +78,43 @@ object NeoxEx {
         return if (xbt > 0.0) btc / xbt else null
     }
 
-    /** Sat of BTC per 1 XBT from the three NeoxEX bodies, or `null` where the edge
-     *  would refuse. `now` is unix seconds. */
-    fun priceFrom(bookJson: String, tickerJson: String, pairsJson: String, now: Long): Long? {
+    /** NeoxEX's depth-weighted mid, sat of BTC per 1 XBT. [ok] is whether the old
+     *  quoting rules pass; the price is shown as a reference either way. */
+    data class Reference(val priceSatPerXbt: Long, val ok: Boolean)
+
+    /** The [Reference] from the three NeoxEX bodies, or `null` when there is no data
+     *  to price from (an unreadable book or an empty side). `now` is unix seconds. */
+    fun referenceFrom(bookJson: String, tickerJson: String, pairsJson: String, now: Long): Reference? {
         val book = runCatching { JSONObject(bookJson) }.getOrNull() ?: return null
         val bids = levels(book, "bids", descending = true) ?: return null
         val asks = levels(book, "asks", descending = false) ?: return null
-        val t = ticker(tickerJson) ?: return null
-        val pairPaused = pairPaused(pairsJson) ?: return null
-        if (t.paused || pairPaused) return null
-        if (now - t.computedAt > MAX_AGE_SECS) return null
         val bid = sideVwap(bids) ?: return null
         val ask = sideVwap(asks) ?: return null
         val mid = (bid + ask) / 2.0
-        if ((ask - bid) / mid > MAX_SPREAD) return null
-        if (Math.abs(mid - t.last) / t.last > MAX_FROM_LAST) return null
-        return Math.round(mid * 1e8)
+        val price = Math.round(mid * 1e8).takeIf { it > 0 } ?: return null
+        val t = ticker(tickerJson)
+        val pairPaused = pairPaused(pairsJson)
+        val ok = t != null && pairPaused != null && !t.paused && !pairPaused &&
+            now - t.computedAt <= MAX_AGE_SECS &&
+            (ask - bid) / mid <= MAX_SPREAD &&
+            Math.abs(mid - t.last) / t.last <= MAX_FROM_LAST
+        return Reference(price, ok)
     }
 
     /**
-     * Fetch and price. `null` means NeoxEX answered and the rule refuses to
-     * quote (paused, stale, too wide, far from last, malformed) — a definite
-     * "no". A network or HTTP failure throws instead: "unreachable" is not a
-     * refusal, and the swap engine retries it rather than declining.
+     * Fetch and price. `null` means NeoxEX answered with no data to price from;
+     * a network or HTTP failure throws instead: "unreachable" is not "no data".
      */
-    suspend fun price(
+    suspend fun reference(
         http: OkHttpClient,
         base: String = BASE,
         now: Long = System.currentTimeMillis() / 1000,
-    ): Long? = withContext(Dispatchers.IO) {
+    ): Reference? = withContext(Dispatchers.IO) {
         fun get(path: String): String =
             http.newCall(Request.Builder().url("${base.trimEnd('/')}/api/exchange/$path").build()).execute().use { r ->
                 if (!r.isSuccessful) throw IOException("neoxex ${r.code} on $path")
                 r.body?.string().orEmpty()
             }
-        priceFrom(get("orderbook/$PAIR"), get("ticker/$PAIR"), get("pairs"), now)
+        referenceFrom(get("orderbook/$PAIR"), get("ticker/$PAIR"), get("pairs"), now)
     }
 }

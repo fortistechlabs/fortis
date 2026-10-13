@@ -8,7 +8,7 @@ import org.junit.Test
 class SwapNotificationsTest {
     private fun rec(step: Step) = SwapRecord(
         id = "offer-1", fromWalletId = "w1", toWalletId = "w2", sendChain = "xbt",
-        amountSat = 1_000_000, slippageBps = 100, ownerSecret = "s", swapIndex = 7,
+        amountSat = 1_000_000, limitPrice = 1_120_000, ownerSecret = "s", swapIndex = 7,
         wrappedXbt = "", wrappedBtc = "", redeemAddress = "bc1q", refundAddress = "x1q", step = step,
     )
 

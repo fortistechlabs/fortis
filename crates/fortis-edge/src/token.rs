@@ -13,9 +13,18 @@ const ID_LEN: usize = 16;
 const TAG_LEN: usize = 16;
 
 /// Load the signing secret from `path`, creating 32 random bytes if absent.
+/// The file is kept owner-only (`0600`), whatever the umask: anyone who can
+/// read it can mint install tokens. One found readable by others is tightened.
 pub fn load_or_create_secret(path: &std::path::Path) -> Result<Vec<u8>> {
+    use std::io::Write;
+    use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
     if let Ok(bytes) = std::fs::read(path) {
         if bytes.len() >= 16 {
+            let perms = std::fs::metadata(path).with_context(|| format!("reading {}", path.display()))?.permissions();
+            if perms.mode() & 0o077 != 0 {
+                std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))
+                    .with_context(|| format!("making {} owner-only", path.display()))?;
+            }
             return Ok(bytes);
         }
     }
@@ -24,7 +33,16 @@ pub fn load_or_create_secret(path: &std::path::Path) -> Result<Vec<u8>> {
     if let Some(dir) = path.parent() {
         std::fs::create_dir_all(dir).ok();
     }
-    std::fs::write(path, secret).with_context(|| format!("writing {}", path.display()))?;
+    let mut f = std::fs::OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(true)
+        .mode(0o600)
+        .open(path)
+        .with_context(|| format!("writing {}", path.display()))?;
+    // `mode` applies only on creation: a short file left from before keeps its own.
+    f.set_permissions(std::fs::Permissions::from_mode(0o600))?;
+    f.write_all(&secret).with_context(|| format!("writing {}", path.display()))?;
     Ok(secret.to_vec())
 }
 
@@ -64,6 +82,34 @@ pub fn verify(secret: &[u8], token: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::os::unix::fs::PermissionsExt;
+
+    fn mode(p: &std::path::Path) -> u32 {
+        std::fs::metadata(p).unwrap().permissions().mode() & 0o777
+    }
+
+    /// The secret signs every install token (and keys the owner secrets):
+    /// readable by the edge's own user only.
+    #[test]
+    fn a_new_secret_file_is_owner_only() {
+        let d = crate::test_tmp::TempDir::new("secret-new");
+        let p = d.join("edge.secret");
+        let s = load_or_create_secret(&p).unwrap();
+        assert_eq!(s.len(), 32);
+        assert_eq!(mode(&p), 0o600);
+        assert_eq!(load_or_create_secret(&p).unwrap(), s);
+    }
+
+    #[test]
+    fn an_existing_secret_file_readable_by_others_is_made_owner_only() {
+        let d = crate::test_tmp::TempDir::new("secret-old");
+        std::fs::create_dir_all(&*d).unwrap();
+        let p = d.join("edge.secret");
+        std::fs::write(&p, [7u8; 32]).unwrap();
+        std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o644)).unwrap();
+        assert_eq!(load_or_create_secret(&p).unwrap(), vec![7u8; 32], "the same secret: tokens stay valid");
+        assert_eq!(mode(&p), 0o600);
+    }
 
     #[test]
     fn issued_tokens_verify_and_tampered_ones_do_not() {

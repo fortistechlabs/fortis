@@ -9,128 +9,18 @@
 <meta property="og:description" content="Non-custodial software for Bitcoin XBT and Bitcoin BTC.">
 <meta property="og:type" content="website">
 <meta property="og:url" content="https://fortistechlabs.com/">
-<meta property="og:image" content="https://fortistechlabs.com/img/receive.jpg">
+<meta property="og:image" content="https://fortistechlabs.com/banner.png">
 <link rel="icon" href="/icon.svg">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
-<style>
-  :root {
-    color-scheme: dark;
-    --bg: #0a1420; --card: #0d1e2c; --line: rgba(90,212,255,.28);
-    --ink: #eaf6ff; --dim: #7fa0b8; --faint: #4d6b82; --accent: #5ad4ff;
-  }
-  * { box-sizing: border-box; }
-  html { scroll-behavior: smooth; overflow-x: hidden; }
-  body {
-    margin: 0; background: var(--bg); color: var(--ink);
-    font: 16px/1.65 'Space Grotesk', -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-    -webkit-text-size-adjust: 100%; overflow-x: hidden;
-    background-image:
-      linear-gradient(rgba(90,212,255,.055) 1px, transparent 1px),
-      linear-gradient(90deg, rgba(90,212,255,.055) 1px, transparent 1px);
-    background-size: 32px 32px;
-  }
-  img { max-width: 100%; }
-  a { color: var(--accent); text-decoration: none; }
-  a:hover { text-decoration: underline; }
-  code, .mono { font-family: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
-  .wrap { max-width: 1000px; margin: 0 auto; padding: 0 24px; }
-
-  nav { display: flex; align-items: center; justify-content: space-between; padding: 22px 0; }
-  nav .brand { display: flex; align-items: center; gap: 11px; font-weight: 700; font-size: 17px; color: #fff; }
-  nav .brand img { width: 28px; height: 28px; }
-  nav .links a { color: var(--dim); margin-left: 22px; font-size: 13px; font-family: 'IBM Plex Mono', monospace; }
-
-  header.hero {
-    text-align: center; padding: 76px 0 84px;
-    background:
-      radial-gradient(600px 380px at 18% -10%, rgba(90,212,255,.14), transparent 70%),
-      radial-gradient(560px 380px at 92% 15%, rgba(90,212,255,.08), transparent 70%);
-  }
-  header.hero .eyebrow {
-    color: var(--accent); letter-spacing: .18em; text-transform: uppercase; font-size: 12px;
-    font-family: 'IBM Plex Mono', monospace;
-  }
-  header.hero h1 { font-size: clamp(34px, 7vw, 58px); margin: 12px 0 16px; letter-spacing: -.01em; color: #fff; font-weight: 600; }
-  header.hero p { font-size: clamp(16px, 3.4vw, 20px); color: var(--dim); margin: 0 auto; max-width: 660px; }
-
-  section { padding: 56px 0; border-top: 1px solid var(--line); }
-  section h2 { font-size: 24px; color: #fff; margin: 0 0 8px; font-weight: 600; }
-  section .lead { color: var(--dim); max-width: 660px; margin: 0 0 32px; }
-
-  .product {
-    display: grid; grid-template-columns: 1.1fr 1fr; gap: 40px; align-items: center;
-    background: var(--card); border: 1px solid var(--line); border-radius: 4px; padding: 32px;
-  }
-  .product + .product { margin-top: 20px; }
-  .product h3 { margin: 0 0 4px; font-size: 22px; color: #fff; font-weight: 600; }
-  .product .kicker { color: var(--accent); font-size: 12.5px; margin: 0 0 14px; font-family: 'IBM Plex Mono', monospace; letter-spacing: .03em; }
-  .product ul { margin: 14px 0 20px; padding-left: 18px; color: var(--dim); }
-  .product li { margin: 5px 0; }
-  .product .cta { display: inline-block; font-size: 13px; color: var(--faint);
-    border: 1px solid var(--line); border-radius: 4px; padding: 7px 16px; font-family: 'IBM Plex Mono', monospace; }
-  .dl { display: flex; flex-wrap: wrap; gap: 10px; margin: 4px 0 10px; }
-  .dl a {
-    position: relative; display: inline-flex; align-items: center; gap: 8px; font-size: 13.5px;
-    font-weight: 600; border-radius: 2px; padding: 12px 22px; font-family: 'IBM Plex Mono', monospace;
-    letter-spacing: .02em;
-  }
-  .dl a::before, .dl a::after { content: ""; position: absolute; width: 9px; height: 9px; border-color: var(--accent); border-style: solid; }
-  .dl a::before { left: -1px; top: -1px; border-width: 1.5px 0 0 1.5px; }
-  .dl a::after { right: -1px; bottom: -1px; border-width: 0 1.5px 1.5px 0; }
-  .dl .primary { background: rgba(90,212,255,.12); color: var(--ink); border: 1px solid var(--accent); }
-  .dl .primary:hover { text-decoration: none; background: rgba(90,212,255,.2); }
-  .dl .secondary { border: 1px solid var(--line); color: var(--ink); }
-  .dl .secondary:hover { text-decoration: none; border-color: var(--accent); }
-  .dl-note { font-size: 12.5px; color: var(--faint); margin: 0 0 10px; line-height: 1.7; font-family: 'IBM Plex Mono', monospace; }
-  .dl-note code { font-size: 11px; word-break: break-all; }
-  .install { margin: 0 0 6px; border: 1px solid var(--line); border-radius: 4px;
-    background: rgba(90,212,255,.03); }
-  .install > summary { cursor: pointer; padding: 12px 16px; font-size: 13.5px;
-    font-weight: 600; color: var(--ink); list-style: none; }
-  .install > summary::-webkit-details-marker { display: none; }
-  .install > summary::marker { content: ""; }
-  .install > summary::before { content: "+"; color: var(--accent); margin-right: 8px; font-family: 'IBM Plex Mono', monospace; }
-  .install[open] > summary::before { content: "\2212"; }
-  .install .body { padding: 0 16px 14px; }
-  .install ol { margin: 4px 0 0; padding-left: 20px; color: var(--dim);
-    font-size: 13.5px; line-height: 1.7; }
-  .install li { margin: 6px 0; }
-  .install .sub { margin: 12px 0 0; font-size: 12.5px; color: var(--faint); line-height: 1.7; }
-  .install code { font-size: 11px; word-break: break-all; }
-  .product .shots { display: flex; gap: 14px; max-width: 100%; overflow-x: auto; padding-bottom: 8px; }
-  .product .shots img { width: 168px; flex: none; border-radius: 4px; border: 1px solid var(--line); }
-
-  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr)); gap: 16px; }
-  .feature { background: var(--card); border: 1px solid var(--line); border-radius: 4px; padding: 20px; }
-  .feature h3 { margin: 0 0 6px; font-size: 16px; color: #fff; font-weight: 600; }
-  .feature p { margin: 0; color: var(--dim); font-size: 14.5px; }
-
-  footer { border-top: 1px solid var(--line); padding: 40px 0 64px; color: var(--faint); font-size: 14px; }
-  footer .row { display: flex; flex-wrap: wrap; gap: 14px 26px; align-items: center; justify-content: space-between; }
-  footer a { color: var(--dim); }
-  footer .row > span:last-child { font-family: 'IBM Plex Mono', monospace; font-size: 12.5px; }
-  .warn { color: #ffcf7a; }
-
-  @media (max-width: 720px) {
-    .product { grid-template-columns: 1fr; gap: 26px; padding: 24px; }
-  }
-  @media (max-width: 560px) {
-    nav .links a[href="#wallet"] { display: none; }
-    nav .links a { margin-left: 16px; font-size: 12px; }
-    header.hero { padding: 52px 0 60px; }
-    section { padding: 44px 0; }
-  }
-</style>
+<link rel="stylesheet" href="/style.css">
 </head>
 <body>
 
 <div class="wrap">
   <nav>
-    <span class="brand"><img src="/icon.svg" alt=""> Fortis Tech Labs</span>
+    <a class="brand" href="/"><img src="/icon.svg" alt=""> Fortis Tech Labs</a>
     <span class="links">
-      <a href="#wallet">Fortis Wallet</a>
+      <a href="#wallet">Wallet</a>
+      <a href="/swaps">Swaps</a>
       <a href="#features">Features</a>
       <a href="https://github.com/fortistechlabs/fortis" target="_blank" rel="noopener">Source</a>
       <a href="/privacy">Privacy</a>
@@ -142,7 +32,7 @@
 <header class="hero">
   <div class="wrap">
     <div class="eyebrow">Fortis Tech Labs</div>
-    <h1>Tools for Bitcoin self-custody</h1>
+    <h1>Tools for Bitcoin self&#8209;custody</h1>
     <p>We build non-custodial software for Bitcoin XBT and Bitcoin BTC — apps that put the keys, and the responsibility that comes with them, in the hands of the people who own the coins. No accounts, no custody, no one who can move your coins but you.</p>
   </div>
 </header>
@@ -151,11 +41,11 @@
   <div class="wrap">
     <h2>Our apps</h2>
     <p class="lead">One wallet — on Android, or straight in your browser.</p>
-    <div class="product">
+    <div class="panel product">
       <div>
         <h3>Fortis Wallet — Web</h3>
         <p class="kicker">Any modern browser · installable as a PWA · no download</p>
-        <p style="color:var(--dim)">A non-custodial wallet running entirely in your browser. Your recovery phrase is generated on your device and never leaves it — there's no account and nothing held on a server but public chain data. Open it, use it, or add it to your home screen and it works like any other app.</p>
+        <p class="dim">A non-custodial wallet running entirely in your browser. Your recovery phrase is generated on your device and never leaves it — there's no account and nothing held on a server but public chain data. Open it, use it, or add it to your home screen and it works like any other app.</p>
         <ul>
           <li>Up to 10 named wallets — any mix of XBT and BTC — from the one phrase</li>
           <li>Optional quick-unlock via your device's fingerprint, face, or screen lock (WebAuthn), password always works as a fallback</li>
@@ -164,7 +54,7 @@
           <li>Same open-source Rust core as the Android app — the signing code isn't reimplemented per platform</li>
         </ul>
         <div class="dl">
-          <a class="primary" href="https://app.fortistechlabs.com/" target="_blank" rel="noopener">Open Fortis Wallet</a>
+          <a class="btn primary" href="https://app.fortistechlabs.com/" target="_blank" rel="noopener">Open Fortis Wallet</a>
         </div>
         <details class="install">
           <summary>How to sign fully offline (air-gapped)</summary>
@@ -193,28 +83,29 @@
       </div>
     </div>
 
-    <div class="product">
+    <div class="panel product">
       <div>
         <h3>Fortis Wallet</h3>
         <p class="kicker">Android 8+ · direct download &amp; Obtainium</p>
-        <p style="color:var(--dim)">A non-custodial mobile wallet for Bitcoin XBT and Bitcoin BTC. Your recovery phrase is generated on your device, encrypted under a password you choose, and never leaves it.</p>
+        <p class="dim">A non-custodial mobile wallet for Bitcoin XBT and Bitcoin BTC. Your recovery phrase is generated on your device, encrypted under a password you choose, and never leaves it.</p>
         <ul>
           <li>12- or 24-word BIP-39 phrase, BIP-84 native SegWit, optional passphrase ("25th word")</li>
           <li>Up to 10 named wallets — any mix of XBT and BTC — from the one phrase</li>
           <li>Send &amp; receive with QR codes, a built-in camera scanner, or paste</li>
           <li>Fee presets or a custom sat/vB rate; "take the fees out of this amount"; sweep a whole balance</li>
           <li>History with a tap-through to a block explorer; approximate USD value</li>
+          <li>Swap BTC ⇄ XBT with other people — atomic and non-custodial; coming in the next release (<a href="/swaps">how swaps work</a>)</li>
           <li>One unlock — fingerprint, face, or device PIN — opens every wallet</li>
           <li>Phrase and password screens blocked from screenshots, screen recording, and the app switcher</li>
           <li>A 1% fee (min 400&nbsp;sat) funds the backend — added as a transaction output, shown before you sign</li>
         </ul>
         <div class="dl">
-          <a class="primary" href="https://github.com/fortistechlabs/fortis/releases/latest/download/fortis-wallet.apk">Download APK</a>
-          <a class="secondary" href="https://zapstore.dev/apps/com.fortistechlabs.wallet" target="_blank" rel="noopener">Zapstore</a>
-          <a class="secondary" href="https://apps.obtainium.imranr.dev/redirect?r=obtainium%3A%2F%2Fadd%2Fhttps%253A%252F%252Fgithub.com%252Ffortistechlabs%252Ffortis" target="_blank" rel="noopener">Add to Obtainium</a>
+          <a class="btn primary" href="https://github.com/fortistechlabs/fortis/releases/latest/download/fortis-wallet.apk">Download APK</a>
+          <a class="btn secondary" href="https://zapstore.dev/apps/com.fortistechlabs.wallet" target="_blank" rel="noopener">Zapstore</a>
+          <a class="btn secondary" href="https://apps.obtainium.imranr.dev/redirect?r=obtainium%3A%2F%2Fadd%2Fhttps%253A%252F%252Fgithub.com%252Ffortistechlabs%252Ffortis" target="_blank" rel="noopener">Add to Obtainium</a>
         </div>
         <p class="dl-note">
-          Latest: <strong>v0.3.6</strong> · ~10&nbsp;MB · Android 8+ ·
+          Latest: <strong>v0.4.3</strong> · ~10&nbsp;MB · Android 8+ ·
           <a href="https://github.com/fortistechlabs/fortis/releases">all releases &amp; changelog</a>
         </p>
         <details class="install" open>
@@ -241,9 +132,10 @@
         </details>
       </div>
       <div class="shots">
-        <img src="/img/onboard.jpg" alt="Fortis Wallet onboarding" loading="lazy">
-        <img src="/img/receive.jpg" alt="Fortis Wallet receive screen" loading="lazy">
-        <img src="/img/send.jpg" alt="Fortis Wallet send screen" loading="lazy">
+        <img src="/img/android-home.jpg" alt="Fortis Wallet home: active swaps and your wallets" loading="lazy" width="540" height="1125">
+        <img src="/img/android-receive.jpg" alt="Fortis Wallet receive screen" loading="lazy" width="540" height="1125">
+        <img src="/img/android-send.jpg" alt="Fortis Wallet send screen" loading="lazy" width="540" height="1125">
+        <img src="/img/android-history.jpg" alt="Fortis Wallet history" loading="lazy" width="540" height="1125">
       </div>
     </div>
   </div>
@@ -254,6 +146,10 @@
     <h2>What sets it apart</h2>
     <p class="lead">The basics work the way you'd expect. These are the parts that don't.</p>
     <div class="grid">
+      <div class="feature">
+        <h3>Swap BTC ⇄ XBT, no middleman</h3>
+        <p>Trade one coin for the other with another person. Both sides lock their coins in a contract on chain: either both get paid, or both get their coins back. Nobody, us included, can take them. <a href="/swaps">How swaps work →</a></p>
+      </div>
       <div class="feature">
         <h3>Made for Bitcoin XBT</h3>
         <p>Bitcoin XBT is a chain almost no wallet supports. Fortis runs it right alongside regular Bitcoin (BTC), chosen per wallet.</p>

@@ -4,7 +4,9 @@ import android.util.Log
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeout
 import java.util.concurrent.ConcurrentHashMap
 
 /**
@@ -18,6 +20,12 @@ import java.util.concurrent.ConcurrentHashMap
  */
 class SwapRunner(
     private val active: suspend () -> List<String>,
+    /** The most one step may take. Past it, the step is cancelled (its HTTP
+     *  calls with it) and the swap steps again next pass — from its saved
+     *  record, so nothing is lost; a stuck step can't hold a swap forever. */
+    private val stepTimeoutMs: Long = STEP_TIMEOUT_MS,
+    /** Told when a step is abandoned at its time limit (into the swap's trace). */
+    private val onTimeout: (String) -> Unit = {},
     private val step: suspend (String) -> Unit,
 ) {
     private val inFlight = ConcurrentHashMap.newKeySet<String>()
@@ -40,10 +48,17 @@ class SwapRunner(
             return@launch
         }
         for (id in ids) {
-            if (!inFlight.add(id)) continue
+            if (!inFlight.add(id)) {
+                if (com.fortis.wallet.BuildConfig.DEBUG) runCatching { Log.i("SwapRunner", "${id.take(8)}: still in its last step, skipped") }
+                continue
+            }
             launch {
                 try {
-                    step(id)
+                    withTimeout(stepTimeoutMs) { step(id) }
+                } catch (e: TimeoutCancellationException) {
+                    // Only this step's own limit — not the pass being cancelled.
+                    log("step $id took over ${stepTimeoutMs / 1000} s; abandoned, retried next pass", e)
+                    runCatching { onTimeout(id) }
                 } catch (e: CancellationException) {
                     throw e
                 } catch (e: Exception) {
@@ -57,6 +72,13 @@ class SwapRunner(
 
     // android.util.Log is a stub under JVM unit tests (it throws); logging must never fail a pass.
     private fun log(msg: String, e: Exception) {
-        runCatching { Log.w("SwapRunner", msg, e) }
+        // Debug builds only: step errors can carry outpoints and txids.
+        if (com.fortis.wallet.BuildConfig.DEBUG) runCatching { Log.w("SwapRunner", msg, e) }
+    }
+
+    companion object {
+        /** Generous next to a normal step (one 25 s relay long-poll plus a few
+         *  calls, each capped at 60 s), so only a stuck step ever reaches it. */
+        const val STEP_TIMEOUT_MS = 5 * 60_000L
     }
 }

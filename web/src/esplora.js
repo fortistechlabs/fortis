@@ -63,6 +63,18 @@ async function chunked(items, n, fn) {
 }
 
 /** Mint a per-install token at a fortis-edge base URL (`POST {base}/register`). */
+/** The confirmed sats a `/scan` reply `r` summed under `unlisted` instead of
+ *  listing coin by coin — an address dusted past the index's per-address cap.
+ *  Only for addresses in `asked`: anything else is a wrong answer. */
+export function unlistedSat(r, asked) {
+  let sum = 0;
+  for (const u of r.unlisted ?? []) {
+    if (!asked.has(u.address)) throw new Error('scan summed coins for an address that was not asked about');
+    sum += Number(u.value);
+  }
+  return sum;
+}
+
 export async function edgeRegister(base) {
   // A bounded timeout matters here specifically because auto-connect (see
   // app.js) awaits this during onboarding with no user-visible cancel — a
@@ -399,6 +411,7 @@ export class EsploraBackend {
     const unspent = [];
     const txs = new Map();
     let tip = 0;
+    let unlisted = 0;
 
     const fresh = [];
     for (const branch of [0, 1]) {
@@ -414,8 +427,10 @@ export class EsploraBackend {
     // edge's cap); this only ever splits for a wallet whose own window alone
     // already exceeds that, which a single call would otherwise be rejected for.
     for (let i = 0; i < fresh.length; i += BATCH_MAX_ADDRESSES) {
-      const r = await this._postScan(fresh.slice(i, i + BATCH_MAX_ADDRESSES).map((a) => a.address));
+      const part = fresh.slice(i, i + BATCH_MAX_ADDRESSES).map((a) => a.address);
+      const r = await this._postScan(part);
       tip = Math.max(tip, Number(r.tip));
+      unlisted += unlistedSat(r, new Set(part));
       for (const a of r.used) used.add(a);
       unspent.push(...r.utxos);
       for (const t of r.txs) if (!txs.has(t.txid)) txs.set(t.txid, summarizeTx(t));
@@ -435,7 +450,8 @@ export class EsploraBackend {
       };
     });
     // `txs` / `mine` stand in for the per-address `addrs[].txs` the walk produces.
-    return { tip, utxos, addrs: [], txs: [...txs.values()], mine: new Set(byAddr.keys()) };
+    // `unlisted`: confirmed coins summed instead of listed (dust): in the balance, not spendable here.
+    return { tip, utxos, addrs: [], txs: [...txs.values()], mine: new Set(byAddr.keys()), unlisted };
   }
 
   async _refresh(force = false) {
@@ -513,10 +529,10 @@ export class EsploraBackend {
   }
 
   async balances() {
-    const { utxos } = await this._refresh();
+    const { utxos, unlisted = 0 } = await this._refresh();
     const sum = (f) => utxos.filter(f).reduce((s, u) => s + u.value_sat, 0);
     return {
-      confirmed_sat: sum((u) => u.confirmations >= 1),
+      confirmed_sat: sum((u) => u.confirmations >= 1) + unlisted,
       pending_sat: sum((u) => u.confirmations < 1),
       immature_sat: 0,
     };

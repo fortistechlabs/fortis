@@ -15,4 +15,6 @@ fun caps(text: String, locale: Locale): String = text.uppercase(locale)
 @Composable
 @ReadOnlyComposable
 fun caps(text: String): String =
-    caps(text, ConfigurationCompat.getLocales(LocalConfiguration.current)[0] ?: Locale.getDefault())
+    // An empty locale list (never seen) falls back to ROOT: Locale.getDefault()
+    // here couldn't be observed, so a language change wouldn't recompose.
+    caps(text, ConfigurationCompat.getLocales(LocalConfiguration.current)[0] ?: Locale.ROOT)

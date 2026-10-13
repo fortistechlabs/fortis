@@ -14,4 +14,4 @@ pub use ops::{
     estimate_feerate, history, import_account, import_descriptors, import_request, scanning,
     test_accept, wallet_balances, wpkh_branch_descriptor, Balances, ChainStatus, HistoryEntry,
 };
-pub use rpc::{cookie_auth, Rpc};
+pub use rpc::{cookie_auth, Rpc, Unreachable};

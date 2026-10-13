@@ -10,7 +10,6 @@ import kotlinx.coroutines.sync.withLock
 import okhttp3.OkHttpClient
 import org.json.JSONArray
 import org.json.JSONObject
-import java.security.SecureRandom
 
 /**
  * Where a swap is. Everything before [DONE] is still being driven.
@@ -50,7 +49,8 @@ data class SwapRecord(
     val toWalletId: String,
     val sendChain: String,
     val amountSat: Long,
-    val slippageBps: Int,
+    /** sat of BTC per XBT: the lowest the initiator accepts, the highest the participant accepts. */
+    val limitPrice: Long,
     val ownerSecret: String,
     val swapIndex: Int,
     val account: Int = 0,
@@ -75,6 +75,8 @@ data class SwapRecord(
     val hashlock: String? = null,
     val theirTxid: String? = null,
     val theirVout: Int? = null,
+    /** The edge's match status as of the last step (`accepted`, `cancelled`, …). */
+    val matchStatus: String? = null,
     val redeemTxid: String? = null,
     val refundTxid: String? = null,
     val marks: Set<String> = emptySet(),
@@ -92,6 +94,20 @@ data class SwapRecord(
     val clientId: String? = null,
     /** The offer was posted (or is to be posted) private, with a share code. */
     val privateOffer: Boolean = false,
+    /** The seed's master fingerprint: swap indices count up per seed. */
+    val seed: String? = null,
+    /** This swap's recovery tag (`Wallet.swapRecoveryTag`), sent with its offer. */
+    val recoveryTag: String? = null,
+    /** The initiator's preimage nonce (16 random bytes, hex), drawn with the
+     *  swap and relayed with the hashlock; a recovered swap reads it back. */
+    val preimageNonce: String? = null,
+    /** A cancelled match's release (v2): the initiator's unsigned release
+     *  transactions (asked, or received by the participant), the
+     *  participant's signatures on them (received by the initiator), and the
+     *  initiator's finished ones (what it broadcast). */
+    val releaseTxs: List<String> = emptyList(),
+    val releaseSigs: List<String> = emptyList(),
+    val releaseSigned: List<String> = emptyList(),
 ) {
     val recvChain: String get() = if (sendChain == "btc") "xbt" else "btc"
 
@@ -105,7 +121,7 @@ data class SwapRecord(
 
     fun toJson(): JSONObject = JSONObject().apply {
         put("id", id); put("from_wallet_id", fromWalletId); put("to_wallet_id", toWalletId)
-        put("send_chain", sendChain); put("amount_sat", amountSat); put("slippage_bps", slippageBps)
+        put("send_chain", sendChain); put("amount_sat", amountSat); put("limit_price", limitPrice)
         put("owner_secret", ownerSecret); put("swap_index", swapIndex); put("account", account)
         put("wrapped_xbt", wrappedXbt); put("wrapped_btc", wrappedBtc); put("relay_seq", relaySeq)
         put("presigned", JSONArray(presigned)); put("step", step.name)
@@ -124,7 +140,14 @@ data class SwapRecord(
         if (createdAt != 0L) put("created_at", createdAt)
         clientId?.let { put("client_id", it) }
         if (privateOffer) put("private", true)
+        seed?.let { put("seed", it) }
+        recoveryTag?.let { put("recovery_tag", it) }
+        preimageNonce?.let { put("preimage_nonce", it) }
+        if (releaseTxs.isNotEmpty()) put("release_txs", JSONArray(releaseTxs))
+        if (releaseSigs.isNotEmpty()) put("release_sigs", JSONArray(releaseSigs))
+        if (releaseSigned.isNotEmpty()) put("release_signed_txs", JSONArray(releaseSigned))
         theirTxid?.let { put("their_txid", it) }; theirVout?.let { put("their_vout", it) }
+        matchStatus?.let { put("match_status", it) }
         redeemTxid?.let { put("redeem_txid", it) }; refundTxid?.let { put("refund_txid", it) }
     }
 
@@ -143,7 +166,7 @@ data class SwapRecord(
             toWalletId = o.getString("to_wallet_id"),
             sendChain = o.getString("send_chain"),
             amountSat = o.getLong("amount_sat"),
-            slippageBps = o.getInt("slippage_bps"),
+            limitPrice = o.optLong("limit_price", 0), // 0 is refused by validate_terms: a stray old record declines
             ownerSecret = o.getString("owner_secret"),
             swapIndex = o.getInt("swap_index"),
             account = o.optInt("account", 0),
@@ -166,6 +189,7 @@ data class SwapRecord(
             hashlock = o.str("hashlock"),
             theirTxid = o.str("their_txid"),
             theirVout = o.int("their_vout"),
+            matchStatus = o.str("match_status"),
             redeemTxid = o.str("redeem_txid"),
             refundTxid = o.str("refund_txid"),
             marks = o.optJSONArray("marks").strings().toSet(),
@@ -175,6 +199,12 @@ data class SwapRecord(
             createdAt = o.optLong("created_at", 0),
             clientId = o.str("client_id"),
             privateOffer = o.optBoolean("private", false),
+            seed = o.str("seed"),
+            recoveryTag = o.str("recovery_tag"),
+            preimageNonce = o.str("preimage_nonce"),
+            releaseTxs = o.optJSONArray("release_txs").strings(),
+            releaseSigs = o.optJSONArray("release_sigs").strings(),
+            releaseSigned = o.optJSONArray("release_signed_txs").strings(),
         )
     }
 }
@@ -196,16 +226,13 @@ private class DataStoreBlob(private val ctx: Context) : SwapBlob {
     }
 }
 
-private val secureRandom = SecureRandom()
 
 /**
  * Every swap on this phone, as one JSON document like [Store]'s wallet list:
- * `{"records":[…], "swap_indices":[…], "token": "…"}`.
+ * `{"records":[…], "swap_next":{seed: index}, "token": "…"}`.
  */
 class SwapStore(
     private val blob: SwapBlob,
-    /** A uniformly random swap index in `[0, 2^31)`; a parameter only so tests can script it. */
-    private val draw: () -> Int = { secureRandom.nextInt() and Int.MAX_VALUE },
 ) {
     constructor(ctx: Context) : this(DataStoreBlob(ctx.applicationContext))
 
@@ -285,31 +312,39 @@ class SwapStore(
     suspend fun active(): List<SwapRecord> = all().filter { it.step.active }
 
     /**
-     * The swap index for a new swap from `walletId`: drawn uniformly at random
-     * in `[0, 2^31)` with [SecureRandom], redrawn while it collides with any
-     * record's index or any index handed out before (on any wallet: a clone of
-     * the same seed on the other chain derives the same keys per index). The
-     * caller saves it in the record.
-     *
-     * Not a counter: swap keys — and the initiator's preimage, the HMAC of its
-     * XBT swap key — are seed-deterministic per index, and this store does not
-     * survive a reinstall or clear-data (no backup). A counter would restart at
-     * 0 and reuse a hashlock whose preimage an earlier swap already published,
-     * letting a participant take the XBT leg without funding. A random index
-     * repeats with probability ~n/2^31.
+     * The next swap index for [seed] (its master fingerprint), counting up
+     * from 0, so a restored phone can find its swaps again by their recovery
+     * tags (`HMAC(k_rec, index)`). Never one a record on this phone holds,
+     * nor one handed out before. Swap keys are seed-deterministic per index,
+     * so reuse must not happen: after a reinstall the counter restarts, but
+     * the edge refuses a tag it has seen (the caller then takes the next
+     * index), the restore scan moves the counter past every swap it finds,
+     * and the initiator's preimage is bound to the match id anyway.
      */
-    suspend fun nextSwapIndex(@Suppress("UNUSED_PARAMETER") walletId: String): Int {
+    suspend fun nextSwapIndex(seed: String): Int {
         var out = 0
         edit { doc ->
-            val issued = doc.optJSONArray("swap_indices") ?: JSONArray()
+            val next = doc.optJSONObject("swap_next") ?: JSONObject()
             val taken = records(doc).map { it.swapIndex }.toMutableSet()
-            for (i in 0 until issued.length()) taken += issued.getInt(i)
-            do {
-                out = draw()
-            } while (out in taken)
-            doc.put("swap_indices", issued.put(out))
+            out = next.optInt(seed, 0)
+            while (out in taken) out++
+            doc.put("swap_next", next.put(seed, out + 1))
         }
         return out
+    }
+
+    /** Count [seed]'s swaps on past [pastIndex] (found by a restore scan). Never back. */
+    /** Give back [index], just drawn for [seed], when the edge refused its
+     *  request before storing the tag (nothing of it was published): only if
+     *  it is still the latest draw. Keeps the restore scan's gaps short. */
+    suspend fun releaseSwapIndex(seed: String, index: Int) = edit { doc ->
+        val next = doc.optJSONObject("swap_next") ?: return@edit
+        if (next.optInt(seed, 0) == index + 1) doc.put("swap_next", next.put(seed, index))
+    }
+
+    suspend fun bumpSwapIndex(seed: String, pastIndex: Int) = edit { doc ->
+        val next = doc.optJSONObject("swap_next") ?: JSONObject()
+        doc.put("swap_next", next.put(seed, maxOf(next.optInt(seed, 0), pastIndex + 1)))
     }
 
     /** The install token used for the `/swap/…` routes (strikes are counted against it). */

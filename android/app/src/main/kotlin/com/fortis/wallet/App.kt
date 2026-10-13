@@ -28,7 +28,10 @@ fun FortisApp(vm: WalletViewModel = viewModel()) {
     // One owner for FLAG_SECURE, keyed on the phase — a per-screen DisposableEffect
     // races with AnimatedContent's crossfade (the outgoing screen clears the flag
     // the incoming one just set).
-    SecureWindow(vm.phase in SECURE_PHASES)
+    // Release builds keep every screen out of screenshots and the recents preview
+    // (balances, addresses, history too). Debug builds only the secret screens,
+    // so the dev builds can still be screenshotted while testing.
+    SecureWindow(vm.phase in SECURE_PHASES || !BuildConfig.DEBUG)
 
     FortisTheme {
         AnimatedContent(

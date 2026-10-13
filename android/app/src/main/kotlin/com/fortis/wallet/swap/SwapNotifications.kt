@@ -98,6 +98,8 @@ object SwapNotifications {
             .setSmallIcon(R.drawable.ic_mark)
             .setContentTitle(ctx.getString(R.string.swap_notification_title))
             .setContentText(text)
+            // Expanded: the step, then the one thing the user has to do.
+            .setStyle(NotificationCompat.BigTextStyle().bigText(text + "\n" + ctx.getString(R.string.swap_notification_keep_on)))
             .setOngoing(true)
             .setOnlyAlertOnce(true)
             .setSilent(true)

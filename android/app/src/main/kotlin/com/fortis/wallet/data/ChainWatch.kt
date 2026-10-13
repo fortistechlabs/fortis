@@ -1,8 +1,6 @@
 package com.fortis.wallet.data
 
 import com.fortis.wallet.HOSTED_EDGE
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -40,6 +38,14 @@ interface ChainWatch {
 }
 
 /**
+ * The edge's fee estimates, kept between 1 sat/vB and [max] (the core's swap
+ * ceiling), duplicates dropped, order kept: a hostile or broken edge's absurd
+ * estimate can't reach a signed swap spend (the core caps those too).
+ */
+internal fun clampFeerates(rates: List<Long>, max: Long): List<Long> =
+    rates.map { it.coerceIn(1L, max) }.distinct()
+
+/**
  * [ChainWatch] over the hosted edge: `{edge}/xbt/…` (fortis-index) and
  * `{edge}/btc/…` (Esplora). HTLC spends pass the edge's fee check once both
  * parties' keys and the hashlock have been relayed.
@@ -53,10 +59,8 @@ class EdgeChainWatch(
 
     private suspend fun fetch(path: String): Pair<Int, String> {
         val auth = token()
-        return withContext(Dispatchers.IO) {
-            val req = Request.Builder().url(base + path).header("Authorization", "Bearer $auth").build()
-            http.newCall(req).execute().use { r -> r.code to r.body?.string().orEmpty() }
-        }
+        val req = Request.Builder().url(base + path).header("Authorization", "Bearer $auth").build()
+        return http.send(req) { r -> r.code to r.body?.string().orEmpty() }
     }
 
     /** The body of a 2xx, `null` for a 404, an exception otherwise. */
@@ -139,21 +143,19 @@ class EdgeChainWatch(
         // hourFee is the 6-block target (as the watchtower reads it), fastestFee the next block
         val t6 = maxOf(1L, Math.ceil(f.optDouble("hourFee", 1.0)).toLong())
         val t1 = maxOf(1L, Math.ceil(f.optDouble("fastestFee", 1.0)).toLong())
-        return listOf(t6, maxOf(t1, 2 * t6))
+        return clampFeerates(listOf(t6, maxOf(t1, 2 * t6)), uniffi.wallet_ffi.maxSwapFeerateSatVb().toLong())
     }
 
     override suspend fun broadcast(chain: String, hex: String): String {
         val auth = token()
-        return withContext(Dispatchers.IO) {
-            val req = Request.Builder().url("$base/$chain/tx")
-                .header("Authorization", "Bearer $auth")
-                .post(hex.toRequestBody("text/plain".toMediaTypeOrNull()))
-                .build()
-            http.newCall(req).execute().use { r ->
-                val body = r.body?.string()?.trim().orEmpty()
-                check(r.isSuccessful) { body.ifBlank { "the $chain node rejected the transaction (${r.code})" } }
-                body
-            }
+        val req = Request.Builder().url("$base/$chain/tx")
+            .header("Authorization", "Bearer $auth")
+            .post(hex.toRequestBody("text/plain".toMediaTypeOrNull()))
+            .build()
+        return http.send(req) { r ->
+            val body = r.body?.string()?.trim().orEmpty()
+            check(r.isSuccessful) { body.ifBlank { "the $chain node rejected the transaction (${r.code})" } }
+            body
         }
     }
 }

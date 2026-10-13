@@ -1,4 +1,6 @@
-//! NeoxEX `BTCB2_BTC` price for the P2P swap: sat of BTC per 1 XBT.
+//! NeoxEX `BTCB2_BTC` reference price for the P2P swap: sat of BTC per 1
+//! XBT. Swaps trade at the users' own limit prices; this is only shown next
+//! to them (`GET /swap/quote`), with `ok` saying whether the rule below passes.
 //!
 //! The Android app re-implements this exact rule against the same fixtures
 //! (`tests/fixtures/neoxex/`), so keep it simple. Prices are BTC per XBT,
@@ -34,6 +36,7 @@
 //! entry in `/api/exchange/pairs` has `tradingPaused` = true. The orderbook
 //! has no timestamp, so the ticker's `computedAt` is the freshness clock.
 
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
@@ -138,6 +141,28 @@ fn side_vwap(levels: &[(f64, f64)]) -> Option<f64> {
     (xbt > 0.0).then(|| btc / xbt)
 }
 
+/// The NeoxEX reference: the depth-weighted mid, whatever the checks say,
+/// and whether [`price_from`] would accept it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Reference {
+    pub price_sat_per_xbt: u64,
+    pub ok: bool,
+}
+
+fn mid(book: &Book) -> Option<(f64, f64, f64)> {
+    let (bid, ask) = (side_vwap(&book.bids)?, side_vwap(&book.asks)?);
+    Some((bid, ask, (bid + ask) / 2.0))
+}
+
+/// The reference at `now`; `None` when a side of the book is empty.
+pub fn reference_from(book: &Book, ticker: &Ticker, now: u64) -> Option<Reference> {
+    let (_, _, mid) = mid(book)?;
+    Some(Reference {
+        price_sat_per_xbt: (mid * 1e8).round() as u64,
+        ok: price_from(book, ticker, now).is_ok(),
+    })
+}
+
 /// sat of BTC per 1 XBT. See the module doc for the rule.
 pub fn price_from(book: &Book, ticker: &Ticker, now: u64) -> Result<u64, QuoteError> {
     if ticker.paused {
@@ -146,11 +171,7 @@ pub fn price_from(book: &Book, ticker: &Ticker, now: u64) -> Result<u64, QuoteEr
     if now.saturating_sub(ticker.computed_at) > MAX_AGE_SECS {
         return Err(QuoteError::Stale);
     }
-    let (bid, ask) = match (side_vwap(&book.bids), side_vwap(&book.asks)) {
-        (Some(b), Some(a)) => (b, a),
-        _ => return Err(QuoteError::Empty),
-    };
-    let mid = (bid + ask) / 2.0;
+    let (bid, ask, mid) = mid(book).ok_or(QuoteError::Empty)?;
     if (ask - bid) / mid > MAX_SPREAD {
         return Err(QuoteError::WideSpread);
     }
@@ -173,7 +194,24 @@ struct Snapshot {
 pub struct NeoxEx {
     base: String,
     agent: ureq::Agent,
+    /// The last good snapshot. Only ever locked briefly: never across a fetch.
     cache: Mutex<Option<Snapshot>>,
+    /// When the last fetch failed; no refetch until `CACHE_SECS` after it, so
+    /// an outage doesn't make every request wait out the agent timeout.
+    failed_at: Mutex<Option<Instant>>,
+    /// Set while one caller fetches; everyone else answers from `cache`.
+    refreshing: AtomicBool,
+    #[cfg(test)]
+    fetches: std::sync::atomic::AtomicUsize,
+}
+
+/// Clears `refreshing` when the fetching caller is done, even on a panic.
+struct Refreshing<'a>(&'a AtomicBool);
+
+impl Drop for Refreshing<'_> {
+    fn drop(&mut self) {
+        self.0.store(false, Ordering::Release);
+    }
 }
 
 impl NeoxEx {
@@ -182,7 +220,13 @@ impl NeoxEx {
         if let Ok(tls) = native_tls::TlsConnector::new() {
             b = b.tls_connector(std::sync::Arc::new(tls));
         }
-        Self { base: base_url.trim_end_matches('/').to_string(), agent: b.build(), cache: Mutex::new(None) }
+        Self { base: base_url.trim_end_matches('/').to_string(), agent: b.build(),
+            cache: Mutex::new(None),
+            failed_at: Mutex::new(None),
+            refreshing: AtomicBool::new(false),
+            #[cfg(test)]
+            fetches: std::sync::atomic::AtomicUsize::new(0),
+        }
     }
 
     fn get(&self, path: &str) -> Result<String, QuoteError> {
@@ -191,20 +235,62 @@ impl NeoxEx {
     }
 
     fn fetch(&self) -> Result<Snapshot, QuoteError> {
+        #[cfg(test)]
+        self.fetches.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         let book = parse_book(&self.get(&format!("orderbook/{PAIR}"))?)?;
         let mut ticker = parse_ticker(&self.get(&format!("ticker/{PAIR}"))?)?;
         ticker.paused |= pair_paused(&self.get("pairs")?, PAIR)?;
         Ok(Snapshot { at: Instant::now(), book, ticker })
     }
 
-    /// Sat of BTC per 1 XBT; refetches at most every 10 s.
-    pub fn price(&self) -> Result<u64, QuoteError> {
-        let mut c = self.cache.lock().unwrap();
-        if c.as_ref().map_or(true, |s| s.at.elapsed().as_secs() >= CACHE_SECS) {
-            *c = Some(self.fetch()?);
+    /// Whether the cache is due a refetch: no snapshot or one older than
+    /// `CACHE_SECS`, and no failed fetch within the last `CACHE_SECS`.
+    fn due(&self) -> bool {
+        let stale = self
+            .cache
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .as_ref()
+            .is_none_or(|s| s.at.elapsed().as_secs() >= CACHE_SECS);
+        stale
+            && !self
+                .failed_at
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .is_some_and(|t| t.elapsed().as_secs() < CACHE_SECS)
+    }
+
+    /// The reference now; refetches at most every 10 s, and never within
+    /// 10 s of a failed fetch. Single-flight: one caller fetches (without
+    /// holding the cache lock) while every concurrent caller answers at once
+    /// from the last good snapshot, whose age makes `ok` false once stale.
+    /// `None` when there has never been a good snapshot or its book has an
+    /// empty side.
+    pub fn reference(&self) -> Option<Reference> {
+        if self.due()
+            && self
+                .refreshing
+                .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
+                .is_ok()
+        {
+            let _done = Refreshing(&self.refreshing);
+            // Another caller may have refreshed between `due` and winning the flag.
+            if self.due() {
+                match self.fetch() {
+                    Ok(snap) => {
+                        *self.cache.lock().unwrap_or_else(|e| e.into_inner()) = Some(snap);
+                        *self.failed_at.lock().unwrap_or_else(|e| e.into_inner()) = None;
+                    }
+                    Err(_) => {
+                        *self.failed_at.lock().unwrap_or_else(|e| e.into_inner()) =
+                            Some(Instant::now());
+                    }
+                }
+            }
         }
-        let s = c.as_ref().unwrap();
-        price_from(&s.book, &s.ticker, unix_now())
+        let c = self.cache.lock().unwrap_or_else(|e| e.into_inner());
+        let s = c.as_ref()?;
+        reference_from(&s.book, &s.ticker, unix_now())
     }
 }
 
@@ -326,6 +412,116 @@ mod tests {
         assert_eq!(price_from(&b, &t, COMPUTED + 10), Err(QuoteError::Empty));
         let b = Book { bids: vec![(0.0099, 1.0)], asks: vec![] };
         assert_eq!(price_from(&b, &t, COMPUTED + 10), Err(QuoteError::Empty));
+    }
+
+    #[test]
+    fn reference_of_fixture_is_ok() {
+        assert_eq!(
+            reference_from(&book(BOOK_OK), &ticker(TICKER_OK), COMPUTED + 10),
+            Some(Reference { price_sat_per_xbt: 1_008_980, ok: true })
+        );
+    }
+
+    #[test]
+    fn reference_of_wide_book_is_not_ok() {
+        let b = book(BOOK_WIDE);
+        let mid = (side_vwap(&b.bids).unwrap() + side_vwap(&b.asks).unwrap()) / 2.0;
+        assert_eq!(
+            reference_from(&b, &ticker(TICKER_OK), COMPUTED + 10),
+            Some(Reference { price_sat_per_xbt: (mid * 1e8).round() as u64, ok: false })
+        );
+    }
+
+    #[test]
+    fn reference_is_not_ok_when_stale_paused_or_far_from_last() {
+        let not_ok = Some(Reference { price_sat_per_xbt: 1_008_980, ok: false });
+        assert_eq!(reference_from(&book(BOOK_OK), &ticker(TICKER_OK), COMPUTED + 61), not_ok);
+        assert_eq!(reference_from(&book(BOOK_OK), &ticker(TICKER_PAUSED), COMPUTED + 10), not_ok);
+        assert_eq!(reference_from(&book(BOOK_OK), &ticker(TICKER_FAR), COMPUTED + 10), not_ok);
+    }
+
+    #[test]
+    fn reference_of_empty_book_is_none() {
+        let t = Ticker { last: 0.01, paused: false, computed_at: COMPUTED };
+        let b = Book { bids: vec![], asks: vec![(0.0101, 2.0)] };
+        assert_eq!(reference_from(&b, &t, COMPUTED + 10), None);
+        let b = Book { bids: vec![(0.0099, 1.0)], asks: vec![] };
+        assert_eq!(reference_from(&b, &t, COMPUTED + 10), None);
+    }
+
+    #[test]
+    fn failed_fetch_is_not_retried_within_cache_window() {
+        use std::sync::atomic::Ordering::SeqCst;
+        // A port nothing listens on: connections are refused.
+        let port = std::net::TcpListener::bind("127.0.0.1:0").unwrap().local_addr().unwrap().port();
+        let n = NeoxEx::new(format!("http://127.0.0.1:{port}"));
+        assert_eq!(n.reference(), None);
+        assert_eq!(n.fetches.load(SeqCst), 1);
+        assert_eq!(n.reference(), None);
+        assert_eq!(n.fetches.load(SeqCst), 1, "second call must not refetch");
+        // Once the window has passed, it tries again.
+        *n.failed_at.lock().unwrap() = Some(Instant::now() - Duration::from_secs(CACHE_SECS + 1));
+        assert_eq!(n.reference(), None);
+        assert_eq!(n.fetches.load(SeqCst), 2);
+    }
+
+    fn ok_snapshot(age_secs: u64) -> Snapshot {
+        let mut t = ticker(TICKER_OK);
+        t.computed_at = unix_now();
+        Snapshot { at: Instant::now() - Duration::from_secs(age_secs), book: book(BOOK_OK), ticker: t }
+    }
+
+    /// A NeoxEX that accepts connections and holds each for `secs` before
+    /// hanging up without an answer.
+    fn slow_stub(secs: u64) -> String {
+        let l = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = l.local_addr().unwrap();
+        std::thread::spawn(move || {
+            for c in l.incoming().flatten() {
+                std::thread::spawn(move || {
+                    std::thread::sleep(Duration::from_secs(secs));
+                    drop(c);
+                });
+            }
+        });
+        format!("http://{addr}")
+    }
+
+    #[test]
+    fn concurrent_reference_does_not_wait_for_a_fetch_in_flight() {
+        use std::sync::atomic::Ordering::SeqCst;
+        let n = std::sync::Arc::new(NeoxEx::new(slow_stub(2)));
+        // A last good snapshot, due for a refresh.
+        *n.cache.lock().unwrap() = Some(ok_snapshot(CACHE_SECS + 1));
+        let bg = {
+            let n = n.clone();
+            std::thread::spawn(move || n.reference())
+        };
+        let t0 = Instant::now();
+        while n.fetches.load(SeqCst) == 0 {
+            assert!(t0.elapsed() < Duration::from_secs(5), "fetch never started");
+            std::thread::yield_now();
+        }
+        let t = Instant::now();
+        let r = n.reference();
+        assert!(t.elapsed() < Duration::from_millis(500), "waited {:?} for the fetch in flight", t.elapsed());
+        assert_eq!(r, Some(Reference { price_sat_per_xbt: 1_008_980, ok: true }));
+        assert_eq!(n.fetches.load(SeqCst), 1, "only one caller fetches");
+        // The fetch fails; the fetcher still gets the last good snapshot.
+        assert_eq!(bg.join().unwrap(), r);
+    }
+
+    #[test]
+    fn failed_refetch_keeps_last_good_snapshot() {
+        use std::sync::atomic::Ordering::SeqCst;
+        let port = std::net::TcpListener::bind("127.0.0.1:0").unwrap().local_addr().unwrap().port();
+        let n = NeoxEx::new(format!("http://127.0.0.1:{port}"));
+        *n.cache.lock().unwrap() = Some(ok_snapshot(CACHE_SECS + 1));
+        let good = Some(Reference { price_sat_per_xbt: 1_008_980, ok: true });
+        assert_eq!(n.reference(), good);
+        assert_eq!(n.fetches.load(SeqCst), 1);
+        assert_eq!(n.reference(), good);
+        assert_eq!(n.fetches.load(SeqCst), 1, "no refetch within the window after a failure");
     }
 
     #[test]

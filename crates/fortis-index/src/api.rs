@@ -14,23 +14,25 @@ use std::sync::atomic::Ordering;
 use std::sync::Arc;
 
 use axum::extract::{DefaultBodyLimit, Path, RawQuery, Request, State};
-use axum::http::{header, HeaderValue, Method, StatusCode};
+use axum::http::{header, StatusCode};
 use axum::middleware::{self, Next};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use bitcoin::address::NetworkUnchecked;
-use bitcoin::{Address, Network, Txid};
+use bitcoin::{Address, Network, OutPoint, Txid};
 use serde_json::{json, Value};
 use tower::limit::GlobalConcurrencyLimitLayer;
 
 use fortis_node::Rpc;
 
 use crate::chainstate::{view, SharedChain, View};
-use crate::db::{Db, TooHeavy};
+use crate::db::{Db, TooHeavy, Unlisted};
+use crate::keys::UtxoVal;
 use crate::keys::{Program, TxNum};
 use crate::mempool::{MempoolView, SharedMempool};
-use crate::render::Renderer;
+use crate::render::{esplora_tx, Renderer};
+use crate::spends::{OutspendError, Spends};
 use crate::sync::SyncStatus;
 
 /// Most addresses one `POST /scan` may name.
@@ -57,6 +59,8 @@ pub struct AppState {
     pub network: Network,
     pub status: Arc<SyncStatus>,
     pub chain_id: String,
+    /// Single-output spend lookups (swap HTLCs) for the `/tx/:txid…` routes.
+    pub spends: Arc<Spends>,
 }
 
 /// An error answered as `{"error": "<msg>"}` with its status.
@@ -72,18 +76,35 @@ impl ApiError {
         Self::new(StatusCode::BAD_REQUEST, msg)
     }
 
-    /// Index errors: "too heavy" is the caller's problem (400), anything else ours.
+    /// Index errors: "too heavy" is the caller's problem (400), anything else
+    /// ours — logged, never sent (it can name files).
     fn index(e: anyhow::Error) -> Self {
         if e.chain().any(|c| c.is::<TooHeavy>()) {
             return Self::bad_request("address too heavy");
         }
-        Self::new(StatusCode::INTERNAL_SERVER_ERROR, format!("{e:#}"))
+        eprintln!("fortis-index: index error: {e:#}");
+        Self::new(StatusCode::INTERNAL_SERVER_ERROR, "the index could not answer")
     }
 
-    /// Failures fetching detail from the node.
+    /// Failures fetching detail from the node. The node being down is logged
+    /// and answered generically (its text names the node's address); the
+    /// node's own answer (an RPC error) is passed on.
     fn node(e: anyhow::Error) -> Self {
+        if node_down(&e) {
+            return Self::node_unavailable(&e);
+        }
         Self::new(StatusCode::BAD_GATEWAY, format!("{e:#}"))
     }
+
+    fn node_unavailable(e: &anyhow::Error) -> Self {
+        eprintln!("fortis-index: node unavailable: {e:#}");
+        Self::new(StatusCode::BAD_GATEWAY, "the node is unavailable")
+    }
+}
+
+/// The node is down or unreachable (not an answer from it).
+fn node_down(e: &anyhow::Error) -> bool {
+    e.chain().any(|c| c.is::<fortis_node::Unreachable>())
 }
 
 impl IntoResponse for ApiError {
@@ -106,37 +127,42 @@ pub fn router(state: AppState) -> Router {
         .route("/tx", post(broadcast))
         .route("/scan", post(scan))
         .route("/txout/{txid}/{vout}", get(txout))
+        .route("/tx/{txid}", get(tx_json))
+        .route("/tx/{txid}/hex", get(tx_hex))
+        .route("/tx/{txid}/outspend/{vout}", get(outspend))
         .route("/address/{addr}/utxo", get(address_utxo))
         .route("/address/{addr}/txs", get(address_txs))
         .fallback(no_route)
         .method_not_allowed_fallback(no_route)
         .layer(DefaultBodyLimit::max(BODY_LIMIT))
         .layer(GlobalConcurrencyLimitLayer::new(MAX_CONCURRENT))
-        .layer(middleware::from_fn(cors))
+        .layer(middleware::from_fn(host_guard))
         .with_state(state)
 }
 
-/// Answer preflights and put the CORS headers on every response, errors included.
-async fn cors(req: Request, next: Next) -> Response {
-    let mut resp = if req.method() == Method::OPTIONS {
-        StatusCode::NO_CONTENT.into_response()
-    } else {
-        next.run(req).await
+/// Refuse a request addressed to any hostname but `localhost`. The index
+/// listens on this machine for the edge, which (like local tools) uses an IP
+/// address or `localhost`; DNS rebinding reaches 127.0.0.1 under a hostname a
+/// web page controls, so that is refused. No CORS headers either: only the
+/// edge talks to the index, and it adds its own for the public.
+async fn host_guard(req: Request, next: Next) -> Response {
+    let allowed = match req.headers().get(header::HOST) {
+        None => true,
+        Some(h) => h.to_str().is_ok_and(host_allowed),
     };
-    let h = resp.headers_mut();
-    h.insert(
-        header::ACCESS_CONTROL_ALLOW_ORIGIN,
-        HeaderValue::from_static("*"),
-    );
-    h.insert(
-        header::ACCESS_CONTROL_ALLOW_METHODS,
-        HeaderValue::from_static("GET, POST, OPTIONS"),
-    );
-    h.insert(
-        header::ACCESS_CONTROL_ALLOW_HEADERS,
-        HeaderValue::from_static("content-type"),
-    );
-    resp
+    if !allowed {
+        return ApiError::new(StatusCode::FORBIDDEN, "address the index by IP address or localhost").into_response();
+    }
+    next.run(req).await
+}
+
+/// `localhost` or an IP literal, with or without a port.
+fn host_allowed(host: &str) -> bool {
+    let name = match host.strip_prefix('[') {
+        Some(v6) => v6.split(']').next().unwrap_or(""),
+        None => host.rsplit_once(':').map_or(host, |(name, _)| name),
+    };
+    name.eq_ignore_ascii_case("localhost") || name.parse::<std::net::IpAddr>().is_ok()
 }
 
 async fn no_route() -> ApiError {
@@ -204,8 +230,14 @@ async fn broadcast(State(st): State<AppState>, body: String) -> Response {
     let rpc = st.rpc.clone();
     match tokio::task::spawn_blocking(move || fortis_node::broadcast(&rpc, body.trim())).await {
         Ok(Ok(txid)) => text(StatusCode::OK, txid.to_string()),
+        // The node down: generic (its text names the node). Its rejection
+        // ("insufficient fee", …): passed on, the wallets act on it.
+        Ok(Err(e)) if node_down(&e) => ApiError::node_unavailable(&e).into_response(),
         Ok(Err(e)) => text(StatusCode::BAD_REQUEST, format!("{e:#}")),
-        Err(e) => text(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()),
+        Err(e) => {
+            eprintln!("fortis-index: broadcast task failed: {e}");
+            text(StatusCode::INTERNAL_SERVER_ERROR, "broadcast failed".into())
+        }
     }
 }
 
@@ -229,6 +261,73 @@ async fn txout(
         .map_err(|e| ApiError::new(StatusCode::INTERNAL_SERVER_ERROR, e))?
         .map_err(ApiError::node)?;
     txout_reply(&res)
+}
+
+fn parse_txid(s: &str) -> ApiResult<Txid> {
+    s.parse()
+        .map_err(|e| ApiError::bad_request(format!("bad txid: {e}")))
+}
+
+/// Run a node lookup off the request path.
+async fn on_node<T: Send + 'static>(
+    f: impl FnOnce() -> Result<T, ApiError> + Send + 'static,
+) -> ApiResult<T> {
+    tokio::task::spawn_blocking(f)
+        .await
+        .map_err(|e| ApiError::new(StatusCode::INTERNAL_SERVER_ERROR, e))?
+}
+
+fn unknown_tx() -> ApiError {
+    ApiError::new(StatusCode::NOT_FOUND, "unknown transaction")
+}
+
+/// `GET /tx/:txid` — Esplora's transaction JSON, from the node (any
+/// transaction, not only indexed addresses'): what swaps read an HTLC from.
+async fn tx_json(State(st): State<AppState>, Path(txid): Path<String>) -> ApiResult<Json<Value>> {
+    let txid = parse_txid(&txid)?;
+    on_node(move || {
+        let node = st.spends.node();
+        let t = node.tx(&txid).map_err(ApiError::node)?.ok_or_else(unknown_tx)?;
+        let block = match t["blockhash"].as_str().map(str::parse::<bitcoin::BlockHash>) {
+            Some(Ok(h)) => node.height_of(&h).map_err(ApiError::node)?.map(|n| (h, n)),
+            _ => None,
+        };
+        let status = match block {
+            Some((h, n)) => json!({
+                "confirmed": true, "block_height": n, "block_hash": h.to_string(),
+                "block_time": t["blocktime"],
+            }),
+            None => json!({ "confirmed": false }),
+        };
+        Ok(Json(esplora_tx(&t, status)))
+    })
+    .await
+}
+
+/// `GET /tx/:txid/hex` — the raw transaction.
+async fn tx_hex(State(st): State<AppState>, Path(txid): Path<String>) -> ApiResult<Response> {
+    let txid = parse_txid(&txid)?;
+    on_node(move || {
+        let hex = st.spends.node().raw_tx(&txid).map_err(ApiError::node)?.ok_or_else(unknown_tx)?;
+        Ok(text(StatusCode::OK, hex))
+    })
+    .await
+}
+
+/// `GET /tx/:txid/outspend/:vout` — who spent the output, if anyone.
+async fn outspend(
+    State(st): State<AppState>,
+    Path((txid, vout)): Path<(String, u32)>,
+) -> ApiResult<Json<Value>> {
+    let txid = parse_txid(&txid)?;
+    on_node(move || match st.spends.outspend(&txid, vout) {
+        Ok(o) => Ok(Json(o.json())),
+        Err(OutspendError::UnknownOutput) => Err(ApiError::new(StatusCode::NOT_FOUND, "unknown output")),
+        Err(OutspendError::Pending(m)) => Err(ApiError::new(StatusCode::SERVICE_UNAVAILABLE, m)),
+        Err(OutspendError::OutOfRange(m)) => Err(ApiError::new(StatusCode::UNPROCESSABLE_ENTITY, m)),
+        Err(OutspendError::Node(e)) => Err(ApiError::node(e)),
+    })
+    .await
 }
 
 /// `gettxout`'s params for the `/txout` query string: `include_mempool` is
@@ -278,10 +377,25 @@ fn address_program(addr: &str, network: Network) -> ApiResult<Option<Program>> {
 /// Confirmed UTXOs (minus any spent by a pending tx), then unconfirmed ones
 /// the mempool creates for `p`.
 fn utxo_rows(v: &View, mp: &MempoolView, p: &Program) -> ApiResult<Vec<Value>> {
-    let mut rows: Vec<Value> = v
+    let rows = v.reader.utxos(p, MAX_ROWS).map_err(ApiError::index)?;
+    Ok(utxo_json(rows, mp, p))
+}
+
+/// The scan's coins for `p`: never "too heavy". Past [`MAX_ROWS`] the largest
+/// are listed and the rest (dust, say) counted and summed, so a wallet dusted
+/// by anyone who knows one of its addresses still shows its whole balance.
+fn utxo_rows_capped(v: &View, mp: &MempoolView, p: &Program) -> ApiResult<(Vec<Value>, Unlisted)> {
+    let (rows, rest) = v
         .reader
-        .utxos(p, MAX_ROWS)
-        .map_err(ApiError::index)?
+        .utxos_largest(p, MAX_ROWS, |op| !mp.is_spent(op))
+        .map_err(ApiError::index)?;
+    Ok((utxo_json(rows, mp, p), rest))
+}
+
+/// Confirmed `rows` not being spent in the mempool, then the mempool's own
+/// unspent outputs for `p`, as Esplora `utxo` objects.
+fn utxo_json(rows: Vec<(OutPoint, UtxoVal)>, mp: &MempoolView, p: &Program) -> Vec<Value> {
+    let mut rows: Vec<Value> = rows
         .into_iter()
         .filter(|(op, _)| !mp.is_spent(op))
         .map(|(op, u)| {
@@ -315,7 +429,7 @@ fn utxo_rows(v: &View, mp: &MempoolView, p: &Program) -> ApiResult<Vec<Value>> {
             "status": { "confirmed": false },
         }));
     }
-    Ok(rows)
+    rows
 }
 
 async fn address_utxo(
@@ -411,6 +525,8 @@ fn scan_targets(body: &str, network: Network) -> ApiResult<(Vec<(String, Program
 struct ScanPlan {
     used: Vec<String>,
     utxos: Vec<Value>,
+    /// `{address, count, value}` for each address past the row cap.
+    unlisted: Vec<Value>,
     pending: Vec<Txid>,
     /// Newest first, each tx once, capped to the requested history.
     confirmed: Vec<TxNum>,
@@ -424,6 +540,7 @@ fn scan_plan(
 ) -> ApiResult<ScanPlan> {
     let mut used = Vec::new();
     let mut utxos = Vec::new();
+    let mut unlisted = Vec::new();
     let mut pending = Vec::new();
     let mut pending_ids = HashSet::new();
     let mut confirmed = Vec::new();
@@ -434,9 +551,13 @@ fn scan_plan(
         if !rows.is_empty() || !mem.is_empty() {
             used.push(addr.clone());
         }
-        for mut u in utxo_rows(v, mp, p)? {
+        let (rows_of_p, rest) = utxo_rows_capped(v, mp, p)?;
+        for mut u in rows_of_p {
             u["address"] = json!(addr);
             utxos.push(u);
+        }
+        if rest.count > 0 {
+            unlisted.push(json!({ "address": addr, "count": rest.count, "value": rest.value }));
         }
         for id in mem {
             if pending_ids.insert(id) {
@@ -458,6 +579,7 @@ fn scan_plan(
     Ok(ScanPlan {
         used,
         utxos,
+        unlisted,
         pending,
         confirmed,
     })
@@ -472,6 +594,7 @@ fn scan_plan(
 ///   "used":   ["bc1q…", …],            // appeared in any tx, pending included
 ///   "utxos":  [{ "address", "txid", "vout", "value", "status" }, …],
 ///   "txs":    [ <Esplora tx>, … ],     // pending first, then newest confirmed; each tx once
+///   "unlisted": [{ "address", "count", "value" }, …], // past the per-address cap: the rest, summed
 ///   "failed": [] }                     // addresses that couldn't be checked
 /// ```
 ///
@@ -494,6 +617,7 @@ async fn scan(State(st): State<AppState>, body: String) -> ApiResult<Json<Value>
             "tip": v.chain.tip().map_or(0, |(h, _)| h),
             "used": plan.used,
             "utxos": plan.utxos,
+            "unlisted": plan.unlisted,
             "txs": txs,
             "failed": Vec::<String>::new(),
         })))

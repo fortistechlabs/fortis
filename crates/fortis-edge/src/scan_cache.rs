@@ -13,8 +13,9 @@
 //! still real" check as a freshly-fetched one before it ever reaches a user.
 
 use std::path::Path;
+use std::sync::Mutex;
 
-use rocksdb::{Options, DB};
+use rocksdb::{IteratorMode, Options, DB};
 use serde_json::{json, Value};
 
 /// Haskoin's own `address/balances` numbers for one address. Comparing this
@@ -41,8 +42,15 @@ impl Signature {
     }
 }
 
+/// Addresses the cache holds at most: anyone may scan any address, so past
+/// this a new address just isn't cached (its next scan fetches in full).
+pub const MAX_KEYS: usize = 1_000_000;
+
 pub struct ScanCache {
-    db: DB,
+    db: crate::rdb::Db,
+    max_keys: usize,
+    /// Keys stored; the lock also makes check-then-write exact.
+    count: Mutex<usize>,
 }
 
 impl ScanCache {
@@ -51,10 +59,17 @@ impl ScanCache {
     /// every address is still answered fully via a live fetch, just without
     /// the skip-when-unchanged shortcut.
     pub fn new(dir: &Path) -> Option<Self> {
+        Self::with_max_keys(dir, MAX_KEYS)
+    }
+
+    pub fn with_max_keys(dir: &Path, max_keys: usize) -> Option<Self> {
         let mut opts = Options::default();
         opts.create_if_missing(true);
-        match DB::open(&opts, dir) {
-            Ok(db) => Some(Self { db }),
+        match crate::rdb::Db::open(|| DB::open(&opts, dir)) {
+            Ok(db) => {
+                let count = db.iterator(IteratorMode::Start).count();
+                Some(Self { db, max_keys, count: Mutex::new(count) })
+            }
             Err(e) => {
                 eprintln!(
                     "fortis-edge: scan cache db at {dir:?} unavailable ({e}); \
@@ -95,8 +110,14 @@ impl ScanCache {
     /// it — confirmed transactions are `btc_history`'s job, not this cache's.
     pub fn update(&self, address: &str, signature: Signature, pending: &[Value]) {
         let entry = json!({ "signature": signature.to_json(), "pending": pending });
-        if let Ok(bytes) = serde_json::to_vec(&entry) {
-            let _ = self.db.put(address.as_bytes(), bytes);
+        let Ok(bytes) = serde_json::to_vec(&entry) else { return };
+        let mut count = self.count.lock().unwrap_or_else(|e| e.into_inner());
+        let known = matches!(self.db.get_pinned(address.as_bytes()), Ok(Some(_)));
+        if !known && *count >= self.max_keys {
+            return;
+        }
+        if self.db.put(address.as_bytes(), bytes).is_ok() && !known {
+            *count += 1;
         }
     }
 
@@ -106,7 +127,10 @@ impl ScanCache {
     /// activity for an address sooner than the next Haskoin poll would
     /// otherwise notice it.
     pub fn forget(&self, address: &str) {
-        let _ = self.db.delete(address.as_bytes());
+        let mut count = self.count.lock().unwrap_or_else(|e| e.into_inner());
+        if matches!(self.db.get_pinned(address.as_bytes()), Ok(Some(_))) && self.db.delete(address.as_bytes()).is_ok() {
+            *count = count.saturating_sub(1);
+        }
     }
 }
 
@@ -125,6 +149,32 @@ mod tests {
         let c = ScanCache::new(&c_dir).unwrap();
         assert_eq!(c.signature("addr1"), None);
         assert!(c.pending("addr1").is_empty());
+    }
+
+    /// One key per address asked about: at the budget a new address isn't
+    /// cached (its next scan just fetches in full); known ones still update.
+    #[test]
+    fn the_cache_stops_growing_at_its_key_budget() {
+        let c_dir = temp_dir("budget");
+        let c = ScanCache::with_max_keys(&c_dir, 2).unwrap();
+        let sig = Signature { txs: 1, utxo: 1, unconfirmed: 0 };
+        let newer = Signature { txs: 2, utxo: 1, unconfirmed: 0 };
+        c.update("a", sig, &[]);
+        c.update("b", sig, &[]);
+        c.update("c", sig, &[]);
+        assert_eq!(c.signature("c"), None);
+        c.update("a", newer, &[]);
+        assert_eq!(c.signature("a"), Some(newer));
+        c.forget("a");
+        c.forget("a"); // forgetting twice frees one slot, not two
+        c.update("c", sig, &[]);
+        assert_eq!(c.signature("c"), Some(sig));
+        c.update("d", sig, &[]);
+        assert_eq!(c.signature("d"), None);
+        drop(c);
+        let c = ScanCache::with_max_keys(&c_dir, 2).unwrap();
+        c.update("e", sig, &[]);
+        assert_eq!(c.signature("e"), None, "the count survives a restart");
     }
 
     #[test]

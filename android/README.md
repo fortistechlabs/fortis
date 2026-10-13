@@ -98,7 +98,14 @@ Peer-to-peer BTC ⇄ XBT atomic swaps through a `fortis-edge --swap` coordinator
 (API, price rules and the watchtower: `crates/fortis-edge/README.md`). The Swap
 button on Home appears only while the edge answers `GET /swap/quote` (or a swap is
 still running), so nothing shows until the server enables it. Screens are in
-`ui/screens/SwapScreens.kt` (list, new offer, take a private code, detail).
+`ui/screens/SwapScreens.kt` (list, new offer, take a private code, detail). The
+Swaps page also lists the offers waiting for a match (`GET /swap/book`, every 15 s
+while shown), each with a funds line from `fundsFor` (only wallets that can sign
+count); tapping one opens Take offer, which takes all or part of it at its own
+price (`POST /swap/offers/{id}/take`, one client id per attempt so a retry takes
+once) and starts the swap like a taken code. An offer is matched once: taking part of
+it ends it (the seller's app withdraws the rest, as for any matched offer), and
+the Take screen says so.
 
 ```
 SwapScreens ─► WalletViewModel ─► SwapEngine ─► SwapApi (edge /swap/*)
@@ -118,13 +125,35 @@ unlock hook                    ─┘
 | `swap/SwapCrypto.kt` | the seam over wallet-ffi's `SwapSession`, so the engine's JVM tests run against a fake. |
 | `swap/SwapNotifications.kt` | the in-progress line and one alert each for matched, needs funding, they funded, done, failed and refunding. Tapping opens the app, which steps the swaps at once. |
 | `data/SwapApi.kt` | the edge client. Offers are posted with a `client_id` so a retry returns the same offer. |
+| `data/ChainCheck.kt` | independent explorers (BTC: mempool.space, then blockstream.info; XBT: mempool.kilombino.com, then mempool.guide), so a hostile edge can't cost coins: the counterparty's funding is believed only once an explorer shows the same output, unspent, with the confirmations (before the participant funds, and before the initiator reveals the preimage); the redeems go out through an explorer as well as the edge; and the participant looks for the preimage there too when the edge shows no spender. The swap settles (REFUNDED or DONE, which wipes the swap keys) only once an explorer shows the spend confirmed (for a refund, that it is ours: no preimage in it); a "spent" from the edge alone never stops the phone sending its refund, and refunds go out through an explorer too. An explorer that can't be reached means wait, never go ahead. |
 | `data/SwapStore.kt` | all swap records in one DataStore blob (`fortis_swaps`), plus the edge token. |
 | `data/SwapKeystore.kt` | wraps each swap's two signing secrets with an AES-GCM Keystore key (`fortis_swap_v1`) that does **not** need biometrics, so a swap can refund or redeem in the background while the app is locked. Each secret controls one swap's HTLCs only and is blanked when the swap settles. |
 
 How a swap survives the process dying:
-- **Swap index.** Each swap's key branch index is drawn at random from `[0, 2^31)`
-  and redrawn on any collision, so two swaps never share keys, even across a
-  restore.
+- **Swap index.** Swap indices count up per seed (0, 1, 2, …; the counter is
+  keyed by the seed's master fingerprint and never reuses an index any record
+  holds). Every offer and take carries a recovery tag, `HMAC-SHA256(k_rec, index)`
+  with `k_rec` at `m/84'/0'/0'/3'`, which the edge keeps unique: a tag used before
+  is refused (`409 "this swap index was used before"`); the app then catches its
+  counter up (a look-only `POST /swap/recover`) and retries on the next index
+  (`swap/SwapIndex.kt`). An index whose request the edge refused for another
+  reason is given back, so the restore scan's gaps stay short. The initiator's
+  preimage also takes 16 random bytes the phone draws per swap (relayed with the
+  hashlock), so even an index used twice never repeats a preimage. Older swaps
+  keep their random indices.
+- **Restore.** After restoring a seed (and after "Also add on …"), and from
+  Settings → **Find my swaps**, the app derives the seed's tags in order and asks
+  `POST /swap/recover` (100 at a time, until 20 in a row are unknown;
+  `swap/Recovery.kt`), looking only. Swaps whose own leg is funded and not
+  settled, and that this phone doesn't already run, are then claimed (the edge
+  issues fresh owner secrets for just those) and rebuilt at that funding (never
+  funding again): the engine takes the counterparty's keys, the hashlock and the
+  preimage nonce from the relay, checks with an independent explorer that the
+  funding is exactly the HTLC the rebuilt session makes (else the swap stops,
+  nothing signed; an explorer that doesn't answer or doesn't know the funding
+  means wait), and then refunds or redeems as usual. A swap needs both of the seed's wallets (XBT and
+  BTC); one missing is reported, not guessed. Swaps made before tags existed
+  stay with the watchtower.
 - **Provisional record.** A swap is saved (step `PROVISIONAL`, keyed by its
   `client_id`) before the offer is posted. If the app dies mid-POST, the retry
   finds the same offer on the edge and the record is re-keyed to the real offer id.
@@ -134,6 +163,17 @@ How a swap survives the process dying:
 - **Watchtower.** Once funded, the phone gives the edge its refund, and the
   participant also gives a presigned redeem of the initiator's XBT HTLC. If the
   phone is gone when the preimage appears on BTC, the edge finishes the redeem.
+- **Cancelled before the participant funds.** Contracts are versioned by the
+  match's terms (`contract_version`): v1 (claim or refund) for swaps matched
+  before, v2 for new ones, which adds a cooperative **release** both sides sign
+  (no secret, no timelock). When the edge cancels a match with only the
+  initiator's XBT locked, the initiator asks for a release, the participant's
+  app signs it (only if nothing of its own is funded or in flight, and it never
+  funds that swap afterwards), and the initiator checks the signature and sends
+  it: the XBT comes back in minutes instead of at the 48 h locktime. Nobody taps
+  anything; the participant signs even while its app is locked (it uses the
+  swap key). If the participant's phone never comes back, the refund at the
+  locktime is still there.
 - **Locked wallet.** If the from-wallet is locked when funding is due, the
   `Funder` returns nothing and the swap waits (with a "needs funding"
   notification) until a later pass finds the wallet unlocked.
@@ -156,10 +196,10 @@ Setup:
    ```sh
    cargo run --release -p fortis-edge -- --bind 0.0.0.0:8098 \
      --xbt-upstream http://127.0.0.1:8094 --btc-upstream https://mempool.space/api \
-     --service-fee-address <bc1…> --swap --swap-max-sat 100000
+     --service-fee-address <bc1…> --swap
    ```
-   The minimum BTC leg is 80 000 sat, so the cap leaves little room; each side
-   also pays 0.5% plus network fees.
+   The minimum BTC leg is 20 000 sat; the commission is 0.5% per side, at least
+   400 sat, and each side also pays network fees.
 2. Build two debug installs that point at it: change `HOSTED_EDGE` to the staging
    URL (`http://10.0.2.2:8098` from an emulator; for a device on the LAN use the
    host's address, which must be in `src/debug/res/xml/network_security_config.xml`
@@ -170,11 +210,20 @@ Setup:
    uninstall the store app `com.fortistechlabs.wallet`. Use two emulators
    (`adb -s <serial> …`), or one device and one emulator; revert `HOSTED_EDGE`
    afterwards.
+
+   With one phone, install a second copy beside the first:
+   `./gradlew installDebug -Pdev2` builds `com.fortistechlabs.wallet.dev2`
+   ("fortis dev2", its own wallets and swap keys) next to "fortis dev". Run A in
+   one and B in the other.
 3. In each app create a wallet. For XBT → BTC, A holds XBT and B holds BTC.
 
 Run:
 1. **XBT → BTC.** On A: Home → Swap → New, XBT to BTC, an amount above the
-   minimum, then post. On B: New, BTC to XBT, the same amount. They match at once.
+   minimum, type a price (BTC per XBT; the field is prefilled from the best open
+   offer or NeoxEX, and a price more than 5% worse than NeoxEX asks to confirm),
+   then post. On B: New, BTC to XBT, the same amount and a price at or above A's.
+   They match at once, at the price of whichever offer was resting. Crossing
+   prices match at the resting one; prices that do not cross stay open.
    Both apps raise "matched". The XBT sender (the initiator) funds first; the BTC
    sender (the participant) funds after the XBT HTLC has 6 confirmations. Unlock
    if asked. Watch it reach done on
@@ -196,7 +245,7 @@ Run:
    - Also kill the app between posting an offer and the match: on relaunch the
      swap must appear once, not twice.
 4. To see a refund: post an offer, let it match, and do not fund on one side;
-   the waiting side's HTLC refunds after the timelock (the BTC leg is 24 h on mainnet, the XBT leg 144 h).
+   the waiting side's HTLC refunds after the timelock (the BTC leg is 24 h on mainnet, the XBT leg 48 h).
 
 ## End-to-end test (Rust)
 

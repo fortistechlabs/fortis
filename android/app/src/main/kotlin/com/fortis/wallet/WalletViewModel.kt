@@ -9,14 +9,20 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.fortis.wallet.data.*
 import com.fortis.wallet.swap.SwapService
+import com.fortis.wallet.swap.indexUsed
+import com.fortis.wallet.swap.withFreshIndex
+import com.fortis.wallet.swap.recoveredRecord
+import com.fortis.wallet.swap.recoveryWallets
+import com.fortis.wallet.swap.scanTags
 import com.fortis.wallet.ui.fmtCoin
-import com.fortis.wallet.ui.screens.SLIPPAGE_BPS
 import com.fortis.wallet.ui.screens.amountError
+import com.fortis.wallet.ui.screens.amountLimit
 import com.fortis.wallet.ui.screens.btcLeg
 import com.fortis.wallet.wallet.WalletSession
 import com.fortis.wallet.wallet.newMnemonic
 import com.fortis.wallet.wallet.sealSeed
 import com.fortis.wallet.wallet.unsealSeed
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -31,13 +37,23 @@ import java.util.concurrent.TimeUnit
 enum class Phase { Loading, AppLock, Onboard, Gen, Create, Restore, Watch, HwConnect, Shell, RevealSeed }
 
 /** The three top-level destinations inside [Phase.Shell]'s nav bar. */
-enum class NavTab { Home, Wallet, Settings }
+enum class NavTab { Home, Wallet, Swaps, Settings }
 
 /** How many wallets one install can hold. */
 const val MAX_WALLETS = 10
 
 /** Longest a wallet name may be. */
 const val MAX_WALLET_NAME = 30
+
+/** A wallet name as stored: trimmed, at most [MAX_WALLET_NAME], "Wallet" when blank. */
+fun cleanWalletName(name: String): String = name.trim().take(MAX_WALLET_NAME).ifBlank { "Wallet" }
+
+/** True if another wallet on [chain] already has [name] (trimmed, ignoring case).
+ *  The same name on the other chain is fine: "add to the other chain" keeps it. */
+fun walletNameTaken(wallets: List<WalletConfig>, name: String, chain: String, exceptId: String? = null): Boolean {
+    val n = cleanWalletName(name)
+    return wallets.any { it.id != exceptId && it.chain == chain && it.name.equals(n, ignoreCase = true) }
+}
 
 /** The one backend the mobile app talks to. Not user-configurable, not shown. */
 const val HOSTED_EDGE = "https://api.fortistechlabs.com"
@@ -64,17 +80,18 @@ sealed interface SwapRoute {
     data object List : SwapRoute
     data object New : SwapRoute
     data object Take : SwapRoute
+    /** Taking all or part of a listed offer. */
+    data class TakeListed(val entry: com.fortis.wallet.data.BookEntry) : SwapRoute
     data class Detail(val id: String) : SwapRoute
 }
 
-/** A taken share code's terms, shown before Accept. [ownPrice] is this phone's
- *  NeoxEX price (`null` if unknown); [problem] why the terms fail our own check. */
+/** A taken share code's terms, shown before Accept. [reference] is this phone's
+ *  own NeoxEX reference (`null` if unknown); [problem] why the terms fail our own check. */
 data class TakePreview(
     val taken: Taken,
     val termsJson: String,
     val role: String,
-    val slippageBps: Int,
-    val ownPrice: Long?,
+    val reference: NeoxEx.Reference?,
     val problem: String?,
 ) {
     private val terms get() = org.json.JSONObject(termsJson)
@@ -87,15 +104,18 @@ data class TakePreview(
     val acceptBy: Long get() = terms.getLong("accept_by")
 }
 
+/** A new swap's keys: its index on [seed] (the master fingerprint), the
+ *  recovery tag the edge files it under, and the two wrapped secrets. */
 private data class SwapKeys(
-    val index: Int, val wrappedXbt: String, val wrappedBtc: String,
-    val redeemAddress: String, val refundAddress: String,
+    val index: Int, val seed: String, val recoveryTag: String,
+    val wrappedXbt: String, val wrappedBtc: String,
 )
 
 class WalletViewModel(app: Application) : AndroidViewModel(app) {
     private val store = Store(app)
     private val txCache = TxCache(app)
     private fun str(id: Int, vararg args: Any) = getApplication<Application>().getString(id, *args)
+    private fun plural(id: Int, n: Int) = getApplication<Application>().resources.getQuantityString(id, n, n)
     private val http = OkHttpClient.Builder()
         .proxy(Proxy.NO_PROXY) // ignore any Wi-Fi/Studio proxy — local hosts must be direct
         // A watch-only scan makes dozens to hundreds of these; EsploraBackend's
@@ -257,17 +277,19 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    /** Confirmed balance (sat) per wallet id, for the Home / Settings overviews.
-     *  Absent = not yet known. */
-    var walletBalances by mutableStateOf<Map<String, Long>>(emptyMap()); private set
+    /** Confirmed and pending balances (sat) per wallet id, for the Home / Settings
+     *  overviews. Absent = not yet known. */
+    private var overview by mutableStateOf(OverviewBalances())
+    val walletBalances: Map<String, Long> get() = overview.confirmed
+    val walletPending: Map<String, Long> get() = overview.pending
     private val overviewBackends = java.util.concurrent.ConcurrentHashMap<String, Backend>()
     private val balanceLock = Any()
     private var scanningAll = false
 
     /** Record one wallet's balance — serialised, since the bulk scan runs off the
      *  main thread while [refresh] writes from it. */
-    private fun setWalletBalance(id: String, sat: Long) = synchronized(balanceLock) {
-        walletBalances = walletBalances + (id to sat)
+    private fun setWalletBalance(id: String, b: Balances) = synchronized(balanceLock) {
+        overview = overview.with(id, b)
     }
 
     private fun setCoinUsd(chain: String, usd: Double) = synchronized(balanceLock) {
@@ -287,7 +309,7 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
                     val id = w.id
                     val b = overviewBackend(w, s)
                     runCatching { b.prewarm() }
-                    runCatching { b.balances() }.getOrNull()?.let { setWalletBalance(id, it.confirmedSat) }
+                    runCatching { b.balances() }.getOrNull()?.let { setWalletBalance(id, it) }
                     // one price lookup per chain, reused across its wallets
                     if (priced.add(w.chain)) {
                         runCatching { b.price() }.getOrNull()?.let { setCoinUsd(w.chain, it) }
@@ -323,7 +345,7 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
 
     /**
      * Funds a swap's HTLC from its from-wallet, over the ordinary send path:
-     * `plan_payment` to the HTLC address plus the 50 bps commission
+     * `plan_payment` to the HTLC address plus the commission (0.5%, at least 400 sat)
      * (`ServiceFee`, to the `/pricing` address — which the engine already checked
      * is the terms' fee address), then `sign_funding_tx`, then broadcast. The
      * txid (computed from the signed hex) and the signed hex are saved as
@@ -342,13 +364,16 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
         val pricing = b.status().pricing ?: error("the edge advertises no commission address")
         val terms = org.json.JSONObject(r.termsJson ?: error("no terms yet"))
         require(pricing.address == terms.getString("fee_address")) { "the commission address changed" }
-        val fee = uniffi.wallet_ffi.ServiceFee(pricing.address, 50u, 0uL, 0uL)
-        val feerate = b.feerateSatVb(6).coerceAtLeast(1uL)
+        val fee = uniffi.wallet_ffi.ServiceFee(pricing.address, 50u, com.fortis.wallet.ui.screens.SWAP_FEE_FLOOR_SAT.toULong(), 0uL)
+        // Capped like every swap spend: a hostile edge's estimate can't make funding a gift to miners.
+        val feerate = b.feerateSatVb(6).coerceIn(1uL, uniffi.wallet_ffi.maxSwapFeerateSatVb())
         val utxos = b.utxos(1u)
         require(utxos.isNotEmpty()) { str(R.string.error_no_coins) }
         s.setIndices(w.nextReceive, w.nextChange)
+        // On BTC, an OP_RETURN the XBT chain can't mine: the funding can't be replayed there.
         val plan = s.view.planPayment(
-            utxos, listOf(uniffi.wallet_ffi.PayTo(htlc.address, htlc.amountSat)), feerate, 1u, null, fee, false,
+            utxos, listOf(uniffi.wallet_ffi.PayTo(htlc.address, htlc.amountSat)), feerate, 1u,
+            com.fortis.wallet.swap.swapFundingGuard(w.chain), fee, false,
         )
         val signed = s.sign(plan.txHex, plan.selected)
         val txid = uniffi.wallet_ffi.txidOf(signed)
@@ -365,7 +390,7 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
     // --- swaps (P2P BTC ⇄ XBT; the engine itself lives in FortisApplication) ---
 
     /** The edge's swap quote; `null` while unknown, or when the edge has swaps off
-     *  (`/swap/quote` → 404) or can't price (503). The Home Swap button hides then. */
+     *  (`/swap/quote` → 404). The Home Swap button hides then. */
     var swapQuote by mutableStateOf<Quote?>(null); private set
 
     /** Every swap on this phone, newest first (re-read from the store). */
@@ -390,6 +415,73 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
     fun openSwaps() { error = null; swapRoute = SwapRoute.List; refreshSwaps(); refreshQuote() }
     fun openNewSwap() { error = null; swapRoute = SwapRoute.New; refreshQuote() }
     fun openTakeCode() { error = null; takePreview = null; swapRoute = SwapRoute.Take }
+    fun openTakeListed(entry: com.fortis.wallet.data.BookEntry) {
+        error = null
+        swapRoute = SwapRoute.TakeListed(entry)
+        seedWallets.forEach { loadSwapFeeReserve(it.id) }
+    }
+
+    /** The open public offers (Swaps page); `null` until the first load. */
+    var book by mutableStateOf<com.fortis.wallet.data.Book?>(null); private set
+
+    fun refreshBook() = viewModelScope.launch {
+        runCatching { fortis.swapApi.book() }.onSuccess { book = it }
+    }
+
+    /** The take being attempted, kept for its retries: (offer id | amount) →
+     *  client id and keys, so a retry after a lost reply takes once, and under
+     *  the recovery tag the edge already holds for it. */
+    private var listedTake: Triple<String, String, SwapKeys>? = null
+
+    /** The keys drawn for the share code being taken (its tag is on the edge). */
+    private var takeCodeKeys: SwapKeys? = null
+
+    /**
+     * Take [amountSat] (on [fromId]'s chain) of listed [entry] at its own price,
+     * then check the match's terms ourselves (a problem declines it at once) and
+     * start the swap from [fromId] into [toId].
+     */
+    fun takeListed(entry: com.fortis.wallet.data.BookEntry, fromId: String, toId: String, amountSat: Long) = swapWrap {
+        val from = seedWallet(fromId)
+        val to = seedWallet(toId)
+        val send = com.fortis.wallet.ui.screens.takerSendChain(entry)
+        if (from.chain != send) throw Exception(str(R.string.swap_error_wrong_chain, send.uppercase()))
+        if (from.chain == to.chain) throw Exception(str(R.string.swap_error_same_chain))
+        val key = "${entry.id}|$amountSat"
+        val t = try {
+            withFreshIndex(onUsed = { catchUpSwapIndex(from.id) }) {
+                val (_, clientId, keys) = listedTake?.takeIf { it.first == key }
+                    ?: Triple(key, newClientId(), drawKeys(from.id)).also { listedTake = it }
+                try {
+                    fortis.swapApi.takeOffer(entry.id, amountSat, entry.priceSatPerXbt, clientId, keys.recoveryTag)
+                } catch (e: SwapHttpException) {
+                    // Refused: nothing was taken, so the next try starts afresh. Its
+                    // index goes back unless the edge holds it (used before).
+                    if (e.code in 400..499) {
+                        listedTake = null
+                        if (!indexUsed(e)) fortis.swapStore.releaseSwapIndex(keys.seed, keys.index)
+                    }
+                    throw e
+                }
+            }
+        } catch (e: Exception) {
+            val plain = com.fortis.wallet.ui.screens.takeError(e) ?: throw e
+            if (plain == R.string.swap_take_gone || plain == R.string.swap_take_price_changed) {
+                listedTake = null
+                refreshBook()
+            }
+            throw Exception(str(plain))
+        }
+        val keys = listedTake!!.third
+        listedTake = null
+        val p = preview(t, entry.priceSatPerXbt)
+        if (p.problem != null) {
+            takePreview = p
+            declineTaken()
+            throw Exception(p.problem)
+        }
+        startTaken(p, from, to, keys)
+    }
     fun openSwap(id: String) { error = null; swapRoute = SwapRoute.Detail(id) }
 
     /** Back from a swap screen: to the list, and from the list to the tabs. A
@@ -401,10 +493,33 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
             null, SwapRoute.List -> null
             else -> SwapRoute.List
         }
+        // Back from the Swaps tab's own list leaves the tab for Home.
+        if (swapRoute == null && nav == NavTab.Swaps) nav = NavTab.Home
     }
+
+    /** Network-fee reserve (sat) for funding a swap from each wallet, for the
+     *  New swap screen's "up to 100%" slider. Absent until [loadSwapFeeReserve]. */
+    var swapFeeReserves by mutableStateOf<Map<String, Long>>(emptyMap()); private set
+
+    /** Look up [walletId]'s confirmed coins and today's fee rate, and record what
+     *  funding a swap from it would cost in network fees. Failures leave it unknown. */
+    fun loadSwapFeeReserve(walletId: String) = viewModelScope.launch(Dispatchers.Default) {
+        runCatching {
+            val w = wallets.firstOrNull { it.id == walletId } ?: return@runCatching
+            val s = ensureSession(w.id, quiet = true) ?: return@runCatching
+            val b = overviewBackend(w, s)
+            val feerate = b.feerateSatVb(6).coerceIn(1uL, uniffi.wallet_ffi.maxSwapFeerateSatVb()).toLong()
+            val reserve = com.fortis.wallet.ui.screens.swapFeeReserve(b.utxos(1u).size, feerate, w.chain)
+            synchronized(balanceLock) { swapFeeReserves = swapFeeReserves + (walletId to reserve) }
+        }
+    }
+
+    /** This phone's own NeoxEX reading, shown as the reference on the new-swap screen (`null` when unavailable). */
+    var swapReference by mutableStateOf<NeoxEx.Reference?>(null); private set
 
     fun refreshQuote() = viewModelScope.launch {
         swapQuote = runCatching { fortis.swapApi.quote() }.getOrNull()
+        swapReference = runCatching { fortis.swapReference() }.getOrNull()
     }
 
     fun refreshSwaps() = viewModelScope.launch {
@@ -434,26 +549,54 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
         }
 
     /**
-     * Everything a new swap record needs from the two wallets, while unlocked: a
-     * fresh random swap index, the wrapped secrets, the redeem address (the
-     * to-wallet's next receive, which is then advanced since the redeem always
-     * pays it) and the refund address (the from-wallet's next receive — only
-     * paid if the swap fails, so it isn't advanced).
+     * A new swap's keys from seed wallet [walletId]'s seed, while unlocked: the
+     * seed's next swap index (its counter, so a restore can find the swap again),
+     * the index's recovery tag, and the wrapped secrets.
      */
-    private suspend fun swapKeys(from: WalletConfig, to: WalletConfig): SwapKeys {
+    private suspend fun drawKeys(walletId: String): SwapKeys {
+        if (appSecret == null) throw Exception(str(R.string.swap_error_locked))
+        val fs = withContext(Dispatchers.Default) { ensureSession(walletId, quiet = true) }
+            ?: throw Exception(str(R.string.error_open_wallet))
+        val w = fs.wallet ?: throw Exception(str(R.string.swap_error_seed_only))
+        val seed = fs.fingerprint ?: w.masterFingerprint()
+        val index = fortis.swapStore.nextSwapIndex(seed)
+        val tag = withContext(Dispatchers.Default) { w.swapRecoveryTag(0u, index.toUInt()) }
+        val (xbt, btc) = wrappedSwapSecrets(fs, index)
+        return SwapKeys(index, seed, tag, xbt, btc)
+    }
+
+    /**
+     * A new swap's redeem address (the to-wallet's next receive, which is then
+     * advanced since the redeem always pays it) and refund address (the
+     * from-wallet's next receive — only paid if the swap fails, so it isn't
+     * advanced), while unlocked.
+     */
+    private suspend fun swapAddresses(from: WalletConfig, to: WalletConfig): Pair<String, String> {
         if (appSecret == null) throw Exception(str(R.string.swap_error_locked))
         if (from.chain == to.chain) throw Exception(str(R.string.swap_error_same_chain))
         val (fs, ts) = withContext(Dispatchers.Default) {
             ensureSession(from.id, quiet = true) to ensureSession(to.id, quiet = true)
         }
         if (fs == null || ts == null) throw Exception(str(R.string.error_open_wallet))
-        val index = fortis.swapStore.nextSwapIndex(from.id)
-        val (xbt, btc) = wrappedSwapSecrets(fs, index)
-        return SwapKeys(
-            index, xbt, btc,
-            redeemAddress = ts.receiveAddress(to.nextReceive).address,
-            refundAddress = fs.receiveAddress(from.nextReceive).address,
-        )
+        return ts.receiveAddress(to.nextReceive).address to fs.receiveAddress(from.nextReceive).address
+    }
+
+    /** A new swap's preimage nonce: 16 random bytes, hex (only the initiator's is used). */
+    private fun newPreimageNonce(): String =
+        ByteArray(16).also { java.security.SecureRandom().nextBytes(it) }.joinToString("") { "%02x".format(it) }
+
+    /**
+     * The edge says a drawn index was used before: this phone's counter for
+     * [walletId]'s seed is behind (a restore whose search didn't run, another
+     * phone on the seed). Move it past every index the edge knows, looking
+     * only — nothing is re-keyed.
+     */
+    private suspend fun catchUpSwapIndex(walletId: String) {
+        val fs = withContext(Dispatchers.Default) { ensureSession(walletId, quiet = true) } ?: return
+        val w = fs.wallet ?: return
+        val seed = fs.fingerprint ?: w.masterFingerprint()
+        val (_, highest) = scanTags({ i -> w.swapRecoveryTag(0u, i.toUInt()) }, { fortis.swapApi.recover(it, claim = false) })
+        if (highest >= 0) fortis.swapStore.bumpSwapIndex(seed, highest)
     }
 
     /** Persist first, then start the service (so its first pass sees the swap). */
@@ -473,42 +616,150 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
      * the engine re-posts with the same client id after a lost response or a
      * crash, and the edge hands back the same offer. The POST then promotes it.
      */
-    fun createOffer(fromId: String, toId: String, amountSat: Long, slippageBps: Int, private: Boolean) = swapWrap {
+    fun createOffer(fromId: String, toId: String, amountSat: Long, priceSatPerXbt: Long, private: Boolean) = swapWrap {
         val from = seedWallet(fromId)
         val to = seedWallet(toId)
         val q = swapQuote ?: throw Exception(str(R.string.swap_unavailable))
-        require(slippageBps in SLIPPAGE_BPS) { "slippage must be 50, 100 or 200 bps" }
-        amountError(btcLeg(amountSat, from.chain, q.priceSatPerXbt), q.minBtcSat, q.maxBtcSat)?.let {
-            throw Exception(str(it, fmtCoin(q.minBtcSat), fmtCoin(q.maxBtcSat)))
+        // a doomed offer must not leave a provisional record behind
+        if (priceSatPerXbt <= 0) throw Exception(str(R.string.swap_error_price))
+        amountError(btcLeg(amountSat, from.chain, priceSatPerXbt), q.minBtcSat, q.maxBtcSat)?.let {
+            throw Exception(str(it, fmtCoin(amountLimit(it, q.minBtcSat, q.maxBtcSat))))
         }
-        val keys = swapKeys(from, to)
-        val clientId = newClientId()
-        val provisional = SwapRecord(
-            id = clientId, clientId = clientId, step = Step.PROVISIONAL, privateOffer = private,
-            fromWalletId = from.id, toWalletId = to.id, sendChain = from.chain,
-            amountSat = amountSat, slippageBps = slippageBps, ownerSecret = "",
-            swapIndex = keys.index, wrappedXbt = keys.wrappedXbt, wrappedBtc = keys.wrappedBtc,
-            redeemAddress = keys.redeemAddress, refundAddress = keys.refundAddress, createdAt = nowSecs(),
-        )
-        fortis.swapStore.put(provisional)
+        val (redeem, refund) = swapAddresses(from, to)
         updateConfig(to.id) { it.copy(nextReceive = it.nextReceive + 1) }
-        val posted = try {
-            fortis.swapEngine.postOffer(clientId)
-        } catch (e: SwapHttpException) {
-            if (e.code != 400 && e.code != 429) {
-                // no answer we can trust: the engine re-posts (and adopts) in the background
+        val posted = withFreshIndex(onUsed = { catchUpSwapIndex(from.id) }) {
+            val keys = drawKeys(from.id)
+            val clientId = newClientId()
+            val provisional = SwapRecord(
+                id = clientId, clientId = clientId, step = Step.PROVISIONAL, privateOffer = private,
+                fromWalletId = from.id, toWalletId = to.id, sendChain = from.chain,
+                amountSat = amountSat, limitPrice = priceSatPerXbt, ownerSecret = "",
+                swapIndex = keys.index, wrappedXbt = keys.wrappedXbt, wrappedBtc = keys.wrappedBtc,
+                redeemAddress = redeem, refundAddress = refund, createdAt = nowSecs(),
+                seed = keys.seed, recoveryTag = keys.recoveryTag, preimageNonce = newPreimageNonce(),
+            )
+            fortis.swapStore.put(provisional)
+            try {
+                fortis.swapEngine.postOffer(clientId)
+            } catch (e: SwapHttpException) {
+                if (e.code != 400 && e.code != 429 && !indexUsed(e)) {
+                    // no answer we can trust: the engine re-posts (and adopts) in the background
+                    showSwap(clientId)
+                } else {
+                    // refused: the edge made no offer, so there is nothing to follow
+                    // (a used index is tried again on the next one; any other
+                    // refusal gives the index back)
+                    fortis.swapStore.remove(clientId)
+                    if (!indexUsed(e)) fortis.swapStore.releaseSwapIndex(keys.seed, keys.index)
+                    refreshSwaps()
+                }
+                throw e
+            } catch (e: Exception) {
                 showSwap(clientId)
-            } else {
-                // refused: the edge made no offer, so there is nothing to follow
-                fortis.swapStore.remove(clientId)
-                refreshSwaps()
+                throw e
             }
-            throw e
-        } catch (e: Exception) {
-            showSwap(clientId)
-            throw e
         }
         showSwap(posted.id)
+    }
+
+    /** A swap search is running (Settings → Find my swaps). */
+    var recovering by mutableStateOf(false); private set
+
+    /** What the last swap search found, shown under its button. */
+    var recoverNote by mutableStateOf<String?>(null); private set
+
+    /**
+     * Find this phone's seeds' swaps that still have coins locked — after a
+     * restore, the records are gone but the edge knows each swap by its
+     * recovery tag — and rebuild them, so the engine refunds or completes them.
+     * [quiet] (after a restore): note only what was found, never a failure.
+     */
+    fun recoverSwaps(quiet: Boolean = false) = viewModelScope.launch {
+        if (recovering) return@launch
+        recovering = true
+        // a fresh result each time, so a search visibly ran
+        if (!quiet) recoverNote = null
+        try {
+            val note = try {
+                findSwaps()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                if (quiet) null else str(R.string.swap_recover_failed, e.message ?: e.toString())
+                // (quiet: the note says to search again from here)
+            }
+            if (!quiet || note != str(R.string.swap_recover_none)) recoverNote = note ?: str(R.string.swap_recover_retry)
+        } finally {
+            recovering = false
+        }
+    }
+
+    /**
+     * [recoverSwaps]' work, per seed: look up its tags (changing nothing),
+     * move its counter past them, and pick the swaps to take over — our own
+     * leg funded, not settled, and not one this phone already runs (taking
+     * that over would re-key it under the running swap). Only those are then
+     * claimed (the edge hands out new owner secrets) and rebuilt.
+     */
+    private suspend fun findSwaps(): String {
+        if (appSecret == null) throw Exception(str(R.string.swap_error_locked))
+        val bySeed = withContext(Dispatchers.Default) {
+            seedWallets.mapNotNull { w ->
+                val s = ensureSession(w.id, quiet = true) ?: return@mapNotNull null
+                val seed = s.fingerprint ?: s.wallet?.masterFingerprint() ?: return@mapNotNull null
+                seed to w
+            }.groupBy({ it.first }, { it.second })
+        }
+        var found = 0
+        var needWallets = 0
+        for ((seed, ws) in bySeed) {
+            val fs = withContext(Dispatchers.Default) { ensureSession(ws.first().id, quiet = true) } ?: continue
+            val w = fs.wallet ?: continue
+            val (entries, highest) = scanTags(
+                { i -> w.swapRecoveryTag(0u, i.toUInt()) },
+                { tags -> fortis.swapApi.recover(tags, claim = false) },
+            )
+            if (highest >= 0) fortis.swapStore.bumpSwapIndex(seed, highest)
+            if (BuildConfig.DEBUG) runCatching {
+                android.util.Log.i("SwapRecovery", "seed ${seed.take(4)}…: ${entries.size} tags known (highest $highest), ${entries.count { it.second.match != null }} matched")
+            }
+            val have = fortis.swapStore.all()
+            val wanted = mutableMapOf<String, Triple<Int, WalletConfig, WalletConfig>>()
+            for ((index, r) in entries) {
+                val m = r.match ?: continue
+                if (r.offerId == null) continue
+                if (have.any { it.id == r.offerId || it.matchId == m.id || it.recoveryTag == r.tag }) continue
+                val initiator = m.role == "initiator"
+                val own = (if (initiator) m.xbtFunding else m.btcFunding) ?: continue // nothing of ours locked
+                // The initiator's XBT already spent: refunded or redeemed, so settled. The
+                // participant's BTC spent may be the initiator's redeem, which our XBT
+                // redeem still needs: always taken over, the engine tells which.
+                if (initiator && fortis.swapCheck.unspent("xbt", own.txid, own.vout) == null) continue
+                val (from, to) = recoveryWallets(if (initiator) "xbt" else "btc", ws, seedWallets) ?: run { needWallets++; continue }
+                if (BuildConfig.DEBUG) runCatching { android.util.Log.i("SwapRecovery", "taking over ${r.offerId?.take(8)}: ${m.role}, ${from.chain} → ${to.chain}") }
+                wanted[r.tag] = Triple(index, from, to)
+            }
+            for (batch in wanted.keys.chunked(100)) {
+                for (r in fortis.swapApi.recover(batch, claim = true)) {
+                    val (index, from, to) = wanted[r.tag] ?: continue
+                    if (r.ownerSecret == null) continue
+                    val (redeem, refund) = swapAddresses(from, to)
+                    val (xbt, btc) = wrappedSwapSecrets(fs, index)
+                    val rec = recoveredRecord(index, r, seed, from, to, xbt, btc, redeem, refund, nowSecs()) ?: continue
+                    fortis.swapStore.put(rec)
+                    updateConfig(to.id) { it.copy(nextReceive = it.nextReceive + 1) }
+                    found++
+                }
+            }
+        }
+        if (found > 0) {
+            SwapService.start(getApplication())
+            swaps = fortis.swapStore.all().sortedByDescending { it.createdAt }
+        }
+        return listOfNotNull(
+            plural(R.plurals.swap_recovered, found).takeIf { found > 0 },
+            plural(R.plurals.swap_recover_need_wallets, needWallets).takeIf { needWallets > 0 },
+        ).joinToString("\n").ifEmpty { str(R.string.swap_recover_none) }
     }
 
     /** Start the service (it drives the saved record) and open the swap. */
@@ -524,14 +775,36 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
 
     /**
      * Take a share code: the edge matches us at once (we are the code's opposite
-     * direction). The terms and our own NeoxEX price check are shown before the
-     * user accepts; nothing is saved until then.
+     * direction). The terms are checked (everything but the price, which is the
+     * code's own) and shown before the user accepts; nothing is saved until then.
      */
-    fun takeCode(code: String, slippageBps: Int) = swapWrap {
+    fun takeCode(code: String) = swapWrap {
         val clean = code.trim().uppercase().filter { it.isLetterOrDigit() }
         if (clean.isEmpty()) throw Exception(str(R.string.swap_error_enter_code))
         takePreview = null
-        val t = fortis.swapApi.take(clean, slippageBps)
+        takeCodeKeys = null
+        // The wallets are picked after the terms show, so the keys come from the
+        // open seed wallet's seed (or the first one's): any of the user's seeds
+        // holds them, and that seed's restore finds the swap by its tag.
+        val keyWallet = seedWallets.firstOrNull { it.id == selectedId } ?: seedWallets.firstOrNull()
+            ?: throw Exception(str(R.string.swap_error_seed_only))
+        val t = withFreshIndex(onUsed = { catchUpSwapIndex(keyWallet.id) }) {
+            val keys = drawKeys(keyWallet.id)
+            try {
+                fortis.swapApi.take(clean, keys.recoveryTag).also { takeCodeKeys = keys }
+            } catch (e: SwapHttpException) {
+                // refused (a mistyped code…): nothing taken, the index goes back
+                if (e.code in 400..499 && !indexUsed(e)) fortis.swapStore.releaseSwapIndex(keys.seed, keys.index)
+                throw e
+            }
+        }
+        takePreview = preview(t, limitPrice = null)
+    }
+
+    /** The match [t] made, with its terms checked by us: against [limitPrice]
+     *  (the price we were shown), or — for a share code, whose maker sets the
+     *  price — everything but the price. A failed read cancels our offer. */
+    private suspend fun preview(t: Taken, limitPrice: Long?): TakePreview {
         val info = try {
             fortis.swapApi.match(t.matchId, t.ownerSecret)
         } catch (e: Exception) {
@@ -539,38 +812,39 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
             throw e
         }
         val termsJson = info.terms.toString()
-        val price = runCatching { fortis.ownSwapPrice() }
-        val problem = when {
-            price.isFailure -> str(R.string.swap_check_unreachable)
-            price.getOrNull() == null -> str(R.string.swap_check_refused)
-            else -> runCatching {
-                uniffi.wallet_ffi.validateSwapTerms(
-                    termsJson, price.getOrNull()!!.toULong(), slippageBps.toUInt(), info.role, nowSecs().toUInt(),
-                )
-            }.exceptionOrNull()?.let { it.message ?: it.toString() }
-        }
-        takePreview = TakePreview(t, termsJson, info.role, slippageBps, price.getOrNull(), problem)
+        val limit = limitPrice ?: info.terms.getLong("price_sat_per_xbt")
+        val problem = runCatching {
+            uniffi.wallet_ffi.validateSwapTerms(termsJson, limit.toULong(), info.role, nowSecs().toUInt(), com.fortis.wallet.swap.SWAP_NETWORK)
+        }.exceptionOrNull()?.let { it.message ?: it.toString() }
+        val reference = runCatching { fortis.swapReference() }.getOrNull()
+        return TakePreview(t, termsJson, info.role, reference, problem)
     }
 
     /** Accept the shown terms: build and save the swap record, then start it. */
     fun acceptTaken(fromId: String, toId: String) = swapWrap {
         val p = takePreview ?: return@swapWrap
-        val from = seedWallet(fromId)
-        val to = seedWallet(toId)
+        val keys = takeCodeKeys ?: return@swapWrap
+        startTaken(p, seedWallet(fromId), seedWallet(toId), keys)
+    }
+
+    /** Build and save the swap record for taken match [p] (taken under [keys]' tag), then start it. */
+    private suspend fun startTaken(p: TakePreview, from: WalletConfig, to: WalletConfig, keys: SwapKeys) {
         if (from.chain != p.sendChain) throw Exception(str(R.string.swap_error_wrong_chain, p.sendChain.uppercase()))
-        val keys = swapKeys(from, to)
+        val (redeem, refund) = swapAddresses(from, to)
         val rec = SwapRecord(
             id = p.taken.offerId, matchId = p.taken.matchId, fromWalletId = from.id, toWalletId = to.id,
-            sendChain = p.sendChain, amountSat = p.sendSat, slippageBps = p.slippageBps,
+            sendChain = p.sendChain, amountSat = p.sendSat, limitPrice = p.priceSatPerXbt,
             ownerSecret = p.taken.ownerSecret, swapIndex = keys.index,
             wrappedXbt = keys.wrappedXbt, wrappedBtc = keys.wrappedBtc,
-            redeemAddress = keys.redeemAddress, refundAddress = keys.refundAddress, createdAt = nowSecs(),
+            redeemAddress = redeem, refundAddress = refund, createdAt = nowSecs(),
+            seed = keys.seed, recoveryTag = keys.recoveryTag, preimageNonce = newPreimageNonce(),
         )
         startSwap(rec)
         takePreview = null
+        takeCodeKeys = null
     }
 
-    /** Turn the shown terms down: the match ends now and both offers come off the book. */
+    /** Turn the shown terms down: the match ends now and our taking offer comes off the book. */
     fun declineTaken() {
         val p = takePreview ?: return
         takePreview = null
@@ -657,6 +931,7 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
         error = null
         if (swapRoute != null) { declineTaken(); swapRoute = null }
         nav = tab
+        if (tab == NavTab.Swaps) { refreshSwaps(); refreshQuote() }
         if (phase == Phase.Shell) enterTab()
     }
     fun goHome() = go(NavTab.Home)
@@ -734,7 +1009,7 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
         sessions.values.forEach { it.close() }
         sessions.clear()
         appSecret = null
-        synchronized(balanceLock) { walletBalances = emptyMap(); coinUsd = emptyMap() }
+        synchronized(balanceLock) { overview = OverviewBalances(); coinUsd = emptyMap() }
         overviewBackends.clear()
         revealingId = null
         declineTaken()
@@ -757,6 +1032,7 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
     fun restoreWallet(name: String, phrase: String, passphrase: String, chain: String, network: String, lock: LockSetup? = null) = wrap {
         val words = phrase.trim().split(Regex("\\s+")).joinToString(" ")
         finishOnboard(name, chain, network, words, passphrase, lock)
+        recoverSwaps(quiet = true)
     }
 
     private suspend fun finishOnboard(
@@ -770,12 +1046,12 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
             lockMode = lock.mode
             store.setLock(lock.mode, lock.appWrapped)
         }
+        requireFreeName(name, chain)
         val secret = appSecret ?: error("the app is locked")
         val s = WalletSession.signing(chain, network, mnemonic, passphrase)
         val sealed = sealSeed(mnemonic, passphrase, secret)
         val id = UUID.randomUUID().toString()
-        val cleanName = name.trim().take(MAX_WALLET_NAME).ifBlank { "Wallet" }
-        val c = WalletConfig(id, cleanName, chain, network, sealed.blobHex, sealed.saltHex)
+        val c = WalletConfig(id, cleanWalletName(name), chain, network, sealed.blobHex, sealed.saltHex)
         store.save(c); store.setSelected(id)
         wallets = wallets + c
         selectedId = id
@@ -851,10 +1127,10 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
         hardware: Boolean = false,
         masterFingerprint: String? = null,
     ): String {
+        requireFreeName(name, chain)
         val id = UUID.randomUUID().toString()
-        val cleanName = name.trim().take(MAX_WALLET_NAME).ifBlank { "Wallet" }
         val c = WalletConfig(
-            id, cleanName, chain, "mainnet", watchOnly = true, xpub = xpub,
+            id, cleanWalletName(name), chain, "mainnet", watchOnly = true, xpub = xpub,
             hardware = hardware, masterFingerprint = masterFingerprint,
         )
         store.save(c); store.setSelected(id)
@@ -871,7 +1147,17 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
 
     fun renameWallet(id: String, name: String) = wrap {
         val clean = name.trim().take(MAX_WALLET_NAME)
-        if (clean.isNotEmpty()) updateConfig(id) { it.copy(name = clean) }
+        if (clean.isEmpty()) return@wrap
+        val chain = wallets.firstOrNull { it.id == id }?.chain ?: return@wrap
+        requireFreeName(clean, chain, exceptId = id)
+        updateConfig(id) { it.copy(name = clean) }
+    }
+
+    /** Throws (shown as the screen's error) when [name] is taken on [chain]. */
+    private fun requireFreeName(name: String, chain: String, exceptId: String? = null) {
+        if (walletNameTaken(wallets, name, chain, exceptId)) {
+            throw Exception(str(R.string.error_name_taken, chain.uppercase(), cleanWalletName(name)))
+        }
     }
 
     // --- reveal recovery phrase ---
@@ -879,7 +1165,18 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
     var revealingId by mutableStateOf<String?>(null); private set
 
     /** Go to the (screenshot-blocked) recovery-phrase screen for a wallet. */
-    fun startReveal(id: String) { error = null; revealingId = id; phase = Phase.RevealSeed }
+    /** A fresh "it's you" (fingerprint or password) for a reveal or a send. */
+    private val reauth = com.fortis.wallet.security.Reauth(com.fortis.wallet.security.REAUTH_FRESH_MS)
+
+    /** The UI proved it's the user: [given] is the app secret their fingerprint
+     *  unwrapped, or their password. True if it matches the unlocked app's. */
+    fun confirmIdentity(given: String): Boolean = reauth.confirm(given, appSecret)
+
+    /** Reveal a recovery phrase — only right after [confirmIdentity]. */
+    fun startReveal(id: String) {
+        if (!reauth.consume()) { error = str(R.string.reauth_needed); return }
+        error = null; revealingId = id; phase = Phase.RevealSeed
+    }
     fun closeReveal() { revealingId = null; resolvePhase() }
 
     /** Decrypt a wallet's seed for display. `(words, passphrase)`; passphrase is
@@ -899,7 +1196,7 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
     fun cloneToOtherChain(id: String) = wrap {
         val c = wallets.firstOrNull { it.id == id } ?: return@wrap
         if (!canAddWallet) { error = str(R.string.error_wallet_max, MAX_WALLETS); return@wrap }
-        if (wallets.any { it.name == c.name && it.chain == c.otherChain }) {
+        if (walletNameTaken(wallets, c.name, c.otherChain)) {
             error = str(R.string.error_clone_exists, c.name, c.otherChain.uppercase())
             return@wrap
         }
@@ -911,6 +1208,8 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
         )
         store.save(clone)
         wallets = wallets + clone
+        // the seed may have swaps that needed this chain's wallet to recover
+        if (!c.watchOnly && !c.hardware) recoverSwaps(quiet = true)
     }
 
     /** Remove a wallet from the app. The seed is not destroyed — its recovery
@@ -920,7 +1219,7 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
         val wasCurrent = id == selectedId
         sessions.remove(id)?.close()
         overviewBackends.remove(id)
-        walletBalances = walletBalances - id
+        synchronized(balanceLock) { overview = overview.without(id) }
         val remaining = store.remove(id)
         wallets = remaining.wallets
         selectedId = remaining.selectedId
@@ -1065,7 +1364,7 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
             history = newHistory
             if (!newBalances.serverDegraded) {
                 balances = newBalances
-                refreshingFor?.let { id -> setWalletBalance(id, newBalances.confirmedSat) }
+                refreshingFor?.let { id -> setWalletBalance(id, newBalances) }
             }
             // Only when this landed via the primary backend (not the old
             // public-explorer fallback, `degraded`) *and* the edge itself
@@ -1122,7 +1421,8 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
                     // surfaced to the UI via lastRefreshError so a real
                     // failure reads as a real failure, not an indefinite
                     // "Connecting…".
-                    android.util.Log.e("WalletRefresh", "refresh failed for ${refreshingChain ?: "?"}", e)
+                    // Debug builds only: the message can carry request paths with addresses.
+                    if (BuildConfig.DEBUG) android.util.Log.e("WalletRefresh", "refresh failed for ${refreshingChain ?: "?"}", e)
                     lastRefreshError = e.message ?: e::class.simpleName ?: "unknown error"
                     status = null
                 }
@@ -1163,7 +1463,9 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
 
     fun cancelPending() { pending = null }
 
+    /** Sign and send the pending payment — only right after [confirmIdentity]. */
     fun confirmSend() = wrap {
+        if (!reauth.consume()) throw Exception(str(R.string.reauth_needed))
         val p = pending!!; val b = active(); val s = session!!; val c = config!!
         val signed = s.sign(p.plan.txHex, p.plan.selected)
         val txid = b.broadcast(signed)
@@ -1202,4 +1504,18 @@ private fun xpubDepth(s: String): Int? {
     if (hex.length % 2 != 0) hex = "0$hex"
     val bytes = hex.chunked(2)
     return if (bytes.size > 4) bytes[4].toInt(16) else null
+}
+
+/** Per-wallet confirmed and pending balances for the overviews. A degraded scan
+ *  (the edge flagged it incomplete; its UTXO list is empty) is ignored, as the
+ *  wallet screen does, so a known balance never flashes to 0. */
+data class OverviewBalances(
+    val confirmed: Map<String, Long> = emptyMap(),
+    val pending: Map<String, Long> = emptyMap(),
+) {
+    fun with(id: String, b: Balances): OverviewBalances =
+        if (b.serverDegraded) this
+        else OverviewBalances(confirmed + (id to b.confirmedSat), pending + (id to b.pendingSat))
+
+    fun without(id: String) = OverviewBalances(confirmed - id, pending - id)
 }

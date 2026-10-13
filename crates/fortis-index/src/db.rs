@@ -67,6 +67,13 @@ pub enum OpenError {
 #[error("address too heavy")]
 pub struct TooHeavy;
 
+/// Unspent outputs left out of a listing past its cap: how many, worth how much.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub struct Unlisted {
+    pub count: u64,
+    pub value: u64,
+}
+
 #[derive(Debug, thiserror::Error)]
 #[error("no undo for height {height}: reorg deeper than {MAX_REORG_DEPTH}; rebuild with --start-height or restore")]
 pub struct NoUndo {
@@ -79,6 +86,30 @@ pub struct Db {
     /// A read-only secondary: no snapshots (RocksDB doesn't support them
     /// there); its view only changes on `catch_up`.
     secondary: bool,
+    render: Arc<RenderCap>,
+}
+
+/// Rendered transactions cached at most: every one any client asks about
+/// is cached, so without a cap anyone walking addresses fills the disk.
+/// Past it the oldest half goes (a dropped one is rendered from the node
+/// again when asked for). About 1–2 GB at the cap.
+pub const RENDER_MAX_ROWS: u64 = 1_000_000;
+
+/// The render cache's row count (an estimate at open, exact after a trim)
+/// and its cap.
+struct RenderCap {
+    rows: std::sync::atomic::AtomicU64,
+    max: std::sync::atomic::AtomicU64,
+}
+
+impl RenderCap {
+    fn new(db: &DB) -> Arc<RenderCap> {
+        let rows = db
+            .cf_handle(CF_RENDER)
+            .and_then(|cf| db.property_int_value_cf(&cf, "rocksdb.estimate-num-keys").ok().flatten())
+            .unwrap_or(0);
+        Arc::new(RenderCap { rows: rows.into(), max: RENDER_MAX_ROWS.into() })
+    }
 }
 
 /// What `rollback` needs to undo one block: the keys it added and the UTXOs
@@ -225,9 +256,11 @@ impl Db {
         let (opts, cfs) = db_options(cfg);
         let db = DB::open_cf_descriptors(&opts, path, cfs)
             .with_context(|| format!("opening index database {}", path.display()))?;
+        let render = RenderCap::new(&db);
         let db = Db {
             db: Arc::new(db),
             secondary: false,
+            render,
         };
         db.guard(chain_id, true)?;
         Ok(db)
@@ -247,9 +280,11 @@ impl Db {
         opts.set_max_open_files(-1);
         let db = DB::open_cf_descriptors_as_secondary(&opts, path, secondary, cfs)
             .with_context(|| format!("opening index database {} as secondary", path.display()))?;
+        let render = RenderCap::new(&db);
         let db = Db {
             db: Arc::new(db),
             secondary: true,
+            render,
         };
         db.guard(chain_id, false)?;
         Ok(db)
@@ -547,10 +582,38 @@ impl Db {
         }
     }
 
-    /// Cache the rendered Esplora JSON of confirmed transaction `n`.
+    /// Cache the rendered Esplora JSON of confirmed transaction `n`, keeping
+    /// the cache to [`RENDER_MAX_ROWS`].
     pub fn render_put(&self, n: TxNum, json: &[u8]) -> Result<()> {
+        use std::sync::atomic::Ordering::Relaxed;
         self.db.put_cf(self.cf(CF_RENDER), txnum_key(n), json)?;
+        if self.render.rows.fetch_add(1, Relaxed) + 1 > self.render.max.load(Relaxed) {
+            self.trim_render()?;
+        }
         Ok(())
+    }
+
+    /// Drop the oldest render rows (lowest txnums), keeping half the cap.
+    /// Two key scans: rare (once per half a cap of new rows), so cheap overall.
+    fn trim_render(&self) -> Result<()> {
+        use std::sync::atomic::Ordering::Relaxed;
+        let cf = self.cf(CF_RENDER);
+        let keep = self.render.max.load(Relaxed) / 2;
+        let total = self.db.iterator_cf(cf, rocksdb::IteratorMode::Start).count() as u64;
+        if total > keep {
+            if let Some(item) = self.db.iterator_cf(cf, rocksdb::IteratorMode::Start).nth((total - keep) as usize) {
+                let (first_kept, _) = item?;
+                self.db.delete_range_cf(cf, &txnum_key(0)[..], &first_kept[..])?;
+            }
+        }
+        self.render.rows.store(total.min(keep), Relaxed);
+        Ok(())
+    }
+
+    #[cfg(test)]
+    pub(crate) fn with_render_cap(self, max: u64) -> Db {
+        self.render.max.store(max, std::sync::atomic::Ordering::Relaxed);
+        self
     }
 }
 
@@ -638,6 +701,49 @@ impl<'a> Reader<'a> {
         }
         it.status()?;
         Ok(out)
+    }
+
+    /// The `max_rows` largest unspent outputs of `p` that `keep` accepts, and
+    /// the count and sum of the rest — for an address dusted past the cap,
+    /// which still has a full balance. Streams the rows through a min-heap,
+    /// so memory stays at `max_rows` however many there are.
+    pub fn utxos_largest(
+        &self,
+        p: &Program,
+        max_rows: usize,
+        keep: impl Fn(&OutPoint) -> bool,
+    ) -> Result<(Vec<(OutPoint, UtxoVal)>, Unlisted)> {
+        use std::cmp::Reverse;
+        use std::collections::BinaryHeap;
+        let mut it = self.raw_iter(CF_UTXO, prefix_opts(p));
+        it.seek(p);
+        // Smallest value on top; ties broken by outpoint so the order is total.
+        let mut heap: BinaryHeap<Reverse<(u64, OutPoint, Vec<u8>)>> = BinaryHeap::new();
+        let mut rest = Unlisted::default();
+        while it.valid() {
+            let k = it.key().unwrap();
+            if !k.starts_with(p) {
+                break;
+            }
+            let op = utxo_outpoint(k);
+            if keep(&op) {
+                let raw = it.value().unwrap().to_vec();
+                let value = UtxoVal::decode(&raw)?.value;
+                heap.push(Reverse((value, op, raw)));
+                if heap.len() > max_rows {
+                    let Reverse((v, ..)) = heap.pop().expect("over the cap");
+                    rest.count += 1;
+                    rest.value += v;
+                }
+            }
+            it.next();
+        }
+        it.status()?;
+        let listed = heap
+            .into_iter()
+            .map(|Reverse((_, op, raw))| Ok((op, UtxoVal::decode(&raw)?)))
+            .collect::<Result<Vec<_>>>()?;
+        Ok((listed, rest))
     }
 
     /// Every unspent output of `p`; [`TooHeavy`] if there are more than `max_rows`.

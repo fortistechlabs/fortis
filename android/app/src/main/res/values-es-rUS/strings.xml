@@ -186,4 +186,32 @@
         <item quantity="one">%1$d palabra</item>
         <item quantity="other">%1$d palabras</item>
     </plurals>
+    <string name="swap_recover_title">Intercambios</string>
+    <string name="swap_recover_body">Después de restaurar desde tu frase de recuperación: busca los intercambios que aún tienen tus monedas bloqueadas y reembólsalos o complétalos en este teléfono.</string>
+    <string name="swap_recover_action">Buscar mis intercambios</string>
+    <string name="swap_recover_searching">Buscando…</string>
+    <string name="swap_recover_none">No hay intercambios que recuperar.</string>
+    <string name="swap_recover_failed">No se pudieron buscar intercambios: %1$s</string>
+    <string name="swap_recover_retry">No se pudieron buscar intercambios que recuperar. Cuando tengas conexión, vuelve a buscar con «Buscar mis intercambios».</string>
+    <string name="swap_pending_they_confirming">Sus monedas en el intercambio</string>
+    <string name="swap_hint_they_confirming_first">Sus monedas están en el intercambio. Cuando la red las confirme, la app pondrá las tuyas. La app debe estar desbloqueada para ello: recibirás una notificación cuando llegue el momento.</string>
+    <string name="swap_hint_they_confirming_after_you">Sus monedas están bloqueadas. Cuando la red las confirme, la app cobrará las tuyas automáticamente. No tienes que hacer nada.</string>
+    <string name="swap_status_cancelled_refund">Cancelado · reembolso en camino</string>
+    <string name="swap_cancelled_refund_on">La otra parte no bloqueó sus monedas a tiempo, así que el emparejamiento se canceló. Tus monedas vuelven a ti automáticamente el %1$s. No tienes que hacer nada.</string>
+    <string name="swap_cancelled_nothing_spent">El emparejamiento se canceló antes de que se bloquearan tus monedas. Nada salió de tu monedero.</string>
+    <string name="swap_cancelled_released">La otra parte no bloqueó sus monedas a tiempo, así que el emparejamiento se canceló y liberó las tuyas. Tus monedas ya vuelven a ti. No tienes que hacer nada.</string>
+    <string name="swap_amount_min">Mín</string>
+    <string name="swap_amount_max">Máx</string>
+    <string name="swap_fund_turn_soon">Te toca en unos %1$s: Fortis te avisará para que la abras y pongas tus monedas. Tendrás hasta aproximadamente las %2$s.</string>
+    <string name="swap_fund_turn_now">Te toca: abre Fortis para poner tus monedas antes de las %1$s.</string>
+    <string name="swap_hint_you_funding">La app pone tus monedas en cuanto te toque, mientras esté desbloqueada.</string>
+    <string name="swap_hint_open_to_fund">Te toca: abre Fortis para que ponga tus monedas.</string>
+    <plurals name="swap_recovered">
+        <item quantity="one">%1$d intercambio recuperado. Continúa en Intercambios.</item>
+        <item quantity="other">%1$d intercambios recuperados. Continúan en Intercambios.</item>
+    </plurals>
+    <plurals name="swap_recover_need_wallets">
+        <item quantity="one">%1$d intercambio necesita ambos monederos: añade el de la otra cadena (Añadir también en…) y vuelve a buscar.</item>
+        <item quantity="other">%1$d intercambios necesitan ambos monederos: añade el de la otra cadena (Añadir también en…) y vuelve a buscar.</item>
+    </plurals>
 </resources>

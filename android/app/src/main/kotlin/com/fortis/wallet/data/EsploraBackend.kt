@@ -71,10 +71,10 @@ class TxSummary(
 )
 
 /** Mint a per-install token at a fortis-edge base URL (`POST {base}/register`). */
-suspend fun edgeRegister(http: OkHttpClient, base: String): String = withContext(Dispatchers.IO) {
+suspend fun edgeRegister(http: OkHttpClient, base: String): String {
     val url = base.trimEnd('/') + "/register"
     val req = Request.Builder().url(url).post(ByteArray(0).toRequestBody()).build()
-    http.newCall(req).execute().use { r ->
+    return http.send(req) { r ->
         val body = r.body?.string().orEmpty()
         check(r.isSuccessful) { "register failed at $base (${r.code})" }
         JSONObject(body).getString("token")
@@ -180,6 +180,9 @@ class EsploraBackend(
         /** True if any chunk of this scan came from the edge's own Haskoin-
          *  failure fallback — see `Balances.serverDegraded`'s doc. */
         val degraded: Boolean = false,
+        /** Confirmed coins the index summed instead of listing (an address
+         *  dusted past its cap): in the balance, not spendable here. */
+        val unlistedSat: Long = 0,
     )
 
     private var snapshot: Snapshot? = null
@@ -226,6 +229,7 @@ class EsploraBackend(
         val txs = LinkedHashMap<String, TxSummary>()
         var tip = 0L
         var degraded = false
+        var unlisted = 0L
 
         // One request for the overwhelmingly common case (addrs.size <= the
         // edge's cap); `.chunked` only ever splits this for a wallet whose
@@ -235,6 +239,7 @@ class EsploraBackend(
             val r = postScan(part)
             tip = maxOf(tip, r.getLong("tip"))
             if (r.optBoolean("degraded", false)) degraded = true
+            unlisted += unlistedSat(r, part.toSet())
             r.getJSONArray("used").let { a -> for (i in 0 until a.length()) used += a.getString(i) }
             r.getJSONArray("utxos").let { a -> for (i in 0 until a.length()) unspent += a.getJSONObject(i) }
             r.getJSONArray("txs").let { a ->
@@ -262,7 +267,7 @@ class EsploraBackend(
                 isChange = a.branch == 1u,
             )
         }
-        return Snapshot(coins, txs.values.toList(), addrs.keys.toHashSet(), tip, degraded).also {
+        return Snapshot(coins, txs.values.toList(), addrs.keys.toHashSet(), tip, degraded, unlisted).also {
             snapshot = it
             snapshotAt = startedAt
         }
@@ -639,8 +644,8 @@ class EsploraBackend(
         )
     }
 
-    private fun balancesFrom(u: List<WalletUtxo>, serverDegraded: Boolean = false) = Balances(
-        confirmedSat = u.filter { it.confirmations >= 1u }.sumOf { it.valueSat.toLong() },
+    private fun balancesFrom(u: List<WalletUtxo>, serverDegraded: Boolean = false, unlistedSat: Long = 0) = Balances(
+        confirmedSat = u.filter { it.confirmations >= 1u }.sumOf { it.valueSat.toLong() } + unlistedSat,
         pendingSat = u.filter { it.confirmations < 1u }.sumOf { it.valueSat.toLong() },
         serverDegraded = serverDegraded,
     )
@@ -657,7 +662,7 @@ class EsploraBackend(
         if (batchOn) {
             try {
                 val s = batchSnapshot(false)
-                return balancesFrom(s.utxos, s.degraded) to historyFrom(s.txs, s.mine, s.tip, count)
+                return balancesFrom(s.utxos, s.degraded, s.unlistedSat) to historyFrom(s.txs, s.mine, s.tip, count)
             } catch (e: ScanUnsupported) {
                 batchOn = false // fall through to the per-address walk
             }
@@ -744,4 +749,22 @@ class EsploraBackend(
             body
         }
     }
+}
+
+/**
+ * The confirmed sats a `/scan` reply [r] summed under `unlisted` instead of
+ * listing coin by coin — an address dusted past the index's per-address cap.
+ * Only for addresses in [asked]: anything else is a wrong answer, not a balance.
+ */
+internal fun unlistedSat(r: JSONObject, asked: Set<String>): Long {
+    val a = r.optJSONArray("unlisted") ?: return 0
+    var sum = 0L
+    for (i in 0 until a.length()) {
+        val u = a.getJSONObject(i)
+        if (u.getString("address") !in asked) {
+            throw java.io.IOException("scan summed coins for an address that wasn't asked about")
+        }
+        sum += u.getLong("value")
+    }
+    return sum
 }

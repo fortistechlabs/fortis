@@ -386,6 +386,12 @@ impl Wallet {
         Ok(hex::encode(pk.serialize()))
     }
 
+    /// The recovery tag of swap `swap_index` (lowercase hex), sent with the
+    /// swap's offer so a restored phone can find the swap again.
+    pub fn swap_recovery_tag(&self, account: u32, swap_index: u32) -> Result<String> {
+        Ok(hex::encode(self.key.swap_recovery_tag(account, swap_index)?))
+    }
+
     /// The raw 32-byte swap secret for one swap leg, for a `SwapSession` that
     /// must keep signing after the wallet locks. Store it wrapped; delete it
     /// when the swap ends.

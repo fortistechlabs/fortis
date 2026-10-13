@@ -45,6 +45,8 @@ import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
@@ -120,7 +122,15 @@ internal fun amountToSat(text: String, sat: Boolean): Long? = runCatching {
 
 internal fun copyToClipboard(ctx: Context, label: String, text: String) {
     val cm = ctx.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-    cm.setPrimaryClip(ClipData.newPlainText(label, text))
+    // Marked sensitive (ClipDescription.EXTRA_IS_SENSITIVE, by its key so older
+    // Androids get it too): kept out of clipboard previews and keyboard
+    // clipboard history — an xpub reveals the whole wallet's history.
+    val clip = ClipData.newPlainText(label, text).apply {
+        description.extras = android.os.PersistableBundle().apply {
+            putBoolean("android.content.extra.IS_SENSITIVE", true)
+        }
+    }
+    cm.setPrimaryClip(clip)
     Toast.makeText(ctx, ctx.getString(R.string.toast_copied), Toast.LENGTH_SHORT).show()
 }
 
@@ -266,11 +276,12 @@ fun CreateScreen(vm: WalletViewModel) {
             Text(stringResource(R.string.create_ack), color = Fx.text)
         }
         ErrorText(vm.error)
+        val confirmPhrase = stringResource(R.string.error_confirm_phrase)
         Row(horizontalArrangement = Arrangement.spacedBy(Fx.s2)) {
             GhostButton(stringResource(R.string.action_back), Modifier.weight(1f)) { vm.cancelOnboard() }
             PrimaryButton(stringResource(R.string.action_continue), Modifier.weight(1f)) {
                 val problem = when {
-                    !ack -> ctx.getString(R.string.error_confirm_phrase)
+                    !ack -> confirmPhrase
                     settingUp -> choice.problem(ctx)
                     else -> null
                 }
@@ -430,10 +441,16 @@ fun RevealSeedScreen(vm: WalletViewModel) {
 fun Segmented(options: List<Pair<String, String>>, selected: String, onSelect: (String) -> Unit, modifier: Modifier = Modifier) =
     TextTabs(options, selected, onSelect, modifier)
 
-/** Text tabs over a 1 dp rule: the active one in [Fx.text] with a [Fx.signal]
- *  underline, the rest in [Fx.textDim]. Nav bar, wallet tabs and pickers. */
+/** Folder tabs over a 1 dp rule: the active one in the page colour with a
+ *  [Fx.signal] top edge, the rest slate keys. Nav bar, wallet tabs and pickers. */
 @Composable
-private fun <T> TextTabs(options: List<Pair<T, String>>, selected: T, onSelect: (T) -> Unit, modifier: Modifier = Modifier) {
+private fun <T> TextTabs(
+    options: List<Pair<T, String>>,
+    selected: T,
+    onSelect: (T) -> Unit,
+    modifier: Modifier = Modifier,
+    icons: Map<T, ImageVector> = emptyMap(),
+) {
     // Folder tabs on a baseline: the selected tab is raised, outlined and open at the
     // bottom, with a signal edge on top; the others sit back, darker.
     Row(
@@ -444,21 +461,27 @@ private fun <T> TextTabs(options: List<Pair<T, String>>, selected: T, onSelect: 
     ) {
         options.forEach { (v, label) ->
             val on = v == selected
+            val icon = icons[v]
             Box(
                 // Fixed height: a label that auto-shrinks must not make its tab shorter.
-                Modifier.weight(1f)
+                // An icon tab (Settings' cog) is a narrow square-ish key at the end.
+                (if (icon != null) Modifier.width(52.dp) else Modifier.weight(1f))
                     .height(40.dp)
                     .drawBehind { drawTab(on) }
                     .clickable { onSelect(v) },
                 contentAlignment = Alignment.Center,
             ) {
-                // One line always: long translations (EINSTELLUNGEN) shrink to fit rather than break mid-word.
-                Text(
-                    caps(label), style = FxType.nav, color = if (on) Fx.text else Fx.textDim,
-                    maxLines = 1, softWrap = false,
-                    autoSize = TextAutoSize.StepBased(minFontSize = 9.sp, maxFontSize = FxType.nav.fontSize, stepSize = 0.5.sp),
-                    modifier = Modifier.padding(horizontal = Fx.s1),
-                )
+                if (icon != null) {
+                    Icon(icon, contentDescription = label, tint = if (on) Fx.text else Fx.dimOnSlate, modifier = Modifier.size(22.dp))
+                } else {
+                    // One line always: long translations (EINSTELLUNGEN) shrink to fit rather than break mid-word.
+                    Text(
+                        caps(label), style = FxType.nav, color = if (on) Fx.text else Fx.dimOnSlate,
+                        maxLines = 1, softWrap = false,
+                        autoSize = TextAutoSize.StepBased(minFontSize = 9.sp, maxFontSize = FxType.nav.fontSize, stepSize = 0.5.sp),
+                        modifier = Modifier.padding(horizontal = Fx.s1),
+                    )
+                }
             }
         }
     }
@@ -467,7 +490,7 @@ private fun <T> TextTabs(options: List<Pair<T, String>>, selected: T, onSelect: 
 private fun DrawScope.drawTab(on: Boolean) {
     val sw = 1.dp.toPx()
     val h = sw / 2
-    val r = Fx.r.toPx()
+    val r = Fx.rTab.toPx()
     val w = size.width
     val bottom = size.height
     val outline = Path().apply {
@@ -479,8 +502,12 @@ private fun DrawScope.drawTab(on: Boolean) {
         lineTo(w - h, bottom)
     }
     // The fill covers the row's baseline, so the selected tab opens into the content below.
-    drawPath(Path().apply { addPath(outline); close() }, if (on) Fx.panelRaised else Fx.panel)
-    drawPath(outline, if (on) Fx.control else Fx.line, style = Stroke(sw))
+    // Selected: the page colour, open into the content. Others: slate keys, like the
+    // secondary buttons, so they read as something to press.
+    val fill = Path().apply { addPath(outline); close() }
+    if (on) drawPath(fill, Fx.panelRaised)
+    else drawPath(fill, Brush.verticalGradient(listOf(Fx.ghostTop, Fx.ghostBottom)))
+    drawPath(outline, if (on) Fx.control else Fx.ghostLip, style = Stroke(sw))
     if (on) {
         drawLine(Fx.signal, Offset(r, h + sw), Offset(w - r, h + sw), 2.dp.toPx())
     } else {
@@ -496,7 +523,7 @@ private fun DrawScope.drawTab(on: Boolean) {
 fun Shell(vm: WalletViewModel) {
     val unit = if (vm.config?.chain == "btc") "BTC" else "XBT"
     LaunchedEffect(vm.nav, vm.wallets.map { it.id }) {
-        while (vm.nav == NavTab.Home || vm.nav == NavTab.Settings) {
+        while (vm.nav == NavTab.Home || vm.nav == NavTab.Settings || vm.nav == NavTab.Swaps) {
             vm.refreshAllBalances()
             vm.refreshQuote()
             vm.refreshSwaps()
@@ -510,18 +537,21 @@ fun Shell(vm: WalletViewModel) {
                 .systemBarsPadding().imePadding().padding(horizontal = Fx.s4).padding(top = Fx.s3),
             verticalArrangement = Arrangement.spacedBy(Fx.s3),
         ) {
-            NavBar(vm.nav) { vm.go(it) }
+            // A swap screen counts as the Swaps tab, wherever it was opened from.
+            NavBar(if (vm.swapRoute != null) NavTab.Swaps else vm.nav, vm.showSwap || vm.nav == NavTab.Swaps) { vm.go(it) }
             Box(Modifier.weight(1f).fillMaxWidth()) {
                 // A swap screen opens over the tabs (Home → Swap); a tab tap or Back closes it.
                 when (val route = vm.swapRoute) {
                     SwapRoute.List -> SwapListScreen(vm)
                     SwapRoute.New -> NewSwapScreen(vm)
                     SwapRoute.Take -> TakeCodeScreen(vm)
+                    is SwapRoute.TakeListed -> TakeOfferScreen(vm, route.entry)
                     is SwapRoute.Detail -> SwapDetailScreen(vm, route.id)
                     null -> when (vm.nav) {
                         NavTab.Home -> HomeTab(vm)
                         NavTab.Wallet -> WalletTab(vm)
                         NavTab.Settings -> SettingsTab(vm)
+                        NavTab.Swaps -> SwapListScreen(vm)
                     }
                 }
             }
@@ -532,14 +562,17 @@ fun Shell(vm: WalletViewModel) {
     if (vm.hwOfferXbtFor != null) XbtOfferSheet(vm)
 }
 
+/** Home · Wallet · Swaps · ⚙. Swaps shows only while the edge offers swaps (or
+ *  one is running); Settings is a cog, labelled for screen readers. */
 @Composable
-private fun NavBar(current: NavTab, onSelect: (NavTab) -> Unit) {
-    val labels = listOf(
+private fun NavBar(current: NavTab, showSwaps: Boolean, onSelect: (NavTab) -> Unit) {
+    val labels = listOfNotNull(
         NavTab.Home to stringResource(R.string.nav_home),
         NavTab.Wallet to stringResource(R.string.nav_wallet),
+        (NavTab.Swaps to stringResource(R.string.nav_swaps)).takeIf { showSwaps },
         NavTab.Settings to stringResource(R.string.nav_settings),
     )
-    TextTabs(labels, current, onSelect)
+    TextTabs(labels, current, onSelect, icons = mapOf(NavTab.Settings to Icons.Filled.Settings))
 }
 
 /** Home tab — the list of wallets; tap one to open it. */
@@ -548,6 +581,8 @@ private fun HomeTab(vm: WalletViewModel) = Column(
     Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(top = Fx.s2),
     verticalArrangement = Arrangement.spacedBy(Fx.s4),
 ) {
+    // Running swaps first, while there are any.
+    ActiveSwapsSection(vm.swaps, vm::openSwap)
     Text(stringResource(R.string.home_title), style = MaterialTheme.typography.titleMedium, color = Fx.text)
     // Each wallet is its own key — pressable like a button, not a line in a list.
     Column(verticalArrangement = Arrangement.spacedBy(Fx.s2)) {
@@ -565,12 +600,20 @@ private fun HomeTab(vm: WalletViewModel) = Column(
                     bal?.let { vm.usdValue(it, w.chain) }?.let {
                         Text(stringResource(R.string.fiat_approx, fmtUsd(it)), style = FxType.fiatSmall, color = Fx.dimOnSlate)
                     }
+                    // Incoming (or outgoing) coins not yet confirmed — as on the wallet screen.
+                    vm.walletPending[w.id]?.takeIf { it != 0L }?.let { p ->
+                        Text(
+                            stringResource(R.string.wallet_pending, (if (p > 0) "+" else "") + fmt(p), wUnit),
+                            style = FxType.fiatSmall, color = Fx.warn,
+                        )
+                    }
+                    // Its part in any running swap (why the balance moved).
+                    walletSwapLines(w.id, vm.swaps).forEach { WalletSwapText(it, vm::openSwap) }
                 }
             }
         }
     }
     // Only when the edge quotes swaps (it answers GET /swap/quote) — or a swap is still running.
-    if (vm.showSwap) GhostButton(stringResource(R.string.swap_button)) { vm.openSwaps() }
     if (vm.canAddWallet) PrimaryButton(stringResource(R.string.action_add_wallet)) { vm.addWallet() }
     else Text(stringResource(R.string.wallets_max, MAX_WALLETS), style = FxType.meta, color = Fx.textFaint)
     ErrorText(vm.error)
@@ -601,6 +644,10 @@ fun AppLockScreen(vm: WalletViewModel) {
 @Composable
 private fun SettingsTab(vm: WalletViewModel) {
     val ctx = LocalContext.current
+    val gate = com.fortis.wallet.ui.rememberIdentityGate()
+    val gateAct = com.fortis.wallet.ui.rememberFragmentActivity()
+    val gateScope = rememberCoroutineScope()
+    com.fortis.wallet.ui.ConfirmIdentityDialog(gate, vm)
     val st = vm.status
     var renaming by remember { mutableStateOf<String?>(null) }
     var removing by remember { mutableStateOf<String?>(null) }
@@ -675,6 +722,16 @@ private fun SettingsTab(vm: WalletViewModel) {
             }
         }
 
+        if (vm.seedWallets.isNotEmpty()) GlassCard {
+            Text(stringResource(R.string.swap_recover_title), color = Fx.text, fontWeight = FontWeight.SemiBold)
+            Text(stringResource(R.string.swap_recover_body), style = FxType.meta, color = Fx.textFaint)
+            GhostButton(
+                stringResource(if (vm.recovering) R.string.swap_recover_searching else R.string.swap_recover_action),
+                enabled = !vm.recovering, dense = true,
+            ) { vm.recoverSwaps() }
+            vm.recoverNote?.let { Text(it, style = FxType.meta, color = Fx.text) }
+        }
+
         LanguageCard()
 
         GlassCard {
@@ -721,7 +778,12 @@ private fun SettingsTab(vm: WalletViewModel) {
             containerColor = Fx.panel,
             title = { Text(stringResource(R.string.dialog_reveal_title, w?.display ?: stringResource(R.string.nav_wallet)), color = Fx.text) },
             text = { Text(stringResource(R.string.dialog_reveal_body), color = Fx.textDim) },
-            confirmButton = { TextButton({ vm.startReveal(id); revealWarn = null }) { Text(stringResource(R.string.action_show), color = Fx.signal) } },
+            confirmButton = {
+                TextButton({
+                    revealWarn = null
+                    gate.require(vm, gateAct, gateScope) { vm.startReveal(id) }
+                }) { Text(stringResource(R.string.action_show), color = Fx.signal) }
+            },
             dismissButton = { TextButton({ revealWarn = null }) { Text(stringResource(R.string.action_cancel), color = Fx.text) } },
         )
     }
@@ -798,6 +860,8 @@ private fun WalletTab(vm: WalletViewModel) {
                         ),
                         style = FxType.fiatSmall, color = Fx.warn,
                     )
+                    // Its part in any running swap (why the balance moved); tap to open it.
+                    walletSwapLines(c.id, vm.swaps).forEach { WalletSwapText(it, vm::openSwap) }
                     // `status` resolves fast (just a tip-height + pricing call) but
                     // `balances`/`history` come from the much slower address scan in
                     // the same refresh() — for a deep watch-only BTC wallet (paced
@@ -1154,6 +1218,10 @@ private fun HistoryTab(vm: WalletViewModel, unit: String) {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun ConfirmSheet(vm: WalletViewModel, p: PlanPreview, unit: String) {
+    val gate = com.fortis.wallet.ui.rememberIdentityGate()
+    val gateAct = com.fortis.wallet.ui.rememberFragmentActivity()
+    val gateScope = rememberCoroutineScope()
+    com.fortis.wallet.ui.ConfirmIdentityDialog(gate, vm)
     ModalBottomSheet(onDismissRequest = { vm.cancelPending() }, containerColor = Fx.panel) {
         Column(Modifier.padding(Fx.s4).padding(bottom = Fx.s5), verticalArrangement = Arrangement.spacedBy(Fx.s3)) {
             Text(
@@ -1186,7 +1254,9 @@ private fun ConfirmSheet(vm: WalletViewModel, p: PlanPreview, unit: String) {
             ErrorText(vm.error)
             Row(horizontalArrangement = Arrangement.spacedBy(Fx.s2)) {
                 GhostButton(stringResource(R.string.action_cancel), Modifier.weight(1f)) { vm.cancelPending() }
-                PrimaryButton(stringResource(R.string.action_sign_send), Modifier.weight(1f)) { vm.confirmSend() }
+                PrimaryButton(stringResource(R.string.action_sign_send), Modifier.weight(1f)) {
+                    gate.require(vm, gateAct, gateScope) { vm.confirmSend() }
+                }
             }
         }
     }
@@ -1194,7 +1264,9 @@ private fun ConfirmSheet(vm: WalletViewModel, p: PlanPreview, unit: String) {
 
 @Composable
 internal fun kv(k: String, v: String) = Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-    Text(k, style = FxType.body, color = Fx.textDim)
+    // The value is measured first and keeps its width; a long label wraps instead
+    // (otherwise "Your price (the worst you'll take)" squeezed the price to one character).
+    Text(k, style = FxType.body, color = Fx.textDim, modifier = Modifier.weight(1f))
     Text(v, style = FxType.amount, modifier = Modifier.padding(start = Fx.s4), textAlign = androidx.compose.ui.text.style.TextAlign.End)
 }
 

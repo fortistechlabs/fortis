@@ -5,6 +5,7 @@
     <!-- reused actions / labels -->
     <string name="action_back">Back</string>
     <string name="action_cancel">Cancel</string>
+    <string name="action_confirm">Confirm</string>
     <string name="action_continue">Continue</string>
     <string name="action_save">Save</string>
     <string name="action_done">Done</string>
@@ -109,6 +110,7 @@
     <!-- nav + tabs -->
     <string name="nav_home">Home</string>
     <string name="nav_wallet">Wallet</string>
+    <string name="nav_swaps">Swaps</string>
     <string name="nav_settings">Settings</string>
     <string name="tab_receive">Receive</string>
     <string name="tab_send">Send</string>
@@ -124,6 +126,10 @@
     <string name="lock_password_prompt">Enter your app password.</string>
     <string name="biometric_setup_title">Set up app lock</string>
     <string name="biometric_unlock_title">Unlock Fortis Wallet</string>
+    <string name="reauth_title">Confirm it\'s you</string>
+    <string name="reauth_password">Your app password</string>
+    <string name="reauth_needed">Confirm it\'s you first.</string>
+    <string name="reauth_wrong">That password isn\'t right.</string>
     <string name="biometric_subtitle">Fortis Wallet</string>
     <string name="biometric_invalidated">Your device\'s screen lock changed, so the app can\'t be unlocked here any more. Reinstall and restore each wallet from its recovery phrase.</string>
     <string name="lock_choice_use_biometric">Lock the app with fingerprint or PIN</string>
@@ -238,6 +244,7 @@
 
     <!-- errors surfaced to the user -->
     <string name="error_wallet_max">You can keep up to %1$d wallets on one device.</string>
+    <string name="error_name_taken">You already have a %1$s wallet called “%2$s”. Choose another name.</string>
     <string name="error_clone_exists">“%1$s” is already on %2$s.</string>
     <string name="error_lock_setup_failed">app-lock setup failed</string>
     <string name="error_enter_amount">enter an amount</string>
@@ -277,6 +284,58 @@
     <!-- P2P swap: screens (English only) -->
     <string name="swap_button">Swap</string>
     <string name="swap_title">Swaps</string>
+    <string name="swap_intro_title">Swap one coin for another</string>
+    <string name="swap_intro">Trade your BTC for XBT, or your XBT for BTC, with another person using fortis. Nobody holds your coins in the middle. Either you both get paid, or you get your coins back.</string>
+    <string name="swap_why_two_wallets">A swap moves coins between two chains, so you need two wallets: one to pay with and one to receive into.</string>
+    <string name="swap_help_from">The wallet you pay from.</string>
+    <string name="swap_help_to">The wallet your new coins go into.</string>
+    <string name="swap_help_amount">How much you want to swap.</string>
+    <string name="swap_help_slider">Slide to choose. All the way is %1$s: everything this wallet can swap after the commission and network fee.</string>
+    <string name="swap_error_over_balance">That\'s more than this wallet can swap. The most is %1$s, after the commission and network fee.</string>
+    <string name="swap_help_price">The worst price you\'ll take. You\'ll never get less than this.</string>
+    <string name="swap_help_find">We\'ll find someone who wants to swap the other way.</string>
+    <string name="swap_help_person">Get a code to send to someone you know.</string>
+    <string name="swap_next_title">What happens next</string>
+    <string name="swap_next_1">1. We find someone swapping the other way.</string>
+    <string name="swap_next_2">2. You both lock your coins.</string>
+    <string name="swap_next_3">3. You each collect the other\'s coins.</string>
+    <string name="swap_book_title">Offers waiting for a match</string>
+    <string name="swap_book_get_xbt">Get XBT for your BTC</string>
+    <string name="swap_book_get_btc">Get BTC for your XBT</string>
+    <string name="swap_book_empty">No offers waiting right now. Start your own with New swap.</string>
+    <string name="swap_book_you_get">You get up to %1$s</string>
+    <string name="swap_book_price">%1$s BTC per XBT</string>
+    <string name="swap_book_vs_ref">%1$s vs market</string>
+    <string name="swap_funds_all">You can take all of it</string>
+    <string name="swap_funds_up_to">You can take up to %1$s</string>
+    <string name="swap_funds_not_enough">Not enough %1$s to take this</string>
+    <string name="swap_funds_need_wallet">Add an %1$s wallet to receive into</string>
+    <string name="swap_take_title">Take offer</string>
+    <string name="swap_take">Take</string>
+    <string name="swap_take_price_fixed">Their price: %1$s BTC per XBT</string>
+    <string name="swap_error_over_offer">That\'s more than this offer holds. The most is %1$s.</string>
+    <string name="swap_help_slider_offer">Slide to choose. All the way is %1$s: everything this offer holds.</string>
+    <string name="swap_take_rest_withdrawn">Taking part of it ends their offer: the rest is withdrawn.</string>
+    <string name="swap_take_gone">Someone else took this offer</string>
+    <string name="swap_take_price_changed">This offer\'s price changed — check it again</string>
+    <string name="swap_take_struck">You can\'t take offers for now. Try again later.</string>
+    <string name="swap_take_network">Couldn\'t reach the server</string>
+    <string name="swap_keep_on_xbt">Keep your phone on and connected until the swap says Done. You can close the app. If your phone is off when it\'s your turn, the swap is cancelled and your XBT comes back in about 2 days.</string>
+    <string name="swap_keep_on_btc">Keep your phone on and connected until the swap says Done. You can close the app. If your phone is off when it\'s your turn, the swap is cancelled and your BTC comes back to you within about a day.</string>
+    <string name="swap_cancelled_locked_participant">Your coins are locked, but the server didn\'t hear about it in time, so this match was cancelled. The swap still goes ahead if the other person\'s app sees your coins. If not, your coins come back to you on their own after the refund time.</string>
+    <string name="swap_keep_on_active">Keep your phone on and connected until this says Done. You can close the app.</string>
+    <string name="swap_keep_on_turn">Your turn: open Fortis to put your coins in before %1$s.</string>
+    <string name="swap_notification_keep_on">Keep your phone on and connected until it\'s done.</string>
+    <string name="swap_next_note">It takes about an hour. If anything goes wrong, your coins come back to you on their own.</string>
+    <string name="swap_hint_waiting">Looking for someone. You can close the app.</string>
+    <string name="swap_hint_matched">Found someone! Getting ready.</string>
+    <string name="swap_hint_you_funded">Your coins are locked. Waiting for the other person.</string>
+    <string name="swap_hint_they_funded">Their coins are locked too. Waiting for the network to confirm.</string>
+    <string name="swap_hint_they_funding_after_you">Waiting for them to lock their coins. They do that once yours have enough confirmations.</string>
+    <string name="swap_hint_they_funding_first">Waiting for them to lock their coins. They go first.</string>
+    <string name="swap_hint_redeemed">Collecting your new coins.</string>
+    <string name="swap_hint_redeem_after_them">Waiting for them to collect theirs first: that reveals the key that lets your app collect yours. Nothing for you to do.</string>
+    <string name="swap_hint_done">All done. Your new coins are in your wallet.</string>
     <string name="swap_unavailable">Swaps are unavailable right now.</string>
     <string name="swap_new">New swap</string>
     <string name="swap_take_code">Enter a code</string>
@@ -294,20 +353,29 @@
     <string name="swap_commission">Commission %1$s%%</string>
     <string name="swap_you_send">You send</string>
     <string name="swap_you_receive">You receive</string>
+    <string name="swap_commission_min">Commission (minimum)</string>
     <string name="swap_commission_note">The commission is paid on top of the amount, plus the network fee.</string>
-    <string name="swap_slippage">Max slippage</string>
-    <string name="swap_error_below_min">Too small: swaps start at %1$s BTC (up to %2$s BTC).</string>
-    <string name="swap_error_above_cap">Too large: swaps are limited to %2$s BTC (from %1$s BTC).</string>
+    <string name="swap_price">Price, BTC per XBT</string>
+    <string name="swap_price_vs_ref">NeoxEX mid %1$s · you %2$s</string>
+    <string name="swap_ref_thin"> · thin market</string>
+    <string name="swap_no_ref">No reference price</string>
+    <string name="swap_reference">NeoxEX mid</string>
+    <string name="swap_vs_reference">Versus NeoxEX</string>
+    <string name="swap_take_worse">This price is %1$s%% worse for you than the market reference.</string>
+    <string name="swap_confirm_title">Check your price</string>
+    <string name="swap_confirm_price">Your price is %1$s worse than the market reference. Post anyway?</string>
+    <string name="swap_confirm_no_ref">There is no market reference price right now. Post at %1$s BTC per XBT?</string>
+    <string name="swap_post_anyway">Post</string>
+    <string name="swap_error_price">Enter a price in BTC per XBT (up to 8 decimals).</string>
+    <string name="swap_your_limit">Your price (the worst you\'ll take)</string>
+    <string name="swap_error_below_min">Too small: the smallest swap is %1$s BTC.</string>
+    <string name="swap_error_above_cap">Too large: the largest swap is %1$s BTC.</string>
     <string name="swap_find_match">Find a match</string>
     <string name="swap_with_person">Swap with a person</string>
     <string name="swap_code">Code</string>
     <string name="swap_look_up">Look up</string>
     <string name="swap_terms">Terms</string>
-    <string name="swap_own_price">Your price check</string>
-    <string name="swap_check_ok">Within your %1$s slippage</string>
     <string name="swap_check_failed">Fails your own check: %1$s</string>
-    <string name="swap_check_unreachable">Could not reach NeoxEX to check the price.</string>
-    <string name="swap_check_refused">NeoxEX cannot give a price right now.</string>
     <string name="swap_accept_within">Accept within %1$s</string>
     <string name="swap_accept_expired">Too late to accept: the match has lapsed.</string>
     <string name="swap_accept">Accept</string>
@@ -322,6 +390,12 @@
     <string name="swap_stage_confs">%1$s · %2$d/%3$d</string>
     <string name="swap_stage_redeemed">Redeemed</string>
     <string name="swap_stage_done">Done</string>
+    <!-- The same stages before they happen -->
+    <string name="swap_pending_matched">Matching</string>
+    <string name="swap_pending_you_fund">Your funding</string>
+    <string name="swap_pending_they_fund">Their funding</string>
+    <string name="swap_pending_redeem">Collecting your coins</string>
+    <string name="swap_pending_done">Finishing</string>
     <string name="swap_deadline_accept">Accept by</string>
     <string name="swap_deadline_fund">Fund within</string>
     <string name="swap_deadline_refund">Refund opens in</string>
@@ -331,6 +405,9 @@
     <string name="swap_tx_refund">Refund</string>
     <string name="swap_note">Note: %1$s</string>
     <string name="swap_cancel">Cancel offer</string>
+    <string name="swap_cancel_title">Cancel this offer?</string>
+    <string name="swap_cancel_body">It comes off the market and nothing is swapped.</string>
+    <string name="swap_cancel_keep">Keep it</string>
     <string name="swap_step_posting">Posting the offer</string>
     <string name="swap_step_waiting">Waiting for a match</string>
     <string name="swap_step_matched">Matched</string>
@@ -345,8 +422,42 @@
     <string name="swap_step_failed">Failed</string>
     <string name="swap_error_seed_only">Only wallets with their recovery phrase on this phone can swap.</string>
     <string name="swap_error_locked">Unlock the app to start a swap.</string>
+    <string name="swap_recover_title">Swaps</string>
+    <string name="swap_recover_body">After restoring from your recovery phrase: find the swaps that still have your coins locked, and refund or complete them on this phone.</string>
+    <string name="swap_recover_action">Find my swaps</string>
+    <string name="swap_recover_searching">Searching…</string>
+    <string name="swap_recover_none">No swaps to recover.</string>
+    <string name="swap_recover_retry">Couldn\'t check for swaps to recover. When you\'re connected, search again with Find my swaps.</string>
+    <string name="swap_recover_failed">Could not search for swaps: %1$s</string>
     <string name="swap_error_same_chain">Pick a wallet on the other chain to receive.</string>
     <string name="swap_error_enter_code">Enter a code.</string>
     <string name="swap_error_wrong_chain">This swap sends %1$s: pick a %1$s wallet to send from.</string>
     <string name="swap_error_already_matched">Already matched: the swap is under way.</string>
+    <!-- Home and wallets: running swaps -->
+    <string name="home_active_swaps">Active swaps</string>
+    <string name="wallet_swap_sending">Swap: %1$s %2$s to send</string>
+    <string name="wallet_swap_locked">In a swap: %1$s %2$s locked until it completes</string>
+    <string name="wallet_swap_incoming">Swap: +%1$s %2$s on its way</string>
+    <string name="wallet_swap_returning">Swap refund: %1$s %2$s coming back</string>
+    <string name="swap_pending_they_confirming">Their coins in the swap</string>
+    <string name="swap_hint_they_confirming_first">Their coins are in the swap. Once the network confirms them, the app puts yours in. The app must be unlocked for that: you\'ll get a notification when it\'s time.</string>
+    <string name="swap_hint_they_confirming_after_you">Their coins are locked. Once the network confirms them, the app collects yours automatically. Nothing for you to do.</string>
+    <string name="swap_status_cancelled_refund">Cancelled · refund coming</string>
+    <string name="swap_cancelled_refund_on">The other side didn\'t lock their coins in time, so the match was cancelled. Your coins come back to you automatically on %1$s. Nothing for you to do.</string>
+    <string name="swap_cancelled_nothing_spent">The match was cancelled before your coins were locked. Nothing left your wallet.</string>
+    <string name="swap_cancelled_released">The other side didn\'t lock their coins in time, so the match was cancelled and they released yours. Your coins are on their way back now. Nothing for you to do.</string>
+    <string name="swap_amount_min">Min</string>
+    <string name="swap_amount_max">Max</string>
+    <string name="swap_fund_turn_soon">Your turn in about %1$s: Fortis will notify you to open it and put your coins in. You\'ll then have until about %2$s.</string>
+    <string name="swap_fund_turn_now">It\'s your turn: open Fortis to put your coins in before %1$s.</string>
+    <string name="swap_hint_you_funding">The app puts your coins in as soon as it\'s your turn, while it\'s unlocked.</string>
+    <string name="swap_hint_open_to_fund">Your turn: open Fortis so it can put your coins in.</string>
+    <plurals name="swap_recovered">
+        <item quantity="one">Recovered %1$d swap. It continues under Swaps.</item>
+        <item quantity="other">Recovered %1$d swaps. They continue under Swaps.</item>
+    </plurals>
+    <plurals name="swap_recover_need_wallets">
+        <item quantity="one">%1$d swap needs both wallets: add the other chain\'s wallet (Also add on…), then search again.</item>
+        <item quantity="other">%1$d swaps need both wallets: add the other chain\'s wallet (Also add on…), then search again.</item>
+    </plurals>
 </resources>
