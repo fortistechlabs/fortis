@@ -2,21 +2,20 @@
 
 Fortis Wallet (Android). Versions are `versionName (versionCode)`.
 
-## Unreleased
+## 0.5.0 (18) — 2026-10-13
 
 - A swap the other side never locks its coins into no longer ties yours up for
   two days: once the match is cancelled, their app signs your coins straight
   back and they return within minutes — automatically, on both sides. (New
-  swaps only; needs the matching server update. If their phone is gone for
-  good, the refund at the 48-hour mark still happens on its own.)
+  swaps only. If their phone is gone for good, the refund at the 48-hour mark
+  still happens on its own.)
 - Clearer cancelled swaps: you see when your coins come back, or that nothing
   left your wallet; a running swap's status pulses green.
 - Swaps survive losing the phone: restore your recovery phrase (with both its
   XBT and BTC wallets) and the app finds the swaps that still have your coins
   locked, then refunds or completes them — also from Settings → Find my swaps.
-  Needs the matching server update.
-- Swap BTC ⇄ XBT with other fortis users — atomic, non-custodial, 0.5% per side;
-  available once enabled on the server. Post an offer or take a private one by
+- Swap BTC ⇄ XBT with other fortis users — atomic, non-custodial, 0.5% per side.
+  Post an offer or take a private one by
   code; each side funds its own escrow and either side can always get its coins
   back after the timelock. Swaps keep going in the background (and after a
   reboot), with notifications as they progress. Offers carry your own limit
