@@ -1,11 +1,12 @@
 # Zapstore publication - https://zapstore.dev/docs/publish
 #
-# zsp has no Windows build; publish from WSL:
-#   wsl -d Ubuntu-24.04
-#   SIGN_WITH=nsec1...  ~/bin/zsp publish /mnt/c/Repos/fortis/zapstore.yaml
+# Publish (zsp in ~/.local/bin; nsec read without echo, never in shell history):
+#   read -rsp 'nsec: ' SIGN_WITH; echo; export SIGN_WITH
+#   zsp publish ~/Work/fortis/zapstore.yaml
+#   unset SIGN_WITH
 #
-# One-time first: link the APK signing cert to the Nostr identity -
-#   SIGN_WITH=nsec1...  ~/bin/zsp identity --link-key /mnt/c/Repos/fortis/android/fortis-upload.jks --key-alias fortis
+# One-time first (done): link the APK signing cert to the Nostr identity -
+#   zsp identity --link-key ~/Work/fortis/android/fortis-upload.jks --key-alias fortis
 
 repository: https://github.com/fortistechlabs/fortis
 
@@ -16,18 +17,23 @@ pubkey: npub1qsasj2ljwllm9a3nget7jmdl7ggswf4jtpqjlryyz7l4mxc7lu0qdwthtf
 name: Fortis Wallet
 summary: Non-custodial wallet for Bitcoin XBT and Bitcoin BTC
 description: |
-  A non-custodial mobile wallet for Bitcoin XBT and Bitcoin BTC. Your recovery phrase is generated on your device, encrypted under a password you choose, and never leaves it.
+  A non-custodial mobile wallet for Bitcoin XBT and Bitcoin BTC, locked with your fingerprint. Your recovery phrase is generated on your phone, encrypted there, and never leaves it.
 
+  - Locked with your fingerprint (or face, or device PIN): the key that opens the app is held in your phone's secure hardware (StrongBox or the TEE) and is released only when you unlock - one unlock opens every wallet.
+  - Locks itself a minute after you leave it, and clears your keys from memory; swaps carry on in the background.
+  - Asks again before it shows your recovery phrase or sends coins.
+  - Your recovery phrase is encrypted on the phone (Argon2id + XChaCha20-Poly1305) and never sent anywhere.
+  - Every screen is kept out of screenshots, screen recordings and the recent-apps view.
+  - Swap BTC <-> XBT with another person: atomic and non-custodial (on-chain HTLCs, nobody holds your coins in the middle). Post an offer, take one from the list, or swap privately by code; it runs in the background, a cancelled match releases your coins back within minutes, and "Find my swaps" recovers them from your phrase on a new phone.
   - 12- or 24-word BIP-39 phrase, BIP-84 native SegWit, optional passphrase.
   - Up to 10 named wallets, any mix of XBT and BTC, from the one phrase.
   - Send and receive with QR codes, a built-in camera scanner, or paste.
   - Fee presets or a custom sat/vB rate; "take the fees out of this amount"; sweep a whole balance.
   - History with a tap-through to a block explorer; approximate USD value.
-  - One unlock (fingerprint, face, or device PIN) opens every wallet.
+  - Connect a hardware wallet (Keystone, Passport, SeedSigner, Jade and others) as a view-only BTC wallet by scanning its account QR.
   - Cross-chain replay protection: SIGHASH_UNIFIED on every XBT send (automatic), plus an optional oversized OP_RETURN on BTC sends.
   - Extra entropy from your hands: shake the phone, scribble on screen, or CPU-timing jitter, folded into the seed.
-  - The app-unlock key lives in StrongBox or the TEE when the device has one.
-  - Recovery-phrase and password screens blocked from screenshots, screen recording, and the app switcher.
+  - In English, German, French, Spanish, Portuguese and Chinese.
   - No analytics, no ads, no third-party SDKs; the backend only ever sees public addresses and finished signed transactions - no account, no sign-up.
 
   Standard, portable keys - restore the same phrase in any BIP-84 wallet. Open source (MIT). No Google Play Services.
@@ -48,7 +54,10 @@ release_notes: ./CHANGELOG.md
 icon: https://fortistechlabs.com/icon.png
 
 images:
-  - https://raw.githubusercontent.com/fortistechlabs/fortis/main/store/screenshots/01-onboard.png
-  - https://raw.githubusercontent.com/fortistechlabs/fortis/main/store/screenshots/02-receive.png
-  - https://raw.githubusercontent.com/fortistechlabs/fortis/main/store/screenshots/03-send.png
-  - https://raw.githubusercontent.com/fortistechlabs/fortis/main/store/screenshots/04-settings.png
+  - https://fortistechlabs.com/img/android-home.jpg
+  - https://fortistechlabs.com/img/android-send.jpg
+  - https://fortistechlabs.com/img/android-receive.jpg
+  - https://fortistechlabs.com/img/android-history.jpg
+  - https://fortistechlabs.com/img/swaps/swaps.jpg
+  - https://fortistechlabs.com/img/swaps/funded.jpg
+  - https://fortistechlabs.com/img/swaps/done.jpg
