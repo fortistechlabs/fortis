@@ -48,8 +48,16 @@ self.addEventListener('activate', (e) => {
 self.addEventListener('fetch', (e) => {
   const url = new URL(e.request.url);
   if (url.origin !== location.origin || e.request.method !== 'GET') return;
+  // Always ask the server whether a file changed, never trust the browser's own
+  // HTTP cache: Cloudflare can serve these with `max-age=14400` (4 hours)
+  // despite _headers' no-cache, and the browser then keeps the old stylesheet
+  // and scripts under a new index.html — found live 2026-10-15, a fixed CSS
+  // deploy that didn't reach an open tab. A `no-cache` request revalidates
+  // (a cheap 304 when nothing changed). Navigations can't be re-made with a
+  // new cache mode, and the page itself is served no-cache anyway.
+  const req = e.request.mode === 'navigate' ? e.request : new Request(e.request, { cache: 'no-cache' });
   e.respondWith(
-    fetch(e.request)
+    fetch(req)
       .then((res) => {
         if (res.ok) {
           const copy = res.clone();
