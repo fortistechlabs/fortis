@@ -1,6 +1,24 @@
 # fortis
 
-A non-custodial wallet for **Bitcoin XBT** and **Bitcoin BTC**.
+A non-custodial wallet for **Bitcoin XBT** and **Bitcoin BTC**, locked with your
+fingerprint. Your recovery phrase is generated on your phone, encrypted there,
+and never leaves it.
+
+**Get it (Android):** [fortistechlabs.com](https://fortistechlabs.com) ·
+[latest release](https://github.com/fortistechlabs/fortis/releases/latest) ·
+Obtainium · Zapstore. Every release APK is signed with one key — certificate
+SHA-256 `161ab93fd57121996ae08efdb48275dfd4ae559bcb106412fbc450791b94cd48`.
+
+- **Locked down:** fingerprint (or face, or device PIN) to open; locks itself a
+  minute after you leave it; asks again before showing your phrase or sending;
+  every screen kept out of screenshots. Phrase encrypted with Argon2id +
+  XChaCha20-Poly1305.
+- **Swap BTC ↔ XBT person to person:** atomic, non-custodial HTLC swaps — either
+  both sides get paid or both get their coins back; nobody holds your coins in
+  the middle. [How swaps work](https://fortistechlabs.com/swaps).
+- **No account, no analytics, no ads**, no Google Play Services. MIT licensed.
+
+## For developers
 
 The security-critical logic is one audited Rust crate. It compiles to WebAssembly
 for the browser and to a native library (UniFFI) for iOS / Android — no

@@ -115,6 +115,11 @@ class SwapPreviewActivity : ComponentActivity() {
                             "detail_funded" -> SwapDetailContent(
                                 funded, now, null, "BTC · Savings", "XBT · Savings", "mainnet", false, null, {}, {},
                             )
+                            // only watch-only / hardware wallets: the page explains what's needed
+                            "list_need_phrase" -> SwapListContent(
+                                emptyList(), canStart = false, error = null, onNew = {}, onTake = {}, onOpen = {}, onBack = {},
+                                needsPhrase = true,
+                            )
                             else -> SwapListContent(
                                 listOf(
                                     rec("o1", Step.WAITING_MATCH),

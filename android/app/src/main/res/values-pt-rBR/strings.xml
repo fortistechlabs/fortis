@@ -4,6 +4,9 @@
 
     <string name="action_back">Voltar</string>
     <string name="action_cancel">Cancelar</string>
+    <string name="action_exit">Sair</string>
+    <string name="exit_title">Sair do fortis?</string>
+    <string name="exit_body">Uma troca em andamento continua em segundo plano.</string>
     <string name="action_continue">Continuar</string>
     <string name="action_save">Salvar</string>
     <string name="action_done">Concluído</string>
@@ -20,6 +23,7 @@
     <string name="action_refresh">Atualizar</string>
     <string name="action_reconnect">Reconectar</string>
     <string name="action_review">Revisar</string>
+    <string name="working">Processando</string>
     <string name="action_sign_send">Assinar e enviar</string>
     <string name="action_new_address">Novo endereço</string>
     <string name="action_scan_qr">Escanear QR code</string>
@@ -308,6 +312,8 @@
     <string name="swap_hint_redeem_after_them">Esperando que eles recebam as deles primeiro: isso revela a chave que permite ao seu app receber as suas. Você não precisa fazer nada.</string>
     <string name="swap_hint_done">Tudo pronto. Suas novas moedas estão na sua carteira.</string>
     <string name="swap_unavailable">As trocas não estão disponíveis agora.</string>
+    <string name="swap_need_phrase_title">As trocas precisam de uma carteira da sua frase de recuperação</string>
+    <string name="swap_need_phrase">Carteiras somente de observação e carteiras de hardware não podem assinar uma troca. Adicione uma carteira XBT e uma BTC da sua frase de recuperação: uma para pagar e outra para receber.</string>
     <string name="swap_new">Nova troca</string>
     <string name="swap_take_code">Digitar um código</string>
     <string name="swap_none">Nenhuma troca ainda.</string>

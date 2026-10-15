@@ -4,6 +4,9 @@
 
     <string name="action_back">Retour</string>
     <string name="action_cancel">Annuler</string>
+    <string name="action_exit">Quitter</string>
+    <string name="exit_title">Quitter fortis ?</string>
+    <string name="exit_body">Un échange en cours se poursuit en arrière-plan.</string>
     <string name="action_continue">Continuer</string>
     <string name="action_save">Enregistrer</string>
     <string name="action_done">Terminé</string>
@@ -20,6 +23,7 @@
     <string name="action_refresh">Actualiser</string>
     <string name="action_reconnect">Reconnecter</string>
     <string name="action_review">Vérifier</string>
+    <string name="working">En cours</string>
     <string name="action_sign_send">Signer et envoyer</string>
     <string name="action_new_address">Nouvelle adresse</string>
     <string name="action_scan_qr">Scanner un QR code</string>
@@ -308,6 +312,8 @@
     <string name="swap_hint_redeem_after_them">En attente qu’ils récupèrent d’abord les leurs : cela révèle la clé qui permet à votre app de récupérer les vôtres. Vous n’avez rien à faire.</string>
     <string name="swap_hint_done">C’est terminé. Vos nouvelles pièces sont dans votre portefeuille.</string>
     <string name="swap_unavailable">Les échanges ne sont pas disponibles pour le moment.</string>
+    <string name="swap_need_phrase_title">Les échanges nécessitent un portefeuille issu de votre phrase de récupération</string>
+    <string name="swap_need_phrase">Les portefeuilles en surveillance seule et les portefeuilles matériels ne peuvent pas signer un échange. Ajoutez un portefeuille XBT et un portefeuille BTC issus de votre phrase de récupération : l’un pour payer, l’autre pour recevoir.</string>
     <string name="swap_new">Nouvel échange</string>
     <string name="swap_take_code">Saisir un code</string>
     <string name="swap_none">Aucun échange pour l’instant.</string>

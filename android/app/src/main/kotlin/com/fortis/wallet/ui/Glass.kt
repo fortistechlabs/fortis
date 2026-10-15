@@ -25,7 +25,9 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -90,14 +92,31 @@ fun GlassCard(
     )
 }
 
+/** [working]: the tap is being acted on — the button is disabled (dimmed, taps
+ *  ignored) and its label reads "Working…" with the dots cycling. */
 @Composable
 fun PrimaryButton(
     text: String, modifier: Modifier = Modifier, enabled: Boolean = true,
-    dense: Boolean = false, onClick: () -> Unit,
+    dense: Boolean = false, working: Boolean = false, onClick: () -> Unit,
 ) = RaisedButton(
-    text, Fx.primaryTop, Fx.primaryBottom, Fx.primaryPressed, Fx.primaryLip, Color.White.copy(alpha = 0.45f), Fx.onPrimary,
-    modifier.alpha(if (enabled) 1f else 0.4f), enabled, dense, onClick,
+    if (working) androidx.compose.ui.res.stringResource(com.fortis.wallet.R.string.working) + workingDots() else text,
+    Fx.primaryTop, Fx.primaryBottom, Fx.primaryPressed, Fx.primaryLip, Color.White.copy(alpha = 0.45f), Fx.onPrimary,
+    modifier.alpha(if (enabled && !working) 1f else 0.4f), enabled && !working, dense, onClick,
 )
+
+/** "", ".", "..", "..." on a loop, padded to three characters so the centred
+ *  label (a monospace face) doesn't shift as the dots come and go. */
+@Composable
+private fun workingDots(): String {
+    var n by remember { mutableIntStateOf(1) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            kotlinx.coroutines.delay(400)
+            n = (n + 1) % 4
+        }
+    }
+    return ".".repeat(n) + " ".repeat(3 - n)
+}
 
 @Composable
 fun GhostButton(

@@ -41,6 +41,8 @@ enum class NavTab { Home, Wallet, Swaps, Settings }
 
 /** How many wallets one install can hold. */
 const val MAX_WALLETS = 10
+/** How many places Back remembers. */
+private const val MAX_BACK = 30
 
 /** Longest a wallet name may be. */
 const val MAX_WALLET_NAME = 30
@@ -214,7 +216,67 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
     var feerates by mutableStateOf<Map<Int, Long>>(emptyMap()); private set
     var pending by mutableStateOf<PlanPreview?>(null); private set
     var lastSentTxid by mutableStateOf<String?>(null); private set
+
+    /** Bumped by every payment sent: the Send form starts over. */
+    var sentCount by mutableStateOf(0); private set
     var error by mutableStateOf<String?>(null)
+
+    /** Payments sent from this phone the server hasn't listed yet (see [LocalSend]).
+     *  Written from the main thread and the background balance scan. */
+    private val localLock = Any()
+    @Volatile private var localSends: List<LocalSend> = emptyList()
+
+    /** The in-view wallet's balance and history as the server last gave them,
+     *  before [localSends] are applied. */
+    private var serverBalances: Balances? = null
+    private var serverHistory: List<HistoryEntry> = emptyList()
+
+    /** [id]'s local sends still unlisted — pruning those [listed] now holds. */
+    private fun unseenSends(id: String, listed: List<HistoryEntry>? = null): List<LocalSend> = synchronized(localLock) {
+        localSends = pruneLocalSends(localSends, id, listed?.mapTo(HashSet()) { it.txid }, System.currentTimeMillis())
+        localSends.filter { it.walletId == id }
+    }
+
+    private fun noteLocalSend(s: LocalSend) = synchronized(localLock) {
+        localSends = localSends.filterNot { it.walletId == s.walletId && it.txid == s.txid } + s
+    }
+
+    /** [id]'s coins spent by payments the server hasn't listed yet, as "txid:vout". */
+    private fun spentLocally(id: String): Set<String> = unseenSends(id).flatMapTo(HashSet()) { it.spent }
+
+    /** The local send for a payment [plan] just broadcast as [txid] to [to]. */
+    private fun localSend(c: WalletConfig, s: WalletSession, plan: FundingPlan, txid: String, to: String): LocalSend {
+        val inSat = plan.selected.sumOf { it.valueSat.toLong() }
+        val change = plan.changeSat?.toLong() ?: 0L
+        val out = inSat - plan.feeSat.toLong() - (plan.serviceFeeSat?.toLong() ?: 0L) - change
+        return LocalSend(
+            walletId = c.id, txid = txid,
+            spent = plan.selected.mapTo(HashSet()) { "${it.txid}:${it.vout}" },
+            inSat = inSat,
+            backSat = change + if (ownsAddress(s, c, to)) out else 0L,
+            feeSat = plan.feeSat.toLong(),
+            at = System.currentTimeMillis(),
+        )
+    }
+
+    /** Whether [addr] is one of this wallet's addresses, within the gap past its counters. */
+    private fun ownsAddress(s: WalletSession, c: WalletConfig, addr: String): Boolean =
+        (0..c.nextReceive + 20).any { runCatching { s.view.addressAt(0u, it.toUInt()).address }.getOrNull().equals(addr, ignoreCase = true) } ||
+            (0..c.nextChange + 20).any { runCatching { s.view.addressAt(1u, it.toUInt()).address }.getOrNull().equals(addr, ignoreCase = true) }
+
+    /** Show the in-view wallet's server balance and history with its local sends applied. */
+    private fun showWithLocalSends(id: String, listed: List<HistoryEntry>? = null, toOverview: Boolean = true) {
+        val unseen = unseenSends(id, listed)
+        val raw = serverBalances
+        if (raw == null) {
+            history = withLocalSends(Balances(0, 0), serverHistory, unseen).second
+            return
+        }
+        val (b, h) = withLocalSends(raw, serverHistory, unseen)
+        history = h
+        balances = b
+        if (toOverview && !raw.serverDegraded) setWalletBalance(id, b)
+    }
 
     /** The process's one swap engine and store live here (a service locator). */
     private val fortis = app as FortisApplication
@@ -309,7 +371,14 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
                     val id = w.id
                     val b = overviewBackend(w, s)
                     runCatching { b.prewarm() }
-                    runCatching { b.balances() }.getOrNull()?.let { setWalletBalance(id, it) }
+                    if (unseenSends(id).isEmpty()) {
+                        runCatching { b.balances() }.getOrNull()?.let { setWalletBalance(id, it) }
+                    } else {
+                        // A payment sent from here the server may not list yet: its history decides.
+                        runCatching { b.balancesAndHistory(50) }.getOrNull()?.let { (bal, h) ->
+                            setWalletBalance(id, withLocalSends(bal, h, unseenSends(id, h)).first)
+                        }
+                    }
                     // one price lookup per chain, reused across its wallets
                     if (priced.add(w.chain)) {
                         runCatching { b.price() }.getOrNull()?.let { setCoinUsd(w.chain, it) }
@@ -367,7 +436,8 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
         val fee = uniffi.wallet_ffi.ServiceFee(pricing.address, 50u, com.fortis.wallet.ui.screens.SWAP_FEE_FLOOR_SAT.toULong(), 0uL)
         // Capped like every swap spend: a hostile edge's estimate can't make funding a gift to miners.
         val feerate = b.feerateSatVb(6).coerceIn(1uL, uniffi.wallet_ffi.maxSwapFeerateSatVb())
-        val utxos = b.utxos(1u)
+        val spent = spentLocally(w.id)
+        val utxos = b.utxos(1u).filterNot { "${it.txid}:${it.vout}" in spent }
         require(utxos.isNotEmpty()) { str(R.string.error_no_coins) }
         s.setIndices(w.nextReceive, w.nextChange)
         // On BTC, an OP_RETURN the XBT chain can't mine: the funding can't be replayed there.
@@ -382,6 +452,7 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
         val rec = swaps.get(r.id) ?: error("the swap record is gone")
         swaps.put(rec.copy(pendingFundingTxid = txid, pendingFundingHex = signed))
         b.broadcast(signed)
+        runCatching { noteLocalSend(localSend(w, s, plan, txid, htlc.address)) }
         val idx = s.view.nextIndices()
         updateConfig(w.id) { it.copy(nextChange = maxOf(it.nextChange, idx.nextChange.toInt())) }
         txid
@@ -410,13 +481,19 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
 
     /** Show Home's Swap button: the edge quotes swaps (and there is a wallet to
      *  swap from), or a swap is still running and must stay reachable. */
-    val showSwap: Boolean get() = (swapQuote != null && seedWallets.isNotEmpty()) || swaps.any { it.step.active }
+    /** The Swaps tab shows whenever the edge offers swaps — even with only
+     *  watch-only / hardware wallets, where the page explains what's needed —
+     *  or while a swap is running. */
+    val showSwap: Boolean get() = swapQuote != null || swaps.any { it.step.active }
+    /** Swaps are on offer, but no wallet here can sign one. */
+    val swapNeedsPhrase: Boolean get() = swapQuote != null && seedWallets.isEmpty()
 
-    fun openSwaps() { error = null; swapRoute = SwapRoute.List; refreshSwaps(); refreshQuote() }
-    fun openNewSwap() { error = null; swapRoute = SwapRoute.New; refreshQuote() }
-    fun openTakeCode() { error = null; takePreview = null; swapRoute = SwapRoute.Take }
+    fun openSwaps() { error = null; pushPlace(); swapRoute = SwapRoute.List; refreshSwaps(); refreshQuote() }
+    fun openNewSwap() { error = null; pushPlace(); swapRoute = SwapRoute.New; refreshQuote() }
+    fun openTakeCode() { error = null; takePreview = null; pushPlace(); swapRoute = SwapRoute.Take }
     fun openTakeListed(entry: com.fortis.wallet.data.BookEntry) {
         error = null
+        pushPlace()
         swapRoute = SwapRoute.TakeListed(entry)
         seedWallets.forEach { loadSwapFeeReserve(it.id) }
     }
@@ -482,11 +559,12 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
         }
         startTaken(p, from, to, keys)
     }
-    fun openSwap(id: String) { error = null; swapRoute = SwapRoute.Detail(id) }
+    fun openSwap(id: String) { error = null; pushPlace(); swapRoute = SwapRoute.Detail(id) }
 
     /** Back from a swap screen: to the list, and from the list to the tabs. A
      *  taken code left without accepting is declined so the match ends at once. */
     fun swapBack() {
+        if (back()) return
         error = null
         if (swapRoute == SwapRoute.Take && takePreview != null) declineTaken()
         swapRoute = when (swapRoute) {
@@ -762,7 +840,8 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
         ).joinToString("\n").ifEmpty { str(R.string.swap_recover_none) }
     }
 
-    /** Start the service (it drives the saved record) and open the swap. */
+    /** Start the service (it drives the saved record) and open the swap — in
+     *  place of the New / Take screen it came from, so Back skips that form. */
     private suspend fun showSwap(id: String) {
         SwapService.start(getApplication())
         swaps = fortis.swapStore.all().sortedByDescending { it.createdAt }
@@ -914,21 +993,61 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
         backend = null; fallback = null; usingFallback = false
         status = null; history = emptyList(); feerates = emptyMap()
         pending = null; lastSentTxid = null
+        serverHistory = emptyList(); refreshAgain = false
         // Seed with the last successful refresh's balance rather than a blank
         // 0, so opening a wallet shows *something* immediately instead of
         // always starting from scratch — refresh() overwrites this with a
         // fresh value shortly. `status` staying null keeps the "connecting…"
         // hint showing alongside it, so a stale number still reads as
         // "still checking", not as a confirmed-current one.
-        balances = wallets.firstOrNull { it.id == selectedId }?.lastKnownBalanceSat
+        serverBalances = wallets.firstOrNull { it.id == selectedId }?.lastKnownBalanceSat
             ?.let { Balances(confirmedSat = it, pendingSat = 0) }
+        balances = serverBalances
+        selectedId?.let { if (serverBalances != null) showWithLocalSends(it, toOverview = false) }
     }
 
     // --- navigation ---
 
+    /** One place in the Shell: a tab, and the swap screen open over it (if any). */
+    private data class Place(val nav: NavTab, val swapRoute: SwapRoute?)
+
+    /** Where Back goes: the places visited before this one, newest last. */
+    private val backStack = ArrayDeque<Place>()
+
+    /** Remember the place in view before moving somewhere else. */
+    private fun pushPlace() {
+        val here = Place(nav, swapRoute)
+        if (backStack.lastOrNull() != here) backStack.addLast(here)
+        while (backStack.size > MAX_BACK) backStack.removeFirst()
+    }
+
+    /** A fresh start (locked, wallet added or removed): nothing to go back to. */
+    private fun clearBack() = backStack.clear()
+
+    /**
+     * Back within the Shell: return to the place visited before this one, or
+     * Home. False on Home with nothing behind it — the caller then asks before
+     * leaving the app.
+     */
+    fun back(): Boolean {
+        val prev = backStack.removeLastOrNull() ?: Place(NavTab.Home, null).takeIf {
+            // Nothing remembered (e.g. after a restart): Home is where Back ends up.
+            nav != NavTab.Home || swapRoute != null
+        } ?: return false
+        error = null
+        if (swapRoute != null && prev.swapRoute != swapRoute) declineTaken()
+        swapRoute = prev.swapRoute
+        nav = prev.nav
+        if (nav == NavTab.Swaps || swapRoute == SwapRoute.List) { refreshSwaps(); refreshQuote() }
+        if (phase == Phase.Shell) enterTab()
+        return true
+    }
+
     /** Switch the Shell's top-nav tab. */
     fun go(tab: NavTab) {
         error = null
+        if (nav == tab && swapRoute == null) return
+        pushPlace()
         if (swapRoute != null) { declineTaken(); swapRoute = null }
         nav = tab
         if (tab == NavTab.Swaps) { refreshSwaps(); refreshQuote() }
@@ -949,6 +1068,13 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
         draftMnemonic = null
         phase = if (wallets.isEmpty()) Phase.Onboard else Phase.Shell
     }
+
+    /** Back from a step of adding a wallet (generate, restore, watch, hardware)
+     *  to the screen where you chose how to add it. */
+    fun backToOnboard() { error = null; phase = Phase.Onboard }
+
+    /** Adding a wallet over existing ones (Back then returns to them). */
+    val addingWallet: Boolean get() = wallets.isNotEmpty()
 
     fun goCreate() { phase = if (draftMnemonic != null) Phase.Create else Phase.Gen }
     fun generateSeed(extra: ByteArray, words: Int) = wrap {
@@ -971,6 +1097,8 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
             viewModelScope.launch { store.setSelected(id) }
             resetView()
         }
+        if (nav != NavTab.Wallet || swapRoute != null) pushPlace()
+        if (swapRoute != null) { declineTaken(); swapRoute = null }
         nav = NavTab.Wallet
         resolvePhase()
     }
@@ -1016,6 +1144,7 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
         swapRoute = null
         resetView()
         nav = NavTab.Home
+        clearBack()
         phase = when {
             wallets.isEmpty() -> Phase.Onboard
             wallets.all { it.watchOnly } -> Phase.Shell // nothing was ever locked
@@ -1059,6 +1188,7 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
         sessions[id] = s
         draftMnemonic = null
         nav = NavTab.Wallet
+        clearBack()
         resolvePhase()
     }
 
@@ -1139,6 +1269,7 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
         resetView()
         draftMnemonic = null
         nav = NavTab.Wallet
+        clearBack()
         resolvePhase()
         return id
     }
@@ -1229,11 +1360,13 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
             appSecret = null
             com.fortis.wallet.data.SeedKeystore.deleteKey()
             nav = NavTab.Home
+            clearBack()
             resetView()
             resolvePhase()
         } else if (wasCurrent) {
             resetView()
             nav = NavTab.Home
+            clearBack()
             resolvePhase()
         }
     }
@@ -1300,7 +1433,7 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    fun refresh() = viewModelScope.launch {
+    fun refresh(): kotlinx.coroutines.Job = viewModelScope.launch {
         // The wallet-detail screen's poll loop calls this every 20s with no
         // memory of whether the last call ever finished — without this guard,
         // a scan that runs longer than 20s (any real watch-only import with
@@ -1314,6 +1447,7 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
         // enough to make an otherwise-healthy edge look unreliable.
         if (refreshing) return@launch
         refreshing = true
+        refreshAgain = false
         lastRefreshError = null
         val edge = backend ?: run { refreshing = false; return@launch }
         // The wallet this refresh() call is for — captured now because
@@ -1361,10 +1495,13 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
             // whatever's already showing (a real balance from this session,
             // or the seeded last-known one) instead of overwriting it with
             // data the server itself said not to trust.
-            history = newHistory
-            if (!newBalances.serverDegraded) {
-                balances = newBalances
-                refreshingFor?.let { id -> setWalletBalance(id, newBalances) }
+            serverHistory = newHistory
+            if (!newBalances.serverDegraded) serverBalances = newBalances
+            // Payments this phone sent that the server hasn't listed yet still show.
+            if (refreshingFor != null) showWithLocalSends(refreshingFor, newHistory)
+            else {
+                history = newHistory
+                if (!newBalances.serverDegraded) balances = newBalances
             }
             // Only when this landed via the primary backend (not the old
             // public-explorer fallback, `degraded`) *and* the edge itself
@@ -1428,7 +1565,17 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
                 }
         } finally {
             refreshing = false
+            if (refreshAgain) refresh()
         }
+    }
+
+    /** Set when [refreshSoon] found a refresh already running: one more follows it. */
+    private var refreshAgain = false
+
+    /** Like [refresh], but never skipped: when one is already running (and may have
+     *  fetched before a payment just sent), another runs right after it. */
+    fun refreshSoon() {
+        if (refreshing) refreshAgain = true else refresh()
     }
 
     fun newReceiveAddress() = viewModelScope.launch {
@@ -1436,17 +1583,41 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
         updateConfig(id) { it.copy(nextReceive = it.nextReceive + 1) }
     }
 
+    /** Review is building the payment (fee rate, coins, plan): the button shows it. */
+    var reviewing by mutableStateOf(false); private set
+
+    /** Sign & send is signing and broadcasting: the button shows it. */
+    var sending by mutableStateOf(false); private set
+
     fun buildPayment(
         to: String, amountSat: Long, sweep: Boolean,
         feerateOverride: Long?, confTarget: Int, replayProtect: Boolean,
         feeFromAmount: Boolean = false,
-    ) = wrap {
+    ) {
+        if (reviewing) return
+        reviewing = true
+        wrap {
+            try {
+                planPayment(to, amountSat, sweep, feerateOverride, confTarget, replayProtect, feeFromAmount)
+            } finally {
+                reviewing = false
+            }
+        }
+    }
+
+    private suspend fun planPayment(
+        to: String, amountSat: Long, sweep: Boolean,
+        feerateOverride: Long?, confTarget: Int, replayProtect: Boolean,
+        feeFromAmount: Boolean,
+    ) {
         require(sweep || amountSat > 0L) { str(R.string.error_enter_amount) }
         val to = to.trim()
         val b = active(); val s = session!!; val c = config!!
         s.checkAddress(to) // clear "… is not a valid address" before any network I/O
         val feerate = (feerateOverride ?: b.feerateSatVb(confTarget).toLong()).coerceAtLeast(1)
-        val utxos = b.utxos(1u)
+        // Not the coins a payment just sent spent, while the server may still list them.
+        val spent = spentLocally(c.id)
+        val utxos = b.utxos(1u).filterNot { "${it.txid}:${it.vout}" in spent }
         require(utxos.isNotEmpty()) { str(R.string.error_no_coins) }
         s.setIndices(c.nextReceive, c.nextChange)
         val opReturn = if (replayProtect && c.chain == "btc" && !sweep)
@@ -1464,16 +1635,46 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
     fun cancelPending() { pending = null }
 
     /** Sign and send the pending payment — only right after [confirmIdentity]. */
-    fun confirmSend() = wrap {
+    fun confirmSend() {
+        if (sending) return
+        sending = true
+        wrap {
+            try {
+                signAndSend()
+            } finally {
+                sending = false
+            }
+        }
+    }
+
+    private suspend fun signAndSend() {
         if (!reauth.consume()) throw Exception(str(R.string.reauth_needed))
         val p = pending!!; val b = active(); val s = session!!; val c = config!!
         val signed = s.sign(p.plan.txHex, p.plan.selected)
         val txid = b.broadcast(signed)
-        val idx = s.view.nextIndices()
-        updateConfig(c.id) { it.copy(nextChange = maxOf(it.nextChange, idx.nextChange.toInt())) }
+        // Sent: nothing below may turn that into an error on screen, or leave the
+        // confirm sheet up inviting a second tap.
+        val sent = runCatching { uniffi.wallet_ffi.txidOf(signed) }.getOrNull() ?: txid.trim()
         pending = null
-        lastSentTxid = txid.trim().ifBlank { null }
-        refresh()
+        lastSentTxid = sent
+        sentCount++
+        runCatching {
+            val idx = s.view.nextIndices()
+            updateConfig(c.id) { it.copy(nextChange = maxOf(it.nextChange, idx.nextChange.toInt())) }
+        }.onFailure { if (it is CancellationException) throw it }
+        runCatching { noteLocalSend(localSend(c, s, p.plan, sent, p.to)) }
+        if (selectedId == c.id) showWithLocalSends(c.id)
+        refreshSoon()
+        followSend(c.id)
+    }
+
+    /** Refresh again a few times after a payment, until the server lists it. */
+    private fun followSend(id: String) = viewModelScope.launch {
+        for (wait in longArrayOf(3_000, 5_000, 10_000, 15_000, 30_000)) {
+            kotlinx.coroutines.delay(wait)
+            if (selectedId != id || unseenSends(id).isEmpty()) return@launch
+            refreshSoon()
+        }
     }
 
     fun dismissLastSent() { lastSentTxid = null }
@@ -1519,3 +1720,49 @@ data class OverviewBalances(
 
     fun without(id: String) = OverviewBalances(confirmed - id, pending - id)
 }
+
+/**
+ * A payment this phone broadcast that the server hasn't listed yet. Until it
+ * does, the wallet shows it (a pending history row, the new balance) and the
+ * next payment leaves its coins alone — otherwise a second send planned from
+ * the server's stale coin list would spend the same coins again.
+ */
+data class LocalSend(
+    val walletId: String,
+    val txid: String,
+    /** The coins it spent, as "txid:vout". */
+    val spent: Set<String>,
+    /** Their total. Payments spend confirmed coins only. */
+    val inSat: Long,
+    /** What comes back to this wallet: the change, plus the payment itself when it went to one of its own addresses. */
+    val backSat: Long,
+    val feeSat: Long,
+    val at: Long,
+) {
+    /** The row the server will list for it (see EsploraBackend.historyFrom). */
+    fun entry() = HistoryEntry(
+        txid = txid, send = true, amountSat = backSat - inSat + feeSat,
+        confirmations = 0L, time = at / 1000, feeSat = feeSat,
+    )
+}
+
+/** How long a local send is still trusted without the server listing it — past
+ *  this it was most likely dropped, and its coins are spendable again. */
+const val LOCAL_SEND_MS = 30 * 60_000L
+
+/** The server's balance and history with the [unseen] local sends applied. */
+fun withLocalSends(b: Balances, h: List<HistoryEntry>, unseen: List<LocalSend>): Pair<Balances, List<HistoryEntry>> {
+    if (unseen.isEmpty()) return b to h
+    val listed = h.mapTo(HashSet()) { it.txid }
+    val add = unseen.filter { it.txid !in listed }
+    if (add.isEmpty()) return b to h
+    val shown = b.copy(
+        confirmedSat = (b.confirmedSat - add.sumOf { it.inSat }).coerceAtLeast(0L),
+        pendingSat = b.pendingSat + add.sumOf { it.backSat },
+    )
+    return shown to (add.sortedByDescending { it.at }.map { it.entry() } + h)
+}
+
+/** [sends] without those [listed] for [walletId] (the server has them now) and the expired. */
+fun pruneLocalSends(sends: List<LocalSend>, walletId: String, listed: Set<String>?, now: Long): List<LocalSend> =
+    sends.filter { now - it.at < LOCAL_SEND_MS && (listed == null || it.walletId != walletId || it.txid !in listed) }

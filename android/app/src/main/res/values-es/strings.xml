@@ -4,6 +4,9 @@
 
     <string name="action_back">Atrás</string>
     <string name="action_cancel">Cancelar</string>
+    <string name="action_exit">Salir</string>
+    <string name="exit_title">¿Salir de fortis?</string>
+    <string name="exit_body">Un intercambio en curso sigue en segundo plano.</string>
     <string name="action_continue">Continuar</string>
     <string name="action_save">Guardar</string>
     <string name="action_done">Listo</string>
@@ -20,6 +23,7 @@
     <string name="action_refresh">Actualizar</string>
     <string name="action_reconnect">Reconectar</string>
     <string name="action_review">Revisar</string>
+    <string name="working">Procesando</string>
     <string name="action_sign_send">Firmar y enviar</string>
     <string name="action_new_address">Nueva dirección</string>
     <string name="action_scan_qr">Escanear código QR</string>
@@ -308,6 +312,8 @@
     <string name="swap_hint_redeem_after_them">Esperando a que recojan primero las suyas: eso revela la clave que permite a tu app recoger las tuyas. No tienes que hacer nada.</string>
     <string name="swap_hint_done">Todo listo. Tus nuevas monedas están en tu monedero.</string>
     <string name="swap_unavailable">Los intercambios no están disponibles ahora.</string>
+    <string name="swap_need_phrase_title">Los intercambios necesitan un monedero de tu frase de recuperación</string>
+    <string name="swap_need_phrase">Los monederos de solo vigilancia y los de hardware no pueden firmar un intercambio. Añade un monedero XBT y uno BTC de tu frase de recuperación: uno para pagar y otro para recibir.</string>
     <string name="swap_new">Nuevo intercambio</string>
     <string name="swap_take_code">Introducir un código</string>
     <string name="swap_none">Aún no hay intercambios.</string>

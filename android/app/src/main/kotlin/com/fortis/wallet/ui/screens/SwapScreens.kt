@@ -645,6 +645,8 @@ fun SwapListScreen(vm: WalletViewModel) {
     SwapListContent(
         swaps = vm.swaps,
         canStart = vm.swapQuote != null && vm.seedWallets.isNotEmpty(),
+        needsPhrase = vm.swapNeedsPhrase,
+        onAddWallet = vm::addWallet,
         error = vm.error,
         onNew = vm::openNewSwap,
         onTake = vm::openTakeCode,
@@ -674,15 +676,26 @@ internal fun SwapListContent(
     funds: (BookEntry) -> Funds = { Funds.NotEnough },
     refPrice: Long? = null,
     onPick: (BookEntry) -> Unit = {},
+    needsPhrase: Boolean = false,
+    onAddWallet: () -> Unit = {},
 ) = SwapColumn {
     SwapTitle(stringResource(R.string.swap_title))
     GlassCard {
         Text(stringResource(R.string.swap_intro_title), color = Fx.text, fontWeight = FontWeight.SemiBold)
         Text(stringResource(R.string.swap_intro), style = FxType.body, color = Fx.textDim)
     }
-    if (!canStart) Text(stringResource(R.string.swap_unavailable), style = FxType.meta, color = Fx.textFaint)
-    PrimaryButton(stringResource(R.string.swap_new), enabled = canStart) { onNew() }
-    GhostButton(stringResource(R.string.swap_take_code), enabled = canStart) { onTake() }
+    if (needsPhrase) {
+        // Only watch-only / hardware wallets: nothing here can sign a swap.
+        GlassCard(hero = true) {
+            Text(stringResource(R.string.swap_need_phrase_title), color = Fx.text, fontWeight = FontWeight.SemiBold)
+            Text(stringResource(R.string.swap_need_phrase), style = FxType.body, color = Fx.textDim)
+        }
+        PrimaryButton(stringResource(R.string.action_add_wallet)) { onAddWallet() }
+    } else {
+        if (!canStart) Text(stringResource(R.string.swap_unavailable), style = FxType.meta, color = Fx.textFaint)
+        PrimaryButton(stringResource(R.string.swap_new), enabled = canStart) { onNew() }
+        GhostButton(stringResource(R.string.swap_take_code), enabled = canStart) { onTake() }
+    }
     val (active, history) = swaps.partition { it.step.active }
     if (swaps.isEmpty()) Text(stringResource(R.string.swap_none), style = FxType.meta, color = Fx.textFaint)
     @Composable

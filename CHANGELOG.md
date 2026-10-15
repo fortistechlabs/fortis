@@ -2,6 +2,29 @@
 
 Fortis Wallet (Android). Versions are `versionName (versionCode)`.
 
+## 0.5.1 (19) — 2026-10-15
+
+- Send: after you tap Review, and again after Sign & send, the button is
+  disabled and reads "Working..." with animated dots until it's done, so you can
+  see it's busy (and can't tap it twice).
+- Send: a payment shows at once — in your balance and as a pending line in
+  history — instead of only once the server catches up. Until it does, the next
+  payment won't try to spend the same coins again.
+- Send: after a payment, the form clears (so Review can't resend it) and a
+  "Payment sent" message stays up until you tap OK, with View to open it in the
+  explorer.
+- Send: the payment review opens full height, with the address shown in full,
+  and the address field no longer keeps the keyboard up after Review.
+- Back (the button or a swipe from the edge) now goes back to the screen you
+  were on, instead of closing the app. On Home, with nowhere left to go back
+  to, it asks "Exit fortis?" first.
+- The Swaps tab now shows even when every wallet on the phone is watch-only or
+  hardware. It explains that a swap needs a wallet from your recovery phrase,
+  with a button to add one (it used to be hidden, so you couldn't tell swaps
+  existed).
+- History: a long dollar value no longer runs into "confirmed" — there's always
+  a gap, and the dollar value moves to its own line when it doesn't fit.
+
 ## 0.5.0 (18) — 2026-10-13
 
 - A swap the other side never locks its coins into no longer ties yours up for

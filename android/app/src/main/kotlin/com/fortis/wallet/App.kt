@@ -1,17 +1,27 @@
 package com.fortis.wallet
 
+import androidx.activity.compose.BackHandler
+import androidx.activity.compose.LocalActivity
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
+import com.fortis.wallet.ui.theme.Fx
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.fortis.wallet.ui.AmbientBackground
 import com.fortis.wallet.ui.SecureWindow
@@ -54,6 +64,34 @@ fun FortisApp(vm: WalletViewModel = viewModel()) {
                 Phase.Shell -> Shell(vm)
                 Phase.RevealSeed -> RevealSeedScreen(vm)
             }
+        }
+
+        // Back (button or edge swipe) goes to the previous screen; it never
+        // leaves the app without asking. Dialogs and sheets handle their own.
+        var askExit by remember { mutableStateOf(false) }
+        BackHandler {
+            when (vm.phase) {
+                Phase.Shell -> if (!vm.back()) askExit = true
+                Phase.RevealSeed -> vm.closeReveal()
+                Phase.Gen, Phase.Create, Phase.Restore, Phase.Watch, Phase.HwConnect -> vm.backToOnboard()
+                Phase.Onboard -> if (vm.addingWallet) vm.cancelOnboard() else askExit = true
+                Phase.AppLock, Phase.Loading -> askExit = true
+            }
+        }
+        if (askExit) {
+            val activity = LocalActivity.current
+            AlertDialog(
+                onDismissRequest = { askExit = false },
+                containerColor = Fx.panel,
+                title = { Text(stringResource(R.string.exit_title), color = Fx.text) },
+                text = { Text(stringResource(R.string.exit_body), color = Fx.textDim) },
+                confirmButton = {
+                    TextButton({ askExit = false; activity?.finish() }) { Text(stringResource(R.string.action_exit), color = Fx.signal) }
+                },
+                dismissButton = {
+                    TextButton({ askExit = false }) { Text(stringResource(R.string.action_cancel), color = Fx.text) }
+                },
+            )
         }
     }
 }

@@ -55,6 +55,7 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -557,7 +558,6 @@ fun Shell(vm: WalletViewModel) {
             }
         }
     }
-    BackHandler(enabled = vm.swapRoute != null) { vm.swapBack() }
     vm.pending?.let { ConfirmSheet(vm, it, unit) }
     if (vm.hwOfferXbtFor != null) XbtOfferSheet(vm)
 }
@@ -924,39 +924,44 @@ private fun WalletTab(vm: WalletViewModel) {
             "history" to stringResource(R.string.tab_history),
         )
         TextTabs(tabKeys.map { it to tabLabels.getValue(it) }, tab, { tab = it })
-        vm.lastSentTxid?.let { txid -> SentBanner(vm, txid) }
+        vm.lastSentTxid?.let { txid -> SentDialog(vm, txid) }
         Column(
             Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(Fx.s4),
         ) {
             when (tab) {
                 "receive" -> ReceiveTab(vm)
-                "send" -> SendTab(vm)
+                "send" -> key(vm.sentCount) { SendTab(vm) } // a sent payment starts the form over
                 else -> HistoryTab(vm, unit)
             }
         }
     }
 }
 
+/** "Payment sent", until the user taps OK. */
 @Composable
-private fun SentBanner(vm: WalletViewModel, txid: String) {
+private fun SentDialog(vm: WalletViewModel, txid: String) {
     val ctx = LocalContext.current
     val c = vm.config
     val url = c?.let { explorerTxUrl(it.chain, it.network, txid) }
-    GlassCard {
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f)) {
-                Text(stringResource(R.string.sent_title), color = Fx.good, fontWeight = FontWeight.Medium)
-                Text(
-                    stringResource(R.string.sent_txid, txid.take(12)),
-                    style = FxType.meta, color = Fx.textFaint,
-                    modifier = Modifier.clickable { copyToClipboard(ctx, "txid", txid) },
-                )
-            }
-            if (url != null) TextButton({ openInBrowser(ctx, url) }) { Text(stringResource(R.string.action_view), color = Fx.signal) }
-            IconButton({ vm.dismissLastSent() }) { Icon(Icons.Filled.Close, stringResource(R.string.cd_dismiss), tint = Fx.textDim) }
-        }
-    }
+    AlertDialog(
+        onDismissRequest = { vm.dismissLastSent() },
+        containerColor = Fx.panel,
+        title = { Text(stringResource(R.string.sent_title), color = Fx.good) },
+        text = {
+            Text(
+                stringResource(R.string.sent_txid, txid.take(12)),
+                style = FxType.meta, color = Fx.textDim,
+                modifier = Modifier.clickable { copyToClipboard(ctx, "txid", txid) },
+            )
+        },
+        confirmButton = {
+            TextButton({ vm.dismissLastSent() }) { Text(stringResource(android.R.string.ok), color = Fx.signal) }
+        },
+        dismissButton = if (url == null) null else {
+            { TextButton({ openInBrowser(ctx, url) }) { Text(stringResource(R.string.action_view), color = Fx.text) } }
+        },
+    )
 }
 
 @OptIn(ExperimentalFoundationApi::class)
@@ -1104,10 +1109,13 @@ private fun SendTab(vm: WalletViewModel) {
             )
         }
         ErrorText(vm.error)
+        val focus = LocalFocusManager.current
         PrimaryButton(
             stringResource(R.string.action_review),
             enabled = to.isNotBlank() && (sweep || (amountSat != null && amountSat > 0)),
+            working = vm.reviewing,
         ) {
+            focus.clearFocus() // the keyboard goes, and the address field lets go
             vm.buildPayment(to, amountSat ?: 0L, sweep, custom.toLongOrNull(), target, replayProtect && isBtc, feeFromAmount && !sweep)
         }
     }
@@ -1177,11 +1185,10 @@ private fun HistoryTab(vm: WalletViewModel, unit: String) {
                 horizontalArrangement = Arrangement.SpaceBetween,
             ) {
                 Column(Modifier.weight(1f)) {
-                    FlowRow(itemVerticalAlignment = Alignment.Bottom) {
+                    FlowRow(itemVerticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         Text((if (h.amountSat > 0) "+" else "") + fmt(h.amountSat) + " " + unit,
                             style = FxType.amount, color = if (h.amountSat > 0) Fx.signal else Fx.text)
                         if (h.amountSat != 0L) vm.usdValue(if (h.amountSat < 0) -h.amountSat else h.amountSat, chain)?.let {
-                            Spacer(Modifier.width(6.dp))
                             Text(stringResource(R.string.fiat_approx, fmtUsd(it)), style = FxType.fiatSmall)
                         }
                     }
@@ -1205,6 +1212,7 @@ private fun HistoryTab(vm: WalletViewModel, unit: String) {
                         else -> stringResource(R.string.history_confirmed)
                     },
                     style = FxType.meta, color = if (h.confirmations < 1) Fx.warn else Fx.textDim,
+                    modifier = Modifier.padding(start = Fx.s3),
                 )
             }
         }
@@ -1222,11 +1230,24 @@ private fun ConfirmSheet(vm: WalletViewModel, p: PlanPreview, unit: String) {
     val gateAct = com.fortis.wallet.ui.rememberFragmentActivity()
     val gateScope = rememberCoroutineScope()
     com.fortis.wallet.ui.ConfirmIdentityDialog(gate, vm)
-    ModalBottomSheet(onDismissRequest = { vm.cancelPending() }, containerColor = Fx.panel) {
-        Column(Modifier.padding(Fx.s4).padding(bottom = Fx.s5), verticalArrangement = Arrangement.spacedBy(Fx.s3)) {
+    // Opened all the way: half-open, the amounts and Sign & send sat below the fold.
+    // Not dismissable while signing and sending: the payment can't be half-cancelled.
+    val sheet = rememberModalBottomSheetState(
+        skipPartiallyExpanded = true,
+        confirmValueChange = { it != SheetValue.Hidden || !vm.sending },
+    )
+    ModalBottomSheet(
+        onDismissRequest = { if (!vm.sending) vm.cancelPending() },
+        sheetState = sheet,
+        containerColor = Fx.panel,
+    ) {
+        Column(
+            Modifier.verticalScroll(rememberScrollState()).padding(horizontal = Fx.s5).padding(top = Fx.s2, bottom = Fx.s6),
+            verticalArrangement = Arrangement.spacedBy(Fx.s4),
+        ) {
             Text(
                 if (p.sweep) stringResource(R.string.confirm_sweep_title) else stringResource(R.string.confirm_payment_title),
-                style = MaterialTheme.typography.titleMedium, color = Fx.text,
+                style = MaterialTheme.typography.titleLarge, color = Fx.text,
             )
             val chain = vm.config?.chain ?: "xbt"
             val inTotal = p.plan.selected.sumOf { it.valueSat.toLong() }
@@ -1241,7 +1262,11 @@ private fun ConfirmSheet(vm: WalletViewModel, p: PlanPreview, unit: String) {
                 else "${fmt(sat)} $unit"
             }
 
-            kv(stringResource(R.string.confirm_to), p.to)
+            // The address on its own lines, in full: it's what the user checks.
+            Column(verticalArrangement = Arrangement.spacedBy(Fx.s1)) {
+                Text(stringResource(R.string.confirm_to), style = FxType.body, color = Fx.textDim)
+                Text(p.to, style = FxType.amount, color = Fx.text)
+            }
             kv(stringResource(R.string.confirm_you_send), amountLine(total))
             kv(stringResource(R.string.confirm_recipient_gets), amountLine(out))
             kv(
@@ -1253,8 +1278,10 @@ private fun ConfirmSheet(vm: WalletViewModel, p: PlanPreview, unit: String) {
             if (p.replayProtected) kv(stringResource(R.string.confirm_replay), stringResource(R.string.confirm_replay_value))
             ErrorText(vm.error)
             Row(horizontalArrangement = Arrangement.spacedBy(Fx.s2)) {
-                GhostButton(stringResource(R.string.action_cancel), Modifier.weight(1f)) { vm.cancelPending() }
-                PrimaryButton(stringResource(R.string.action_sign_send), Modifier.weight(1f)) {
+                GhostButton(stringResource(R.string.action_cancel), Modifier.weight(1f), enabled = !vm.sending) {
+                    if (!vm.sending) vm.cancelPending()
+                }
+                PrimaryButton(stringResource(R.string.action_sign_send), Modifier.weight(1f), working = vm.sending) {
                     gate.require(vm, gateAct, gateScope) { vm.confirmSend() }
                 }
             }

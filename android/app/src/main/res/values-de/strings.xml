@@ -4,6 +4,9 @@
 
     <string name="action_back">Zurück</string>
     <string name="action_cancel">Abbrechen</string>
+    <string name="action_exit">Beenden</string>
+    <string name="exit_title">fortis beenden?</string>
+    <string name="exit_body">Ein laufender Swap geht im Hintergrund weiter.</string>
     <string name="action_continue">Weiter</string>
     <string name="action_save">Speichern</string>
     <string name="action_done">Fertig</string>
@@ -20,6 +23,7 @@
     <string name="action_refresh">Aktualisieren</string>
     <string name="action_reconnect">Neu verbinden</string>
     <string name="action_review">Prüfen</string>
+    <string name="working">Wird bearbeitet</string>
     <string name="action_sign_send">Signieren &amp; senden</string>
     <string name="action_new_address">Neue Adresse</string>
     <string name="action_scan_qr">QR-Code scannen</string>
@@ -308,6 +312,8 @@
     <string name="swap_hint_redeem_after_them">Wir warten, bis sie ihre Coins zuerst abholen: Das gibt den Schlüssel preis, mit dem deine App deine abholt. Du musst nichts tun.</string>
     <string name="swap_hint_done">Alles erledigt. Deine neuen Coins sind in deiner Wallet.</string>
     <string name="swap_unavailable">Swaps sind gerade nicht verfügbar.</string>
+    <string name="swap_need_phrase_title">Für Swaps brauchst du ein Wallet aus deiner Wiederherstellungsphrase</string>
+    <string name="swap_need_phrase">Reine Beobachtungs- und Hardware-Wallets können keinen Swap signieren. Füge ein XBT- und ein BTC-Wallet aus deiner Wiederherstellungsphrase hinzu: eines zum Bezahlen, eines zum Empfangen.</string>
     <string name="swap_new">Neuer Swap</string>
     <string name="swap_take_code">Code eingeben</string>
     <string name="swap_none">Noch keine Swaps.</string>

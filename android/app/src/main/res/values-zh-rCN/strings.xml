@@ -4,6 +4,9 @@
 
     <string name="action_back">返回</string>
     <string name="action_cancel">取消</string>
+    <string name="action_exit">退出</string>
+    <string name="exit_title">退出 fortis？</string>
+    <string name="exit_body">进行中的兑换会在后台继续。</string>
     <string name="action_continue">继续</string>
     <string name="action_save">保存</string>
     <string name="action_done">完成</string>
@@ -20,6 +23,7 @@
     <string name="action_refresh">刷新</string>
     <string name="action_reconnect">重新连接</string>
     <string name="action_review">检查</string>
+    <string name="working">处理中</string>
     <string name="action_sign_send">签名并发送</string>
     <string name="action_new_address">新地址</string>
     <string name="action_scan_qr">扫描二维码</string>
@@ -307,6 +311,8 @@
     <string name="swap_hint_redeem_after_them">正在等待对方先领取他们的币：这会公开让你的应用领取你的币所需的密钥。你无需任何操作。</string>
     <string name="swap_hint_done">全部完成。你的新币已在钱包中。</string>
     <string name="swap_unavailable">兑换暂不可用。</string>
+    <string name="swap_need_phrase_title">兑换需要来自恢复助记词的钱包</string>
+    <string name="swap_need_phrase">仅观察钱包和硬件钱包无法签署兑换。请用你的恢复助记词添加一个 XBT 钱包和一个 BTC 钱包：一个用于付款，一个用于收款。</string>
     <string name="swap_new">新建兑换</string>
     <string name="swap_take_code">输入代码</string>
     <string name="swap_none">还没有兑换。</string>
