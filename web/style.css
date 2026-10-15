@@ -129,7 +129,9 @@ button {
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12), 0 var(--lip) 0 var(--ghost-lip);
   transition: transform 50ms linear, box-shadow 50ms linear;
   -webkit-tap-highlight-color: transparent;
-  overflow-wrap: anywhere;
+  /* break-word, not anywhere: a long label still wraps, but a squeezed button
+     keeps its words whole instead of shrinking to one letter per line */
+  overflow-wrap: break-word;
 }
 button:active:not(:disabled) {
   transform: translateY(var(--lip));
@@ -386,8 +388,11 @@ input[type="checkbox"] { width: 18px; height: 18px; flex: 0 0 auto; accent-color
   color: var(--text);
   font-size: 13px;
 }
-.update-bar span { flex: 1; }
-.update-bar button { min-height: var(--btn-h-dense); }
+.update-bar { flex-wrap: wrap; }
+/* The message takes the room left over; on a narrow screen it gets its own line. */
+.update-bar > span { flex: 1 1 12rem; }
+.update-bar .row { flex: 0 0 auto; margin-left: auto; }
+.update-bar button { flex: 0 0 auto; min-height: var(--btn-h-dense); padding: 8px var(--s4); white-space: nowrap; }
 
 /* ---- Home: each wallet is a pressable tile (PressableTile) ---- */
 .tiles { display: flex; flex-direction: column; gap: var(--s2); }

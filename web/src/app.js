@@ -61,6 +61,12 @@ function resetDetail() {
 let detailPoll = null;
 let overviewPoll = null;
 
+// Strings load first, independently of the wasm engine: anything shown early —
+// the "update available" bar can appear the moment the page opens, when an
+// update was already waiting from an earlier visit — waits on this instead of
+// rendering [[key]] placeholders.
+const i18nReady = i18nInit().catch(() => {});
+
 start();
 
 async function start() {
@@ -74,7 +80,7 @@ async function start() {
       el('pre', { class: 'card mono' }, 'wasm-pack build crates/wallet-wasm --target web --out-dir ../../web/pkg')));
   }
   initTheme();
-  await i18nInit();
+  await i18nReady;
   const raw = await loadRaw();
   if (raw.kind === 'v2') state = raw.state;
   else if (raw.kind === 'legacy') pendingLegacy = migrateLegacyShape(raw.record);
@@ -2073,13 +2079,15 @@ function val(id) {
  *  sw.js). Surface it instead of staying silent: this is a wallet, and
  *  "the code changed under you mid-session" is worth a heads-up, not
  *  something to spring silently. */
-function offerUpdate(reg) {
+async function offerUpdate(reg) {
+  await i18nReady;
   if (document.getElementById('update-bar')) return;
   const bar = el('div', { id: 'update-bar', class: 'update-bar' },
     el('span', {}, t('update_available')),
-    el('div', { class: 'row', style: 'flex:0' },
+    el('div', { class: 'row' },
       el('button', { class: 'ghost', onclick: () => bar.remove() }, t('action_dismiss')),
-      el('button', { class: 'primary', onclick: () => reg.waiting.postMessage('SKIP_WAITING') }, t('action_refresh'))));
+      // No worker waiting any more (another tab already switched): just reload.
+      el('button', { class: 'primary', onclick: () => (reg.waiting ? reg.waiting.postMessage('SKIP_WAITING') : location.reload()) }, t('action_refresh'))));
   document.body.append(bar);
 }
 
