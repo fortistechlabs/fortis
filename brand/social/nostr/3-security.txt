@@ -1,0 +1,9 @@
+What protects your coins in Fortis Wallet:
+
+• The key that opens the app lives in your phone's secure hardware (StrongBox or the TEE) and is released only by your fingerprint, face or device PIN.
+• Your recovery phrase is generated on the phone and encrypted there. It never leaves it.
+• Fortis locks itself after a minute in the background, and every screen is kept out of screenshots and the recent-apps view.
+• Every swap transaction is valid on one chain only, so it can't be replayed on the other.
+• The code is open: https://github.com/fortistechlabs/fortis
+
+#bitcoin #xbt #selfcustody

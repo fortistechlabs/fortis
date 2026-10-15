@@ -40,4 +40,7 @@ python3 -m venv /tmp/venv && /tmp/venv/bin/pip install fonttools
 - Android: `res/drawable/ic_launcher_foreground.xml` (scaled 1.05 into the
   adaptive icon's 66 dp safe zone), `ic_launcher_background.xml` (`#111315`),
   `ic_mark.xml` (onboarding).
-- Web wallet and site: still the previous castle shield until their restyles.
+- Web wallet: `web/icon.svg` (= `site/icon.svg`), `icon-192.png` / `icon-512.png`
+  (the mark on a rounded `#111315` tile), `apple-touch-icon.png` (square tile),
+  and the onboarding mark inline in `web/src/app.js`.
+- Site: `site/icon.svg`.

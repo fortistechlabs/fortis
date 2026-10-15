@@ -18,13 +18,13 @@ import * as bitbox from './bitbox.js';
 import { EntropyPool } from './entropy.js';
 import { registerPrf, unlockPrf, prfPossible } from './webauthn.js';
 import { AutoLock, AUTO_LOCK_MS, sameSecret } from './relock.js';
-import { storedTheme, setTheme, initThemeWatcher } from './theme.js';
+import { initTheme } from './theme.js';
 import {
   init as i18nInit, t, tPlural, setLocale, overrideTag, localeLabel, SUPPORTED_LOCALES,
 } from './i18n.js';
 import {
   el, mount, toast, copy, fmt, fmtUsd, qrCode, qrCodeOrNull, parseAmount, shortTxid, timeAgo, countUp,
-  initParallax, SAT,
+  SAT,
 } from './ui.js';
 
 const UNIT = { xbt: 'XBT', btc: 'BTC' };
@@ -73,12 +73,11 @@ async function start() {
       el('p', { class: 'err' }, 'could not load the wallet engine (wallet_wasm). Build it with:'),
       el('pre', { class: 'card mono' }, 'wasm-pack build crates/wallet-wasm --target web --out-dir ../../web/pkg')));
   }
-  initThemeWatcher();
+  initTheme();
   await i18nInit();
   const raw = await loadRaw();
   if (raw.kind === 'v2') state = raw.state;
   else if (raw.kind === 'legacy') pendingLegacy = migrateLegacyShape(raw.record);
-  initParallax();
   render();
 }
 
@@ -180,29 +179,11 @@ function render() {
 
 /* ------------------------------------------------------------------ onboard */
 
-// Same mark as web/icon.svg / site/icon.svg / the Android launcher icon
-// (ic_launcher_foreground.xml + ic_launcher_background.xml) — the one
-// canonical brand mark everywhere else.
-const SHIELD = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
-  <defs>
-    <linearGradient id="bg" x1="0" y1="0" x2="512" y2="512" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#0E1424"/><stop offset="1" stop-color="#080A12"/>
-    </linearGradient>
-    <linearGradient id="sh" x1="150" y1="60" x2="360" y2="470" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#8FBCFF"/><stop offset="1" stop-color="#4A73D0"/>
-    </linearGradient>
-    <clipPath id="gate"><path d="M44,81 V51 a10,10 0 0 1 20,0 V81 Z"/></clipPath>
-  </defs>
-  <rect width="512" height="512" rx="112" fill="url(#bg)"/>
-  <g transform="translate(-25 -33) scale(5.3)">
-    <path d="M22,22 h8 v8 h6 v-8 h8 v8 h6 v-8 h8 v8 h6 v-8 h8 v8 h6 v-8 h8 V58 C86,72 73,82 54,89 C35,82 22,72 22,58 Z"
-          fill="url(#sh)" stroke="#233B6A" stroke-width="1.3" stroke-linejoin="round"/>
-    <path d="M44,81 V51 a10,10 0 0 1 20,0 V81 Z" fill="#0B0D18"/>
-    <g clip-path="url(#gate)" stroke="#8FBCFF" stroke-width="2">
-      <path d="M49,49 V82 M54,47 V82 M59,49 V82"/>
-      <path d="M43,56 H65 M43,64 H65 M43,72 H65"/>
-    </g>
-  </g>
+// The keyhole shield — the same mark as the Android app's onboarding
+// (res/drawable/ic_mark.xml) and brand/fortis-mark.svg.
+const SHIELD = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" aria-hidden="true">
+  <path d="M32 7 53 14.5V30c0 13.5-8.8 21.6-21 26.5C19.8 51.6 11 43.5 11 30V14.5Z" fill="none" stroke="#E9ECEF" stroke-width="2.2" stroke-linejoin="round"/>
+  <g fill="#00FF41"><circle cx="32" cy="27" r="5"/><path d="M29.2 30.5h5.6L36.5 42h-9Z"/></g>
 </svg>`;
 
 function brand(tagline) {
@@ -260,12 +241,7 @@ function renderGen() {
     }, tPlural('word_count', n))));
 
   const hint = el('div', { class: 'hint' }, t('gen_pad_hint_web'));
-  const pad = el('div', {
-    style:
-      'position:relative;overflow:hidden;height:150px;border:1px dashed var(--hair);border-radius:var(--r-lg);' +
-      'display:flex;align-items:center;justify-content:center;' +
-      'touch-action:none;user-select:none;cursor:crosshair',
-  }, hint);
+  const pad = el('div', { class: 'entropy-pad' }, hint);
   let drawing = false;
   const trail = [];
   const MAX_DOTS = 250;
@@ -276,9 +252,7 @@ function renderGen() {
     const y = e.clientY - r.top;
     pool.addPointer(x, y, e.timeStamp);
     if (hint.isConnected) hint.remove();
-    const dot = el('div', { style:
-      `position:absolute;left:${x - 2}px;top:${y - 2}px;width:4px;height:4px;border-radius:50%;` +
-      'background:var(--accent);box-shadow:0 0 4px var(--accent);pointer-events:none;' });
+    const dot = el('div', { class: 'entropy-dot', style: `left:${x - 2}px;top:${y - 2}px` });
     pad.appendChild(dot);
     trail.push(dot);
     if (trail.length > MAX_DOTS) trail.shift().remove();
@@ -288,8 +262,7 @@ function renderGen() {
   pad.addEventListener('pointermove', sample);
   pad.addEventListener('pointerup', () => (drawing = false));
 
-  const bar = el('div', { style: 'height:8px;border-radius:999px;background:var(--glass-1);overflow:hidden' },
-    el('div', { id: 'entbar', style: 'height:100%;width:0%;background:linear-gradient(90deg,var(--accent),var(--accent-2));transition:width .1s' }));
+  const bar = el('div', { class: 'entropy-bar' }, el('div', { id: 'entbar' }));
   const label = el('div', { id: 'entlabel', class: 'hint' }, '');
 
   mount(el('div', { class: 'screen' },
@@ -401,8 +374,9 @@ function clearBusy(primaryBtn, otherBtn, label) {
 function renderRestore() {
   mount(el('div', { class: 'screen' },
     el('h2', {}, t('restore_title')),
-    el('label', {}, t('restore_body')),
-    el('textarea', { id: 'phrase', rows: 3, autocapitalize: 'none', autocomplete: 'off', spellcheck: 'false' }),
+    // A sentence, not a field label: running text, not small caps.
+    el('p', { id: 'phrase-note' }, t('restore_body')),
+    el('textarea', { id: 'phrase', 'aria-describedby': 'phrase-note', rows: 3, autocapitalize: 'none', autocomplete: 'off', spellcheck: 'false' }),
     el('label', {}, t('field_passphrase')),
     el('input', { id: 'passphrase', type: 'password', autocomplete: 'off' }),
     el('label', {}, t('field_wallet_name')),
@@ -447,8 +421,9 @@ async function onRestore() {
 function renderWatchImport() {
   mount(el('div', { class: 'screen' },
     el('h2', {}, t('watch_title')),
-    el('label', {}, t('watch_body')),
-    el('textarea', { id: 'xpub', rows: 3, autocapitalize: 'none', autocomplete: 'off', spellcheck: 'false' }),
+    // A sentence, not a field label: running text, not small caps.
+    el('p', { id: 'xpub-note' }, t('watch_body')),
+    el('textarea', { id: 'xpub', 'aria-describedby': 'xpub-note', rows: 3, autocapitalize: 'none', autocomplete: 'off', spellcheck: 'false' }),
     el('label', {}, t('field_wallet_name')),
     el('input', { id: 'name', value: nextWalletName(), maxlength: MAX_WALLET_NAME_LEN, autocomplete: 'off' }),
     el('label', {}, t('field_chain')), chainPicker(),
@@ -843,8 +818,8 @@ function renderLocked() {
     el('div', { class: 'spacer' }),
     brand(),
     el('div', { class: 'card stack' },
-      el('label', {}, t('lock_password_prompt')),
-      el('input', { id: 'pw', type: 'password', autocomplete: 'current-password', onkeydown: (e) => e.key === 'Enter' && onUnlockPassword() }),
+      el('p', {}, t('lock_password_prompt')),
+      el('input', { id: 'pw', type: 'password', 'aria-label': t('field_app_password'), autocomplete: 'current-password', onkeydown: (e) => e.key === 'Enter' && onUnlockPassword() }),
       el('div', { id: 'err', class: 'err' }),
       el('button', { class: 'primary wide', onclick: onUnlockPassword }, t('action_unlock')),
       state.lock.prf && prfPossible()
@@ -909,13 +884,26 @@ function onLock() {
 
 /* ------------------------------------------------------------------ shell (home / wallet / settings) */
 
+// Material's "settings" cog, as on Android's nav bar.
+const COG = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58a.49.49 0 0 0 .12-.61l-1.92-3.32a.488.488 0 0 0-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54a.484.484 0 0 0-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58a.49.49 0 0 0-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z"/></svg>';
+
+/** Home · Wallet · ⚙ — folder tabs; Settings is a cog, labelled for screen readers. */
 function renderNav() {
-  return el('div', { class: 'tabs card' },
-    [['home', 'nav_home'], ['wallet', 'nav_wallet'], ['settings', 'nav_settings']].map(([id, key]) =>
-      el('button', {
-        class: ui.nav === id ? 'active' : '',
+  return el('div', { class: 'tabs', role: 'tablist' },
+    [['home', 'nav_home'], ['wallet', 'nav_wallet'], ['settings', 'nav_settings']].map(([id, key]) => {
+      const props = {
+        class: [ui.nav === id ? 'active' : '', id === 'settings' ? 'icon' : ''].join(' ').trim(),
+        role: 'tab',
+        'aria-selected': ui.nav === id ? 'true' : 'false',
         onclick: () => { ui.nav = id; if (id === 'wallet') ui.tab = 'receive'; render(); },
-      }, t(key))));
+      };
+      if (id === 'settings') {
+        const b = el('button', { ...props, 'aria-label': t(key), title: t(key) });
+        b.innerHTML = COG;
+        return b;
+      }
+      return el('button', props, t(key));
+    }));
 }
 
 /** `fresh` (only on genuine navigation — see the sole call site in render())
@@ -955,25 +943,34 @@ function renderShellIfIdle() {
   if (state && (!state.lock || appSecret) && !ui.addingWallet && !ui.pendingPlan && !ui.dialog) renderShell();
 }
 
+const CHEVRON = '<svg class="chev" viewBox="0 0 24 24" aria-hidden="true"><path d="M8.59 16.59 13.17 12 8.59 7.41 10 6l6 6-6 6z"/></svg>';
+
+/** Home tab — the wallets, each its own key to press (as on Android). */
 function renderHomeTab() {
   return el('div', { class: 'stack' },
     el('h2', {}, t('home_title')),
     state.wallets.length
-      ? el('div', { class: 'card walletlist' },
+      ? el('div', { class: 'tiles' },
           state.wallets.map((w) => {
             const sat = overview.balances.get(w.id);
             const usdPrice = overview.usd[w.chain];
             const usd = usdPrice != null && sat != null ? fmtUsd((usdPrice * sat) / SAT) : null;
-            return el('div', {
-              class: 'walletrow',
+            // The unit already shows with the balance; only what sets this wallet apart.
+            const kind = [w.network === 'regtest' ? 'regtest' : null, walletBadgeText(w) || null]
+              .filter(Boolean).join(' · ');
+            const tile = el('button', {
+              class: `tile${w.id === state.selected ? ' on' : ''}`,
               onclick: () => { state.selected = w.id; resetDetail(); saveState(state); ui.nav = 'wallet'; ui.tab = 'receive'; render(); },
             },
-              el('div', {},
-                el('div', { class: 'name' }, w.name),
-                el('div', { class: 'chain' }, `${UNIT[w.chain]}${w.network === 'regtest' ? ' · regtest' : ''}${walletBadgeText(w) ? ` · ${walletBadgeText(w)}` : ''}  ·  ${t('home_tap_to_open')}`)),
-              el('div', { style: 'text-align:right' },
-                el('div', { class: 'amt' }, sat != null ? `${fmt(sat)} ${UNIT[w.chain]}` : '…'),
-                usd ? el('div', { class: 'hint' }, usd) : null));
+              el('span', { class: 'info' },
+                el('span', { class: 'name' }, w.name),
+                sat != null
+                  ? el('span', { class: 'amt' }, `${fmt(sat)} ${UNIT[w.chain]}`)
+                  : el('span', { class: 'sub' }, t('home_tap_to_open')),
+                usd ? el('span', { class: 'sub' }, t('fiat_approx', usd)) : null,
+                kind ? el('span', { class: 'sub' }, kind) : null));
+            tile.insertAdjacentHTML('beforeend', CHEVRON);
+            return tile;
           }))
       : null,
     state.wallets.length < MAX_WALLETS
@@ -1012,24 +1009,29 @@ function renderWalletTab() {
   const via = w.backend?.kind === 'edge' ? 'fortis' : w.backend?.kind === 'esplora' ? new URL(w.backend.url).host : t('wallet_via_node');
   const usdLine = detail.usd != null && b ? t('fiat_approx', fmtUsd((detail.usd * b.confirmed_sat) / SAT)) : null;
 
+  // The hero panel, laid out as on Android: name (caps), the balance with its
+  // unit in signal green, ≈ US$, anything pending, then the status line.
   const top = el('div', { class: 'topbar' },
-    el('div', {},
-      el('div', { class: 'name' }, w.name + (walletBadgeText(w) ? `  ·  ${walletBadgeText(w)}` : '')),
-      el('div', { class: 'bal' },
-        el('span', { class: 'num' }, b ? fmt(b.confirmed_sat) : '—'), ' ',
-        el('span', { class: 'unit' }, unit)),
-      usdLine ? el('div', { class: 'hint' }, usdLine) : null,
-      el('div', { class: 'hint' },
-        el('span', { class: `dot ${dot}` }), ' ', hint, `  ·  ${via}`,
-        b && b.pending_sat ? `  ·  ${t('wallet_pending', fmt(b.pending_sat), unit)}` : '')));
+    el('div', { class: 'name' }, w.name + (walletBadgeText(w) ? ` · ${walletBadgeText(w)}` : '')),
+    el('div', { class: 'bal' },
+      el('span', { class: 'num' }, b ? fmt(b.confirmed_sat) : '—'),
+      el('span', { class: 'unit' }, unit)),
+    usdLine ? el('div', { class: 'fiat-hero' }, usdLine) : null,
+    b && b.pending_sat
+      ? el('div', { class: 'pending-line' }, t('wallet_pending', (b.pending_sat > 0 ? '+' : '') + fmt(b.pending_sat), unit))
+      : null,
+    el('div', { class: 'status' }, el('span', { class: `dot ${dot}` }), `${hint} · ${via}`));
 
   // Building (not signing) a transaction needs no key, so a watch-only
   // wallet keeps Send too — for air-gapped signing, see paneSend().
   const tabIds = ['receive', 'send', 'history'];
   if (!tabIds.includes(ui.tab)) ui.tab = 'receive'; // e.g. stale 'send' on a watch-only wallet
-  const tabs = el('div', { class: 'tabs card' },
+  const tabs = el('div', { class: 'tabs', role: 'tablist' },
     tabIds.map((tid) =>
-      el('button', { class: ui.tab === tid ? 'active' : '', onclick: () => { ui.tab = tid; render(); } }, t(`tab_${tid}`))));
+      el('button', {
+        class: ui.tab === tid ? 'active' : '', role: 'tab', 'aria-selected': ui.tab === tid ? 'true' : 'false',
+        onclick: () => { ui.tab = tid; render(); },
+      }, t(`tab_${tid}`))));
 
   let body;
   if (ui.tab === 'receive') body = paneReceive(w);
@@ -1067,7 +1069,7 @@ function paneSend(w) {
       el('button', {
         class: String(d.target) === target ? 'on' : '',
         onclick: () => { d.target = Number(target); d.customFee = null; render(); },
-      }, `${t(key)}${presets[target] ? ` · ${presets[target]} s/vB` : ''}`)));
+      }, t(key), presets[target] ? el('span', { class: 'rate' }, ` · ${presets[target]} s/vB`) : null)));
 
   let fiatLine = null;
   if (!d.sweep && d.amount && detail.usd != null) {
@@ -1087,7 +1089,7 @@ function paneSend(w) {
     d.sweep ? null : el('label', {}, `${t('field_amount')} (${unit})`),
     d.sweep ? null : el('input', { id: 'amount', value: d.amount, inputmode: 'decimal',
       oninput: (e) => (d.amount = e.target.value) }),
-    fiatLine ? el('div', { class: 'hint' }, fiatLine) : null,
+    fiatLine ? el('div', { class: 'fiat' }, fiatLine) : null,
     el('label', {}, t('confirm_network_fee')),
     feeSeg,
     el('input', { id: 'customfee', placeholder: t('field_custom_feerate'), inputmode: 'numeric',
@@ -1181,7 +1183,7 @@ function renderConfirm() {
       el('div', { class: 'grabber' }),
       el('h2', {}, t(sweep ? 'confirm_sweep_title' : 'confirm_payment_title')),
       el('div', { class: 'amount-lead mono' }, `${fmt(outAmount)} `, el('span', { class: 'unit' }, unit)),
-      usdAmount ? el('div', { class: 'hint' }, t('fiat_approx', usdAmount)) : null,
+      usdAmount ? el('div', { class: 'fiat' }, t('fiat_approx', usdAmount)) : null,
       el('div', { class: 'kvs' },
         row(t('confirm_to'), el('span', { class: 'mono', style: 'word-break:break-all;text-align:right' }, to)),
         row(t('confirm_network_fee'), t('confirm_network_fee_value', fmt(plan.fee_sat), unit, feerate)),
@@ -1336,7 +1338,7 @@ function paneHistory(w) {
       return el('div', { class: 'item', onclick: () => openTx(tx.txid) },
         el('div', {},
           el('div', { class: `amt ${pos ? 'pos' : 'neg'}` }, `${pos ? '+' : ''}${fmt(tx.amount_sat)} ${unit}`),
-          usd ? el('div', { class: 'hint' }, usd) : null,
+          usd ? el('div', { class: 'fiat' }, t('fiat_approx', usd)) : null,
           el('div', { class: 'meta' }, `${label} · ${timeAgo(tx.time)} · ${shortTxid(tx.txid)}${fee}`)),
         el('span', { class: `badge ${conf < 1 ? 'pending' : ''}` },
           conf < 1 ? t('history_pending') : conf < 6 ? t('history_conf_n', conf) : t('history_confirmed')));
@@ -1374,14 +1376,6 @@ function renderSettingsTab() {
       el('h2', {}, t('settings_language')),
       el('button', { class: 'ghost wide', onclick: () => { ui.dialog = { kind: 'locale' }; renderDialogSheet(); } },
         overrideTag() ? localeLabel(overrideTag()) : t('language_system_default'))),
-    el('div', { class: 'card stack' },
-      el('h2', {}, t('settings_theme')),
-      el('div', { class: 'seg' },
-        [['system', t('language_system_default')], ['light', t('theme_light')], ['dark', t('theme_dark')]].map(([id, label]) =>
-          el('button', {
-            class: storedTheme() === id ? 'on' : '',
-            onclick: () => { setTheme(id); render(); },
-          }, label)))),
     state.lock ? el('div', { class: 'card stack' },
       el('button', { class: 'ghost wide danger', onclick: onLock }, t('action_lock_app'))) : null,
     // Same key + format Android's Settings footer uses ("fortis 0.4.0"). The
@@ -1446,8 +1440,8 @@ function renderWalletCard(w) {
     : t('wallet_via_node');
   return el('div', { class: 'card stack wallet-card' },
     el('div', { class: 'row', style: 'align-items:center' },
-      el('b', {}, w.name), el('span', { class: 'badge' }, UNIT[w.chain]),
-      walletBadgeText(w) ? el('span', { class: 'badge' }, walletBadgeText(w)) : null),
+      el('b', { style: 'font-weight:500;flex:1;min-width:0;overflow-wrap:anywhere' }, w.name), el('span', { class: 'chip' }, UNIT[w.chain]),
+      walletBadgeText(w) ? el('span', { class: 'chip' }, walletBadgeText(w)) : null),
     el('div', { class: 'hint' }, `${t('settings_connection')}: ${connLabel}`),
     w.hwType ? el('div', { class: 'hint' }, t('error_bitbox_xbt_unsupported')) : null,
     el('div', { class: 'actions-wrap' },

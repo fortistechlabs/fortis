@@ -1,0 +1,12 @@
+Fortis Wallet 0.5.1 is out.
+
+A non-custodial Android wallet for Bitcoin XBT and Bitcoin BTC, locked with your fingerprint. Your recovery phrase is generated on your phone, encrypted there, and never leaves it.
+
+New: swap BTC ⇄ XBT directly with another person. Both sides lock coins in an on-chain contract: either you both get paid, or you both get your coins back. Nobody holds your coins in the middle — not the other person, and not us.
+
+Open source. On Zapstore:
+https://zapstore.dev/apps/com.fortistechlabs.wallet
+
+https://fortistechlabs.com/og-wallet-2026-10.png
+
+#bitcoin #xbt #nostr #zapstore #android

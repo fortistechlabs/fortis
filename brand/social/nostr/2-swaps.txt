@@ -1,0 +1,15 @@
+How a person-to-person swap works in Fortis Wallet:
+
+1. Post an offer, take one from the list, or share a code with someone you know.
+2. Whoever sends XBT goes first: the app locks it in a contract on chain.
+3. The other side locks their BTC.
+4. Each side claims the other's coins — claiming reveals the key that lets the other side claim theirs.
+
+If someone backs out, the coins go back. The contract decides, not a person, and not us.
+
+0.5% of what you send (at least 400 sat), plus the network fee. Start small — swaps are new.
+
+A two-minute video of a real swap between two phones:
+https://fortistechlabs.com/swaps
+
+#bitcoin #xbt #atomicswap

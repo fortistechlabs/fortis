@@ -14,6 +14,7 @@ const ASSETS = [
   './', './index.html', './style.css', './manifest.webmanifest',
   './icon.svg', './icon-192.png', './icon-512.png', './apple-touch-icon.png',
   './vendor/qrcode.js',
+  './fonts/jetbrains-mono-regular.woff2', './fonts/jetbrains-mono-medium.woff2', './fonts/jetbrains-mono-semibold.woff2',
   './src/app.js', './src/ui.js', './src/store.js', './src/gateway.js', './src/wallet.js',
   './src/esplora.js', './src/entropy.js', './src/i18n.js', './src/webauthn.js',
   './src/theme.js', './src/preinit.js', './src/relock.js', './src/locales/en.json',

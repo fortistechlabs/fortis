@@ -8,10 +8,11 @@ Implemented on Android in [`ui/theme/Theme.kt`](android/app/src/main/kotlin/com/
 (`Fx` tokens, `FxType` type scale) and [`ui/Glass.kt`](android/app/src/main/kotlin/com/fortis/wallet/ui/Glass.kt)
 (components). Names match across platforms.
 
-> The site ([`site/style.css`](site/style.css)) uses it too, with JetBrains Mono
-> served from `site/fonts/`. **Not yet adopted by the web wallet:**
-> [`web/style.css`](web/style.css) still implements the previous "Glassy &
-> layered" language and castle-shield logo until its own restyle.
+> The site ([`site/style.css`](site/style.css)) and the web wallet
+> ([`web/style.css`](web/style.css)) use it too, with JetBrains Mono served from
+> `site/fonts/` and `web/fonts/`; the web wallet's classes map onto the
+> components below (`.card` = Panel, `.topbar` = hero, `button.primary` /
+> `button.ghost`, `.tabs` / `.seg`, `button.tile` = Pressable tile).
 
 ## Principles
 

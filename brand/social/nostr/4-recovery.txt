@@ -1,0 +1,9 @@
+Lost your phone halfway through a swap?
+
+Restore your recovery phrase on a new phone, then Settings → Find my swaps. Fortis finds the swaps that still have coins locked and finishes them — collecting what you're owed, or refunding you.
+
+And if the other side disappears, your coins come back on their own at the refund time. Their app normally releases them within minutes.
+
+https://fortistechlabs.com/swaps
+
+#bitcoin #xbt #selfcustody

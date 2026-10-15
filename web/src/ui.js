@@ -50,10 +50,7 @@ export function qrCode(text, size = 176) {
   qr.addData(text);
   qr.make();
   const svg = qr.createSvgTag({ cellSize: 4, margin: 8, scalable: true, title: t('cd_address_qr') });
-  return el('div', {
-    style: `width:${size}px;height:${size}px;background:#fff;border-radius:var(--r-sm);padding:10px;margin:0 auto;box-shadow:var(--e-card);`,
-    html: svg,
-  });
+  return el('div', { class: 'qr', style: `width:${size}px;height:${size}px`, html: svg });
 }
 
 /** Same as `qrCode`, but for payloads that might not fit in one QR frame (an
@@ -102,23 +99,6 @@ export function countUp(el, fromSat, toSat) {
   requestAnimationFrame(tick);
 }
 
-/** Nudge the ambient background as the page scrolls. */
-export function initParallax() {
-  const bg = document.querySelector('.bg');
-  if (!bg || reduceMotion()) return;
-  let raf = 0;
-  addEventListener(
-    'scroll',
-    () => {
-      if (raf) return;
-      raf = requestAnimationFrame(() => {
-        bg.style.transform = `translateY(${scrollY * -0.06}px)`;
-        raf = 0;
-      });
-    },
-    { passive: true },
-  );
-}
 export const parseAmount = (s) => {
   const str = String(s).trim();
   const n = Number(str);
