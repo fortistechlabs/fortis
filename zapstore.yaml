@@ -29,11 +29,11 @@ description: |
   - Up to 10 named wallets, any mix of XBT and BTC, from the one phrase.
   - Send and receive with QR codes, a built-in camera scanner, or paste.
   - Fee presets or a custom sat/vB rate; "take the fees out of this amount"; sweep a whole balance.
-  - History with a tap-through to a block explorer; approximate USD value.
+  - History with a tap-through to a block explorer; approximate value in USD, EUR or 28 other currencies (Settings -> Currency).
   - Connect a hardware wallet (Keystone, Passport, SeedSigner, Jade and others) as a view-only BTC wallet by scanning its account QR.
   - Cross-chain replay protection: SIGHASH_UNIFIED on every XBT send (automatic), plus an optional oversized OP_RETURN on BTC sends.
   - Extra entropy from your hands: shake the phone, scribble on screen, or CPU-timing jitter, folded into the seed.
-  - In English, German, French, Spanish, Portuguese and Chinese.
+  - In 75 languages, picked in Settings or following your phone.
   - No analytics, no ads, no third-party SDKs; the backend only ever sees public addresses and finished signed transactions - no account, no sign-up.
 
   Standard, portable keys - restore the same phrase in any BIP-84 wallet. Open source (MIT). No Google Play Services.
