@@ -92,13 +92,22 @@ Examples: `https://api.kraken.com/0/public/Ticker?pair=XBTUSD` for BTC,
 feed). Unset → `/btc/v1/prices` proxies to `--btc-upstream/v1/prices`;
 `/xbt/v1/prices` 404s and the wallet shows no fiat value.
 
-`--fx-url https://www.ecb.europa.eu/stats/eurofxref/eurofxref-daily.xml` adds
-the other currencies: the ECB's daily reference rates (~30 currencies) turn the
-USD price into `{ "USD": 655.0, "EUR": 584.404, "GBP": …, "JPY": … }`. Refreshed
-hourly in the background. A feed that doesn't parse, has no USD, quotes EUR/USD
-outside 0.5–2.0, or is more than 10 days old adds nothing: the answer is USD
-alone, as without the flag, and a wallet set to another currency shows no
-value rather than a wrong one. Older apps read only `USD`.
+The other currencies (`fx.rs`) turn the USD price into
+`{ "USD": 655.0, "EUR": 584.404, "GBP": …, "JPY": … }` for the 29 the wallets offer:
+
+- `--fx-live-url https://api.coinbase.com/v2/exchange-rates?currency=USD` —
+  Coinbase's public rates (no key, updated every minute), asked every 10 min.
+  Used for a currency whenever it's good for it.
+- `--fx-url https://www.ecb.europa.eu/stats/eurofxref/eurofxref-daily.xml` — the
+  ECB's daily reference rates, asked hourly. Used for a currency only when the
+  live feed fails for it: unreachable or junk, its last good answer over an hour
+  old, the currency missing, or its rate more than 10% from the ECB's (a broken
+  or tampered feed, not a market move).
+
+An ECB file that doesn't parse, has no USD, quotes EUR/USD outside 0.5–2.0, or is
+more than 10 days old counts as down. A currency neither feed is good for is left
+out (USD alone when both are down), and a wallet set to it shows no value rather
+than a wrong one. Older apps read only `USD`.
 `--xbt-price-upstream <base>` is a deprecated alias that appends `/v1/prices`.
 
 ### Swaps
@@ -182,7 +191,7 @@ The wallet points its XBT explorer URL at `https://<host>/xbt` and its BTC one a
 | `POST /register` | `{ "token": "<id>.<hmac>" }` |
 | `GET \| POST /xbt/<esplora path>` | → XBT upstream |
 | `GET \| POST /btc/<esplora path>` | → BTC upstream |
-| `GET /{btc,xbt}/v1/prices` | `{ "USD": <n>, ... }` from `--{chain}-price-url`, plus the `--fx-url` currencies (60 s cache); BTC falls back to the Esplora upstream, XBT 404s |
+| `GET /{btc,xbt}/v1/prices` | `{ "USD": <n>, ... }` from `--{chain}-price-url`, plus the `--fx-live-url` / `--fx-url` currencies (60 s cache); BTC falls back to the Esplora upstream, XBT 404s |
 | `POST /btc/prewarm` | `["addr",…]` → batch-load from Haskoin, fill the address cache, `{ "warmed": <n> }` (404 if `--btc-haskoin-url` empty) |
 | `POST /crash` | `204`; appends the body to `--crash-log` (else `404`) |
 | `GET /pricing` | `{address, bps, floor_sat, cap_sat}` when a service fee is set (else `404`) |

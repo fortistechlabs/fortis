@@ -189,6 +189,12 @@ struct Args {
     /// price source (`--{btc,xbt}-price-url`).
     #[arg(long)]
     fx_url: Option<String>,
+    /// Live exchange rates, used first: Coinbase's public
+    /// `https://api.coinbase.com/v2/exchange-rates?currency=USD` (no key,
+    /// updated every minute, asked every 10 min). A currency falls back to
+    /// `--fx-url`'s ECB rate only when this fails for it — see `fx.rs`.
+    #[arg(long)]
+    fx_live_url: Option<String>,
     /// Cap on `/btc/address/*` lookups per second sent to `--btc-upstream`.
     /// A wallet scan fans out ~40 of them at once and public explorers
     /// (mempool.space, blockstream.info) 429 the burst; the edge queues them
@@ -615,7 +621,8 @@ fn run() -> Result<()> {
         xbt_price: xbt_price_url
             .as_deref()
             .map(|u| price::PriceCache::spawn(price::PriceSource::new(u), std::time::Duration::from_secs(60))),
-        fx: args.fx_url.as_deref().map(|u| fx::FxCache::spawn(u, std::time::Duration::from_secs(3600))),
+        fx: (args.fx_url.is_some() || args.fx_live_url.is_some())
+            .then(|| fx::FxCache::spawn(args.fx_live_url.as_deref(), args.fx_url.as_deref())),
         btc_haskoin: args
             .btc_haskoin_url
             .as_deref()
@@ -662,7 +669,8 @@ fn run() -> Result<()> {
     eprintln!("  btc broadcast  {}", args.btc_rpc_url.as_deref().unwrap_or("(via btc upstream)"));
     eprintln!("  btc price      {}", args.btc_price_url.as_deref().unwrap_or("(via btc upstream)"));
     eprintln!("  xbt price    {}", xbt_price_url.as_deref().unwrap_or("(none)"));
-    eprintln!("  fx rates       {}", args.fx_url.as_deref().unwrap_or("(none: USD only)"));
+    eprintln!("  fx live        {}", args.fx_live_url.as_deref().unwrap_or("(none)"));
+    eprintln!("  fx fallback    {}", args.fx_url.as_deref().unwrap_or("(none)"));
     eprintln!("  cache dir      {}", cache_dir.display());
     eprintln!(
         "  btc history    {}",
@@ -1080,8 +1088,8 @@ fn proxy_chain(req: &mut Request, st: &State, method: &Method, path: &str, query
             }
             return match source.current() {
                 Some(usd) => {
-                    let rates = st.fx.as_ref().and_then(fx::FxCache::current);
-                    let body = serde_json::to_vec(&fx::prices_body(usd, rates.as_ref())).unwrap_or_default();
+                    let rates = st.fx.as_ref().map(fx::FxCache::current).unwrap_or_default();
+                    let body = serde_json::to_vec(&fx::prices_body(usd, &rates)).unwrap_or_default();
                     Reply::Raw(200, "application/json".into(), body)
                 }
                 None => {
