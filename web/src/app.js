@@ -21,7 +21,7 @@ import { AutoLock, AUTO_LOCK_MS, sameSecret } from './relock.js';
 import { initTheme } from './theme.js';
 import { FIAT_CODES, chosenFiat, currentFiat, setFiat, defaultFiat, fiatSymbol, fiatName } from './fiat.js';
 import {
-  init as i18nInit, t, tPlural, setLocale, overrideTag, localeLabel, SUPPORTED_LOCALES, currentTag,
+  init as i18nInit, t, tPlural, setLocale, overrideTag, localeLabel, localeLabelIn, SUPPORTED_LOCALES, currentTag,
 } from './i18n.js';
 import {
   el, mount, toast, copy, fmt, fmtFiat, qrCode, qrCodeOrNull, parseAmount, shortTxid, timeAgo, countUp,
@@ -1946,10 +1946,19 @@ function renderLocaleSheet() {
     el('div', { class: 'sheet' },
       el('div', { class: 'grabber' }),
       el('h2', {}, t('settings_language')),
-      el('div', { class: 'locale-list' }, [
-        el('button', { class: !cur ? 'on' : '', onclick: () => pick(null) }, t('language_system_default')),
-        ...tags.map((tag) => el('button', { class: cur === tag ? 'on' : '', onclick: () => pick(tag) }, localeLabel(tag))),
+      el('div', { class: 'locale-list language-list' }, [
+        el('button', { class: !cur ? 'on' : '', 'aria-pressed': String(!cur), onclick: () => pick(null) },
+          el('span', { class: 'name' }, t('language_system_default'))),
+        ...tags.map((tag) => {
+          const own = localeLabel(tag);
+          const inUi = localeLabelIn(tag, currentTag());
+          return el('button', { class: cur === tag ? 'on' : '', 'aria-pressed': String(cur === tag), lang: tag, onclick: () => pick(tag) },
+            el('span', { class: 'name' }, own),
+            inUi !== own ? el('span', { class: 'sub', lang: currentTag() }, inUi) : null);
+        }),
       ]))));
+  // open where the current choice is, not at the top of a long list
+  document.querySelector('.language-list .on')?.scrollIntoView({ block: 'center' });
 }
 
 function renderCurrencySheet() {

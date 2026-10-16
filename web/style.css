@@ -422,10 +422,13 @@ button.tile.on { outline: 1.5px solid var(--signal); outline-offset: -1.5px; }
 .actions-wrap { display: grid; grid-template-columns: 1fr 1fr; gap: var(--s2); }
 .actions-wrap button { min-height: var(--btn-h-dense); margin-bottom: var(--lip); }
 
-/* ---- language picker sheet ---- */
-.locale-list { max-height: 60vh; overflow-y: auto; display: flex; flex-direction: column; gap: 2px; }
+/* ---- picker sheets (language, currency) ---- */
+.locale-list { max-height: 60vh; overflow-y: auto; display: flex; flex-direction: column; gap: 0; }
+/* Pickers (language, currency): whole-row targets with a line between rows. */
 .locale-list button {
-  min-height: 0;
+  min-height: 52px;
+  width: 100%;
+  border-bottom: 1px solid var(--line);
   margin: 0;
   text-align: left;
   text-transform: none;
@@ -433,26 +436,23 @@ button.tile.on { outline: 1.5px solid var(--signal); outline-offset: -1.5px; }
   font: 400 15px/1.4 var(--mono);
   background: transparent;
   box-shadow: none;
-  border-radius: var(--r-sm);
+  border-radius: 0;
   padding: 10px var(--s3);
 }
 .locale-list button:active:not(:disabled) { transform: none; background: var(--panel-raised); }
-.locale-list button.on { background: var(--panel-raised); color: var(--signal); }
+.locale-list button:last-child { border-bottom: 0; }
+.locale-list button.on { background: var(--panel-raised); color: var(--signal); border-radius: var(--r-sm); }
+.language-list button { display: flex; flex-direction: column; align-items: flex-start; justify-content: center; gap: 2px; }
+.language-list .sub { font-size: 13px; color: var(--text-dim); }
+.language-list .on .sub { color: inherit; }
 
-/* Currency picker: whole-row targets, symbol · code · name in columns. */
-.currency-list { gap: 0; }
+/* Currency picker: symbol · code · name in columns. */
 .currency-list button {
   display: grid;
   grid-template-columns: 3.5ch 4.5ch 1fr;
   align-items: center;
   column-gap: var(--s2);
-  min-height: 52px;
-  width: 100%;
-  border-bottom: 1px solid var(--line);
-  border-radius: 0;
 }
-.currency-list button:last-child { border-bottom: 0; }
-.currency-list button.on { border-radius: var(--r-sm); }
 .currency-list .sym { font-weight: 600; text-align: center; color: var(--text-dim); }
 .currency-list .on .sym { color: var(--signal); }
 .currency-list .code { font-weight: 600; }

@@ -90,12 +90,17 @@ export function currentTag() {
  *  one (e.g. "Deutsch", "Português (Brasil)") — derived at runtime, no
  *  hand-maintained label table, mirroring Android's `localeLabel()`. */
 export function localeLabel(tag) {
+  return localeLabelIn(tag, tag);
+}
+
+/** `tag`'s name as said in the language `inTag`, e.g. ("de", "en") → "German". */
+export function localeLabelIn(tag, inTag) {
   try {
     const loc = new Intl.Locale(tag);
-    const lang = new Intl.DisplayNames([tag], { type: 'language' }).of(loc.language);
+    const lang = new Intl.DisplayNames([inTag], { type: 'language' }).of(loc.language);
     const name = lang ? lang.charAt(0).toUpperCase() + lang.slice(1) : tag;
     if (loc.region) {
-      const region = new Intl.DisplayNames([tag], { type: 'region' }).of(loc.region);
+      const region = new Intl.DisplayNames([inTag], { type: 'region' }).of(loc.region);
       if (region) return `${name} (${region})`;
     }
     return name;
