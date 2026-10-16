@@ -132,6 +132,8 @@
   "settings_connection": "இணைப்பு",
   "settings_degraded_note": "fortis சேவையை அணுக முடியவில்லை — தற்போதைக்கு பொது பிளாக் தரவு பயன்படுத்தப்படுகிறது. இது தானாகவே திரும்பும்.",
   "settings_language": "மொழி",
+  "currency_automatic": "தானியங்கு (%1$s)",
+  "settings_currency": "நாணயம்",
   "settings_one_unlock": "ஒரு முறை திறப்பது ஆப்ஸில் உள்ள ஒவ்வொரு வாலட்டையும் திறக்கும்.",
   "settings_security": "பாதுகாப்பு",
   "settings_status": "நிலை",

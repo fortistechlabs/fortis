@@ -132,6 +132,8 @@
   "settings_connection": "Подключение",
   "settings_degraded_note": "Сервис fortis недоступен — пока используются публичные данные блоков. Переключение назад произойдёт автоматически.",
   "settings_language": "Язык",
+  "currency_automatic": "Автоматически (%1$s)",
+  "settings_currency": "Валюта",
   "settings_one_unlock": "Одна разблокировка открывает каждый кошелёк в приложении.",
   "settings_security": "Безопасность",
   "settings_status": "Статус",

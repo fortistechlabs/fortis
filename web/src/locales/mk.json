@@ -132,6 +132,8 @@
   "settings_connection": "Врска",
   "settings_degraded_note": "Услугата fortis е недостапна — засега се користат јавни податоци за блокови. Автоматски ќе се врати назад.",
   "settings_language": "Јазик",
+  "currency_automatic": "Автоматски (%1$s)",
+  "settings_currency": "Валута",
   "settings_one_unlock": "Едно отклучување отвора секој паричник во апликацијата.",
   "settings_security": "Безбедност",
   "settings_status": "Статус",

@@ -100,6 +100,8 @@
     <string name="settings_one_unlock">Ein aflæsing opnar hvert veski í forritinu.</string>
     <string name="settings_language">Tungumál</string>
     <string name="language_system_default">Sjálfgefið kerfis</string>
+    <string name="settings_currency">Gjaldmiðill</string>
+    <string name="currency_automatic">Sjálfvirkt (%1$s)</string>
     <string name="settings_status">Staða</string>
     <string name="settings_chain_height">Keðjuhæð</string>
     <string name="settings_degraded_note">Ekki næst í fortis-þjónustuna — notast við opinber blokkgögn í bili. Það skiptir sjálfkrafa til baka.</string>

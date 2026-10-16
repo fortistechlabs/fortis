@@ -100,6 +100,8 @@
     <string name="settings_one_unlock">การปลดล็อกครั้งเดียวเปิดกระเป๋าเงินทุกใบในแอป</string>
     <string name="settings_language">ภาษา</string>
     <string name="language_system_default">ค่าเริ่มต้นของระบบ</string>
+    <string name="settings_currency">สกุลเงิน</string>
+    <string name="currency_automatic">อัตโนมัติ (%1$s)</string>
     <string name="settings_status">สถานะ</string>
     <string name="settings_chain_height">ความสูงของเชน</string>
     <string name="settings_degraded_note">ไม่สามารถเข้าถึงบริการ fortis ได้ — กำลังใช้ข้อมูลบล็อกสาธารณะชั่วคราว ระบบจะสลับกลับโดยอัตโนมัติ</string>

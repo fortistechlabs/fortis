@@ -132,6 +132,8 @@
   "settings_connection": "সংযোগ",
   "settings_degraded_note": "fortis পরিষেবা অনুপলব্ধ — আপাতত সর্বজনীন ব্লক ডেটা ব্যবহার করা হচ্ছে। এটি স্বয়ংক্রিয়ভাবে ফিরে যাবে।",
   "settings_language": "ভাষা",
+  "currency_automatic": "স্বয়ংক্রিয় (%1$s)",
+  "settings_currency": "মুদ্রা",
   "settings_one_unlock": "একবার আনলক করলে অ্যাপের প্রতিটি ওয়ালেট খুলে যায়।",
   "settings_security": "নিরাপত্তা",
   "settings_status": "স্ট্যাটাস",

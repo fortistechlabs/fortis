@@ -132,6 +132,8 @@
   "settings_connection": "Підключення",
   "settings_degraded_note": "Сервіс fortis недоступний — поки що використовуються публічні дані блоків. Перемикання назад відбудеться автоматично.",
   "settings_language": "Мова",
+  "currency_automatic": "Автоматично (%1$s)",
+  "settings_currency": "Валюта",
   "settings_one_unlock": "Одне розблокування відкриває кожен гаманець у застосунку.",
   "settings_security": "Безпека",
   "settings_status": "Статус",

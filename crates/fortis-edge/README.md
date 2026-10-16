@@ -91,6 +91,14 @@ Examples: `https://api.kraken.com/0/public/Ticker?pair=XBTUSD` for BTC,
 `https://mempool.kilombino.com/api/v1/prices` for XBT (a `fortis-index` has no
 feed). Unset → `/btc/v1/prices` proxies to `--btc-upstream/v1/prices`;
 `/xbt/v1/prices` 404s and the wallet shows no fiat value.
+
+`--fx-url https://www.ecb.europa.eu/stats/eurofxref/eurofxref-daily.xml` adds
+the other currencies: the ECB's daily reference rates (~30 currencies) turn the
+USD price into `{ "USD": 655.0, "EUR": 584.404, "GBP": …, "JPY": … }`. Refreshed
+hourly in the background. A feed that doesn't parse, has no USD, quotes EUR/USD
+outside 0.5–2.0, or is more than 10 days old adds nothing: the answer is USD
+alone, as without the flag, and a wallet set to another currency shows no
+value rather than a wrong one. Older apps read only `USD`.
 `--xbt-price-upstream <base>` is a deprecated alias that appends `/v1/prices`.
 
 ### Swaps
@@ -174,7 +182,7 @@ The wallet points its XBT explorer URL at `https://<host>/xbt` and its BTC one a
 | `POST /register` | `{ "token": "<id>.<hmac>" }` |
 | `GET \| POST /xbt/<esplora path>` | → XBT upstream |
 | `GET \| POST /btc/<esplora path>` | → BTC upstream |
-| `GET /{btc,xbt}/v1/prices` | `{ "USD": <n> }` from `--{chain}-price-url` (60 s cache); BTC falls back to the Esplora upstream, XBT 404s |
+| `GET /{btc,xbt}/v1/prices` | `{ "USD": <n>, ... }` from `--{chain}-price-url`, plus the `--fx-url` currencies (60 s cache); BTC falls back to the Esplora upstream, XBT 404s |
 | `POST /btc/prewarm` | `["addr",…]` → batch-load from Haskoin, fill the address cache, `{ "warmed": <n> }` (404 if `--btc-haskoin-url` empty) |
 | `POST /crash` | `204`; appends the body to `--crash-log` (else `404`) |
 | `GET /pricing` | `{address, bps, floor_sat, cap_sat}` when a service fee is set (else `404`) |

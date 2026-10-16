@@ -100,6 +100,8 @@
     <string name="settings_one_unlock">Ένα ξεκλείδωμα ανοίγει κάθε πορτοφόλι στην εφαρμογή.</string>
     <string name="settings_language">Γλώσσα</string>
     <string name="language_system_default">Προεπιλογή συστήματος</string>
+    <string name="settings_currency">Νόμισμα</string>
+    <string name="currency_automatic">Αυτόματο (%1$s)</string>
     <string name="settings_status">Κατάσταση</string>
     <string name="settings_chain_height">Ύψος αλυσίδας</string>
     <string name="settings_degraded_note">Η υπηρεσία fortis δεν είναι προσβάσιμη — χρήση δημόσιων δεδομένων μπλοκ προς το παρόν. Θα επανέλθει αυτόματα.</string>

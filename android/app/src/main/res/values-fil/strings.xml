@@ -100,6 +100,8 @@
     <string name="settings_one_unlock">Isang unlock ang magbubukas sa bawat wallet sa app.</string>
     <string name="settings_language">Wika</string>
     <string name="language_system_default">Default ng system</string>
+    <string name="settings_currency">Pera</string>
+    <string name="currency_automatic">Awtomatiko (%1$s)</string>
     <string name="settings_status">Status</string>
     <string name="settings_chain_height">Taas ng chain</string>
     <string name="settings_degraded_note">Hindi maabot ang serbisyong fortis — gumagamit muna ng pampublikong block data. Awtomatiko itong babalik.</string>

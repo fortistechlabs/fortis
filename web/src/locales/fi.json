@@ -132,6 +132,8 @@
   "settings_connection": "Yhteys",
   "settings_degraded_note": "Fortis-palveluun ei saada yhteyttä — käytetään toistaiseksi julkisia lohkotietoja. Yhteys palautuu automaattisesti.",
   "settings_language": "Kieli",
+  "currency_automatic": "Automaattinen (%1$s)",
+  "settings_currency": "Valuutta",
   "settings_one_unlock": "Yksi avaus avaa jokaisen lompakon sovelluksessa.",
   "settings_security": "Turvallisuus",
   "settings_status": "Tila",

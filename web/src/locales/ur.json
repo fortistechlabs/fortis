@@ -132,6 +132,8 @@
   "settings_connection": "کنکشن",
   "settings_degraded_note": "fortis سروس تک رسائی نہیں — فی الحال عوامی بلاک ڈیٹا استعمال ہو رہا ہے۔ یہ خود بخود واپس آ جائے گی۔",
   "settings_language": "زبان",
+  "currency_automatic": "خودکار (%1$s)",
+  "settings_currency": "کرنسی",
   "settings_one_unlock": "ایک بار ان لاک کرنے سے ایپ کا ہر والیٹ کھل جاتا ہے۔",
   "settings_security": "سیکیورٹی",
   "settings_status": "حیثیت",

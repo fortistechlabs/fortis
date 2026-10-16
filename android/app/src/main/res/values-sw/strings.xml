@@ -100,6 +100,8 @@
     <string name="settings_one_unlock">Kufungua mara moja hufungua kila pochi katika programu.</string>
     <string name="settings_language">Lugha</string>
     <string name="language_system_default">Chaguo-msingi la mfumo</string>
+    <string name="settings_currency">Sarafu</string>
+    <string name="currency_automatic">Kiotomatiki (%1$s)</string>
     <string name="settings_status">Hali</string>
     <string name="settings_chain_height">Urefu wa mnyororo</string>
     <string name="settings_degraded_note">Huduma ya fortis haipatikani — inatumia data ya umma ya vitalu kwa sasa. Itarudi kiotomatiki.</string>

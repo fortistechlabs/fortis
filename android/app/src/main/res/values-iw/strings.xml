@@ -100,6 +100,8 @@
     <string name="settings_one_unlock">ביטול נעילה אחד פותח כל ארנק באפליקציה.</string>
     <string name="settings_language">שפה</string>
     <string name="language_system_default">ברירת המחדל של המערכת</string>
+    <string name="settings_currency">מטבע</string>
+    <string name="currency_automatic">אוטומטי (%1$s)</string>
     <string name="settings_status">סטטוס</string>
     <string name="settings_chain_height">גובה השרשרת</string>
     <string name="settings_degraded_note">שירות fortis אינו נגיש — נעשה שימוש בנתוני בלוקים ציבוריים לעת עתה. הוא יחזור אוטומטית.</string>

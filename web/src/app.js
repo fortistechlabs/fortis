@@ -19,11 +19,12 @@ import { EntropyPool } from './entropy.js';
 import { registerPrf, unlockPrf, prfPossible } from './webauthn.js';
 import { AutoLock, AUTO_LOCK_MS, sameSecret } from './relock.js';
 import { initTheme } from './theme.js';
+import { FIAT_CODES, chosenFiat, currentFiat, setFiat, defaultFiat, fiatLabel } from './fiat.js';
 import {
-  init as i18nInit, t, tPlural, setLocale, overrideTag, localeLabel, SUPPORTED_LOCALES,
+  init as i18nInit, t, tPlural, setLocale, overrideTag, localeLabel, SUPPORTED_LOCALES, currentTag,
 } from './i18n.js';
 import {
-  el, mount, toast, copy, fmt, fmtUsd, qrCode, qrCodeOrNull, parseAmount, shortTxid, timeAgo, countUp,
+  el, mount, toast, copy, fmt, fmtFiat, qrCode, qrCodeOrNull, parseAmount, shortTxid, timeAgo, countUp,
   SAT,
 } from './ui.js';
 
@@ -45,9 +46,9 @@ const sessions = new Map(); // walletId -> Session (wasm), unsealed lazily, free
 const backends = new Map(); // walletId -> Gateway | EsploraBackend
 
 let ui = { screen: 'main', nav: 'home', tab: 'receive' };
-const overview = { balances: new Map(), usd: {} }; // walletId->sat, chain->usd (Home list)
+const overview = { balances: new Map(), prices: {} }; // walletId->sat, chain->{code: price} (Home list)
 let overviewScanning = false;
-let detail = { status: null, balances: null, history: [], feerate: {}, usd: null, _shownBal: undefined };
+let detail = { status: null, balances: null, history: [], feerate: {}, prices: null, _shownBal: undefined };
 let detailScanning = false;
 
 /** Blank the wallet-detail view — call whenever `state.selected` changes.
@@ -56,7 +57,7 @@ let detailScanning = false;
  *  newly-selected wallet's own refresh() resolves, which for a slow chain
  *  can take a while and looks like the wrong wallet's data. */
 function resetDetail() {
-  detail = { status: null, balances: null, history: [], feerate: {}, usd: null, _shownBal: undefined };
+  detail = { status: null, balances: null, history: [], feerate: {}, prices: null, _shownBal: undefined };
 }
 let detailPoll = null;
 let overviewPoll = null;
@@ -868,7 +869,7 @@ function onWipe() {
       state = null;
       pendingLegacy = null;
       overview.balances.clear();
-      overview.usd = {};
+      overview.prices = {};
       render();
     },
   };
@@ -881,8 +882,8 @@ function onLock() {
   backends.clear();
   appSecret = null;
   overview.balances.clear();
-  overview.usd = {};
-  detail = { status: null, balances: null, history: [], feerate: {}, usd: null, _shownBal: undefined };
+  overview.prices = {};
+  detail = { status: null, balances: null, history: [], feerate: {}, prices: null, _shownBal: undefined };
   ui.prfAutoTried = false;
   ui.nav = 'home';
   render();
@@ -959,8 +960,7 @@ function renderHomeTab() {
       ? el('div', { class: 'tiles' },
           state.wallets.map((w) => {
             const sat = overview.balances.get(w.id);
-            const usdPrice = overview.usd[w.chain];
-            const usd = usdPrice != null && sat != null ? fmtUsd((usdPrice * sat) / SAT) : null;
+            const usd = fiatText(overview.prices[w.chain], sat);
             // The unit already shows with the balance; only what sets this wallet apart.
             const kind = [w.network === 'regtest' ? 'regtest' : null, walletBadgeText(w) || null]
               .filter(Boolean).join(' · ');
@@ -1013,7 +1013,7 @@ function renderWalletTab() {
     else { dot = 'ok'; hint = t('wallet_block', st.node?.blocks); }
   }
   const via = w.backend?.kind === 'edge' ? 'fortis' : w.backend?.kind === 'esplora' ? new URL(w.backend.url).host : t('wallet_via_node');
-  const usdLine = detail.usd != null && b ? t('fiat_approx', fmtUsd((detail.usd * b.confirmed_sat) / SAT)) : null;
+  const usdLine = b && fiatText(detail.prices, b.confirmed_sat) ? t('fiat_approx', fiatText(detail.prices, b.confirmed_sat)) : null;
 
   // The hero panel, laid out as on Android: name (caps), the balance with its
   // unit in signal green, ≈ US$, anything pending, then the status line.
@@ -1078,9 +1078,10 @@ function paneSend(w) {
       }, t(key), presets[target] ? el('span', { class: 'rate' }, ` · ${presets[target]} s/vB`) : null)));
 
   let fiatLine = null;
-  if (!d.sweep && d.amount && detail.usd != null) {
+  if (!d.sweep && d.amount) {
     const n = Number(d.amount);
-    if (isFinite(n) && n > 0) fiatLine = t('value_with_fiat', d.amount, unit, fmtUsd(detail.usd * n));
+    const v = isFinite(n) && n > 0 ? fiatText(detail.prices, Math.round(n * SAT)) : null;
+    if (v) fiatLine = t('value_with_fiat', d.amount, unit, v);
   }
 
   return el('div', { class: 'card stack' },
@@ -1175,8 +1176,8 @@ function renderConfirm() {
   const svcFee = Number(plan.service_fee_sat || 0);
   const outAmount = inTotal - Number(plan.fee_sat) - svcFee - Number(plan.change_sat || 0);
   const totalOut = outAmount + Number(plan.fee_sat) + svcFee;
-  const usdAmount = detail.usd != null ? fmtUsd((detail.usd * outAmount) / SAT) : null;
-  const usdTotal = detail.usd != null ? fmtUsd((detail.usd * totalOut) / SAT) : null;
+  const usdAmount = fiatText(detail.prices, outAmount);
+  const usdTotal = fiatText(detail.prices, totalOut);
   // Cancel is disabled while a hardware sign is in flight: there's no way to
   // actually abort a BitBox02 mid-operation (only declining on the device
   // itself does), so letting the sheet close here would just null out
@@ -1340,7 +1341,7 @@ function paneHistory(w) {
       const send = tx.direction === 'send';
       const label = send && tx.amount_sat === 0 ? t('history_internal') : t(send ? 'history_send' : 'history_receive');
       const fee = send && tx.fee_sat ? ` · ${Math.abs(tx.fee_sat)} sat` : '';
-      const usd = detail.usd != null ? fmtUsd((detail.usd * Math.abs(tx.amount_sat)) / SAT) : null;
+      const usd = fiatText(detail.prices, Math.abs(tx.amount_sat));
       return el('div', { class: 'item', onclick: () => openTx(tx.txid) },
         el('div', {},
           el('div', { class: `amt ${pos ? 'pos' : 'neg'}` }, `${pos ? '+' : ''}${fmt(tx.amount_sat)} ${unit}`),
@@ -1351,6 +1352,15 @@ function paneHistory(w) {
     }),
     explorerTxUrl(w, '') ? el('div', { class: 'hint', style: 'padding:8px 2px 0' }, t('history_hint_web')) : null,
   ]);
+}
+
+/** Approximate value of `sat` in the display currency, formatted, from a
+ *  chain's `{ code: price }` — or null when there's no price in that
+ *  currency (never another currency's). */
+function fiatText(prices, sat) {
+  const code = currentFiat();
+  const p = prices?.[code];
+  return p != null && sat != null ? fmtFiat((p * sat) / SAT, code) : null;
 }
 
 /* ------------------------------------------------------------------ settings */
@@ -1382,6 +1392,10 @@ function renderSettingsTab() {
       el('h2', {}, t('settings_language')),
       el('button', { class: 'ghost wide', onclick: () => { ui.dialog = { kind: 'locale' }; renderDialogSheet(); } },
         overrideTag() ? localeLabel(overrideTag()) : t('language_system_default'))),
+    el('div', { class: 'card stack' },
+      el('h2', {}, t('settings_currency')),
+      el('button', { class: 'ghost wide', onclick: () => { ui.dialog = { kind: 'currency' }; renderDialogSheet(); } },
+        chosenFiat() || t('currency_automatic', defaultFiat(navigator.languages?.[0] || 'en-US')))),
     state.lock ? el('div', { class: 'card stack' },
       el('button', { class: 'ghost wide danger', onclick: onLock }, t('action_lock_app'))) : null,
     // Same key + format Android's Settings footer uses ("fortis 0.4.0"). The
@@ -1650,6 +1664,7 @@ function renderDialogSheet() {
   if (ui.dialog.kind === 'reveal') return renderRevealSheet();
   if (ui.dialog.kind === 'change-password') return renderChangePasswordSheet();
   if (ui.dialog.kind === 'locale') return renderLocaleSheet();
+  if (ui.dialog.kind === 'currency') return renderCurrencySheet();
   if (ui.dialog.kind === 'confirm') return renderConfirmSheet();
   if (ui.dialog.kind === 'prompt') return renderPromptSheet();
   if (ui.dialog.kind === 'reauth') return renderReauthSheet();
@@ -1937,6 +1952,22 @@ function renderLocaleSheet() {
       ]))));
 }
 
+function renderCurrencySheet() {
+  const cur = chosenFiat();
+  const pick = (code) => { setFiat(code); closeDialog(); };
+  mount(el('div', { class: 'sheet-wrap' },
+    el('div', { class: 'scrim', onclick: closeDialog }),
+    el('div', { class: 'sheet' },
+      el('div', { class: 'grabber' }),
+      el('h2', {}, t('settings_currency')),
+      el('div', { class: 'locale-list' }, [
+        el('button', { class: !cur ? 'on' : '', onclick: () => pick(null) },
+          t('currency_automatic', defaultFiat(navigator.languages?.[0] || 'en-US'))),
+        ...FIAT_CODES.map((code) => el('button', { class: cur === code ? 'on' : '', onclick: () => pick(code) },
+          fiatLabel(code, currentTag()))),
+      ]))));
+}
+
 /* ------------------------------------------------------------------ polling */
 
 async function refresh() {
@@ -1973,9 +2004,9 @@ async function refresh() {
     detail.history = history || [];
     renderShellIfIdle();
 
-    const [balances, usd] = await Promise.all([
+    const [balances, prices] = await Promise.all([
       backend.balances().catch(() => null),
-      backend.price ? backend.price().catch(() => null) : Promise.resolve(null),
+      backend.prices ? backend.prices().catch(() => null) : Promise.resolve(null),
     ]);
     // The user may have switched wallets while the awaits above were
     // in flight — `state.selected` would no longer be `refreshingFor`.
@@ -1987,7 +2018,7 @@ async function refresh() {
     // new selection's own refresh() owns `detail` now.
     if (state.selected !== refreshingFor) return;
     if (balances) detail.balances = balances;
-    if (usd != null) { detail.usd = usd; overview.usd[w.chain] = usd; }
+    if (prices) { detail.prices = prices; overview.prices[w.chain] = prices; }
     if (detail.balances) overview.balances.set(w.id, detail.balances.confirmed_sat);
     if (!Object.keys(detail.feerate).length) {
       for (const target of [1, 6, 144]) {
@@ -2017,10 +2048,10 @@ async function refreshAllBalances() {
         await backend.prewarm?.();
         const bal = await backend.balances();
         overview.balances.set(w.id, bal.confirmed_sat);
-        if (!priced.has(w.chain) && backend.price) {
+        if (!priced.has(w.chain) && backend.prices) {
           priced.add(w.chain);
-          const p = await backend.price();
-          if (p != null) overview.usd[w.chain] = p;
+          const p = await backend.prices();
+          if (p) overview.prices[w.chain] = p;
         }
       } catch {
         /* keep this wallet's last cached balance */

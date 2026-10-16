@@ -219,6 +219,8 @@
   "settings_degraded_note": "无法连接 fortis 服务——暂时使用公开区块数据。将自动切换回来。",
   "settings_key_software": "此设备没有安全硬件——解锁密钥仅受软件保护。",
   "settings_language": "语言",
+  "currency_automatic": "自动 (%1$s)",
+  "settings_currency": "货币",
   "settings_theme": "主题",
   "signed_export_body": "在联网设备上扫描此码，或复制下方文本，以便广播。",
   "signed_export_title": "交易已签名",

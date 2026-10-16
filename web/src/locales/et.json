@@ -132,6 +132,8 @@
   "settings_connection": "Ühendus",
   "settings_degraded_note": "Teenus fortis pole kättesaadav — praegu kasutatakse avalikke plokiandmeid. See lülitub automaatselt tagasi.",
   "settings_language": "Keel",
+  "currency_automatic": "Automaatne (%1$s)",
+  "settings_currency": "Valuuta",
   "settings_one_unlock": "Üks avamine avab iga rahakoti rakenduses.",
   "settings_security": "Turvalisus",
   "settings_status": "Olek",

@@ -132,6 +132,8 @@
   "settings_connection": "Connessione",
   "settings_degraded_note": "Il servizio fortis non è raggiungibile — per ora si usano dati pubblici sui blocchi. Tornerà automaticamente.",
   "settings_language": "Lingua",
+  "currency_automatic": "Automatica (%1$s)",
+  "settings_currency": "Valuta",
   "settings_one_unlock": "Uno sblocco apre ogni wallet nell'app.",
   "settings_security": "Sicurezza",
   "settings_status": "Stato",

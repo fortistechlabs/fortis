@@ -100,6 +100,8 @@
     <string name="settings_one_unlock">Desblokeo bakar batek aplikazioko diru-zorro bakoitza irekitzen du.</string>
     <string name="settings_language">Hizkuntza</string>
     <string name="language_system_default">Sistemaren lehenetsia</string>
+    <string name="settings_currency">Moneta</string>
+    <string name="currency_automatic">Automatikoa (%1$s)</string>
     <string name="settings_status">Egoera</string>
     <string name="settings_chain_height">Katearen altuera</string>
     <string name="settings_degraded_note">fortis zerbitzua ez dago eskuragarri — oraingoz blokeen datu publikoak erabiltzen ari da. Automatikoki itzuliko da.</string>

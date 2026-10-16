@@ -100,6 +100,8 @@
     <string name="settings_one_unlock">Jedno odomknutie otvorí každú peňaženku v aplikácii.</string>
     <string name="settings_language">Jazyk</string>
     <string name="language_system_default">Predvolené nastavenie systému</string>
+    <string name="settings_currency">Mena</string>
+    <string name="currency_automatic">Automaticky (%1$s)</string>
     <string name="settings_status">Stav</string>
     <string name="settings_chain_height">Výška reťazca</string>
     <string name="settings_degraded_note">Služba fortis je nedostupná — zatiaľ sa používajú verejné údaje blokov. Prepne sa späť automaticky.</string>

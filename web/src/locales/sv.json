@@ -132,6 +132,8 @@
   "settings_connection": "Anslutning",
   "settings_degraded_note": "Fortis-tjänsten är inte tillgänglig — använder offentliga blockdata tills vidare. Den växlar tillbaka automatiskt.",
   "settings_language": "Språk",
+  "currency_automatic": "Automatisk (%1$s)",
+  "settings_currency": "Valuta",
   "settings_one_unlock": "En upplåsning öppnar varje plånbok i appen.",
   "settings_security": "Säkerhet",
   "settings_status": "Status",

@@ -132,6 +132,8 @@
   "settings_connection": "Připojení",
   "settings_degraded_note": "Služba fortis je nedostupná — zatím se používají veřejná data bloků. Přepne se zpět automaticky.",
   "settings_language": "Jazyk",
+  "currency_automatic": "Automaticky (%1$s)",
+  "settings_currency": "Měna",
   "settings_one_unlock": "Jedno odemknutí otevře každou peněženku v aplikaci.",
   "settings_security": "Zabezpečení",
   "settings_status": "Stav",

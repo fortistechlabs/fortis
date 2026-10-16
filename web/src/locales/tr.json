@@ -132,6 +132,8 @@
   "settings_connection": "Bağlantı",
   "settings_degraded_note": "fortis hizmetine ulaşılamıyor — şimdilik herkese açık blok verileri kullanılıyor. Otomatik olarak geri dönecek.",
   "settings_language": "Dil",
+  "currency_automatic": "Otomatik (%1$s)",
+  "settings_currency": "Para birimi",
   "settings_one_unlock": "Tek bir kilit açma, uygulamadaki her cüzdanı açar.",
   "settings_security": "Güvenlik",
   "settings_status": "Durum",

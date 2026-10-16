@@ -132,6 +132,8 @@
   "settings_connection": "Байланыш",
   "settings_degraded_note": "fortis кызматына жетүү мүмкүн эмес — азырынча ачык блок маалыматтары колдонулууда. Автоматтык түрдө кайра которулат.",
   "settings_language": "Тил",
+  "currency_automatic": "Автоматтык (%1$s)",
+  "settings_currency": "Валюта",
   "settings_one_unlock": "Бир жолу кулпуну ачуу колдонмодогу ар бир капчыкты ачат.",
   "settings_security": "Коопсуздук",
   "settings_status": "Абал",

@@ -100,6 +100,8 @@
     <string name="settings_one_unlock">একবার আনলক করলে অ্যাপের প্রতিটি ওয়ালেট খুলে যায়।</string>
     <string name="settings_language">ভাষা</string>
     <string name="language_system_default">সিস্টেম ডিফল্ট</string>
+    <string name="settings_currency">মুদ্রা</string>
+    <string name="currency_automatic">স্বয়ংক্রিয় (%1$s)</string>
     <string name="settings_status">স্ট্যাটাস</string>
     <string name="settings_chain_height">চেইনের উচ্চতা</string>
     <string name="settings_degraded_note">fortis পরিষেবা অনুপলব্ধ — আপাতত সর্বজনীন ব্লক ডেটা ব্যবহার করা হচ্ছে। এটি স্বয়ংক্রিয়ভাবে ফিরে যাবে।</string>

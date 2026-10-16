@@ -132,6 +132,8 @@
   "settings_connection": "കണക്ഷൻ",
   "settings_degraded_note": "fortis സേവനം ലഭ്യമല്ല — തൽക്കാലം പൊതു ബ്ലോക്ക് ഡാറ്റ ഉപയോഗിക്കുന്നു. ഇത് സ്വയമേവ തിരികെ മാറും.",
   "settings_language": "ഭാഷ",
+  "currency_automatic": "സ്വയമേവ (%1$s)",
+  "settings_currency": "കറൻസി",
   "settings_one_unlock": "ഒരു തവണ അൺലോക്ക് ചെയ്യുന്നത് ആപ്പിലെ ഓരോ വാലറ്റും തുറക്കുന്നു.",
   "settings_security": "സുരക്ഷ",
   "settings_status": "നില",

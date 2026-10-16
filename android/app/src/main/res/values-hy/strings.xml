@@ -100,6 +100,8 @@
     <string name="settings_one_unlock">Մեկ ապակողպումը բացում է հավելվածի յուրաքանչյուր դրամապանակ։</string>
     <string name="settings_language">Լեզու</string>
     <string name="language_system_default">Համակարգի կանխադրված</string>
+    <string name="settings_currency">Արժույթ</string>
+    <string name="currency_automatic">Ավտոմատ (%1$s)</string>
     <string name="settings_status">Կարգավիճակ</string>
     <string name="settings_chain_height">Շղթայի բարձրություն</string>
     <string name="settings_degraded_note">fortis ծառայությունն անհասանելի է — առայժմ օգտագործվում են հանրային բլոկների տվյալները։ Ավտոմատ կվերադառնա։</string>

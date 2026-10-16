@@ -220,6 +220,8 @@
   "settings_degraded_note": "O serviço fortis está inacessível — a usar dados públicos de blocos por agora. Voltará automaticamente.",
   "settings_key_software": "Este dispositivo não tem hardware seguro — a chave de desbloqueio está protegida apenas por software.",
   "settings_language": "Idioma",
+  "currency_automatic": "Automática (%1$s)",
+  "settings_currency": "Moeda",
   "settings_theme": "Tema",
   "signed_export_body": "Leia isto no dispositivo online ou copie o texto abaixo para a difundir.",
   "signed_export_title": "Transação assinada",

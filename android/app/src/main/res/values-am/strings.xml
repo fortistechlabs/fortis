@@ -100,6 +100,8 @@
     <string name="settings_one_unlock">አንድ ጊዜ መክፈት በመተግበሪያው ውስጥ ያለውን እያንዳንዱን ዋሌት ይከፍታል።</string>
     <string name="settings_language">ቋንቋ</string>
     <string name="language_system_default">የስርዓት ነባሪ</string>
+    <string name="settings_currency">ምንዛሪ</string>
+    <string name="currency_automatic">ራስ-ሰር (%1$s)</string>
     <string name="settings_status">ሁኔታ</string>
     <string name="settings_chain_height">የሰንሰለት ቁመት</string>
     <string name="settings_degraded_note">የ fortis አገልግሎት ተደራሽ አይደለም — ለአሁኑ ይፋዊ የብሎክ ውሂብ በመጠቀም ላይ። በራስ-ሰር ወደ ኋላ ይመለሳል።</string>

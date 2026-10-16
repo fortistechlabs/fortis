@@ -100,6 +100,8 @@
     <string name="settings_one_unlock">Egyetlen feloldás megnyit minden tárcát az alkalmazásban.</string>
     <string name="settings_language">Nyelv</string>
     <string name="language_system_default">Rendszer alapértelmezése</string>
+    <string name="settings_currency">Pénznem</string>
+    <string name="currency_automatic">Automatikus (%1$s)</string>
     <string name="settings_status">Állapot</string>
     <string name="settings_chain_height">Lánc magassága</string>
     <string name="settings_degraded_note">A fortis szolgáltatás nem érhető el — egyelőre nyilvános blokkadatokat használunk. Automatikusan visszavált.</string>

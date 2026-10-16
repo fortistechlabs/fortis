@@ -100,6 +100,8 @@
     <string name="settings_one_unlock">ஒரு முறை திறப்பது ஆப்ஸில் உள்ள ஒவ்வொரு வாலட்டையும் திறக்கும்.</string>
     <string name="settings_language">மொழி</string>
     <string name="language_system_default">சிஸ்டம் இயல்புநிலை</string>
+    <string name="settings_currency">நாணயம்</string>
+    <string name="currency_automatic">தானியங்கு (%1$s)</string>
     <string name="settings_status">நிலை</string>
     <string name="settings_chain_height">செயின் உயரம்</string>
     <string name="settings_degraded_note">fortis சேவையை அணுக முடியவில்லை — தற்போதைக்கு பொது பிளாக் தரவு பயன்படுத்தப்படுகிறது. இது தானாகவே திரும்பும்.</string>

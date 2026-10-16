@@ -132,6 +132,8 @@
   "settings_connection": "Verbinding",
   "settings_degraded_note": "Die fortis-diens is onbereikbaar — gebruik voorlopig openbare blokdata. Dit sal outomaties terugskakel.",
   "settings_language": "Taal",
+  "currency_automatic": "Outomaties (%1$s)",
+  "settings_currency": "Geldeenheid",
   "settings_one_unlock": "Een ontsluiting maak elke beursie in die app oop.",
   "settings_security": "Sekuriteit",
   "settings_status": "Status",

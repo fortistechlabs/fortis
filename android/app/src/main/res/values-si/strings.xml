@@ -100,6 +100,8 @@
     <string name="settings_one_unlock">එක් වරක් අගුළු ඇරීමෙන් යෙදුමේ සෑම පසුම්බියක්ම විවෘත වේ.</string>
     <string name="settings_language">භාෂාව</string>
     <string name="language_system_default">පද්ධති පෙරනිමිය</string>
+    <string name="settings_currency">මුදල් වර්ගය</string>
+    <string name="currency_automatic">ස්වයංක්‍රීය (%1$s)</string>
     <string name="settings_status">තත්ත්වය</string>
     <string name="settings_chain_height">දාම උස</string>
     <string name="settings_degraded_note">fortis සේවාවට ළඟා විය නොහැක — දැනට පොදු බ්ලොක් දත්ත භාවිතා කරයි. එය ස්වයංක්‍රීයව නැවත මාරු වේ.</string>

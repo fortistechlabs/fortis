@@ -67,13 +67,15 @@ export function qrCodeOrNull(text, size = 220) {
   }
 }
 
-/** Approximate USD value, device-locale grouping/punctuation, USD currency
- *  pinned regardless of locale. `< $0.01` floor for tiny nonzero values,
- *  matching the Android app's `fmtUsd`. `null`/`undefined` -> null (omit). */
-export function fmtUsd(v) {
+/** Approximate fiat value in `code`, device-locale grouping/punctuation, in
+ *  the currency's own decimals ("¥1,235"). A `<` floor of the smallest unit
+ *  for tiny nonzero values ("<$0.01", "<¥1"), matching the Android app's
+ *  `fmtFiat`. `null`/`undefined` -> null (omit). */
+export function fmtFiat(v, code) {
   if (v == null || !isFinite(v)) return null;
-  const nf = new Intl.NumberFormat(currentTag(), { style: 'currency', currency: 'USD' });
-  return v > 0 && v < 0.01 ? '<' + nf.format(0.01) : nf.format(v);
+  const nf = new Intl.NumberFormat(currentTag(), { style: 'currency', currency: code });
+  const unit = 10 ** -nf.resolvedOptions().maximumFractionDigits;
+  return v > 0 && v < unit ? '<' + nf.format(unit) : nf.format(v);
 }
 
 const reduceMotion = () =>

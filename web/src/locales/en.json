@@ -220,6 +220,8 @@
   "settings_degraded_note": "The fortis service is unreachable — using public block data for now. It'll switch back automatically.",
   "settings_key_software": "This device has no secure hardware — the unlock key is protected in software only.",
   "settings_language": "Language",
+  "currency_automatic": "Automatic (%1$s)",
+  "settings_currency": "Currency",
   "settings_theme": "Theme",
   "signed_export_body": "Scan this on the online device, or copy the text below, to broadcast it.",
   "signed_export_title": "Transaction signed",

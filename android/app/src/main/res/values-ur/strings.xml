@@ -100,6 +100,8 @@
     <string name="settings_one_unlock">ایک بار ان لاک کرنے سے ایپ کا ہر والیٹ کھل جاتا ہے۔</string>
     <string name="settings_language">زبان</string>
     <string name="language_system_default">سسٹم ڈیفالٹ</string>
+    <string name="settings_currency">کرنسی</string>
+    <string name="currency_automatic">خودکار (%1$s)</string>
     <string name="settings_status">حیثیت</string>
     <string name="settings_chain_height">چین کی اونچائی</string>
     <string name="settings_degraded_note">fortis سروس تک رسائی نہیں — فی الحال عوامی بلاک ڈیٹا استعمال ہو رہا ہے۔ یہ خود بخود واپس آ جائے گی۔</string>

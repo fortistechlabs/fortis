@@ -154,6 +154,8 @@
     <string name="settings_key_software">This device has no secure hardware — the unlock key is protected in software only.</string>
     <string name="settings_language">Language</string>
     <string name="language_system_default">System default</string>
+    <string name="settings_currency">Currency</string>
+    <string name="currency_automatic">Automatic (%1$s)</string>
     <string name="settings_status">Status</string>
     <string name="settings_chain_height">Chain height</string>
     <string name="settings_degraded_note">The fortis service is unreachable — using public block data for now. It\'ll switch back automatically.</string>

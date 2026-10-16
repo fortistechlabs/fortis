@@ -132,6 +132,8 @@
   "settings_connection": "ಸಂಪರ್ಕ",
   "settings_degraded_note": "fortis ಸೇವೆ ಲಭ್ಯವಿಲ್ಲ — ಸದ್ಯಕ್ಕೆ ಸಾರ್ವಜನಿಕ ಬ್ಲಾಕ್ ಡೇಟಾ ಬಳಸಲಾಗುತ್ತಿದೆ. ಇದು ಸ್ವಯಂಚಾಲಿತವಾಗಿ ಮರಳುತ್ತದೆ.",
   "settings_language": "ಭಾಷೆ",
+  "currency_automatic": "ಸ್ವಯಂಚಾಲಿತ (%1$s)",
+  "settings_currency": "ಕರೆನ್ಸಿ",
   "settings_one_unlock": "ಒಮ್ಮೆ ಅನ್‌ಲಾಕ್ ಮಾಡಿದರೆ ಆ್ಯಪ್‌ನ ಪ್ರತಿ ವಾಲೆಟ್ ತೆರೆಯುತ್ತದೆ.",
   "settings_security": "ಭದ್ರತೆ",
   "settings_status": "ಸ್ಥಿತಿ",

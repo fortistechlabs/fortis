@@ -100,6 +100,8 @@
     <string name="settings_one_unlock">Một lần mở khóa mở mọi ví trong ứng dụng.</string>
     <string name="settings_language">Ngôn ngữ</string>
     <string name="language_system_default">Mặc định của hệ thống</string>
+    <string name="settings_currency">Tiền tệ</string>
+    <string name="currency_automatic">Tự động (%1$s)</string>
     <string name="settings_status">Trạng thái</string>
     <string name="settings_chain_height">Độ cao chuỗi</string>
     <string name="settings_degraded_note">Không thể kết nối dịch vụ fortis — tạm dùng dữ liệu khối công khai. Sẽ tự động chuyển lại.</string>

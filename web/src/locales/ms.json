@@ -132,6 +132,8 @@
   "settings_connection": "Sambungan",
   "settings_degraded_note": "Perkhidmatan fortis tidak dapat dicapai — menggunakan data blok awam buat masa ini. Ia akan bertukar semula secara automatik.",
   "settings_language": "Bahasa",
+  "currency_automatic": "Automatik (%1$s)",
+  "settings_currency": "Mata wang",
   "settings_one_unlock": "Satu buka kunci membuka setiap dompet dalam apl.",
   "settings_security": "Keselamatan",
   "settings_status": "Status",

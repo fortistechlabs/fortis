@@ -100,6 +100,8 @@
     <string name="settings_one_unlock">Üks avamine avab iga rahakoti rakenduses.</string>
     <string name="settings_language">Keel</string>
     <string name="language_system_default">Süsteemi vaikeväärtus</string>
+    <string name="settings_currency">Valuuta</string>
+    <string name="currency_automatic">Automaatne (%1$s)</string>
     <string name="settings_status">Olek</string>
     <string name="settings_chain_height">Ahela kõrgus</string>
     <string name="settings_degraded_note">Teenus fortis pole kättesaadav — praegu kasutatakse avalikke plokiandmeid. See lülitub automaatselt tagasi.</string>

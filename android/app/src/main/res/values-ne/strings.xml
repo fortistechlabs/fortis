@@ -100,6 +100,8 @@
     <string name="settings_one_unlock">एक पटक अनलक गर्दा एपको प्रत्येक वालेट खुल्छ।</string>
     <string name="settings_language">भाषा</string>
     <string name="language_system_default">सिस्टम पूर्वनिर्धारित</string>
+    <string name="settings_currency">मुद्रा</string>
+    <string name="currency_automatic">स्वचालित (%1$s)</string>
     <string name="settings_status">स्थिति</string>
     <string name="settings_chain_height">चेन उचाइ</string>
     <string name="settings_degraded_note">fortis सेवा पहुँचयोग्य छैन — अहिलेलाई सार्वजनिक ब्लक डेटा प्रयोग हुँदैछ। यो स्वतः फर्किनेछ।</string>

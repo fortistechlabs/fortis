@@ -220,6 +220,8 @@
   "settings_degraded_note": "Le service fortis est injoignable — utilisation de données de blocs publiques pour l'instant. Le retour se fera automatiquement.",
   "settings_key_software": "Cet appareil n’a pas de matériel sécurisé — la clé de déverrouillage n’est protégée que par logiciel.",
   "settings_language": "Langue",
+  "currency_automatic": "Automatique (%1$s)",
+  "settings_currency": "Devise",
   "settings_theme": "Thème",
   "signed_export_body": "Scannez ceci sur l’appareil en ligne, ou copiez le texte ci-dessous, pour la diffuser.",
   "signed_export_title": "Transaction signée",

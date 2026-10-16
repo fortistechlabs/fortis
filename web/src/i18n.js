@@ -1,7 +1,7 @@
 // Locale strings. Mirrors the Android app's res/values*/strings.xml — same keys,
 // same %1$s/%1$d placeholder syntax — so translations can be converted straight
-// across (see web/tools/i18n_extract.py). Fiat stays USD-only regardless of
-// locale; only strings and number/date formatting localize.
+// across (see web/tools/i18n_extract.py). The fiat currency is its own setting
+// (fiat.js); only strings and number/date formatting follow the language.
 
 const LS_KEY = 'fortis_locale';
 

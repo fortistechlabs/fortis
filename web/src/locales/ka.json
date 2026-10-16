@@ -132,6 +132,8 @@
   "settings_connection": "კავშირი",
   "settings_degraded_note": "fortis სერვისი მიუწვდომელია — ჯერჯერობით გამოიყენება საჯარო ბლოკის მონაცემები. ავტომატურად დაბრუნდება.",
   "settings_language": "ენა",
+  "currency_automatic": "ავტომატური (%1$s)",
+  "settings_currency": "ვალუტა",
   "settings_one_unlock": "ერთი განბლოკვა ხსნის აპლიკაციის თითოეულ საფულეს.",
   "settings_security": "უსაფრთხოება",
   "settings_status": "სტატუსი",

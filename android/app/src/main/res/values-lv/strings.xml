@@ -100,6 +100,8 @@
     <string name="settings_one_unlock">Viena atbloķēšana atver katru maku lietotnē.</string>
     <string name="settings_language">Valoda</string>
     <string name="language_system_default">Sistēmas noklusējums</string>
+    <string name="settings_currency">Valūta</string>
+    <string name="currency_automatic">Automātiski (%1$s)</string>
     <string name="settings_status">Statuss</string>
     <string name="settings_chain_height">Ķēdes augstums</string>
     <string name="settings_degraded_note">Pakalpojums fortis nav sasniedzams — pagaidām tiek izmantoti publiski bloku dati. Tas automātiski pārslēgsies atpakaļ.</string>

@@ -132,6 +132,8 @@
   "settings_connection": "Връзка",
   "settings_degraded_note": "Услугата fortis е недостъпна — засега се използват публични данни за блокове. Ще превключи обратно автоматично.",
   "settings_language": "Език",
+  "currency_automatic": "Автоматично (%1$s)",
+  "settings_currency": "Валута",
   "settings_one_unlock": "Едно отключване отваря всеки портфейл в приложението.",
   "settings_security": "Сигурност",
   "settings_status": "Състояние",

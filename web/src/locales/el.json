@@ -132,6 +132,8 @@
   "settings_connection": "Σύνδεση",
   "settings_degraded_note": "Η υπηρεσία fortis δεν είναι προσβάσιμη — χρήση δημόσιων δεδομένων μπλοκ προς το παρόν. Θα επανέλθει αυτόματα.",
   "settings_language": "Γλώσσα",
+  "currency_automatic": "Αυτόματο (%1$s)",
+  "settings_currency": "Νόμισμα",
   "settings_one_unlock": "Ένα ξεκλείδωμα ανοίγει κάθε πορτοφόλι στην εφαρμογή.",
   "settings_security": "Ασφάλεια",
   "settings_status": "Κατάσταση",

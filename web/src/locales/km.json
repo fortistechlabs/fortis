@@ -132,6 +132,8 @@
   "settings_connection": "ការតភ្ជាប់",
   "settings_degraded_note": "សេវាកម្ម fortis មិនអាចចូលប្រើបាន — កំពុងប្រើទិន្នន័យប្លុកសាធារណៈជាបណ្តោះអាសន្ន។ វានឹងប្ដូរត្រឡប់ដោយស្វ័យប្រវត្តិ។",
   "settings_language": "ភាសា",
+  "currency_automatic": "ស្វ័យប្រវត្តិ (%1$s)",
+  "settings_currency": "រូបិយប័ណ្ណ",
   "settings_one_unlock": "ការដោះសោមួយដងបើកកាបូបនីមួយៗនៅក្នុងកម្មវិធី។",
   "settings_security": "សុវត្ថិភាព",
   "settings_status": "ស្ថានភាព",

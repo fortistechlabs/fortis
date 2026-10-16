@@ -132,6 +132,8 @@
   "settings_connection": "Koneksyon",
   "settings_degraded_note": "Hindi maabot ang serbisyong fortis — gumagamit muna ng pampublikong block data. Awtomatiko itong babalik.",
   "settings_language": "Wika",
+  "currency_automatic": "Awtomatiko (%1$s)",
+  "settings_currency": "Pera",
   "settings_one_unlock": "Isang unlock ang magbubukas sa bawat wallet sa app.",
   "settings_security": "Seguridad",
   "settings_status": "Status",

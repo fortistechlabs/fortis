@@ -100,6 +100,8 @@
     <string name="settings_one_unlock">Бір рет ашу қолданбадағы әр әмиянды ашады.</string>
     <string name="settings_language">Тіл</string>
     <string name="language_system_default">Жүйе әдепкісі</string>
+    <string name="settings_currency">Валюта</string>
+    <string name="currency_automatic">Автоматты (%1$s)</string>
     <string name="settings_status">Күй</string>
     <string name="settings_chain_height">Тізбек биіктігі</string>
     <string name="settings_degraded_note">fortis қызметіне қол жеткізу мүмкін емес — әзірге ашық блок деректері пайдаланылуда. Автоматты түрде қайта ауысады.</string>

@@ -132,6 +132,8 @@
   "settings_connection": "اتصال",
   "settings_degraded_note": "سرویس fortis در دسترس نیست — فعلاً از داده‌های عمومی بلاک استفاده می‌شود. به‌صورت خودکار بازمی‌گردد.",
   "settings_language": "زبان",
+  "currency_automatic": "خودکار (%1$s)",
+  "settings_currency": "واحد پول",
   "settings_one_unlock": "یک بار باز کردن قفل هر کیف پول در برنامه را باز می‌کند.",
   "settings_security": "امنیت",
   "settings_status": "وضعیت",

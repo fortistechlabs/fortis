@@ -204,14 +204,30 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
      *  logcat — hinting at what had actually gone wrong. */
     var lastRefreshError by mutableStateOf<String?>(null); private set
 
-    /** USD per whole coin, keyed by chain ("btc" / "xbt"). Shared by every
-     *  wallet on that chain; absent = no fiat value shown. */
-    var coinUsd by mutableStateOf<Map<String, Double>>(emptyMap()); private set
+    /** Price per whole coin by currency code, keyed by chain ("btc" / "xbt").
+     *  Shared by every wallet on that chain; absent = no fiat value shown. */
+    var coinPrices by mutableStateOf<Map<String, Map<String, Double>>>(emptyMap()); private set
 
-    /** Approximate USD value of `sat` on `chain`, or null if that chain has no
-     *  price yet. */
-    fun usdValue(sat: Long, chain: String): Double? =
-        coinUsd[chain]?.let { it * (sat / 100_000_000.0) }
+    private val fiatPrefs = FiatPrefs(app)
+
+    /** The currency fiat values are shown in: the one chosen in Settings, else
+     *  the device region's (see [defaultFiat]). */
+    var fiat by mutableStateOf(fiatPrefs.chosen() ?: defaultFiat()); private set
+
+    /** Whether [fiat] was chosen (false = following the device region). */
+    var fiatChosen by mutableStateOf(fiatPrefs.chosen() != null); private set
+
+    /** Choose the display currency; null = follow the device region. */
+    fun chooseFiat(code: String?) {
+        fiatPrefs.set(code)
+        fiat = code ?: defaultFiat()
+        fiatChosen = code != null
+    }
+
+    /** Approximate value of `sat` on `chain` in [fiat], formatted, or null if
+     *  there's no price in that currency yet. Never another currency's. */
+    fun fiatText(sat: Long, chain: String): String? =
+        coinPrices[chain]?.get(fiat)?.let { fmtFiat(it * (sat / 100_000_000.0), fiat) }
     var history by mutableStateOf<List<HistoryEntry>>(emptyList()); private set
     var feerates by mutableStateOf<Map<Int, Long>>(emptyMap()); private set
     var pending by mutableStateOf<PlanPreview?>(null); private set
@@ -354,8 +370,8 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
         overview = overview.with(id, b)
     }
 
-    private fun setCoinUsd(chain: String, usd: Double) = synchronized(balanceLock) {
-        coinUsd = coinUsd + (chain to usd)
+    private fun setCoinPrices(chain: String, prices: Map<String, Double>) = synchronized(balanceLock) {
+        coinPrices = coinPrices + (chain to prices)
     }
 
     /** Scan every wallet's balance in the background; failures leave that
@@ -381,7 +397,7 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
                     }
                     // one price lookup per chain, reused across its wallets
                     if (priced.add(w.chain)) {
-                        runCatching { b.price() }.getOrNull()?.let { setCoinUsd(w.chain, it) }
+                        runCatching { b.prices() }.getOrNull()?.let { setCoinPrices(w.chain, it) }
                     }
                 }
             } finally {
@@ -1137,7 +1153,7 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
         sessions.values.forEach { it.close() }
         sessions.clear()
         appSecret = null
-        synchronized(balanceLock) { overview = OverviewBalances(); coinUsd = emptyMap() }
+        synchronized(balanceLock) { overview = OverviewBalances(); coinPrices = emptyMap() }
         overviewBackends.clear()
         revealingId = null
         declineTaken()
@@ -1520,7 +1536,7 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
                 }
             }
 
-            val newUsd = refreshingChain?.let { ch -> runCatching { b.price() }.getOrNull()?.let { ch to it } }
+            val newPrices = refreshingChain?.let { ch -> runCatching { b.prices() }.getOrNull()?.let { ch to it } }
             val newFeerates =
                 if (feerates.isEmpty()) listOf(1, 6, 144).associateWith { b.feerateSatVb(it).toLong() } else null
             val cur = wallets.firstOrNull { it.id == refreshingFor }?.nextReceive ?: 0
@@ -1536,11 +1552,11 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
             // next XBT poll tick corrected it. Discard silently instead — the
             // new selection's own refresh() owns the UI now. (balances/history
             // already passed this same check right after they were fetched;
-            // this second check guards newUsd/newFeerates/freshReceive, which
+            // this second check guards newPrices/newFeerates/freshReceive, which
             // were fetched afterward and could race a switch on their own.)
             if (backend !== b && fallback !== b) return
 
-            newUsd?.let { (ch, usd) -> setCoinUsd(ch, usd) }
+            newPrices?.let { (ch, p) -> setCoinPrices(ch, p) }
             newFeerates?.let { feerates = it }
             if (refreshingFor != null && freshReceive > cur) {
                 updateConfig(refreshingFor) { it.copy(nextReceive = freshReceive) }

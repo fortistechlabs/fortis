@@ -100,6 +100,8 @@
     <string name="settings_one_unlock">Tek bir kilit açma, uygulamadaki her cüzdanı açar.</string>
     <string name="settings_language">Dil</string>
     <string name="language_system_default">Sistem varsayılanı</string>
+    <string name="settings_currency">Para birimi</string>
+    <string name="currency_automatic">Otomatik (%1$s)</string>
     <string name="settings_status">Durum</string>
     <string name="settings_chain_height">Zincir yüksekliği</string>
     <string name="settings_degraded_note">fortis hizmetine ulaşılamıyor — şimdilik herkese açık blok verileri kullanılıyor. Otomatik olarak geri dönecek.</string>

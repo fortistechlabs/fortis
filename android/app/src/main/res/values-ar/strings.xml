@@ -100,6 +100,8 @@
     <string name="settings_one_unlock">إلغاء قفل واحد يفتح كل محفظة في التطبيق.</string>
     <string name="settings_language">اللغة</string>
     <string name="language_system_default">إعداد النظام الافتراضي</string>
+    <string name="settings_currency">العملة</string>
+    <string name="currency_automatic">تلقائي (%1$s)</string>
     <string name="settings_status">الحالة</string>
     <string name="settings_chain_height">ارتفاع السلسلة</string>
     <string name="settings_degraded_note">خدمة fortis غير قابلة للوصول — يتم استخدام بيانات الكتل العامة مؤقتًا. ستعود تلقائيًا.</string>

@@ -132,6 +132,8 @@
   "settings_connection": "Savienojums",
   "settings_degraded_note": "Pakalpojums fortis nav sasniedzams — pagaidām tiek izmantoti publiski bloku dati. Tas automātiski pārslēgsies atpakaļ.",
   "settings_language": "Valoda",
+  "currency_automatic": "Automātiski (%1$s)",
+  "settings_currency": "Valūta",
   "settings_one_unlock": "Viena atbloķēšana atver katru maku lietotnē.",
   "settings_security": "Drošība",
   "settings_status": "Statuss",

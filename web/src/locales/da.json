@@ -132,6 +132,8 @@
   "settings_connection": "Forbindelse",
   "settings_degraded_note": "Fortis-tjenesten kan ikke nås — bruger offentlige blokdata indtil videre. Den skifter tilbage automatisk.",
   "settings_language": "Sprog",
+  "currency_automatic": "Automatisk (%1$s)",
+  "settings_currency": "Valuta",
   "settings_one_unlock": "Én oplåsning åbner hver tegnebog i appen.",
   "settings_security": "Sikkerhed",
   "settings_status": "Status",

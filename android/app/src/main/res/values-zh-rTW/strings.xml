@@ -104,6 +104,8 @@
     <string name="settings_one_unlock">一次解鎖即可開啟應用程式中的每個錢包。</string>
     <string name="settings_language">語言</string>
     <string name="language_system_default">系統預設</string>
+    <string name="settings_currency">貨幣</string>
+    <string name="currency_automatic">自動 (%1$s)</string>
     <string name="settings_status">狀態</string>
     <string name="settings_chain_height">鏈高度</string>
     <string name="settings_degraded_note">無法連線 fortis 服務——暫時使用公開區塊資料。將自動切換回來。</string>

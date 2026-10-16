@@ -132,6 +132,8 @@
   "settings_connection": "Կապ",
   "settings_degraded_note": "fortis ծառայությունն անհասանելի է — առայժմ օգտագործվում են հանրային բլոկների տվյալները։ Ավտոմատ կվերադառնա։",
   "settings_language": "Լեզու",
+  "currency_automatic": "Ավտոմատ (%1$s)",
+  "settings_currency": "Արժույթ",
   "settings_one_unlock": "Մեկ ապակողպումը բացում է հավելվածի յուրաքանչյուր դրամապանակ։",
   "settings_security": "Անվտանգություն",
   "settings_status": "Կարգավիճակ",

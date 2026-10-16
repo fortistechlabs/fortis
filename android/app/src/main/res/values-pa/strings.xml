@@ -100,6 +100,8 @@
     <string name="settings_one_unlock">ਇੱਕ ਵਾਰ ਅਨਲਾਕ ਕਰਨ ਨਾਲ ਐਪ ਦਾ ਹਰ ਵਾਲਿਟ ਖੁੱਲ੍ਹ ਜਾਂਦਾ ਹੈ।</string>
     <string name="settings_language">ਭਾਸ਼ਾ</string>
     <string name="language_system_default">ਸਿਸਟਮ ਡਿਫਾਲਟ</string>
+    <string name="settings_currency">ਮੁਦਰਾ</string>
+    <string name="currency_automatic">ਸਵੈਚਲਿਤ (%1$s)</string>
     <string name="settings_status">ਸਥਿਤੀ</string>
     <string name="settings_chain_height">ਚੇਨ ਦੀ ਉਚਾਈ</string>
     <string name="settings_degraded_note">fortis ਸੇਵਾ ਉਪਲਬਧ ਨਹੀਂ — ਹਾਲੇ ਜਨਤਕ ਬਲਾਕ ਡਾਟਾ ਵਰਤਿਆ ਜਾ ਰਿਹਾ ਹੈ। ਇਹ ਆਪਣੇ ਆਪ ਵਾਪਸ ਆ ਜਾਵੇਗੀ।</string>

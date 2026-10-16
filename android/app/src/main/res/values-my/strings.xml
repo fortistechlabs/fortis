@@ -100,6 +100,8 @@
     <string name="settings_one_unlock">တစ်ကြိမ် သော့ဖွင့်ခြင်းဖြင့် အက်ပ်ရှိ ပိုက်ဆံအိတ်တစ်ခုစီ ပွင့်သည်။</string>
     <string name="settings_language">ဘာသာစကား</string>
     <string name="language_system_default">စနစ် မူရင်း</string>
+    <string name="settings_currency">ငွေကြေး</string>
+    <string name="currency_automatic">အလိုအလျောက် (%1$s)</string>
     <string name="settings_status">အခြေအနေ</string>
     <string name="settings_chain_height">ကွင်းဆက် အမြင့်</string>
     <string name="settings_degraded_note">fortis ဝန်ဆောင်မှုကို ချိတ်ဆက်၍ မရပါ — ယခုအတွက် အများသုံး block ဒေတာကို အသုံးပြုနေသည်။ အလိုအလျောက် ပြန်ပြောင်းသွားပါမည်။</string>

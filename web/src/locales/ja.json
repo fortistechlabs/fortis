@@ -132,6 +132,8 @@
   "settings_connection": "接続",
   "settings_degraded_note": "fortis サービスに接続できません — 現在は公開ブロックデータを使用しています。自動的に切り替わります。",
   "settings_language": "言語",
+  "currency_automatic": "自動 (%1$s)",
+  "settings_currency": "通貨",
   "settings_one_unlock": "1回のロック解除でアプリ内のすべてのウォレットが開きます。",
   "settings_security": "セキュリティ",
   "settings_status": "ステータス",

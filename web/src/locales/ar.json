@@ -132,6 +132,8 @@
   "settings_connection": "الاتصال",
   "settings_degraded_note": "خدمة fortis غير قابلة للوصول — يتم استخدام بيانات الكتل العامة مؤقتًا. ستعود تلقائيًا.",
   "settings_language": "اللغة",
+  "currency_automatic": "تلقائي (%1$s)",
+  "settings_currency": "العملة",
   "settings_one_unlock": "إلغاء قفل واحد يفتح كل محفظة في التطبيق.",
   "settings_security": "الأمان",
   "settings_status": "الحالة",

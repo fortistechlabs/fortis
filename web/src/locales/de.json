@@ -220,6 +220,8 @@
   "settings_degraded_note": "Der Fortis-Dienst ist nicht erreichbar – vorerst werden öffentliche Blockdaten verwendet. Es wird automatisch zurückgewechselt.",
   "settings_key_software": "Dieses Gerät hat keine sichere Hardware – der Entsperrschlüssel ist nur per Software geschützt.",
   "settings_language": "Sprache",
+  "currency_automatic": "Automatisch (%1$s)",
+  "settings_currency": "Währung",
   "settings_theme": "Design",
   "signed_export_body": "Scanne dies auf dem Online-Gerät oder kopiere den Text unten, um sie zu senden.",
   "signed_export_title": "Transaktion signiert",

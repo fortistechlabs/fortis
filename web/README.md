@@ -4,8 +4,8 @@ A static, offline-capable (PWA) browser wallet. Keys are generated and every
 signature is produced **inside WebAssembly** (`wallet-wasm`); the encrypted seed
 lives in this browser's IndexedDB and never leaves the device. Feature parity
 with the Android app: up to 10 named wallets behind one app lock (password,
-plus optional WebAuthn quick-unlock on supporting browsers), approximate USD
-value, and the UI in ~75 languages (Settings → Language).
+plus optional WebAuthn quick-unlock on supporting browsers), approximate value
+in USD, EUR or 28 other currencies (Settings → Currency), and the UI in ~75 languages (Settings → Language).
 
 At onboarding you create or restore your first wallet, which connects to the
 hosted `fortis` edge automatically (mainnet only — no picker shown). Each
@@ -111,7 +111,7 @@ network.
 ## Scope
 
 Create / restore (12 or 24 words, optional passphrase), up to 10 named wallets
-behind one app lock, balance with approximate USD value, receive addresses,
+behind one app lock, balance with approximate fiat value, receive addresses,
 send + sweep with a fee-rate control, transaction history, on either backend,
 in ~75 languages, a QR code on the receive address. Not yet: RBF fee-bump, coin control, swaps.
 
@@ -137,8 +137,8 @@ chain code) — no new phrase to write down.
 UI strings live in `src/locales/*.json`, converted from the Android app's
 `res/values*/strings.xml` by `tools/i18n_extract.py` (re-run it after Android's
 strings change — it's a manual step, not part of any build). A locale not
-fully translated falls back to English per missing key. Fiat is USD-only
-regardless of language.
+fully translated falls back to English per missing key. The fiat currency is a
+separate setting (Settings → Currency; by default the browser region's).
 
 Verified in headless Chrome: send → broadcast against a regtest node with BLAKE2b
 active, and the explorer path (scan / balance / fees / history) against live
@@ -153,10 +153,11 @@ the language picker, and wallet management actions against the hosted edge.
 | `src/app.js` | controller + screens (no framework) |
 | `src/wallet.js` | `wallet-wasm` wrapper — the only file that touches keys |
 | `src/webauthn.js` | WebAuthn PRF registration/assertion for quick unlock |
+| `src/fiat.js` | the display currency (Settings → Currency, else the browser region's) and parsing `/v1/prices` (`node --test src/fiat.test.js`) |
 | `src/relock.js` | auto-lock after a minute hidden, and the constant-time secret check behind "confirm it's you" (`node --test src/relock.test.js`) |
 | `src/i18n.js`, `src/locales/*.json` | translation loader + per-locale strings |
 | `src/gateway.js` | `fortisd` gateway client (your own node) |
-| `src/esplora.js` | Esplora/edge client — address-gap-limit scan, USD price, same interface as the gateway |
+| `src/esplora.js` | Esplora/edge client — address-gap-limit scan, fiat prices, same interface as the gateway |
 | `src/store.js` | IndexedDB (wallet list + app-lock block; migrates a v1 single-wallet record) |
 | `src/ui.js` | DOM helpers, formatting |
 | `sw.js`, `manifest.webmanifest` | PWA / offline shell |

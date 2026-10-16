@@ -11,6 +11,7 @@
 mod btc_history;
 mod cache;
 mod haskoin;
+mod fx;
 mod limit;
 mod mempool_ws;
 mod metrics;
@@ -181,6 +182,13 @@ struct Args {
     /// `/v1/prices` carries the feed (e.g. https://mempool.kilombino.com/api).
     #[arg(long)]
     xbt_price_upstream: Option<String>,
+    /// Exchange-rate feed for the non-USD currencies in `/v1/prices`: the ECB
+    /// daily reference rates XML
+    /// (https://www.ecb.europa.eu/stats/eurofxref/eurofxref-daily.xml).
+    /// Unset → `/v1/prices` answers USD only. Only applies to a chain with a
+    /// price source (`--{btc,xbt}-price-url`).
+    #[arg(long)]
+    fx_url: Option<String>,
     /// Cap on `/btc/address/*` lookups per second sent to `--btc-upstream`.
     /// A wallet scan fans out ~40 of them at once and public explorers
     /// (mempool.space, blockstream.info) 429 the burst; the edge queues them
@@ -362,6 +370,7 @@ struct State {
     btc_broadcast: Option<fortis_node::Rpc>,
     btc_price: Option<price::PriceCache>,
     xbt_price: Option<price::PriceCache>,
+    fx: Option<fx::FxCache>,
     btc_haskoin: Option<haskoin::HaskoinStore>,
     btc_upstream_scan: bool,
     btc_pacer: Option<Pacer>,
@@ -606,6 +615,7 @@ fn run() -> Result<()> {
         xbt_price: xbt_price_url
             .as_deref()
             .map(|u| price::PriceCache::spawn(price::PriceSource::new(u), std::time::Duration::from_secs(60))),
+        fx: args.fx_url.as_deref().map(|u| fx::FxCache::spawn(u, std::time::Duration::from_secs(3600))),
         btc_haskoin: args
             .btc_haskoin_url
             .as_deref()
@@ -652,6 +662,7 @@ fn run() -> Result<()> {
     eprintln!("  btc broadcast  {}", args.btc_rpc_url.as_deref().unwrap_or("(via btc upstream)"));
     eprintln!("  btc price      {}", args.btc_price_url.as_deref().unwrap_or("(via btc upstream)"));
     eprintln!("  xbt price    {}", xbt_price_url.as_deref().unwrap_or("(none)"));
+    eprintln!("  fx rates       {}", args.fx_url.as_deref().unwrap_or("(none: USD only)"));
     eprintln!("  cache dir      {}", cache_dir.display());
     eprintln!(
         "  btc history    {}",
@@ -1069,7 +1080,8 @@ fn proxy_chain(req: &mut Request, st: &State, method: &Method, path: &str, query
             }
             return match source.current() {
                 Some(usd) => {
-                    let body = serde_json::to_vec(&json!({ "USD": usd })).unwrap_or_default();
+                    let rates = st.fx.as_ref().and_then(fx::FxCache::current);
+                    let body = serde_json::to_vec(&fx::prices_body(usd, rates.as_ref())).unwrap_or_default();
                     Reply::Raw(200, "application/json".into(), body)
                 }
                 None => {

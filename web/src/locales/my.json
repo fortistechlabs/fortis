@@ -132,6 +132,8 @@
   "settings_connection": "ချိတ်ဆက်မှု",
   "settings_degraded_note": "fortis ဝန်ဆောင်မှုကို ချိတ်ဆက်၍ မရပါ — ယခုအတွက် အများသုံး block ဒေတာကို အသုံးပြုနေသည်။ အလိုအလျောက် ပြန်ပြောင်းသွားပါမည်။",
   "settings_language": "ဘာသာစကား",
+  "currency_automatic": "အလိုအလျောက် (%1$s)",
+  "settings_currency": "ငွေကြေး",
   "settings_one_unlock": "တစ်ကြိမ် သော့ဖွင့်ခြင်းဖြင့် အက်ပ်ရှိ ပိုက်ဆံအိတ်တစ်ခုစီ ပွင့်သည်။",
   "settings_security": "လုံခြုံရေး",
   "settings_status": "အခြေအနေ",

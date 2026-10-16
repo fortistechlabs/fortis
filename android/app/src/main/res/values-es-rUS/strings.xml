@@ -100,6 +100,8 @@
     <string name="settings_one_unlock">Un solo desbloqueo abre todas las billeteras de la app.</string>
     <string name="settings_language">Idioma</string>
     <string name="language_system_default">Predeterminado del sistema</string>
+    <string name="settings_currency">Moneda</string>
+    <string name="currency_automatic">Automática (%1$s)</string>
     <string name="settings_status">Estado</string>
     <string name="settings_chain_height">Altura de la cadena</string>
     <string name="settings_degraded_note">El servicio fortis no está disponible — se usan datos públicos de bloques por ahora. Volverá automáticamente.</string>

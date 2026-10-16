@@ -100,6 +100,8 @@
     <string name="settings_one_unlock">Едно отклучување отвора секој паричник во апликацијата.</string>
     <string name="settings_language">Јазик</string>
     <string name="language_system_default">Стандардно за системот</string>
+    <string name="settings_currency">Валута</string>
+    <string name="currency_automatic">Автоматски (%1$s)</string>
     <string name="settings_status">Статус</string>
     <string name="settings_chain_height">Височина на синџирот</string>
     <string name="settings_degraded_note">Услугата fortis е недостапна — засега се користат јавни податоци за блокови. Автоматски ќе се врати назад.</string>

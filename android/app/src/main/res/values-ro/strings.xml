@@ -100,6 +100,8 @@
     <string name="settings_one_unlock">O singură deblocare deschide fiecare portofel din aplicație.</string>
     <string name="settings_language">Limbă</string>
     <string name="language_system_default">Implicit din sistem</string>
+    <string name="settings_currency">Monedă</string>
+    <string name="currency_automatic">Automat (%1$s)</string>
     <string name="settings_status">Stare</string>
     <string name="settings_chain_height">Înălțimea lanțului</string>
     <string name="settings_degraded_note">Serviciul fortis este inaccesibil — se folosesc deocamdată date publice despre blocuri. Va reveni automat.</string>

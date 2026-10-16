@@ -132,6 +132,8 @@
   "settings_connection": "ਕਨੈਕਸ਼ਨ",
   "settings_degraded_note": "fortis ਸੇਵਾ ਉਪਲਬਧ ਨਹੀਂ — ਹਾਲੇ ਜਨਤਕ ਬਲਾਕ ਡਾਟਾ ਵਰਤਿਆ ਜਾ ਰਿਹਾ ਹੈ। ਇਹ ਆਪਣੇ ਆਪ ਵਾਪਸ ਆ ਜਾਵੇਗੀ।",
   "settings_language": "ਭਾਸ਼ਾ",
+  "currency_automatic": "ਸਵੈਚਲਿਤ (%1$s)",
+  "settings_currency": "ਮੁਦਰਾ",
   "settings_one_unlock": "ਇੱਕ ਵਾਰ ਅਨਲਾਕ ਕਰਨ ਨਾਲ ਐਪ ਦਾ ਹਰ ਵਾਲਿਟ ਖੁੱਲ੍ਹ ਜਾਂਦਾ ਹੈ।",
   "settings_security": "ਸੁਰੱਖਿਆ",
   "settings_status": "ਸਥਿਤੀ",

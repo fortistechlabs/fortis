@@ -104,6 +104,8 @@
     <string name="settings_one_unlock">Ein Entsperren öffnet jede Wallet in der App.</string>
     <string name="settings_language">Sprache</string>
     <string name="language_system_default">Systemstandard</string>
+    <string name="settings_currency">Währung</string>
+    <string name="currency_automatic">Automatisch (%1$s)</string>
     <string name="settings_status">Status</string>
     <string name="settings_chain_height">Chain-Höhe</string>
     <string name="settings_degraded_note">Der Fortis-Dienst ist nicht erreichbar – vorerst werden öffentliche Blockdaten verwendet. Es wird automatisch zurückgewechselt.</string>

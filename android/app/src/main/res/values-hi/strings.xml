@@ -100,6 +100,8 @@
     <string name="settings_one_unlock">एक बार अनलॉक करने से ऐप का हर वॉलेट खुल जाता है।</string>
     <string name="settings_language">भाषा</string>
     <string name="language_system_default">सिस्टम डिफ़ॉल्ट</string>
+    <string name="settings_currency">मुद्रा</string>
+    <string name="currency_automatic">स्वचालित (%1$s)</string>
     <string name="settings_status">स्थिति</string>
     <string name="settings_chain_height">चेन ऊँचाई</string>
     <string name="settings_degraded_note">fortis सेवा अनुपलब्ध है — फ़िलहाल सार्वजनिक ब्लॉक डेटा का उपयोग हो रहा है। यह अपने आप वापस स्विच हो जाएगी।</string>

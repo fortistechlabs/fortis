@@ -132,6 +132,8 @@
   "settings_connection": "Ryšys",
   "settings_degraded_note": "Paslauga fortis nepasiekiama — kol kas naudojami vieši blokų duomenys. Ji automatiškai persijungs atgal.",
   "settings_language": "Kalba",
+  "currency_automatic": "Automatiškai (%1$s)",
+  "settings_currency": "Valiuta",
   "settings_one_unlock": "Vienas atrakinimas atidaro kiekvieną piniginę programoje.",
   "settings_security": "Sauga",
   "settings_status": "Būsena",

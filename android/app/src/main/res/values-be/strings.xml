@@ -100,6 +100,8 @@
     <string name="settings_one_unlock">Адно разблакіраванне адкрывае кожны кашалёк у праграме.</string>
     <string name="settings_language">Мова</string>
     <string name="language_system_default">Прадвызначана сістэмай</string>
+    <string name="settings_currency">Валюта</string>
+    <string name="currency_automatic">Аўтаматычна (%1$s)</string>
     <string name="settings_status">Стан</string>
     <string name="settings_chain_height">Вышыня ланцуга</string>
     <string name="settings_degraded_note">Сэрвіс fortis недаступны — пакуль выкарыстоўваюцца публічныя даныя блокаў. Пераключэнне назад адбудзецца аўтаматычна.</string>

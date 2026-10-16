@@ -132,6 +132,8 @@
   "settings_connection": "Povezava",
   "settings_degraded_note": "Storitev fortis ni dosegljiva — zaenkrat se uporabljajo javni podatki o blokih. Samodejno se bo preklopila nazaj.",
   "settings_language": "Jezik",
+  "currency_automatic": "Samodejno (%1$s)",
+  "settings_currency": "Valuta",
   "settings_one_unlock": "En odklep odpre vsako denarnico v aplikaciji.",
   "settings_security": "Varnost",
   "settings_status": "Stanje",

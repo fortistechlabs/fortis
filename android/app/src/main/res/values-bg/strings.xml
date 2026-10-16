@@ -100,6 +100,8 @@
     <string name="settings_one_unlock">Едно отключване отваря всеки портфейл в приложението.</string>
     <string name="settings_language">Език</string>
     <string name="language_system_default">Системна по подразбиране</string>
+    <string name="settings_currency">Валута</string>
+    <string name="currency_automatic">Автоматично (%1$s)</string>
     <string name="settings_status">Състояние</string>
     <string name="settings_chain_height">Височина на веригата</string>
     <string name="settings_degraded_note">Услугата fortis е недостъпна — засега се използват публични данни за блокове. Ще превключи обратно автоматично.</string>

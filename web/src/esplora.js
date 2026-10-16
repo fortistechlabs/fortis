@@ -5,6 +5,7 @@
 // `Gateway`, so `app.js` treats the two interchangeably.
 
 import { loadAddrTxs, saveAddrTxs } from './store.js';
+import { parsePrices } from './fiat.js';
 
 const GAP = 20; // stop scanning a branch after this many consecutive unused
 const CHUNK = 8; // parallel requests per batch
@@ -107,8 +108,8 @@ export class EsploraBackend {
     this._hist = null;
     this._fees = null;
     this._feesLoading = null;
-    this._price = null; // last-known-good USD price, or null before any success
-    this._priceAt = 0;
+    this._prices = null; // last-known-good { code: price }, or null before any success
+    this._pricesAt = 0;
     this._lastPrewarm = 0;
     this._watchSetCache = null;
     this._watchSetCacheAt = 0;
@@ -147,24 +148,24 @@ export class EsploraBackend {
     }
   }
 
-  /** Approximate USD spot price for this chain, or `null` (no feed — either a
+  /** Approximate spot price per whole coin by currency code (always with
+   *  USD; see fiat.js `parsePrices`), or `null` (no feed — either a
    *  non-`edge` backend, which has no `/v1/prices` route, or a transient
    *  failure, in which case the last-known-good value is kept). Client-cached
    *  ~120s on top of the edge's own 60s cache. */
-  async price() {
+  async prices() {
     if (this.kind !== 'edge') return null;
-    if (this._price != null && Date.now() - this._priceAt < 120_000) return this._price;
+    if (this._prices != null && Date.now() - this._pricesAt < 120_000) return this._prices;
     try {
-      const r = await this.get('/v1/prices');
-      const v = Number(r?.USD);
-      if (isFinite(v) && v > 0) {
-        this._price = v;
-        this._priceAt = Date.now();
+      const v = parsePrices(await this.get('/v1/prices'));
+      if (v) {
+        this._prices = v;
+        this._pricesAt = Date.now();
       }
     } catch {
       /* keep the last-known-good value, if any */
     }
-    return this._price;
+    return this._prices;
   }
 
   async _loadPricing() {

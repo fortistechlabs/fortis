@@ -100,6 +100,8 @@
     <string name="settings_one_unlock">Нэг удаа түгжээ тайлахад аппын хэтэвч бүр нээгдэнэ.</string>
     <string name="settings_language">Хэл</string>
     <string name="language_system_default">Системийн үндсэн</string>
+    <string name="settings_currency">Валют</string>
+    <string name="currency_automatic">Автомат (%1$s)</string>
     <string name="settings_status">Төлөв</string>
     <string name="settings_chain_height">Гинжний өндөр</string>
     <string name="settings_degraded_note">fortis үйлчилгээ хүрэлцэхгүй байна — одоохондоо нийтийн блокийн өгөгдөл ашиглаж байна. Автоматаар буцаж холбогдоно.</string>

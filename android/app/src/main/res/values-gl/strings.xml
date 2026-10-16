@@ -100,6 +100,8 @@
     <string name="settings_one_unlock">Un só desbloqueo abre todas as carteiras da app.</string>
     <string name="settings_language">Idioma</string>
     <string name="language_system_default">Predeterminado do sistema</string>
+    <string name="settings_currency">Moeda</string>
+    <string name="currency_automatic">Automática (%1$s)</string>
     <string name="settings_status">Estado</string>
     <string name="settings_chain_height">Altura da cadea</string>
     <string name="settings_degraded_note">O servizo fortis non é accesible — usando datos públicos de bloques por agora. Volverá automaticamente.</string>

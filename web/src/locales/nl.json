@@ -132,6 +132,8 @@
   "settings_connection": "Verbinding",
   "settings_degraded_note": "De fortis-service is onbereikbaar — voorlopig worden openbare blokgegevens gebruikt. Er wordt automatisch teruggeschakeld.",
   "settings_language": "Taal",
+  "currency_automatic": "Automatisch (%1$s)",
+  "settings_currency": "Valuta",
   "settings_one_unlock": "Eén keer ontgrendelen opent elke wallet in de app.",
   "settings_security": "Beveiliging",
   "settings_status": "Status",

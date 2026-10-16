@@ -132,6 +132,8 @@
   "settings_connection": "Conexiune",
   "settings_degraded_note": "Serviciul fortis este inaccesibil — se folosesc deocamdată date publice despre blocuri. Va reveni automat.",
   "settings_language": "Limbă",
+  "currency_automatic": "Automat (%1$s)",
+  "settings_currency": "Monedă",
   "settings_one_unlock": "O singură deblocare deschide fiecare portofel din aplicație.",
   "settings_security": "Securitate",
   "settings_status": "Stare",

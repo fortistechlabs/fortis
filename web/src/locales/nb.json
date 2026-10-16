@@ -132,6 +132,8 @@
   "settings_connection": "Tilkobling",
   "settings_degraded_note": "Fortis-tjenesten er utilgjengelig — bruker offentlige blokkdata inntil videre. Den bytter tilbake automatisk.",
   "settings_language": "Språk",
+  "currency_automatic": "Automatisk (%1$s)",
+  "settings_currency": "Valuta",
   "settings_one_unlock": "Én opplåsing åpner hver lommebok i appen.",
   "settings_security": "Sikkerhet",
   "settings_status": "Status",

@@ -132,6 +132,8 @@
   "settings_connection": "కనెక్షన్",
   "settings_degraded_note": "fortis సేవ అందుబాటులో లేదు — ప్రస్తుతానికి పబ్లిక్ బ్లాక్ డేటా ఉపయోగించబడుతోంది. ఇది స్వయంచాలకంగా తిరిగి మారుతుంది.",
   "settings_language": "భాష",
+  "currency_automatic": "ఆటోమేటిక్ (%1$s)",
+  "settings_currency": "కరెన్సీ",
   "settings_one_unlock": "ఒకసారి అన్‌లాక్ చేస్తే యాప్‌లోని ప్రతి వాలెట్ తెరుచుకుంటుంది.",
   "settings_security": "భద్రత",
   "settings_status": "స్థితి",

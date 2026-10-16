@@ -132,6 +132,8 @@
   "settings_connection": "Байланыс",
   "settings_degraded_note": "fortis қызметіне қол жеткізу мүмкін емес — әзірге ашық блок деректері пайдаланылуда. Автоматты түрде қайта ауысады.",
   "settings_language": "Тіл",
+  "currency_automatic": "Автоматты (%1$s)",
+  "settings_currency": "Валюта",
   "settings_one_unlock": "Бір рет ашу қолданбадағы әр әмиянды ашады.",
   "settings_security": "Қауіпсіздік",
   "settings_status": "Күй",

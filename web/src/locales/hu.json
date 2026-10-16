@@ -132,6 +132,8 @@
   "settings_connection": "Kapcsolat",
   "settings_degraded_note": "A fortis szolgáltatás nem érhető el — egyelőre nyilvános blokkadatokat használunk. Automatikusan visszavált.",
   "settings_language": "Nyelv",
+  "currency_automatic": "Automatikus (%1$s)",
+  "settings_currency": "Pénznem",
   "settings_one_unlock": "Egyetlen feloldás megnyit minden tárcát az alkalmazásban.",
   "settings_security": "Biztonság",
   "settings_status": "Állapot",

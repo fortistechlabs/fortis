@@ -132,6 +132,8 @@
   "settings_connection": "연결",
   "settings_degraded_note": "fortis 서비스에 연결할 수 없습니다 — 현재 공개 블록 데이터를 사용 중입니다. 자동으로 다시 전환됩니다.",
   "settings_language": "언어",
+  "currency_automatic": "자동 (%1$s)",
+  "settings_currency": "통화",
   "settings_one_unlock": "한 번의 잠금 해제로 앱의 모든 지갑이 열립니다.",
   "settings_security": "보안",
   "settings_status": "상태",

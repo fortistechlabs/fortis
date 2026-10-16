@@ -100,6 +100,8 @@
     <string name="settings_one_unlock">Одне розблокування відкриває кожен гаманець у застосунку.</string>
     <string name="settings_language">Мова</string>
     <string name="language_system_default">Системна за замовчуванням</string>
+    <string name="settings_currency">Валюта</string>
+    <string name="currency_automatic">Автоматично (%1$s)</string>
     <string name="settings_status">Статус</string>
     <string name="settings_chain_height">Висота ланцюга</string>
     <string name="settings_degraded_note">Сервіс fortis недоступний — поки що використовуються публічні дані блоків. Перемикання назад відбудеться автоматично.</string>

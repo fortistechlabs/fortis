@@ -100,6 +100,8 @@
     <string name="settings_one_unlock">Бир жолу кулпуну ачуу колдонмодогу ар бир капчыкты ачат.</string>
     <string name="settings_language">Тил</string>
     <string name="language_system_default">Тутумдун демейкиси</string>
+    <string name="settings_currency">Валюта</string>
+    <string name="currency_automatic">Автоматтык (%1$s)</string>
     <string name="settings_status">Абал</string>
     <string name="settings_chain_height">Чынжырдын бийиктиги</string>
     <string name="settings_degraded_note">fortis кызматына жетүү мүмкүн эмес — азырынча ачык блок маалыматтары колдонулууда. Автоматтык түрдө кайра которулат.</string>

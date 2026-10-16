@@ -132,6 +132,8 @@
   "settings_connection": "Veza",
   "settings_degraded_note": "Usluga fortis nije dostupna — zasad se koriste javni podaci o blokovima. Automatski će se vratiti.",
   "settings_language": "Jezik",
+  "currency_automatic": "Automatski (%1$s)",
+  "settings_currency": "Valuta",
   "settings_one_unlock": "Jedno otključavanje otvara svaki novčanik u aplikaciji.",
   "settings_security": "Sigurnost",
   "settings_status": "Status",

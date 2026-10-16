@@ -132,6 +132,8 @@
   "settings_connection": "Bağlantı",
   "settings_degraded_note": "fortis xidmətinə çıxış yoxdur — hələlik ictimai blok məlumatları istifadə olunur. Avtomatik olaraq geri qayıdacaq.",
   "settings_language": "Dil",
+  "currency_automatic": "Avtomatik (%1$s)",
+  "settings_currency": "Valyuta",
   "settings_one_unlock": "Bir dəfə kiliddən çıxarma tətbiqdəki hər pulqabını açır.",
   "settings_security": "Təhlükəsizlik",
   "settings_status": "Status",

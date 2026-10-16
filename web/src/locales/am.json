@@ -132,6 +132,8 @@
   "settings_connection": "ግንኙነት",
   "settings_degraded_note": "የ fortis አገልግሎት ተደራሽ አይደለም — ለአሁኑ ይፋዊ የብሎክ ውሂብ በመጠቀም ላይ። በራስ-ሰር ወደ ኋላ ይመለሳል።",
   "settings_language": "ቋንቋ",
+  "currency_automatic": "ራስ-ሰር (%1$s)",
+  "settings_currency": "ምንዛሪ",
   "settings_one_unlock": "አንድ ጊዜ መክፈት በመተግበሪያው ውስጥ ያለውን እያንዳንዱን ዋሌት ይከፍታል።",
   "settings_security": "ደህንነት",
   "settings_status": "ሁኔታ",

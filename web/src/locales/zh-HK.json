@@ -219,6 +219,8 @@
   "settings_degraded_note": "無法連線 fortis 服務——暫時使用公開區塊資料。將自動切換回來。",
   "settings_key_software": "這台裝置沒有安全硬體——解鎖金鑰僅受軟體保護。",
   "settings_language": "語言",
+  "currency_automatic": "自動 (%1$s)",
+  "settings_currency": "貨幣",
   "settings_theme": "主題",
   "signed_export_body": "在連網的裝置上掃描這個碼，或複製下方文字，以便廣播。",
   "signed_export_title": "交易已簽署",

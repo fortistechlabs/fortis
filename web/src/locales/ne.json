@@ -132,6 +132,8 @@
   "settings_connection": "जडान",
   "settings_degraded_note": "fortis सेवा पहुँचयोग्य छैन — अहिलेलाई सार्वजनिक ब्लक डेटा प्रयोग हुँदैछ। यो स्वतः फर्किनेछ।",
   "settings_language": "भाषा",
+  "currency_automatic": "स्वचालित (%1$s)",
+  "settings_currency": "मुद्रा",
   "settings_one_unlock": "एक पटक अनलक गर्दा एपको प्रत्येक वालेट खुल्छ।",
   "settings_security": "सुरक्षा",
   "settings_status": "स्थिति",

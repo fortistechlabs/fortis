@@ -100,6 +100,8 @@
     <string name="settings_one_unlock">Једно откључавање отвара сваки новчаник у апликацији.</string>
     <string name="settings_language">Језик</string>
     <string name="language_system_default">Подразумевано за систем</string>
+    <string name="settings_currency">Валута</string>
+    <string name="currency_automatic">Аутоматски (%1$s)</string>
     <string name="settings_status">Статус</string>
     <string name="settings_chain_height">Висина ланца</string>
     <string name="settings_degraded_note">Услуга fortis није доступна — за сада се користе јавни подаци о блоковима. Аутоматски ће се вратити.</string>

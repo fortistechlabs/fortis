@@ -4265,6 +4265,7 @@ mod tests {
             btc_broadcast: None,
             btc_price: None,
             xbt_price: None,
+            fx: None,
             btc_haskoin: None,
             btc_upstream_scan: false,
             btc_pacer: None,

@@ -132,6 +132,8 @@
   "settings_connection": "การเชื่อมต่อ",
   "settings_degraded_note": "ไม่สามารถเข้าถึงบริการ fortis ได้ — กำลังใช้ข้อมูลบล็อกสาธารณะชั่วคราว ระบบจะสลับกลับโดยอัตโนมัติ",
   "settings_language": "ภาษา",
+  "currency_automatic": "อัตโนมัติ (%1$s)",
+  "settings_currency": "สกุลเงิน",
   "settings_one_unlock": "การปลดล็อกครั้งเดียวเปิดกระเป๋าเงินทุกใบในแอป",
   "settings_security": "ความปลอดภัย",
   "settings_status": "สถานะ",

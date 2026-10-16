@@ -72,6 +72,9 @@ import com.fortis.wallet.PlanPreview
 import com.fortis.wallet.R
 import com.fortis.wallet.SwapRoute
 import com.fortis.wallet.WalletViewModel
+import com.fortis.wallet.data.FIAT_CODES
+import com.fortis.wallet.data.defaultFiat
+import com.fortis.wallet.data.fiatLabel
 import com.fortis.wallet.ui.*
 import com.fortis.wallet.ui.theme.Fx
 import com.fortis.wallet.ui.theme.FxType
@@ -597,8 +600,8 @@ private fun HomeTab(vm: WalletViewModel) = Column(
                         style = if (bal != null) FxType.amount else FxType.meta,
                         color = if (bal != null) Fx.text else Fx.dimOnSlate,
                     )
-                    bal?.let { vm.usdValue(it, w.chain) }?.let {
-                        Text(stringResource(R.string.fiat_approx, fmtUsd(it)), style = FxType.fiatSmall, color = Fx.dimOnSlate)
+                    bal?.let { vm.fiatText(it, w.chain) }?.let {
+                        Text(stringResource(R.string.fiat_approx, it), style = FxType.fiatSmall, color = Fx.dimOnSlate)
                     }
                     // Incoming (or outgoing) coins not yet confirmed — as on the wallet screen.
                     vm.walletPending[w.id]?.takeIf { it != 0L }?.let { p ->
@@ -681,8 +684,8 @@ private fun SettingsTab(vm: WalletViewModel) {
                                 style = if (bal != null) FxType.amount else FxType.meta,
                                 color = if (bal != null) Fx.text else Fx.textFaint,
                             )
-                            bal?.let { vm.usdValue(it, w.chain) }?.let {
-                                Text(stringResource(R.string.fiat_approx, fmtUsd(it)), style = FxType.fiatSmall)
+                            bal?.let { vm.fiatText(it, w.chain) }?.let {
+                                Text(stringResource(R.string.fiat_approx, it), style = FxType.fiatSmall)
                             }
                         }
                         if (!current) TextButton({ vm.selectWallet(w.id) }) { Text(stringResource(R.string.action_open), color = Fx.signal) }
@@ -733,6 +736,7 @@ private fun SettingsTab(vm: WalletViewModel) {
         }
 
         LanguageCard()
+        CurrencyCard(vm)
 
         GlassCard {
             Text(stringResource(R.string.settings_connection), color = Fx.text, fontWeight = FontWeight.SemiBold)
@@ -849,8 +853,8 @@ private fun WalletTab(vm: WalletViewModel) {
                         Text(unit, style = FxType.label, color = Fx.signal, modifier = Modifier.alignByBaseline().padding(start = 6.dp))
                     }
                     b?.let { bal ->
-                        vm.usdValue(bal.confirmedSat, c.chain)?.let {
-                            Text(stringResource(R.string.fiat_approx, fmtUsd(it)), style = FxType.fiat)
+                        vm.fiatText(bal.confirmedSat, c.chain)?.let {
+                            Text(stringResource(R.string.fiat_approx, it), style = FxType.fiat)
                         }
                     }
                     if (b != null && b.pendingSat != 0L) Text(
@@ -1073,8 +1077,8 @@ private fun SendTab(vm: WalletViewModel) {
             amountSat?.let { sat ->
                 val alt = if (amountInSat) stringResource(R.string.send_alt_coin, fmt(sat), coinUnit)
                     else stringResource(R.string.send_alt_sat, sat.toString())
-                val fiat = vm.usdValue(sat, if (isBtc) "btc" else "xbt")
-                    ?.let { stringResource(R.string.send_alt_fiat, fmtUsd(it)) } ?: ""
+                val fiat = vm.fiatText(sat, if (isBtc) "btc" else "xbt")
+                    ?.let { stringResource(R.string.send_alt_fiat, it) } ?: ""
                 Text(alt + fiat, style = FxType.fiatSmall)
             }
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -1188,8 +1192,8 @@ private fun HistoryTab(vm: WalletViewModel, unit: String) {
                     FlowRow(itemVerticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         Text((if (h.amountSat > 0) "+" else "") + fmt(h.amountSat) + " " + unit,
                             style = FxType.amount, color = if (h.amountSat > 0) Fx.signal else Fx.text)
-                        if (h.amountSat != 0L) vm.usdValue(if (h.amountSat < 0) -h.amountSat else h.amountSat, chain)?.let {
-                            Text(stringResource(R.string.fiat_approx, fmtUsd(it)), style = FxType.fiatSmall)
+                        if (h.amountSat != 0L) vm.fiatText(if (h.amountSat < 0) -h.amountSat else h.amountSat, chain)?.let {
+                            Text(stringResource(R.string.fiat_approx, it), style = FxType.fiatSmall)
                         }
                     }
                     val label = when {
@@ -1257,8 +1261,8 @@ private fun ConfirmSheet(vm: WalletViewModel, p: PlanPreview, unit: String) {
 
             @Composable
             fun amountLine(sat: Long): String {
-                val fiat = vm.usdValue(sat, chain)
-                return if (fiat != null) stringResource(R.string.value_with_fiat, fmt(sat), unit, fmtUsd(fiat))
+                val fiat = vm.fiatText(sat, chain)
+                return if (fiat != null) stringResource(R.string.value_with_fiat, fmt(sat), unit, fiat)
                 else "${fmt(sat)} $unit"
             }
 
@@ -1295,6 +1299,47 @@ internal fun kv(k: String, v: String) = Row(Modifier.fillMaxWidth(), horizontalA
     // (otherwise "Your price (the worst you'll take)" squeezed the price to one character).
     Text(k, style = FxType.body, color = Fx.textDim, modifier = Modifier.weight(1f))
     Text(v, style = FxType.amount, modifier = Modifier.padding(start = Fx.s4), textAlign = androidx.compose.ui.text.style.TextAlign.End)
+}
+
+/** The currency fiat values are shown in. Empty = the device region's. */
+@Composable
+private fun CurrencyCard(vm: WalletViewModel) {
+    var open by remember { mutableStateOf(false) }
+    val automatic = stringResource(R.string.currency_automatic, defaultFiat())
+    GlassCard {
+        Row(
+            Modifier.fillMaxWidth().clickable { open = true },
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(stringResource(R.string.settings_currency), color = Fx.text, fontWeight = FontWeight.SemiBold)
+            Text(if (vm.fiatChosen) vm.fiat else automatic, color = Fx.textDim)
+        }
+    }
+    if (open) {
+        val entries = remember { listOf<String?>(null) + FIAT_CODES }
+        AlertDialog(
+            onDismissRequest = { open = false },
+            containerColor = Fx.panel,
+            title = { Text(stringResource(R.string.settings_currency), color = Fx.text) },
+            text = {
+                LazyColumn(Modifier.heightIn(max = 420.dp)) {
+                    items(entries) { code ->
+                        val selected = if (code == null) !vm.fiatChosen else vm.fiatChosen && code == vm.fiat
+                        Text(
+                            code?.let { fiatLabel(it) } ?: automatic,
+                            color = if (selected) Fx.signal else Fx.text,
+                            modifier = Modifier.fillMaxWidth()
+                                .clickable { open = false; vm.chooseFiat(code) }
+                                .padding(vertical = 12.dp),
+                        )
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = { TextButton({ open = false }) { Text(stringResource(R.string.action_cancel), color = Fx.text) } },
+        )
+    }
 }
 
 /** The app-language override. Empty = follow the device; picking one recreates

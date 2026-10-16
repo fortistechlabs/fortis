@@ -100,6 +100,8 @@
     <string name="settings_one_unlock">En odklep odpre vsako denarnico v aplikaciji.</string>
     <string name="settings_language">Jezik</string>
     <string name="language_system_default">Privzeto v sistemu</string>
+    <string name="settings_currency">Valuta</string>
+    <string name="currency_automatic">Samodejno (%1$s)</string>
     <string name="settings_status">Stanje</string>
     <string name="settings_chain_height">Višina verige</string>
     <string name="settings_degraded_note">Storitev fortis ni dosegljiva — zaenkrat se uporabljajo javni podatki o blokih. Samodejno se bo preklopila nazaj.</string>

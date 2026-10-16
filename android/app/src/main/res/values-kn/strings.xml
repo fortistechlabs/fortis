@@ -100,6 +100,8 @@
     <string name="settings_one_unlock">ಒಮ್ಮೆ ಅನ್‌ಲಾಕ್ ಮಾಡಿದರೆ ಆ್ಯಪ್‌ನ ಪ್ರತಿ ವಾಲೆಟ್ ತೆರೆಯುತ್ತದೆ.</string>
     <string name="settings_language">ಭಾಷೆ</string>
     <string name="language_system_default">ಸಿಸ್ಟಂ ಡೀಫಾಲ್ಟ್</string>
+    <string name="settings_currency">ಕರೆನ್ಸಿ</string>
+    <string name="currency_automatic">ಸ್ವಯಂಚಾಲಿತ (%1$s)</string>
     <string name="settings_status">ಸ್ಥಿತಿ</string>
     <string name="settings_chain_height">ಚೈನ್ ಎತ್ತರ</string>
     <string name="settings_degraded_note">fortis ಸೇವೆ ಲಭ್ಯವಿಲ್ಲ — ಸದ್ಯಕ್ಕೆ ಸಾರ್ವಜನಿಕ ಬ್ಲಾಕ್ ಡೇಟಾ ಬಳಸಲಾಗುತ್ತಿದೆ. ಇದು ಸ್ವಯಂಚಾಲಿತವಾಗಿ ಮರಳುತ್ತದೆ.</string>

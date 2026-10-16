@@ -132,6 +132,8 @@
   "settings_connection": "Ukuxhumana",
   "settings_degraded_note": "Isevisi ye-fortis ayifinyeleleki — isebenzisa idatha yebhulokhi yomphakathi okwamanje. Izobuyela ngokuzenzakalelayo.",
   "settings_language": "Ulimi",
+  "currency_automatic": "Okuzenzakalelayo (%1$s)",
+  "settings_currency": "Imali",
   "settings_one_unlock": "Ukuvula okukodwa kuvula isikhwama ngasinye ohlelweni lokusebenza.",
   "settings_security": "Ukuphepha",
   "settings_status": "Isimo",

@@ -132,6 +132,8 @@
   "settings_connection": "Kết nối",
   "settings_degraded_note": "Không thể kết nối dịch vụ fortis — tạm dùng dữ liệu khối công khai. Sẽ tự động chuyển lại.",
   "settings_language": "Ngôn ngữ",
+  "currency_automatic": "Tự động (%1$s)",
+  "settings_currency": "Tiền tệ",
   "settings_one_unlock": "Một lần mở khóa mở mọi ví trong ứng dụng.",
   "settings_security": "Bảo mật",
   "settings_status": "Trạng thái",

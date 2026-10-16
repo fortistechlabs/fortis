@@ -132,6 +132,8 @@
   "settings_connection": "Холболт",
   "settings_degraded_note": "fortis үйлчилгээ хүрэлцэхгүй байна — одоохондоо нийтийн блокийн өгөгдөл ашиглаж байна. Автоматаар буцаж холбогдоно.",
   "settings_language": "Хэл",
+  "currency_automatic": "Автомат (%1$s)",
+  "settings_currency": "Валют",
   "settings_one_unlock": "Нэг удаа түгжээ тайлахад аппын хэтэвч бүр нээгдэнэ.",
   "settings_security": "Аюулгүй байдал",
   "settings_status": "Төлөв",

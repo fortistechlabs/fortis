@@ -100,6 +100,8 @@
     <string name="settings_one_unlock">એક વાર અનલૉક કરવાથી ઍપમાંનું દરેક વૉલેટ ખૂલે છે.</string>
     <string name="settings_language">ભાષા</string>
     <string name="language_system_default">સિસ્ટમ ડિફૉલ્ટ</string>
+    <string name="settings_currency">ચલણ</string>
+    <string name="currency_automatic">આપમેળે (%1$s)</string>
     <string name="settings_status">સ્થિતિ</string>
     <string name="settings_chain_height">ચેઇન ઊંચાઈ</string>
     <string name="settings_degraded_note">fortis સેવા ઉપલબ્ધ નથી — હાલ સાર્વજનિક બ્લૉક ડેટા વપરાય છે. તે આપમેળે પાછી આવશે.</string>

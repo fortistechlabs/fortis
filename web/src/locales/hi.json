@@ -132,6 +132,8 @@
   "settings_connection": "कनेक्शन",
   "settings_degraded_note": "fortis सेवा अनुपलब्ध है — फ़िलहाल सार्वजनिक ब्लॉक डेटा का उपयोग हो रहा है। यह अपने आप वापस स्विच हो जाएगी।",
   "settings_language": "भाषा",
+  "currency_automatic": "स्वचालित (%1$s)",
+  "settings_currency": "मुद्रा",
   "settings_one_unlock": "एक बार अनलॉक करने से ऐप का हर वॉलेट खुल जाता है।",
   "settings_security": "सुरक्षा",
   "settings_status": "स्थिति",

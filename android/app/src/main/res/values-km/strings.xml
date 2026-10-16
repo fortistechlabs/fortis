@@ -100,6 +100,8 @@
     <string name="settings_one_unlock">ការដោះសោមួយដងបើកកាបូបនីមួយៗនៅក្នុងកម្មវិធី។</string>
     <string name="settings_language">ភាសា</string>
     <string name="language_system_default">លំនាំដើមប្រព័ន្ធ</string>
+    <string name="settings_currency">រូបិយប័ណ្ណ</string>
+    <string name="currency_automatic">ស្វ័យប្រវត្តិ (%1$s)</string>
     <string name="settings_status">ស្ថានភាព</string>
     <string name="settings_chain_height">កម្ពស់ខ្សែសង្វាក់</string>
     <string name="settings_degraded_note">សេវាកម្ម fortis មិនអាចចូលប្រើបាន — កំពុងប្រើទិន្នន័យប្លុកសាធារណៈជាបណ្តោះអាសន្ន។ វានឹងប្ដូរត្រឡប់ដោយស្វ័យប្រវត្តិ។</string>

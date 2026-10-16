@@ -100,6 +100,8 @@
     <string name="settings_one_unlock">ఒకసారి అన్‌లాక్ చేస్తే యాప్‌లోని ప్రతి వాలెట్ తెరుచుకుంటుంది.</string>
     <string name="settings_language">భాష</string>
     <string name="language_system_default">సిస్టమ్ డిఫాల్ట్</string>
+    <string name="settings_currency">కరెన్సీ</string>
+    <string name="currency_automatic">ఆటోమేటిక్ (%1$s)</string>
     <string name="settings_status">స్థితి</string>
     <string name="settings_chain_height">చెయిన్ ఎత్తు</string>
     <string name="settings_degraded_note">fortis సేవ అందుబాటులో లేదు — ప్రస్తుతానికి పబ్లిక్ బ్లాక్ డేటా ఉపయోగించబడుతోంది. ఇది స్వయంచాలకంగా తిరిగి మారుతుంది.</string>

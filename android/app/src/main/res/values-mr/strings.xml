@@ -100,6 +100,8 @@
     <string name="settings_one_unlock">एकदा अनलॉक केल्याने अ‍ॅपमधील प्रत्येक वॉलेट उघडते.</string>
     <string name="settings_language">भाषा</string>
     <string name="language_system_default">सिस्टम डीफॉल्ट</string>
+    <string name="settings_currency">चलन</string>
+    <string name="currency_automatic">स्वयंचलित (%1$s)</string>
     <string name="settings_status">स्थिती</string>
     <string name="settings_chain_height">साखळी उंची</string>
     <string name="settings_degraded_note">fortis सेवा उपलब्ध नाही — सध्या सार्वजनिक ब्लॉक डेटा वापरला जात आहे. ती आपोआप परत येईल.</string>

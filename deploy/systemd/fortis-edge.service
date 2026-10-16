@@ -15,6 +15,7 @@ ExecStart=/usr/local/bin/fortis-edge \
   --btc-upstream https://blockstream.info/api \
   --btc-price-url https://neoxa.exchange/api/exchange/ticker/BTC_USDC \
   --xbt-price-url https://neoxa.exchange/api/exchange/ticker/BTCB2_USDC \
+  --fx-url https://www.ecb.europa.eu/stats/eurofxref/eurofxref-daily.xml \
   --btc-upstream-rate 5 \
   --btc-haskoin-url https://api.haskoin.com/btc \
   --secret-file /var/lib/fortis/fortis-edge.secret \

@@ -132,6 +132,8 @@
   "settings_connection": "සම්බන්ධතාව",
   "settings_degraded_note": "fortis සේවාවට ළඟා විය නොහැක — දැනට පොදු බ්ලොක් දත්ත භාවිතා කරයි. එය ස්වයංක්‍රීයව නැවත මාරු වේ.",
   "settings_language": "භාෂාව",
+  "currency_automatic": "ස්වයංක්‍රීය (%1$s)",
+  "settings_currency": "මුදල් වර්ගය",
   "settings_one_unlock": "එක් වරක් අගුළු ඇරීමෙන් යෙදුමේ සෑම පසුම්බියක්ම විවෘත වේ.",
   "settings_security": "ආරක්ෂාව",
   "settings_status": "තත්ත්වය",

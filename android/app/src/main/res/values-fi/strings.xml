@@ -100,6 +100,8 @@
     <string name="settings_one_unlock">Yksi avaus avaa jokaisen lompakon sovelluksessa.</string>
     <string name="settings_language">Kieli</string>
     <string name="language_system_default">Järjestelmän oletus</string>
+    <string name="settings_currency">Valuutta</string>
+    <string name="currency_automatic">Automaattinen (%1$s)</string>
     <string name="settings_status">Tila</string>
     <string name="settings_chain_height">Ketjun korkeus</string>
     <string name="settings_degraded_note">Fortis-palveluun ei saada yhteyttä — käytetään toistaiseksi julkisia lohkotietoja. Yhteys palautuu automaattisesti.</string>

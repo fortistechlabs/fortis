@@ -132,6 +132,8 @@
   "settings_connection": "Połączenie",
   "settings_degraded_note": "Usługa fortis jest nieosiągalna — na razie używane są publiczne dane bloków. Nastąpi automatyczny powrót.",
   "settings_language": "Język",
+  "currency_automatic": "Automatycznie (%1$s)",
+  "settings_currency": "Waluta",
   "settings_one_unlock": "Jedno odblokowanie otwiera każdy portfel w aplikacji.",
   "settings_security": "Bezpieczeństwo",
   "settings_status": "Status",

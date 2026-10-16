@@ -2,6 +2,15 @@
 
 Fortis Wallet (Android). Versions are `versionName (versionCode)`.
 
+## 0.5.2 (20) — 2026-10-16
+
+- Balances can be shown in your own currency: Settings → Currency. Choose from
+  30 (USD, EUR, GBP, CHF, JPY, CAD, AUD and more); by default it's your phone
+  region's, or USD if that one isn't offered. Values are approximate: the coin
+  prices are in US dollars and the other currencies use the European Central
+  Bank's daily reference rates. If a rate isn't available, the value is left
+  out rather than shown in another currency.
+
 ## 0.5.1 (19) — 2026-10-15
 
 - Send: after you tap Review, and again after Sign & send, the button is

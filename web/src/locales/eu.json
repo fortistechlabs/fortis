@@ -132,6 +132,8 @@
   "settings_connection": "Konexioa",
   "settings_degraded_note": "fortis zerbitzua ez dago eskuragarri — oraingoz blokeen datu publikoak erabiltzen ari da. Automatikoki itzuliko da.",
   "settings_language": "Hizkuntza",
+  "currency_automatic": "Automatikoa (%1$s)",
+  "settings_currency": "Moneta",
   "settings_one_unlock": "Desblokeo bakar batek aplikazioko diru-zorro bakoitza irekitzen du.",
   "settings_security": "Segurtasuna",
   "settings_status": "Egoera",

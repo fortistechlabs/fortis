@@ -100,6 +100,8 @@
     <string name="settings_one_unlock">یک بار باز کردن قفل هر کیف پول در برنامه را باز می‌کند.</string>
     <string name="settings_language">زبان</string>
     <string name="language_system_default">پیش‌فرض سیستم</string>
+    <string name="settings_currency">واحد پول</string>
+    <string name="currency_automatic">خودکار (%1$s)</string>
     <string name="settings_status">وضعیت</string>
     <string name="settings_chain_height">ارتفاع زنجیره</string>
     <string name="settings_degraded_note">سرویس fortis در دسترس نیست — فعلاً از داده‌های عمومی بلاک استفاده می‌شود. به‌صورت خودکار بازمی‌گردد.</string>

@@ -100,6 +100,8 @@
     <string name="settings_one_unlock">Одна разблокировка открывает каждый кошелёк в приложении.</string>
     <string name="settings_language">Язык</string>
     <string name="language_system_default">Системный по умолчанию</string>
+    <string name="settings_currency">Валюта</string>
+    <string name="currency_automatic">Автоматически (%1$s)</string>
     <string name="settings_status">Статус</string>
     <string name="settings_chain_height">Высота цепи</string>
     <string name="settings_degraded_note">Сервис fortis недоступен — пока используются публичные данные блоков. Переключение назад произойдёт автоматически.</string>

@@ -132,6 +132,8 @@
   "settings_connection": "કનેક્શન",
   "settings_degraded_note": "fortis સેવા ઉપલબ્ધ નથી — હાલ સાર્વજનિક બ્લૉક ડેટા વપરાય છે. તે આપમેળે પાછી આવશે.",
   "settings_language": "ભાષા",
+  "currency_automatic": "આપમેળે (%1$s)",
+  "settings_currency": "ચલણ",
   "settings_one_unlock": "એક વાર અનલૉક કરવાથી ઍપમાંનું દરેક વૉલેટ ખૂલે છે.",
   "settings_security": "સુરક્ષા",
   "settings_status": "સ્થિતિ",

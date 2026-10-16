@@ -84,7 +84,8 @@ software). QR on receive (`ui/Qr.kt`, long-press to copy as an image). Balance
 count-up animation on the Wallet hero (`countUpSat`). Gap-limit auto-advance —
 `Backend.firstUnusedReceive` walks the scan past receive addresses already seen
 on-chain so "Receive" shows a fresh one. Multi-wallet (up to 10, per-chain),
-in-app locale picker (75 languages), approximate USD value, opt-in XBT replay
+in-app locale picker (75 languages), approximate value in 30 currencies
+(Settings → Currency; by default the phone region's), opt-in XBT replay
 protection on BTC sends, "take the fee from the amount". Connect a hardware
 wallet (`ui/screens/HwConnectScreen.kt`): its BIP-84 account key arrives as text
 or a BC-UR QR code — animated ones via `ui/MultiScan.kt`'s continuous scanner —

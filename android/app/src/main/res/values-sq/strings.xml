@@ -100,6 +100,8 @@
     <string name="settings_one_unlock">Një shkyçje hap çdo portofol në aplikacion.</string>
     <string name="settings_language">Gjuha</string>
     <string name="language_system_default">Parazgjedhja e sistemit</string>
+    <string name="settings_currency">Monedha</string>
+    <string name="currency_automatic">Automatike (%1$s)</string>
     <string name="settings_status">Statusi</string>
     <string name="settings_chain_height">Lartësia e zinxhirit</string>
     <string name="settings_degraded_note">Shërbimi fortis është i paarritshëm — për momentin përdoren të dhëna publike blloqesh. Do të kthehet automatikisht.</string>

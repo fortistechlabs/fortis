@@ -132,6 +132,8 @@
   "settings_connection": "Connection",
   "settings_degraded_note": "The fortis service is unreachable — using public block data for now. It'll switch back automatically.",
   "settings_language": "Language",
+  "currency_automatic": "Automatic (%1$s)",
+  "settings_currency": "Currency",
   "settings_one_unlock": "One unlock opens every wallet in the app.",
   "settings_security": "Security",
   "settings_status": "Status",

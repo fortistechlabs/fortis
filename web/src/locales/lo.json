@@ -132,6 +132,8 @@
   "settings_connection": "ການເຊື່ອມຕໍ່",
   "settings_degraded_note": "ບໍ່ສາມາດເຂົ້າເຖິງບໍລິການ fortis — ກຳລັງໃຊ້ຂໍ້ມູນບລັອກສາທາລະນະຊົ່ວຄາວ. ມັນຈະສະຫຼັບກັບຄືນໂດຍອັດຕະໂນມັດ.",
   "settings_language": "ພາສາ",
+  "currency_automatic": "ອັດຕະໂນມັດ (%1$s)",
+  "settings_currency": "ສະກຸນເງິນ",
   "settings_one_unlock": "ການປົດລັອກຄັ້ງດຽວເປີດທຸກກະເປົາໃນແອັບ.",
   "settings_security": "ຄວາມປອດໄພ",
   "settings_status": "ສະຖານະ",

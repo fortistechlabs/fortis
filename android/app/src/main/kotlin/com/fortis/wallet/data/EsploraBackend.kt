@@ -673,19 +673,18 @@ class EsploraBackend(
     override suspend fun utxos(minConf: UInt): List<WalletUtxo> =
         scan(force = true).filter { it.confirmations >= minConf }
 
-    private var priceUsd: Double? = null
-    private var priceAt = 0L
+    private var prices: Map<String, Double>? = null
+    private var pricesAt = 0L
 
-    /** `GET /v1/prices` → the `USD` field. Cached ~2 min per instance (the edge
-     *  also caches 60 s); a missing/unpriced feed just returns null. */
-    override suspend fun price(): Double? {
+    /** `GET /v1/prices` → every currency in it (see [parsePrices]). Cached ~2 min
+     *  per instance (the edge also caches 60 s); a missing/unpriced feed keeps
+     *  the last good prices, or returns null. */
+    override suspend fun prices(): Map<String, Double>? {
         val now = System.currentTimeMillis()
-        if (priceUsd != null && now - priceAt < 120_000) return priceUsd
-        val v = runCatching { JSONObject(get("/v1/prices")).optDouble("USD") }
-            .getOrNull()
-            ?.takeIf { it.isFinite() && it > 0.0 }
-        if (v != null) { priceUsd = v; priceAt = now }
-        return v ?: priceUsd
+        if (prices != null && now - pricesAt < 120_000) return prices
+        val v = runCatching { parsePrices(get("/v1/prices")) }.getOrNull()
+        if (v != null) { prices = v; pricesAt = now }
+        return v ?: prices
     }
 
     override suspend fun feerateSatVb(confTarget: Int): ULong = try {

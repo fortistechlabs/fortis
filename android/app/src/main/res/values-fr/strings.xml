@@ -104,6 +104,8 @@
     <string name="settings_one_unlock">Un seul déverrouillage ouvre chaque portefeuille de l\'appli.</string>
     <string name="settings_language">Langue</string>
     <string name="language_system_default">Par défaut du système</string>
+    <string name="settings_currency">Devise</string>
+    <string name="currency_automatic">Automatique (%1$s)</string>
     <string name="settings_status">État</string>
     <string name="settings_chain_height">Hauteur de la chaîne</string>
     <string name="settings_degraded_note">Le service fortis est injoignable — utilisation de données de blocs publiques pour l\'instant. Le retour se fera automatiquement.</string>

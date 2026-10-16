@@ -64,9 +64,10 @@ interface Backend {
      *  fetch to exploit. */
     suspend fun balancesAndHistory(count: Int): Pair<Balances, List<HistoryEntry>> = balances() to history(count)
 
-    /** USD per whole coin for this chain, or null if the backend has no price
-     *  feed. Used only to show an approximate fiat value. */
-    suspend fun price(): Double? = null
+    /** Price per whole coin of this chain by currency code (always with USD),
+     *  or null if the backend has no price feed. Used only to show an
+     *  approximate fiat value. */
+    suspend fun prices(): Map<String, Double>? = null
 
     /** Bulk-load everything for the wallet's addresses ahead of a scan, if the
      *  backend can (a no-op otherwise). Called once at the top of a refresh so

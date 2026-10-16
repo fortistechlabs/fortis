@@ -132,6 +132,8 @@
   "settings_connection": "חיבור",
   "settings_degraded_note": "שירות fortis אינו נגיש — נעשה שימוש בנתוני בלוקים ציבוריים לעת עתה. הוא יחזור אוטומטית.",
   "settings_language": "שפה",
+  "currency_automatic": "אוטומטי (%1$s)",
+  "settings_currency": "מטבע",
   "settings_one_unlock": "ביטול נעילה אחד פותח כל ארנק באפליקציה.",
   "settings_security": "אבטחה",
   "settings_status": "סטטוס",

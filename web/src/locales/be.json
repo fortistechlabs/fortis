@@ -132,6 +132,8 @@
   "settings_connection": "Падключэнне",
   "settings_degraded_note": "Сэрвіс fortis недаступны — пакуль выкарыстоўваюцца публічныя даныя блокаў. Пераключэнне назад адбудзецца аўтаматычна.",
   "settings_language": "Мова",
+  "currency_automatic": "Аўтаматычна (%1$s)",
+  "settings_currency": "Валюта",
   "settings_one_unlock": "Адно разблакіраванне адкрывае кожны кашалёк у праграме.",
   "settings_security": "Бяспека",
   "settings_status": "Стан",

@@ -132,6 +132,8 @@
   "settings_connection": "Connexió",
   "settings_degraded_note": "El servei fortis no és accessible — de moment s'utilitzen dades públiques de blocs. Tornarà automàticament.",
   "settings_language": "Idioma",
+  "currency_automatic": "Automàtica (%1$s)",
+  "settings_currency": "Moneda",
   "settings_one_unlock": "Un sol desbloqueig obre totes les carteres de l'app.",
   "settings_security": "Seguretat",
   "settings_status": "Estat",

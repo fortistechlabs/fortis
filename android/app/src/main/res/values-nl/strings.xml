@@ -100,6 +100,8 @@
     <string name="settings_one_unlock">Eén keer ontgrendelen opent elke wallet in de app.</string>
     <string name="settings_language">Taal</string>
     <string name="language_system_default">Systeemstandaard</string>
+    <string name="settings_currency">Valuta</string>
+    <string name="currency_automatic">Automatisch (%1$s)</string>
     <string name="settings_status">Status</string>
     <string name="settings_chain_height">Ketenhoogte</string>
     <string name="settings_degraded_note">De fortis-service is onbereikbaar — voorlopig worden openbare blokgegevens gebruikt. Er wordt automatisch teruggeschakeld.</string>

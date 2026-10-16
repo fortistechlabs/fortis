@@ -132,6 +132,8 @@
   "settings_connection": "Tenging",
   "settings_degraded_note": "Ekki næst í fortis-þjónustuna — notast við opinber blokkgögn í bili. Það skiptir sjálfkrafa til baka.",
   "settings_language": "Tungumál",
+  "currency_automatic": "Sjálfvirkt (%1$s)",
+  "settings_currency": "Gjaldmiðill",
   "settings_one_unlock": "Ein aflæsing opnar hvert veski í forritinu.",
   "settings_security": "Öryggi",
   "settings_status": "Staða",

@@ -132,6 +132,8 @@
   "settings_connection": "Muunganisho",
   "settings_degraded_note": "Huduma ya fortis haipatikani — inatumia data ya umma ya vitalu kwa sasa. Itarudi kiotomatiki.",
   "settings_language": "Lugha",
+  "currency_automatic": "Kiotomatiki (%1$s)",
+  "settings_currency": "Sarafu",
   "settings_one_unlock": "Kufungua mara moja hufungua kila pochi katika programu.",
   "settings_security": "Usalama",
   "settings_status": "Hali",

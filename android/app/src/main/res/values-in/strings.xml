@@ -100,6 +100,8 @@
     <string name="settings_one_unlock">Satu kali buka kunci membuka setiap dompet di aplikasi.</string>
     <string name="settings_language">Bahasa</string>
     <string name="language_system_default">Default sistem</string>
+    <string name="settings_currency">Mata uang</string>
+    <string name="currency_automatic">Otomatis (%1$s)</string>
     <string name="settings_status">Status</string>
     <string name="settings_chain_height">Tinggi rantai</string>
     <string name="settings_degraded_note">Layanan fortis tidak dapat dijangkau — menggunakan data blok publik untuk sementara. Akan beralih kembali secara otomatis.</string>

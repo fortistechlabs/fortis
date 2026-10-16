@@ -132,6 +132,8 @@
   "settings_connection": "Lidhja",
   "settings_degraded_note": "Shërbimi fortis është i paarritshëm — për momentin përdoren të dhëna publike blloqesh. Do të kthehet automatikisht.",
   "settings_language": "Gjuha",
+  "currency_automatic": "Automatike (%1$s)",
+  "settings_currency": "Monedha",
   "settings_one_unlock": "Një shkyçje hap çdo portofol në aplikacion.",
   "settings_security": "Siguria",
   "settings_status": "Statusi",

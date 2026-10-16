@@ -100,6 +100,8 @@
     <string name="settings_one_unlock">ການປົດລັອກຄັ້ງດຽວເປີດທຸກກະເປົາໃນແອັບ.</string>
     <string name="settings_language">ພາສາ</string>
     <string name="language_system_default">ຄ່າເລີ່ມຕົ້ນຂອງລະບົບ</string>
+    <string name="settings_currency">ສະກຸນເງິນ</string>
+    <string name="currency_automatic">ອັດຕະໂນມັດ (%1$s)</string>
     <string name="settings_status">ສະຖານະ</string>
     <string name="settings_chain_height">ຄວາມສູງຂອງເຄນ</string>
     <string name="settings_degraded_note">ບໍ່ສາມາດເຂົ້າເຖິງບໍລິການ fortis — ກຳລັງໃຊ້ຂໍ້ມູນບລັອກສາທາລະນະຊົ່ວຄາວ. ມັນຈະສະຫຼັບກັບຄືນໂດຍອັດຕະໂນມັດ.</string>
