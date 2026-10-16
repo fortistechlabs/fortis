@@ -2,6 +2,13 @@
 
 Fortis Wallet (Android). Versions are `versionName (versionCode)`.
 
+## 0.5.3 (21) — 2026-10-16
+
+- Settings → Currency: each currency now shows its symbol (€, $, £, kr, ¥…)
+  next to its code and name, and the rows are taller, so they're easier to tap.
+- A currency shown by its code is spaced from the number ("SEK 12.50", not
+  "SEK12.50").
+
 ## 0.5.2 (20) — 2026-10-16
 
 - Balances can be shown in your own currency: Settings → Currency. Choose from
