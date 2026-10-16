@@ -63,6 +63,14 @@ class FiatTest {
     }
 
     @Test
+    fun aCodeIsSpacedFromTheNumber() {
+        Locale.setDefault(Locale("en", "IE"))
+        assertEquals("SEK 1,234.50", fmtFiat(1234.5, "SEK").replace('\u00A0', ' '))
+        assertEquals("<SEK 0.01", fmtFiat(0.001, "SEK").replace('\u00A0', ' '))
+        assertEquals("€1,234.50", fmtFiat(1234.5, "EUR"))
+    }
+
+    @Test
     fun aTinyAmountIsNotShownAsZero() {
         assertEquals("<$0.01", fmtFiat(0.004, "USD"))
         assertEquals("<¥1", fmtFiat(0.4, "JPY"))

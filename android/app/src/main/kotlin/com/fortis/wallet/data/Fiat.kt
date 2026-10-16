@@ -46,8 +46,14 @@ fun fmtFiat(v: Double, code: String): String {
         maximumFractionDigits = dp
     }
     val unit = Math.pow(10.0, -c.defaultFractionDigits.coerceAtLeast(0).toDouble())
-    return if (v > 0.0 && v < unit) "<" + nf.format(unit) else nf.format(v)
+    return spaced(if (v > 0.0 && v < unit) "<" + nf.format(unit) else nf.format(v))
 }
+
+/** A currency shown by its code gets a (no-break) space from the number, as
+ *  the browser's Intl does: Java writes "SEK0.00" / "0,00SEK" outside the
+ *  currency's home locale. */
+private fun spaced(s: String): String =
+    s.replace(Regex("([A-Z]{3})(?=[\\d-])"), "$1\u00A0").replace(Regex("(?<=\\d)([A-Z]{3})"), "\u00A0$1")
 
 /** "EUR · Euro", in the app's language. */
 fun fiatLabel(code: String): String =
