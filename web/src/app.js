@@ -19,7 +19,7 @@ import { EntropyPool } from './entropy.js';
 import { registerPrf, unlockPrf, prfPossible } from './webauthn.js';
 import { AutoLock, AUTO_LOCK_MS, sameSecret } from './relock.js';
 import { initTheme } from './theme.js';
-import { FIAT_CODES, chosenFiat, currentFiat, setFiat, defaultFiat, fiatLabel } from './fiat.js';
+import { FIAT_CODES, chosenFiat, currentFiat, setFiat, defaultFiat, fiatSymbol, fiatName } from './fiat.js';
 import {
   init as i18nInit, t, tPlural, setLocale, overrideTag, localeLabel, SUPPORTED_LOCALES, currentTag,
 } from './i18n.js';
@@ -1960,12 +1960,20 @@ function renderCurrencySheet() {
     el('div', { class: 'sheet' },
       el('div', { class: 'grabber' }),
       el('h2', {}, t('settings_currency')),
-      el('div', { class: 'locale-list' }, [
-        el('button', { class: !cur ? 'on' : '', onclick: () => pick(null) },
-          t('currency_automatic', defaultFiat(navigator.languages?.[0] || 'en-US'))),
-        ...FIAT_CODES.map((code) => el('button', { class: cur === code ? 'on' : '', onclick: () => pick(code) },
-          fiatLabel(code, currentTag()))),
+      el('div', { class: 'locale-list currency-list' }, [
+        el('button', { class: !cur ? 'on' : '', 'aria-pressed': String(!cur), onclick: () => pick(null) },
+          el('span', { class: 'sym' }),
+          el('span', { class: 'name' }, t('currency_automatic', defaultFiat(navigator.languages?.[0] || 'en-US')))),
+        ...FIAT_CODES.map((code) => el('button', {
+          class: cur === code ? 'on' : '', 'aria-pressed': String(cur === code),
+          'aria-label': `${code} ${fiatName(code, currentTag())}`, onclick: () => pick(code),
+        },
+          el('span', { class: 'sym' }, fiatSymbol(code, currentTag())),
+          el('span', { class: 'code' }, code),
+          el('span', { class: 'name' }, fiatName(code, currentTag())))),
       ]))));
+  // open where the current choice is, not at the top of a long list
+  document.querySelector('.currency-list .on')?.scrollIntoView({ block: 'center' });
 }
 
 /* ------------------------------------------------------------------ polling */
@@ -2145,9 +2153,15 @@ if ('serviceWorker' in navigator) {
     });
   }).catch(() => {});
 
+  // Reload only when a new worker replaces one this page was already running
+  // under (the user tapped Refresh). On a first visit the worker installs and
+  // claims the page too, which also fires controllerchange; reloading then
+  // threw away whatever the visitor had started (found live 2026-10-16: a
+  // wallet half-way through being created went back to the start screen).
+  const hadController = !!navigator.serviceWorker.controller;
   let reloadedForUpdate = false;
   navigator.serviceWorker.addEventListener('controllerchange', () => {
-    if (reloadedForUpdate) return;
+    if (!hadController || reloadedForUpdate) return;
     reloadedForUpdate = true;
     location.reload();
   });

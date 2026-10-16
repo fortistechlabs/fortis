@@ -76,10 +76,22 @@ export function parsePrices(r) {
   return out.USD ? out : null;
 }
 
-/** "EUR · Euro", in the UI language. */
-export function fiatLabel(code, tag) {
+/** The currency's short symbol in the UI language ("€", "$", "kr", "zł"), or
+ *  "" when it has none apart from its code (CHF). */
+export function fiatSymbol(code, tag) {
   try {
-    return `${code} · ${new Intl.DisplayNames([tag], { type: 'currency' }).of(code)}`;
+    const s = new Intl.NumberFormat(tag, { style: 'currency', currency: code, currencyDisplay: 'narrowSymbol' })
+      .formatToParts(0).find((p) => p.type === 'currency')?.value || '';
+    return s === code ? '' : s;
+  } catch {
+    return '';
+  }
+}
+
+/** The currency's name in the UI language ("Euro"), or the code. */
+export function fiatName(code, tag) {
+  try {
+    return new Intl.DisplayNames([tag], { type: 'currency' }).of(code) || code;
   } catch {
     return code;
   }

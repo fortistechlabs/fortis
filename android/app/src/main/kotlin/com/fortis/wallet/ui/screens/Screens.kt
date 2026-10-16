@@ -75,6 +75,7 @@ import com.fortis.wallet.WalletViewModel
 import com.fortis.wallet.data.FIAT_CODES
 import com.fortis.wallet.data.defaultFiat
 import com.fortis.wallet.data.fiatLabel
+import com.fortis.wallet.data.fiatSymbol
 import com.fortis.wallet.ui.*
 import com.fortis.wallet.ui.theme.Fx
 import com.fortis.wallet.ui.theme.FxType
@@ -1326,13 +1327,26 @@ private fun CurrencyCard(vm: WalletViewModel) {
                 LazyColumn(Modifier.heightIn(max = 420.dp)) {
                     items(entries) { code ->
                         val selected = if (code == null) !vm.fiatChosen else vm.fiatChosen && code == vm.fiat
-                        Text(
-                            code?.let { fiatLabel(it) } ?: automatic,
-                            color = if (selected) Fx.signal else Fx.text,
-                            modifier = Modifier.fillMaxWidth()
+                        Row(
+                            Modifier.fillMaxWidth()
+                                .heightIn(min = 48.dp)
                                 .clickable { open = false; vm.chooseFiat(code) }
-                                .padding(vertical = 12.dp),
-                        )
+                                .padding(vertical = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text(
+                                code?.let { fiatSymbol(it) } ?: "",
+                                color = if (selected) Fx.signal else Fx.textDim,
+                                fontWeight = FontWeight.SemiBold,
+                                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                                modifier = Modifier.width(40.dp),
+                            )
+                            Text(
+                                code?.let { fiatLabel(it) } ?: automatic,
+                                color = if (selected) Fx.signal else Fx.text,
+                                modifier = Modifier.padding(start = 8.dp),
+                            )
+                        }
                     }
                 }
             },

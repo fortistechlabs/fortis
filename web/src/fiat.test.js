@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { FIAT_CODES, defaultFiat, parsePrices, fiatLabel, chosenFiat, setFiat, currentFiat } from './fiat.js';
+import { FIAT_CODES, defaultFiat, parsePrices, fiatSymbol, fiatName, chosenFiat, setFiat, currentFiat } from './fiat.js';
 
 test('every currency the edge sends is read', () => {
   assert.deepEqual(parsePrices({ USD: 655, EUR: 584.404, JPY: 103474.5717 }), { USD: 655, EUR: 584.404, JPY: 103474.5717 });
@@ -32,8 +32,24 @@ test('the default follows the region', () => {
 
 test('every offered code is a real currency, listed once', () => {
   assert.equal(new Set(FIAT_CODES).size, FIAT_CODES.length);
-  for (const c of FIAT_CODES) assert.match(fiatLabel(c, 'en'), new RegExp(`^${c} · \\S`));
-  assert.equal(fiatLabel('EUR', 'en'), 'EUR · Euro');
+  for (const c of FIAT_CODES) assert.notEqual(fiatName(c, 'en'), c, `${c} has a name`);
+  assert.equal(fiatName('EUR', 'en'), 'Euro');
+  assert.equal(fiatName('EUR', 'de'), 'Euro');
+  assert.equal(fiatName('JPY', 'fr'), 'yen japonais');
+});
+
+test('each currency shows its symbol, none where it has only its code', () => {
+  const sym = Object.fromEntries(FIAT_CODES.map((c) => [c, fiatSymbol(c, 'en')]));
+  assert.equal(sym.USD, '$');
+  assert.equal(sym.EUR, '€');
+  assert.equal(sym.GBP, '£');
+  assert.equal(sym.JPY, '¥');
+  assert.equal(sym.SEK, 'kr');
+  assert.equal(sym.PLN, 'zł');
+  assert.equal(sym.INR, '₹');
+  assert.equal(sym.CHF, '');
+  for (const c of FIAT_CODES) if (c !== 'CHF') assert.ok(sym[c], `${c} has a symbol`);
+  assert.equal(fiatSymbol('XYZ!', 'en'), '');
 });
 
 test('a choice holds even without storage, and only offered codes are taken', () => {

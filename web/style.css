@@ -439,6 +439,27 @@ button.tile.on { outline: 1.5px solid var(--signal); outline-offset: -1.5px; }
 .locale-list button:active:not(:disabled) { transform: none; background: var(--panel-raised); }
 .locale-list button.on { background: var(--panel-raised); color: var(--signal); }
 
+/* Currency picker: whole-row targets, symbol · code · name in columns. */
+.currency-list { gap: 0; }
+.currency-list button {
+  display: grid;
+  grid-template-columns: 3.5ch 4.5ch 1fr;
+  align-items: center;
+  column-gap: var(--s2);
+  min-height: 52px;
+  width: 100%;
+  border-bottom: 1px solid var(--line);
+  border-radius: 0;
+}
+.currency-list button:last-child { border-bottom: 0; }
+.currency-list button.on { border-radius: var(--r-sm); }
+.currency-list .sym { font-weight: 600; text-align: center; color: var(--text-dim); }
+.currency-list .on .sym { color: var(--signal); }
+.currency-list .code { font-weight: 600; }
+.currency-list .name { color: var(--text-dim); overflow-wrap: anywhere; }
+.currency-list .on .name { color: inherit; }
+.currency-list button:first-child .name { grid-column: 2 / -1; color: inherit; }
+
 /* ---- entropy pad (new wallet) ---- */
 .entropy-pad {
   position: relative;

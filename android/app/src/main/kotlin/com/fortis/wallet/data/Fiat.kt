@@ -55,6 +55,18 @@ fun fmtFiat(v: Double, code: String): String {
 private fun spaced(s: String): String =
     s.replace(Regex("([A-Z]{3})(?=[\\d-])"), "$1\u00A0").replace(Regex("(?<=\\d)([A-Z]{3})"), "\u00A0$1")
 
+/** The currency's short symbol in the app's language ("€", "$", "kr", "zł"),
+ *  or "" when it has none apart from its code (CHF). */
+fun fiatSymbol(code: String): String {
+    val s = runCatching {
+        if (android.os.Build.VERSION.SDK_INT >= 28)
+            android.icu.util.Currency.getInstance(code)
+                .getName(android.icu.util.ULocale.getDefault(), android.icu.util.Currency.NARROW_SYMBOL_NAME, null)
+        else Currency.getInstance(code).getSymbol(Locale.getDefault())
+    }.getOrNull() ?: return ""
+    return if (s == code || s.isBlank()) "" else s
+}
+
 /** "EUR · Euro", in the app's language. */
 fun fiatLabel(code: String): String =
     runCatching { "$code · " + Currency.getInstance(code).getDisplayName(Locale.getDefault()) }.getOrDefault(code)
