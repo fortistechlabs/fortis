@@ -15,6 +15,7 @@ import com.fortis.wallet.data.SwapRecord
 import com.fortis.wallet.data.Taken
 import com.fortis.wallet.data.WalletConfig
 import com.fortis.wallet.ui.AmbientBackground
+import com.fortis.wallet.ui.screens.CurrencyPicker
 import com.fortis.wallet.ui.screens.NewSwapContent
 import com.fortis.wallet.ui.screens.SwapDetailContent
 import com.fortis.wallet.ui.screens.SwapListContent
@@ -28,7 +29,7 @@ import org.json.JSONObject
  * check their layout on a phone without an edge that has swaps on.
  * `adb shell am start -n com.fortistechlabs.wallet.dev/com.fortis.wallet.SwapPreviewActivity --es screen new`
  * (screen: list | new | new_low | new_small | new_noref | take | take_noref | detail_code | detail_funded
- *  | detail_turn | detail_need_funding | detail_done | detail_released).
+ *  | detail_turn | detail_need_funding | detail_done | detail_released | currency).
  */
 class SwapPreviewActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -69,6 +70,7 @@ class SwapPreviewActivity : ComponentActivity() {
                             .systemBarsPadding().imePadding().padding(horizontal = Fx.s4).padding(top = Fx.s3),
                     ) {
                         when (screen) {
+                            "currency" -> CurrencyPicker(chosen = intent?.getStringExtra("chosen"), onPick = {}, onDismiss = {})
                             "new", "new_low", "new_small", "new_noref" -> NewSwapContent(
                                 wallets, balances, if (screen == "new_noref") quote.copy(referencePrice = null, bestBtcToXbt = null) else quote,
                                 if (screen == "new_noref") null else NeoxEx.Reference(1_100_000, true), busy = false, error = null,

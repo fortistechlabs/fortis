@@ -1317,43 +1317,53 @@ private fun CurrencyCard(vm: WalletViewModel) {
             Text(if (vm.fiatChosen) vm.fiat else automatic, color = Fx.textDim)
         }
     }
-    if (open) {
-        val entries = remember { listOf<String?>(null) + FIAT_CODES }
-        AlertDialog(
-            onDismissRequest = { open = false },
-            containerColor = Fx.panel,
-            title = { Text(stringResource(R.string.settings_currency), color = Fx.text) },
-            text = {
-                LazyColumn(Modifier.heightIn(max = 420.dp)) {
-                    items(entries) { code ->
-                        val selected = if (code == null) !vm.fiatChosen else vm.fiatChosen && code == vm.fiat
-                        Row(
-                            Modifier.fillMaxWidth()
-                                .heightIn(min = 48.dp)
-                                .clickable { open = false; vm.chooseFiat(code) }
-                                .padding(vertical = 10.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Text(
-                                code?.let { fiatSymbol(it) } ?: "",
-                                color = if (selected) Fx.signal else Fx.textDim,
-                                fontWeight = FontWeight.SemiBold,
-                                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                                modifier = Modifier.width(40.dp),
-                            )
-                            Text(
-                                code?.let { fiatLabel(it) } ?: automatic,
-                                color = if (selected) Fx.signal else Fx.text,
-                                modifier = Modifier.padding(start = 8.dp),
-                            )
-                        }
+    if (open) CurrencyPicker(
+        chosen = if (vm.fiatChosen) vm.fiat else null,
+        onPick = { open = false; vm.chooseFiat(it) },
+        onDismiss = { open = false },
+    )
+}
+
+/** The currency list: "Automatic (EUR)" then each currency as symbol · code ·
+ *  name. [chosen] null = Automatic. Public so the debug preview can show it. */
+@Composable
+fun CurrencyPicker(chosen: String?, onPick: (String?) -> Unit, onDismiss: () -> Unit) {
+    val automatic = stringResource(R.string.currency_automatic, defaultFiat())
+    val entries = remember { listOf<String?>(null) + FIAT_CODES }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = Fx.panel,
+        title = { Text(stringResource(R.string.settings_currency), color = Fx.text) },
+        text = {
+            LazyColumn(Modifier.heightIn(max = 420.dp)) {
+                items(entries) { code ->
+                    val selected = code == chosen
+                    Row(
+                        Modifier.fillMaxWidth()
+                            .heightIn(min = 48.dp)
+                            .clickable { onPick(code) }
+                            .padding(vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            code?.let { fiatSymbol(it) } ?: "",
+                            color = if (selected) Fx.signal else Fx.textDim,
+                            fontWeight = FontWeight.SemiBold,
+                            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                            modifier = Modifier.width(40.dp),
+                        )
+                        Text(
+                            code?.let { fiatLabel(it) } ?: automatic,
+                            color = if (selected) Fx.signal else Fx.text,
+                            modifier = Modifier.padding(start = 8.dp),
+                        )
                     }
                 }
-            },
-            confirmButton = {},
-            dismissButton = { TextButton({ open = false }) { Text(stringResource(R.string.action_cancel), color = Fx.text) } },
-        )
-    }
+            }
+        },
+        confirmButton = {},
+        dismissButton = { TextButton(onDismiss) { Text(stringResource(R.string.action_cancel), color = Fx.text) } },
+    )
 }
 
 /** The app-language override. Empty = follow the device; picking one recreates
