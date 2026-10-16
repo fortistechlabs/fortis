@@ -81,6 +81,7 @@ async function start() {
       el('pre', { class: 'card mono' }, 'wasm-pack build crates/wallet-wasm --target web --out-dir ../../web/pkg')));
   }
   initTheme();
+  loadBuildInfo();
   await i18nReady;
   const raw = await loadRaw();
   if (raw.kind === 'v2') state = raw.state;
@@ -1413,7 +1414,11 @@ function renderSettingsTab() {
 
 /** Fetches `build-info.json` once (git commit + a SHA-256 hash per served
  *  file, written by deploy/build-web-stage.mjs at publish time — see
- *  renderVerifyCard()) and re-renders when it resolves. Absent on a local
+ *  renderVerifyCard()). Asked for at start-up, so it's normally in hand
+ *  before Settings is ever opened; if it lands while Settings is showing,
+ *  only that redraws (never over a dialog or a half-done flow), since the
+ *  card growing pushes Language, Currency and Lock app down under a finger
+ *  about to tap one (found 2026-10-16: a tap meant for Language missed). Absent on a local
  *  checkout that never ran the publish script, or a build from before this
  *  existed — treated as "not available", not an error: `ui.buildInfo` ends
  *  up `false` either way, distinct from `null` (still loading) and
@@ -1424,7 +1429,10 @@ function loadBuildInfo() {
   fetch('./build-info.json')
     .then((r) => (r.ok ? r.json() : null))
     .catch(() => null)
-    .then((info) => { ui.buildInfo = info || false; render(); });
+    .then((info) => {
+      ui.buildInfo = info || false;
+      if (ui.nav === 'settings') renderShellIfIdle();
+    });
 }
 
 /** "Verify this build": answers the fair criticism that a website, unlike
@@ -1443,7 +1451,13 @@ function renderVerifyCard() {
           el('div', { class: 'hint' },
             t('settings_verify_commit', info.commit) + (info.dirty ? ` ${t('settings_verify_dirty')}` : '')),
           el('a', { href: './build-info.json', target: '_blank', rel: 'noopener' }, t('settings_verify_link')))
-      : el('div', { class: 'hint' }, t('settings_verify_unavailable')),
+      : info === null
+        // still loading: hold the space the answer will take, so nothing
+        // below moves when it lands
+        ? el('div', { class: 'stack', style: 'visibility:hidden', 'aria-hidden': 'true' },
+            el('div', { class: 'hint' }, t('settings_verify_commit', '0000000')),
+            el('a', {}, t('settings_verify_link')))
+        : el('div', { class: 'hint' }, t('settings_verify_unavailable')),
     el('div', { class: 'hint' }, t('settings_dedicated_profile')));
 }
 
