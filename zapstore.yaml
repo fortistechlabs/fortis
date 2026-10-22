@@ -30,6 +30,7 @@ description: |
   - Send and receive with QR codes, a built-in camera scanner, or paste.
   - Fee presets or a custom sat/vB rate; "take the fees out of this amount"; sweep a whole balance.
   - History with a tap-through to a block explorer; approximate value in USD, EUR or 28 other currencies (Settings -> Currency).
+  - Use your own server: point BTC, XBT or both at your own Esplora / mempool server (Settings -> Your server), so your addresses, balances and history never reach fortis. It's checked before it's used, there's no silent fallback to anyone else's, and sends through it pay no service fee. Swaps still go through fortis.
   - Connect a hardware wallet (Keystone, Passport, SeedSigner, Jade and others) as a view-only BTC wallet by scanning its account QR.
   - Cross-chain replay protection: SIGHASH_UNIFIED on every XBT send (automatic), plus an optional oversized OP_RETURN on BTC sends.
   - Extra entropy from your hands: shake the phone, scribble on screen, or CPU-timing jitter, folded into the seed.
