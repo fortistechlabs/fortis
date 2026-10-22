@@ -2,6 +2,20 @@
 
 Fortis Wallet (Android). Versions are `versionName (versionCode)`.
 
+## 0.5.4 (22) — 2026-10-22
+
+- Use your own server: Settings → Your server. BTC and XBT can each read the
+  chain from your own Esplora / mempool server instead of fortis servers, so
+  your addresses, balances and history don't reach us. Type its address
+  (`node.example/api` is enough; HTTPS is required) and tap Test & save: it's
+  checked first, and refused if it's on the other chain or not synced. You can
+  switch back to fortis servers at any time and the address is kept. While
+  your server is on, the wallet never falls back to anyone else's, and sends
+  through it pay no service fee. Swaps still go through fortis.
+- If fortis servers can't be reached, BTC wallets now fall back to
+  mempool.space (mempool.emzy.de stopped accepting IPv4 connections), and
+  "View" opens BTC transactions there too.
+
 ## 0.5.3 (21) — 2026-10-16
 
 - Settings → Currency: each currency now shows its symbol (€, $, £, kr, ¥…)
