@@ -193,7 +193,7 @@
     <string name="own_server_yours">Your server (%1$s)</string>
     <string name="own_server_yours_unset">Your server</string>
     <string name="own_server_dialog_title">%1$s server</string>
-    <string name="own_server_hint">Esplora / mempool URL, e.g. https://node.example/api</string>
+    <string name="own_server_hint">Esplora / mempool URL, e.g. node.example/api</string>
     <string name="own_server_test_save">Test &amp; save</string>
     <string name="own_server_testing">Testing…</string>
     <string name="action_change">Change</string>

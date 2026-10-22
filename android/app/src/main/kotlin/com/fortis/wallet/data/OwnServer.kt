@@ -36,7 +36,9 @@ sealed interface OwnServerCheck {
  * and on [chain] there. Stops at the first failure.
  */
 suspend fun validateOwnServer(http: OkHttpClient, chain: String, url: String): OwnServerCheck {
-    val parsed = url.trim().toHttpUrlOrNull()
+    // No scheme typed → HTTPS is assumed; an explicit `http://` is still refused.
+    val typed = url.trim().let { if ("://" in it) it else "https://$it" }
+    val parsed = typed.toHttpUrlOrNull()
     if (parsed?.isHttps != true) return OwnServerCheck.NotHttps
     // OkHttp's canonical form, so every later parser of the saved URL agrees.
     val given = parsed.toString().trimEnd('/')

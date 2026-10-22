@@ -1330,7 +1330,7 @@ private fun OwnServerCard(vm: WalletViewModel) {
             val host = url?.let { runCatching { java.net.URI(it).host }.getOrNull() ?: it }
             val busy = vm.ownServerBusy == chain
             Column(verticalArrangement = Arrangement.spacedBy(Fx.s1)) {
-                Text(chain.uppercase(), style = FxType.label)
+                Text(chain.uppercase(), color = Fx.text, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = Fx.s2))
                 @Composable
                 fun option(label: String, selected: Boolean, onPick: () -> Unit) = Row(
                     Modifier.fillMaxWidth().heightIn(min = 44.dp)

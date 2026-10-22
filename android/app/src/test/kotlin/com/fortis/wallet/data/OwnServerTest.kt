@@ -132,6 +132,18 @@ class OwnServerTest {
     }
 
     @Test
+    fun a_url_without_a_scheme_is_https() {
+        serve("https://n/api")
+        assertEquals(OwnServerCheck.Ok("https://n/api"), check("btc", "n/api"))
+    }
+
+    @Test
+    fun a_bare_host_without_a_scheme_gets_https_and_api() {
+        serve("https://n/api")
+        assertEquals(OwnServerCheck.Ok("https://n/api"), check("btc", " n "))
+    }
+
+    @Test
     fun an_unknown_chain_is_wrong_chain() {
         serve("https://n/api")
         assertEquals(OwnServerCheck.WrongChain, check("ltc", "https://n/api"))
