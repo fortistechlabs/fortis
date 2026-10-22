@@ -61,12 +61,10 @@ fun walletNameTaken(wallets: List<WalletConfig>, name: String, chain: String, ex
 const val HOSTED_EDGE = "https://api.fortistechlabs.com"
 
 /** Public Esplora fallbacks, used when [HOSTED_EDGE] is unreachable.
- *  mempool.space itself is unreachable from at least this project's home
- *  network (DNS resolves, TCP times out, confirmed repeatedly 2026-09-28);
- *  mempool.emzy.de runs the same open-source backend and is confirmed
- *  reliable from here — see fortis-edge's own --btc-upstream for the
- *  server-side twin of this same fix. */
-const val PUBLIC_BTC_ESPLORA = "https://mempool.emzy.de/api"
+ *  BTC was mempool.emzy.de while mempool.space timed out from this project's
+ *  home network (2026-09-28); by 2026-10-22 that had reversed — emzy refused
+ *  IPv4 connections on 443 (IPv6 only), mempool.space answered on both. */
+const val PUBLIC_BTC_ESPLORA = "https://mempool.space/api"
 const val PUBLIC_XBT_ESPLORA = "https://mempool.guide/api"
 
 data class PlanPreview(
