@@ -186,6 +186,22 @@
     <string name="wallet_connecting">connecting…</string>
     <string name="wallet_refreshing">refreshing…</string>
     <string name="wallet_refresh_failed">couldn\'t refresh · will retry</string>
+    <string name="wallet_own_server_unreachable">can\'t reach your server (%1$s) · will retry</string>
+    <string name="settings_own_server">Your server</string>
+    <string name="own_server_note">Read each chain from your own Esplora / mempool server instead of fortis servers. Swaps still use fortis.</string>
+    <string name="own_server_fortis">Fortis servers</string>
+    <string name="own_server_yours">Your server (%1$s)</string>
+    <string name="own_server_yours_unset">Your server</string>
+    <string name="own_server_dialog_title">%1$s server</string>
+    <string name="own_server_hint">Esplora / mempool URL, e.g. https://node.example/api</string>
+    <string name="own_server_test_save">Test &amp; save</string>
+    <string name="own_server_testing">Testing…</string>
+    <string name="action_change">Change</string>
+    <string name="own_server_err_https">This server must use HTTPS.</string>
+    <string name="own_server_err_unreachable">Can\'t reach this server.</string>
+    <string name="own_server_err_not_esplora">Not an Esplora server.</string>
+    <string name="own_server_err_wrong_chain">This server is on the other chain.</string>
+    <string name="own_server_err_not_synced">This server isn\'t synced yet (block %1$s).</string>
     <string name="fiat_approx">≈ %1$s</string>
 
     <!-- sent banner -->

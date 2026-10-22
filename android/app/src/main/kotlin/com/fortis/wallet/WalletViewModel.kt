@@ -183,6 +183,23 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
     private fun active(): Backend = (if (usingFallback) fallback else backend) ?: backend
         ?: error("no backend")
 
+    // --- the user's own Esplora server, per chain (see data/OwnServer.kt) ---
+    /** Saved setting per chain ("btc" / "xbt"), loaded at start. */
+    var ownServers by mutableStateOf<Map<String, OwnServerPrefs>>(emptyMap()); private set
+    /** The last failed check per chain; cleared once one passes. */
+    var ownServerError by mutableStateOf<Map<String, OwnServerCheck>>(emptyMap()); private set
+    /** The chain whose server is being checked, or null. */
+    var ownServerBusy by mutableStateOf<String?>(null); private set
+
+    private fun planFor(w: WalletConfig) =
+        chooseBackend(w.chain, w.network, ownServers[w.chain]?.takeIf { it.on }?.url)
+
+    /** The selected wallet's own server host, or null when it uses fortis servers. */
+    val ownServerHost: String?
+        get() = config?.let { (planFor(it).primary as? BackendTarget.Esplora)?.url }
+            ?.let { ownServerHost(it) ?: it }
+    val usingOwnServer: Boolean get() = config?.let { planFor(it).primary is BackendTarget.Esplora } ?: false
+
     var draftMnemonic by mutableStateOf<String?>(null); private set
     var status by mutableStateOf<ChainStatus?>(null); private set
     var balances by mutableStateOf<Balances?>(null); private set
@@ -304,6 +321,7 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
         fortis.unlockedFunder = funder
         viewModelScope.launch {
             val s = store.load()
+            ownServers = listOf("btc", "xbt").associateWith { store.ownServerPrefs(it) }
             wallets = s.wallets
             selectedId = s.selectedId
             lockMode = s.lockMode
@@ -406,11 +424,17 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    /** The hosted edge as an Esplora backend for any wallet (not just the one in
-     *  view), shared by the balance scan and the swap funder. */
+    /** The hosted edge (or the chain's own server) as an Esplora backend for any
+     *  wallet (not just the one in view), shared by the balance scan and the swap funder. */
     private fun overviewBackend(w: WalletConfig, s: WalletSession): Backend {
         val id = w.id
         return overviewBackends.getOrPut(id) {
+            val own = planFor(w).primary as? BackendTarget.Esplora
+            if (own != null) return@getOrPut EsploraBackend(
+                http, own.url, s.view,
+                { (wallets.firstOrNull { it.id == id } ?: w).let { c -> c.nextReceive to c.nextChange } },
+                chain = w.chain, txCache = txCache,
+            )
             EsploraBackend(
                 http, "$HOSTED_EDGE/${w.chain}", s.view,
                 { (wallets.firstOrNull { it.id == id } ?: w).let { c -> c.nextReceive to c.nextChange } },
@@ -446,7 +470,8 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
         require(!w.watchOnly) { "a watch-only wallet can't fund a swap" }
         val s = withContext(Dispatchers.Default) { ensureSession(w.id, quiet = true) } ?: return@Funder null
         val b = overviewBackend(w, s)
-        val pricing = b.status().pricing ?: error("the edge advertises no commission address")
+        // From the edge itself: the wallet's own server (if set) has no pricing.
+        val pricing = fetchPricing(http, "$HOSTED_EDGE/pricing") ?: error("the edge advertises no commission address")
         val terms = org.json.JSONObject(r.termsJson ?: error("no terms yet"))
         require(pricing.address == terms.getString("fee_address")) { "the commission address changed" }
         val fee = uniffi.wallet_ffi.ServiceFee(pricing.address, 50u, com.fortis.wallet.ui.screens.SWAP_FEE_FLOOR_SAT.toULong(), 0uL)
@@ -1400,6 +1425,14 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
     fun reconnect() = wrap {
         val id = selectedId ?: return@wrap
         if (ensureSession(id) == null) return@wrap // needs the wallet open
+        if (usingOwnServer) {
+            backend = null; fallback = null; usingFallback = false
+            status = null; history = emptyList()
+            ensureBackend()
+            resolvePhase()
+            refreshSoon()
+            return@wrap
+        }
         val token = edgeRegister(http, HOSTED_EDGE)
         updateConfig(id) { it.copy(backendToken = token) }
         backend = edgeBackend(token)
@@ -1439,13 +1472,71 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
     private fun ensureBackend() {
         val c = config ?: return
         val view = session?.view ?: return
-        if (backend == null) backend = edgeBackend(c.backendToken ?: "")
-        if (fallback == null) {
-            val esplora = if (c.chain == "btc") PUBLIC_BTC_ESPLORA else PUBLIC_XBT_ESPLORA
-            fallback = EsploraBackend(
-                http, esplora, view, { config!!.nextReceive to config!!.nextChange },
+        val plan = planFor(c)
+        if (backend == null) backend = when (val p = plan.primary) {
+            BackendTarget.Edge -> edgeBackend(c.backendToken ?: "")
+            is BackendTarget.Esplora -> EsploraBackend(
+                http, p.url, view, { config!!.nextReceive to config!!.nextChange },
                 chain = c.chain, txCache = txCache,
             )
+        }
+        // An own server has no fallback: when it's down, nothing goes elsewhere.
+        val f = plan.fallback as? BackendTarget.Esplora
+        if (fallback == null && f != null) {
+            fallback = EsploraBackend(
+                http, f.url, view, { config!!.nextReceive to config!!.nextChange },
+                chain = c.chain, txCache = txCache,
+            )
+        }
+    }
+
+    /** Check [url] as [chain]'s server and, if it passes, save it and switch to it. */
+    fun saveOwnServer(chain: String, url: String) = viewModelScope.launch { checkAndUse(chain, url) }
+
+    /** Switch [chain] between its saved server (re-checked first) and fortis servers. */
+    fun useOwnServer(chain: String, on: Boolean) = viewModelScope.launch {
+        if (on) {
+            ownServers[chain]?.url?.let { checkAndUse(chain, it) }
+        } else {
+            store.setUseOwnServer(chain, false)
+            ownServerError = ownServerError - chain
+            onOwnServerChanged(chain)
+        }
+    }
+
+    /** Forget [chain]'s server; its wallets go back to fortis servers. */
+    fun removeOwnServer(chain: String) = viewModelScope.launch {
+        store.setOwnServer(chain, null)
+        ownServerError = ownServerError - chain
+        onOwnServerChanged(chain)
+    }
+
+    private suspend fun checkAndUse(chain: String, url: String) {
+        ownServerBusy = chain
+        try {
+            when (val r = validateOwnServer(http, chain, url)) {
+                is OwnServerCheck.Ok -> {
+                    store.setOwnServer(chain, r.url)
+                    store.setUseOwnServer(chain, true)
+                    ownServerError = ownServerError - chain
+                    onOwnServerChanged(chain)
+                }
+                else -> ownServerError = ownServerError + (chain to r)
+            }
+        } finally {
+            ownServerBusy = null
+        }
+    }
+
+    /** Rebuild [chain]'s backends — and only that chain's — after its setting changed. */
+    private suspend fun onOwnServerChanged(chain: String) {
+        ownServers = ownServers + (chain to store.ownServerPrefs(chain))
+        wallets.filter { it.chain == chain }.forEach { overviewBackends.remove(it.id) }
+        if (config?.chain == chain && session != null) {
+            backend = null; fallback = null; usingFallback = false
+            status = null; lastRefreshError = null
+            ensureBackend()
+            refreshSoon()
         }
     }
 
@@ -1576,6 +1667,8 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
                     // "Connecting…".
                     // Debug builds only: the message can carry request paths with addresses.
                     if (BuildConfig.DEBUG) android.util.Log.e("WalletRefresh", "refresh failed for ${refreshingChain ?: "?"}", e)
+                    // A backend replaced meanwhile (a server switch) isn't the new one's failure.
+                    if (backend !== edge) return@onFailure
                     lastRefreshError = e.message ?: e::class.simpleName ?: "unknown error"
                     status = null
                 }

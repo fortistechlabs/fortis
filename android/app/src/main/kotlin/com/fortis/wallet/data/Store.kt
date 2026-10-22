@@ -1,6 +1,7 @@
 package com.fortis.wallet.data
 
 import android.content.Context
+import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
@@ -103,6 +104,9 @@ data class WalletState(
     val appWrapped: String?,
 )
 
+/** One chain's own-server setting: the saved URL (if any) and whether it's in use. */
+data class OwnServerPrefs(val url: String?, val on: Boolean)
+
 class Store(private val ctx: Context) {
     private object K {
         val wallets = stringPreferencesKey("wallets")
@@ -182,6 +186,27 @@ class Store(private val ctx: Context) {
 
     suspend fun setSelected(id: String?) = ctx.dataStore.edit { p ->
         if (id == null) p.remove(K.selected) else p[K.selected] = id
+    }
+
+    private fun ownUrlKey(chain: String) = stringPreferencesKey("own_server_$chain")
+    private fun ownOnKey(chain: String) = booleanPreferencesKey("use_own_server_$chain")
+
+    /** [chain]'s own-server setting as saved — the URL is kept while switched off. */
+    suspend fun ownServerPrefs(chain: String): OwnServerPrefs {
+        val p = ctx.dataStore.data.first()
+        return OwnServerPrefs(p[ownUrlKey(chain)], p[ownOnKey(chain)] ?: false)
+    }
+
+    /** The URL [chain]'s wallets should use, or null for fortis servers. */
+    suspend fun ownServer(chain: String): String? = ownServerPrefs(chain).takeIf { it.on }?.url
+
+    /** Save [chain]'s URL (leaving the switch as it is); null removes it and switches off. */
+    suspend fun setOwnServer(chain: String, url: String?) = ctx.dataStore.edit { p ->
+        if (url == null) { p.remove(ownUrlKey(chain)); p.remove(ownOnKey(chain)) } else p[ownUrlKey(chain)] = url
+    }
+
+    suspend fun setUseOwnServer(chain: String, on: Boolean) = ctx.dataStore.edit { p ->
+        p[ownOnKey(chain)] = on
     }
 
     /** Remove one wallet from the app (the seed is not destroyed — the phrase

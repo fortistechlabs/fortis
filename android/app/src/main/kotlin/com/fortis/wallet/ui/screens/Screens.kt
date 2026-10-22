@@ -736,6 +736,7 @@ private fun SettingsTab(vm: WalletViewModel) {
             vm.recoverNote?.let { Text(it, style = FxType.meta, color = Fx.text) }
         }
 
+        OwnServerCard(vm)
         LanguageCard()
         CurrencyCard(vm)
 
@@ -897,7 +898,9 @@ private fun WalletTab(vm: WalletViewModel) {
                         if (it.degraded) stringResource(R.string.wallet_limited_suffix, head) else head
                     } ?: when {
                         vm.refreshing -> stringResource(R.string.wallet_refreshing)
-                        vm.lastRefreshError != null -> stringResource(R.string.wallet_refresh_failed)
+                        vm.lastRefreshError != null -> vm.ownServerHost
+                            ?.let { stringResource(R.string.wallet_own_server_unreachable, it) }
+                            ?: stringResource(R.string.wallet_refresh_failed)
                         else -> stringResource(R.string.wallet_connecting)
                     }
                     // Connection dot — same ok/connecting semantics as the web wallet's
@@ -1303,6 +1306,91 @@ internal fun kv(k: String, v: String) = Row(Modifier.fillMaxWidth(), horizontalA
 }
 
 /** The currency fiat values are shown in. Empty = the device region's. */
+/** What a failed own-server check tells the user. */
+@Composable
+private fun ownServerErrorText(c: com.fortis.wallet.data.OwnServerCheck): String? = when (c) {
+    is com.fortis.wallet.data.OwnServerCheck.Ok -> null
+    com.fortis.wallet.data.OwnServerCheck.NotHttps -> stringResource(R.string.own_server_err_https)
+    com.fortis.wallet.data.OwnServerCheck.Unreachable -> stringResource(R.string.own_server_err_unreachable)
+    com.fortis.wallet.data.OwnServerCheck.NotEsplora -> stringResource(R.string.own_server_err_not_esplora)
+    com.fortis.wallet.data.OwnServerCheck.WrongChain -> stringResource(R.string.own_server_err_wrong_chain)
+    is com.fortis.wallet.data.OwnServerCheck.NotSynced -> stringResource(R.string.own_server_err_not_synced, c.tip.toString())
+}
+
+/** Per chain: read it from fortis servers or the user's own Esplora server. */
+@Composable
+private fun OwnServerCard(vm: WalletViewModel) {
+    var editing by remember { mutableStateOf<String?>(null) }
+    GlassCard {
+        Text(stringResource(R.string.settings_own_server), color = Fx.text, fontWeight = FontWeight.SemiBold)
+        Text(stringResource(R.string.own_server_note), style = FxType.meta, color = Fx.textFaint)
+        for (chain in listOf("btc", "xbt")) {
+            val prefs = vm.ownServers[chain]
+            val url = prefs?.url
+            val host = url?.let { runCatching { java.net.URI(it).host }.getOrNull() ?: it }
+            val busy = vm.ownServerBusy == chain
+            Column(verticalArrangement = Arrangement.spacedBy(Fx.s1)) {
+                Text(chain.uppercase(), style = FxType.label)
+                @Composable
+                fun option(label: String, selected: Boolean, onPick: () -> Unit) = Row(
+                    Modifier.fillMaxWidth().heightIn(min = 44.dp)
+                        .clickable(enabled = !busy && !selected, onClick = onPick),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(if (selected) "●" else "○", color = if (selected) Fx.signal else Fx.textDim)
+                    Spacer(Modifier.width(Fx.s2))
+                    Text(label, color = if (selected) Fx.text else Fx.textDim)
+                }
+                val on = prefs?.on == true
+                option(stringResource(R.string.own_server_fortis), !on) { vm.useOwnServer(chain, false) }
+                option(
+                    host?.let { stringResource(R.string.own_server_yours, it) } ?: stringResource(R.string.own_server_yours_unset),
+                    on,
+                ) { if (url != null) vm.useOwnServer(chain, true) else editing = chain }
+                if (busy) Text(stringResource(R.string.own_server_testing), style = FxType.meta, color = Fx.textDim)
+                if (editing != chain) vm.ownServerError[chain]?.let { ErrorText(ownServerErrorText(it)) }
+                if (url != null) Row(horizontalArrangement = Arrangement.spacedBy(Fx.s2)) {
+                    GhostButton(stringResource(R.string.action_change), Modifier.weight(1f), dense = true, enabled = !busy) { editing = chain }
+                    GhostButton(stringResource(R.string.action_remove), Modifier.weight(1f), tint = Fx.bad, dense = true, enabled = !busy) {
+                        vm.removeOwnServer(chain)
+                    }
+                }
+            }
+        }
+    }
+    editing?.let { chain -> OwnServerDialog(vm, chain) { editing = null } }
+}
+
+/** Paste a server URL; Test & save checks it and, if it passes, switches to it. */
+@Composable
+private fun OwnServerDialog(vm: WalletViewModel, chain: String, onDone: () -> Unit) {
+    var text by remember(chain) { mutableStateOf(vm.ownServers[chain]?.url ?: "") }
+    var tried by remember(chain) { mutableStateOf(false) }
+    val busy = vm.ownServerBusy == chain
+    // A finished check with no error for this chain means it saved and switched.
+    LaunchedEffect(busy) {
+        if (tried && !busy && vm.ownServerError[chain] == null) onDone()
+    }
+    AlertDialog(
+        onDismissRequest = onDone,
+        containerColor = Fx.panel,
+        title = { Text(stringResource(R.string.own_server_dialog_title, chain.uppercase()), color = Fx.text) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(Fx.s2)) {
+                Field(text, { text = it }, stringResource(R.string.own_server_hint), mono = true, keyboardType = KeyboardType.Uri)
+                if (busy) Text(stringResource(R.string.own_server_testing), style = FxType.meta, color = Fx.textDim)
+                else if (tried) vm.ownServerError[chain]?.let { ErrorText(ownServerErrorText(it)) }
+            }
+        },
+        confirmButton = {
+            TextButton({ tried = true; vm.saveOwnServer(chain, text) }, enabled = !busy && text.isNotBlank()) {
+                Text(stringResource(R.string.own_server_test_save), color = Fx.signal)
+            }
+        },
+        dismissButton = { TextButton(onDone) { Text(stringResource(R.string.action_cancel), color = Fx.text) } },
+    )
+}
+
 @Composable
 private fun CurrencyCard(vm: WalletViewModel) {
     var open by remember { mutableStateOf(false) }

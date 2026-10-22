@@ -70,6 +70,28 @@ class TxSummary(
     val vout: List<Pair<String?, Long>>,
 )
 
+/** Plain Esplora's `/fee-estimates` (`{"<blocks>": sat/vB, …}`) at [confTarget]:
+ *  the estimate for the largest target at or below it, else the smallest one.
+ *  Null when there's no usable estimate. */
+fun parseFeeEstimates(body: String, confTarget: Int): ULong? {
+    val o = runCatching { JSONObject(body) }.getOrNull() ?: return null
+    val est = o.keys().asSequence().mapNotNull { k -> k.toIntOrNull()?.let { it to o.optDouble(k) } }
+        .filter { !it.second.isNaN() }.sortedBy { it.first }.toList()
+    val pick = est.lastOrNull { it.first <= confTarget } ?: est.firstOrNull() ?: return null
+    return maxOf(1L, Math.round(pick.second)).toULong()
+}
+
+/** An edge's `/pricing` answer, or null when it charges no fee or can't be read. */
+suspend fun fetchPricing(http: OkHttpClient, url: String): ServicePricing? = runCatching {
+    withContext(Dispatchers.IO) {
+        http.newCall(Request.Builder().url(url).build()).execute().use { r ->
+            if (!r.isSuccessful) return@use null
+            val o = JSONObject(r.body?.string().orEmpty())
+            ServicePricing(o.getString("address"), o.getInt("bps"), o.getLong("floor_sat"), o.getLong("cap_sat"))
+        }
+    }
+}.getOrNull()
+
 /** Mint a per-install token at a fortis-edge base URL (`POST {base}/register`). */
 suspend fun edgeRegister(http: OkHttpClient, base: String): String {
     val url = base.trimEnd('/') + "/register"
@@ -571,15 +593,7 @@ class EsploraBackend(
     private suspend fun loadPricing() {
         val url = pricingUrl ?: return
         if (pricing != null) return
-        pricing = runCatching {
-            withContext(Dispatchers.IO) {
-                http.newCall(Request.Builder().url(url).build()).execute().use { r ->
-                    if (!r.isSuccessful) return@use null
-                    val o = JSONObject(r.body?.string().orEmpty())
-                    ServicePricing(o.getString("address"), o.getInt("bps"), o.getLong("floor_sat"), o.getLong("cap_sat"))
-                }
-            }
-        }.getOrNull()
+        pricing = fetchPricing(http, url)
     }
 
     private var lastPrewarm = 0L
@@ -695,7 +709,10 @@ class EsploraBackend(
             else -> f.optDouble("economyFee", f.optDouble("hourFee"))
         }
         maxOf(1L, Math.round(pick)).toULong()
-    } catch (e: Exception) { 1uL }
+    } catch (e: Exception) {
+        // Plain Esplora (electrs, e.g. a user's own server) has only `/fee-estimates`.
+        runCatching { parseFeeEstimates(get("/fee-estimates"), confTarget) }.getOrNull() ?: 1uL
+    }
 
     override suspend fun history(count: Int): List<HistoryEntry> {
         if (batchOn) {
