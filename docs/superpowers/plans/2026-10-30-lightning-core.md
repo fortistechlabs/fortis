@@ -17,7 +17,7 @@
 - Android only; `wallet-wasm` must still build with no Lightning code (`cargo build -p wallet-wasm --target wasm32-unknown-unknown`).
 - Mainnet software BTC wallets only; Lightning is **off by default**, per wallet, *Settings → Lightning (beta)*.
 - ldk-node 0.7 line (LDK v0.2). No ldk-node/LDK types cross the `wallet-ffi` boundary.
-- Node seed = BIP-85 HEX application `128169`, 32 bytes, index 0, from the BIP-39 seed; Kotlin never sees node keys.
+- Node seed = BIP-85 HEX application `128169`, 64 bytes, index 0 (path `m/83696968'/128169'/64'/0'`; used directly as ldk-node's 64-byte entropy seed, no expansion), from the BIP-39 seed; Kotlin never sees node keys.
 - Lightning **refuses to pay** while VSS is unreachable; on-chain keeps working.
 - LSP defaults: `open_fee_ppm` 10 000 (1%); `open_fee_min_sat` ≈ 2× next-block fee for an open; `min_payment_size` 10 000 sat; `channel_min_sat` 100 000; `channel_max_sat` 500 000; `channel_size_factor` 2×; starting liquidity 0.05 BTC. Zero-conf JIT channels ("client trusts LSP").
 - Receive below the LSP minimum is on-chain only. One hardcoded LSP peer, found via `GET /ln/info`.
@@ -111,7 +111,7 @@
   - `pub enum LnEvent { PaymentReceived { id: String, amount_msat: u64 }, PaymentSent { id: String, fee_msat: u64 }, PaymentFailed { id: String, reason: String }, ChannelReady, ChannelClosed { reason: String } }`
   - `impl Node { pub fn new(cfg: NodeConfig) -> Result<Node, LnError>; pub fn start(&self) -> Result<(), LnError>; pub fn stop(&self); pub fn balances(&self) -> Balances; pub fn next_event(&self, timeout: Duration) -> Option<LnEvent>; pub fn node_id(&self) -> String }`
 
-- [ ] **Step 1: Tests:** in `keys.rs`, `bip85_hex_matches_bip_vector` (take the BIP-85 *HEX* published test vector — master key, path and output — verbatim from the BIP text) and `bip85_hex_32_bytes_index_0_is_deterministic_and_distinct_from_index_1`. In `tests/node.rs`: `starts_connects_to_lsp_and_stops` (regtest + a stock ldk-node as stand-in LSP: assert `node_id()` stable across restarts from the same seed and different with another seed); `start_without_network_returns_lsp_unreachable_within_15s` (Review Focus 4); `vss_down_start_returns_backup_unavailable`.
+- [ ] **Step 1: Tests:** in `keys.rs`, `bip85_hex_matches_bip_vector` (take the BIP-85 *HEX* published test vector — master key, path and output — verbatim from the BIP text) and `bip85_hex_64_bytes_index_0_is_deterministic_and_distinct_from_index_1`. In `tests/node.rs`: `starts_connects_to_lsp_and_stops` (regtest + a stock ldk-node as stand-in LSP: assert `node_id()` stable across restarts from the same seed and different with another seed); `start_without_network_returns_lsp_unreachable_within_15s` (Review Focus 4); `vss_down_start_returns_backup_unavailable`.
 - [ ] **Step 2:** Run `cargo test -p wallet-core bip85` and `cargo test -p fortis-lightning --test node` — Expected: FAIL.
 - [ ] **Step 3:** Implement `bip85_hex` in `keys.rs` (reuse the existing BIP-32 helper used by `psbt.rs::derive_bip32`). Implement `Node` over `ldk_node::Builder` with `build_with_vss_store_and_fixed_headers` (store id = HMAC-SHA256 of the node seed with tag `fortis/ln/vss/v1`, hex); persist the node's data under `data_dir`; the LSP is added as a persisted peer; `start` maps every ldk-node failure to an `LnError` and never blocks longer than 15 s.
 - [ ] **Step 4:** Rerun — Expected: PASS.

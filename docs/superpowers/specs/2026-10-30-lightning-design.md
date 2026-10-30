@@ -39,7 +39,7 @@ Dec 2025; BOLT splicing spec merged Mar 2026). Phase 1 works without it.
 | Balance display | **One total** in the BTC hero; a line under it splits it: *On-chain · Lightning*. |
 | Platforms | **Android only.** Web wallet unchanged (`wallet-wasm` does not build the Lightning feature). |
 | Wallet kinds | **Software BTC wallets on mainnet only.** No Lightning for watch-only, BitBox, or XBT wallets. |
-| Node keys | **Derived from the BTC wallet's BIP-39 seed by BIP-85** (HEX application 128169, 32 bytes, index 0). Nothing new to write down; a separate key tree so ldk-node's own on-chain wallet never collides with the BIP-84 addresses the wallet already uses. |
+| Node keys | **Derived from the BTC wallet's BIP-39 seed by BIP-85** (HEX application 128169, 64 bytes, index 0 — path `m/83696968'/128169'/64'/0'`; the 64 bytes are ldk-node's entropy seed directly, with no further expansion (decided 2026-10-30)). Nothing new to write down; a separate key tree so ldk-node's own on-chain wallet never collides with the BIP-84 addresses the wallet already uses. |
 | Backup | **VSS** (LDK Versioned Storage Service) hosted by fortis behind the edge; client-side encrypted with seed-derived keys. Lightning **refuses to pay** while VSS is unreachable. |
 | Multiple devices | **One active Lightning device per seed**, enforced by VSS versioning; explicit "Use Lightning here instead" takeover. |
 | Scanning | Send accepts BOLT11, BOLT12 offers, LNURL-pay, Lightning addresses, BIP21 with `lightning=`, and on-chain addresses; `lightning:` / `bitcoin:` links open Send. |
