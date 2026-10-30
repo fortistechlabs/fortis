@@ -30,17 +30,19 @@ data_dir = "/var/lib/fortis-lsp"
 open_fee_ppm = 10000
 open_fee_min_sat = 1000
 
-# Payment sizes the LSP accepts for a JIT channel. max defaults to
-# channel_max_sat in msat.
+# Payment sizes the LSP accepts for a JIT channel (outer bounds; max
+# defaults to channel_max_sat in msat). The LSP narrows them so every JIT
+# channel stays within channel_min_sat..channel_max_sat -- with these
+# defaults it accepts 51 000..250 000 sat -- and publishes the narrowed
+# bounds (GET /info, the stderr line at start). A config that leaves no
+# payment size is refused.
 min_payment_size_msat = 10000000
 max_payment_size_msat = 500000000
 
-# JIT channel size = forwarded amount x channel_size_factor (>= 1.0).
+# JIT channel size = (payment - open fee) x channel_size_factor (1.0 to 10.0).
 channel_size_factor = 2.0
 
-# Channel size bounds published to clients. ldk-node 0.7.1 cannot enforce
-# them on the JIT channel itself (its size is the forwarded amount x factor);
-# see README.md.
+# JIT channel size bounds, enforced through the payment bounds above.
 channel_min_sat = 100000
 channel_max_sat = 500000
 

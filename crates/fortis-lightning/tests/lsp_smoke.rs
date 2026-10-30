@@ -59,8 +59,8 @@ fn client_connects_to_fortis_lsp() {
             limits.channel_min_sat,
             limits.channel_max_sat
         ),
-        (10_000_000, 500_000_000, 100_000, 500_000),
-        "spec defaults"
+        (51_000_000, 250_000_000, 100_000, 500_000),
+        "/info: effective payment bounds for the spec defaults"
     );
 
     // A client `Node` pointed at the printed node id: its start connects

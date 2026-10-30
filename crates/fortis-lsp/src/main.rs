@@ -92,13 +92,11 @@ fn run() -> Result<(), String> {
         .map(|a| a.to_string())
         .unwrap_or_else(|| cfg.metrics_listen.to_string());
 
-    let largest = cfg.largest_jit_channel_sat();
-    if largest > cfg.channel_max_sat {
-        eprintln!(
-            "fortis-lsp: note: ldk-node 0.7.1 cannot cap JIT channel size; with max_payment_size_msat = {} and channel_size_factor = {} a channel can reach {largest} sat (channel_max_sat = {})",
-            cfg.max_payment_size_msat, cfg.channel_size_factor, cfg.channel_max_sat
-        );
-    }
+    let (min_payment_msat, max_payment_msat) = cfg.payment_bounds();
+    eprintln!(
+        "fortis-lsp: JIT payments {min_payment_msat}..={max_payment_msat} msat (configured {}..={}), keeping channels within {}..={} sat",
+        cfg.min_payment_size_msat, cfg.max_payment_size_msat, cfg.channel_min_sat, cfg.channel_max_sat
+    );
 
     let mut b = Builder::new();
     b.set_network(cfg.network);
@@ -141,8 +139,10 @@ fn serve(
         "listen": cfg.listen.to_string(),
         "open_fee_ppm": cfg.open_fee_ppm,
         "open_fee_min_sat": cfg.open_fee_min_sat,
-        "min_payment_size_msat": cfg.min_payment_size_msat,
-        "max_payment_size_msat": cfg.max_payment_size_msat,
+        // Effective bounds (config::effective_payment_bounds), not the raw
+        // config: these keep every JIT channel within channel_min/max_sat.
+        "min_payment_size_msat": cfg.payment_bounds().0,
+        "max_payment_size_msat": cfg.payment_bounds().1,
         "channel_size_factor": cfg.channel_size_factor,
         "channel_min_sat": cfg.channel_min_sat,
         "channel_max_sat": cfg.channel_max_sat,

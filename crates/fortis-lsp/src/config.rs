@@ -134,9 +134,15 @@ impl LspConfig {
             ));
         }
         let f = self.channel_size_factor;
-        if !f.is_finite() || f < 1.0 || over_provisioning_ppm(f).is_none() {
+        if !f.is_finite() || !(1.0..=MAX_CHANNEL_SIZE_FACTOR).contains(&f) {
             return Err(format!(
-                "channel_size_factor ({f}) must be a finite number >= 1.0"
+                "channel_size_factor ({f}) must be a number from 1.0 to {MAX_CHANNEL_SIZE_FACTOR}"
+            ));
+        }
+        if self.max_payment_size_msat > MAX_PAYMENT_CAP_MSAT {
+            return Err(format!(
+                "max_payment_size_msat ({}) is above 21 000 000 BTC",
+                self.max_payment_size_msat
             ));
         }
         if self.open_fee_ppm > 100_000 {
@@ -161,6 +167,7 @@ impl LspConfig {
             ));
         }
         self.rpc_host_port()?;
+        effective_payment_bounds(self)?;
         if self.token.as_deref() == Some("") {
             return Err("token must not be empty (omit it for no token)".into());
         }
@@ -210,19 +217,104 @@ impl LspConfig {
             min_channel_opening_fee_msat: self.open_fee_min_sat * 1_000,
             min_channel_lifetime: MIN_CHANNEL_LIFETIME_BLOCKS,
             max_client_to_self_delay: MAX_CLIENT_TO_SELF_DELAY,
-            min_payment_size_msat: self.min_payment_size_msat,
-            max_payment_size_msat: self.max_payment_size_msat,
+            min_payment_size_msat: self.payment_bounds().0,
+            max_payment_size_msat: self.payment_bounds().1,
             // Zero-conf JIT channels: the client trusts us not to
             // double-spend the funding transaction (spec, LSPS2 bLIP-52).
             client_trusts_lsp: true,
         }
     }
 
-    /// The largest JIT channel ldk-node can open under this config:
-    /// `max_payment_size_msat` forwarded × `channel_size_factor`.
-    pub fn largest_jit_channel_sat(&self) -> u64 {
-        ((self.max_payment_size_msat / 1_000) as f64 * self.channel_size_factor) as u64
+    /// [`effective_payment_bounds`] of this (validated) config: what the
+    /// LSP really accepts and publishes.
+    pub fn payment_bounds(&self) -> (u64, u64) {
+        effective_payment_bounds(self).expect("validated in from_toml")
     }
+}
+
+/// The most bitcoin there is, in msat: `max_payment_size_msat`'s cap.
+pub const MAX_PAYMENT_CAP_MSAT: u64 = 21_000_000 * 100_000_000 * 1_000;
+/// `channel_size_factor`'s cap.
+pub const MAX_CHANNEL_SIZE_FACTOR: f64 = 10.0;
+
+/// ldk-node 0.7.1's JIT channel size (sat) for a payment of `payment_msat`,
+/// or `None` when ldk-node would not open one (nothing left to forward) or
+/// its own `u64` arithmetic would overflow. Mirrors
+/// lightning-liquidity 0.2.7 `compute_opening_fee` (fee = max(ceil(P·ppm /
+/// 10⁶), min fee)), its `amt_to_forward_msat = P − fee`, and ldk-node's
+/// `OpenChannel` handler (`liquidity.rs`): channel = (amt + amt·op_ppm /
+/// 10⁶) / 1000, all integer, rounding down.
+fn jit_channel_sat(c: &LspConfig, op_ppm: u32, payment_msat: u64) -> Option<u64> {
+    let fee = payment_msat
+        .checked_mul(c.open_fee_ppm as u64)?
+        .checked_add(999_999)?
+        / 1_000_000;
+    let fee = fee.max(c.open_fee_min_sat.checked_mul(1_000)?);
+    let amt = payment_msat.saturating_sub(fee);
+    if amt == 0 {
+        return None;
+    }
+    let over = amt.checked_mul(op_ppm as u64)? / 1_000_000;
+    Some(amt.checked_add(over)? / 1_000)
+}
+
+/// Payment bounds `(min_msat, max_msat)` that keep every JIT channel ldk-node
+/// opens within `channel_min_sat..=channel_max_sat` (ldk-node 0.7.1 has no
+/// channel size setting; it sizes the channel from the payment).
+///
+/// - max: the largest P with P·(10⁶ + op_ppm)/10⁶ ≤ channel_max_sat·1000,
+///   rounded down — a payment never yields a channel above P × factor — and
+///   at most the configured `max_payment_size_msat`.
+/// - min: the smallest P ≥ the configured `min_payment_size_msat` whose
+///   channel (exact ldk-node maths, fee included) is ≥ channel_min_sat;
+///   the channel size is non-decreasing in P (fee ppm < 10⁶), so a binary
+///   search finds it.
+///
+/// `Err` when no payment size satisfies both.
+pub fn effective_payment_bounds(c: &LspConfig) -> Result<(u64, u64)> {
+    let op_ppm = over_provisioning_ppm(c.channel_size_factor).ok_or_else(|| {
+        format!(
+            "channel_size_factor ({}) out of range",
+            c.channel_size_factor
+        )
+    })?;
+    let cap = (c.channel_max_sat as u128)
+        .checked_mul(1_000 * 1_000_000)
+        .ok_or("channel_max_sat is too large")?
+        / (1_000_000 + op_ppm as u128);
+    let max = cap.min(c.max_payment_size_msat as u128) as u64;
+    let none = || {
+        format!(
+            "no payment size gives a JIT channel within channel_min_sat..channel_max_sat ({}..{} sat) \
+             with min/max_payment_size_msat {}..{}, open_fee_ppm {}, open_fee_min_sat {}, channel_size_factor {}",
+            c.channel_min_sat,
+            c.channel_max_sat,
+            c.min_payment_size_msat,
+            c.max_payment_size_msat,
+            c.open_fee_ppm,
+            c.open_fee_min_sat,
+            c.channel_size_factor
+        )
+    };
+    let ok = |p: u64| jit_channel_sat(c, op_ppm, p).is_some_and(|ch| ch >= c.channel_min_sat);
+    if c.min_payment_size_msat > max || !ok(max) {
+        return Err(none());
+    }
+    // ldk-node's arithmetic must not overflow anywhere in the range: `max`
+    // is the largest operand and every step is monotone in P.
+    if jit_channel_sat(c, op_ppm, max).is_none() {
+        return Err("max_payment_size_msat too large for ldk-node's fee arithmetic".into());
+    }
+    let (mut lo, mut hi) = (c.min_payment_size_msat, max);
+    while lo < hi {
+        let mid = lo + (hi - lo) / 2;
+        if ok(mid) {
+            hi = mid;
+        } else {
+            lo = mid + 1;
+        }
+    }
+    Ok((lo, max))
 }
 
 /// `factor` as ldk-node's over-provisioning on top of the forwarded amount
@@ -292,7 +384,9 @@ mod tests {
     fn rejects_min_greater_than_max() {
         let e = with("min_payment_size_msat = 2000\nmax_payment_size_msat = 1000").unwrap_err();
         assert!(e.contains("min_payment_size_msat"), "{e}");
-        assert!(with("min_payment_size_msat = 1000\nmax_payment_size_msat = 1000").is_ok());
+        assert!(
+            with("min_payment_size_msat = 100000000\nmax_payment_size_msat = 100000000").is_ok()
+        );
     }
 
     #[test]
@@ -382,8 +476,10 @@ mod tests {
         let s = c.lsps2_service_config();
         assert_eq!(s.channel_opening_fee_ppm, 10_000);
         assert_eq!(s.min_channel_opening_fee_msat, 3_000_000);
-        assert_eq!(s.min_payment_size_msat, 10_000_000);
-        assert_eq!(s.max_payment_size_msat, 500_000_000);
+        // Effective bounds: (P − max(1 % P, 3 000 sat)) × 2.5 >= 100 000 sat
+        // -> P >= 43 000 sat; P × 2.5 <= 500 000 sat -> P <= 200 000 sat.
+        assert_eq!(s.min_payment_size_msat, 43_000_000);
+        assert_eq!(s.max_payment_size_msat, 200_000_000);
         // factor 2.5 = forward amount + 150 % over-provisioning.
         assert_eq!(s.channel_over_provisioning_ppm, 1_500_000);
         assert_eq!(s.require_token.as_deref(), Some("t"));
@@ -403,5 +499,108 @@ mod tests {
         assert!(c.rpc_password().is_err());
         std::fs::remove_dir_all(&dir).unwrap();
         assert!(c.rpc_password().is_err());
+    }
+
+    /// ldk-node 0.7.1's JIT channel size for a payment, transcribed from
+    /// lightning-liquidity 0.2.7 `compute_opening_fee` / service.rs and
+    /// ldk-node `liquidity.rs` (`OpenChannel`), independently of config.rs.
+    fn ldk_channel_sat(c: &LspConfig, payment_msat: u64) -> u64 {
+        let ppm = ((c.channel_size_factor - 1.0) * 1_000_000.0).round() as u64;
+        let fee = (payment_msat * c.open_fee_ppm as u64).div_ceil(1_000_000);
+        let fee = fee.max(c.open_fee_min_sat * 1_000);
+        let amt_to_forward_msat = payment_msat.saturating_sub(fee);
+        let over_provisioning_msat = (amt_to_forward_msat * ppm) / 1_000_000;
+        (amt_to_forward_msat + over_provisioning_msat) / 1000
+    }
+
+    #[test]
+    fn effective_bounds_with_spec_defaults() {
+        let c = with("").unwrap();
+        // (P − max(1 % P, 1 000 sat)) × 2 >= 100 000 sat -> P = 51 000 sat;
+        // P × 2 <= 500 000 sat -> P = 250 000 sat.
+        assert_eq!(
+            effective_payment_bounds(&c).unwrap(),
+            (51_000_000, 250_000_000)
+        );
+        assert_eq!(ldk_channel_sat(&c, 51_000_000), 100_000);
+        assert_eq!(ldk_channel_sat(&c, 50_999_999), 99_999);
+        let s = c.lsps2_service_config();
+        assert_eq!(
+            (s.min_payment_size_msat, s.max_payment_size_msat),
+            (51_000_000, 250_000_000)
+        );
+    }
+
+    #[test]
+    fn every_payment_in_bounds_gives_a_channel_in_bounds() {
+        for extra in [
+            "",
+            "channel_size_factor = 1.0",
+            "channel_size_factor = 1.5",
+            "channel_size_factor = 3.3333333",
+            "channel_size_factor = 10.0\nchannel_max_sat = 5000000",
+            "open_fee_ppm = 0\nopen_fee_min_sat = 0",
+            "open_fee_ppm = 100000\nopen_fee_min_sat = 0",
+            "open_fee_ppm = 77777\nopen_fee_min_sat = 5000\nchannel_size_factor = 1.25",
+            "channel_min_sat = 20000\nchannel_max_sat = 1000000\nopen_fee_min_sat = 333",
+            "min_payment_size_msat = 1\nopen_fee_ppm = 1\nopen_fee_min_sat = 1",
+        ] {
+            let c = with(extra).unwrap_or_else(|e| panic!("{extra:?}: {e}"));
+            let (min, max) = effective_payment_bounds(&c).unwrap();
+            assert!(c.min_payment_size_msat <= min && min <= max && max <= c.max_payment_size_msat);
+            let step = ((max - min) / 997).max(1);
+            let mut payments: Vec<u64> = (min..=max).step_by(step as usize).collect();
+            payments.extend([min, min + 1, max - 1, max]);
+            for p in payments {
+                let ch = ldk_channel_sat(&c, p);
+                assert!(
+                    (c.channel_min_sat..=c.channel_max_sat).contains(&ch),
+                    "{extra:?}: payment {p} msat -> channel {ch} sat"
+                );
+            }
+            // Tight where derived (not clamped by the configured bounds).
+            if min > c.min_payment_size_msat {
+                assert!(
+                    ldk_channel_sat(&c, min - 1) < c.channel_min_sat,
+                    "{extra:?}: min not tight"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn configured_min_above_the_derived_min_wins() {
+        let c = with("min_payment_size_msat = 80000000").unwrap();
+        assert_eq!(
+            effective_payment_bounds(&c).unwrap(),
+            (80_000_000, 250_000_000)
+        );
+        let c = with("max_payment_size_msat = 200000000").unwrap();
+        assert_eq!(
+            effective_payment_bounds(&c).unwrap(),
+            (51_000_000, 200_000_000)
+        );
+    }
+
+    #[test]
+    fn rejects_a_config_with_no_valid_payment_range() {
+        // Max payment below the smallest payment that reaches channel_min_sat.
+        let e = with("max_payment_size_msat = 40000000").unwrap_err();
+        assert!(e.contains("no payment size"), "{e}");
+        // channel_min = channel_max: the open fee leaves no payment exactly on it.
+        assert!(with("channel_min_sat = 500000").is_err());
+        // channel_min unreachable with a 100 % fee... not possible (ppm <= 10 %);
+        // a huge fee floor instead.
+        assert!(with("open_fee_min_sat = 400000").is_err());
+    }
+
+    #[test]
+    fn rejects_factor_above_ten_and_absurd_payment_sizes() {
+        assert!(with("channel_size_factor = 10.1")
+            .unwrap_err()
+            .contains("channel_size_factor"));
+        assert!(with("channel_size_factor = 10.0\nchannel_max_sat = 5000000").is_ok());
+        let e = with("max_payment_size_msat = 2100000000000000001").unwrap_err();
+        assert!(e.contains("max_payment_size_msat"), "{e}");
     }
 }

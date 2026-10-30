@@ -36,21 +36,40 @@ node id and the published limits/fees as JSON (never the token).
 |---|---|
 | `open_fee_ppm` | `channel_opening_fee_ppm` |
 | `open_fee_min_sat` | `min_channel_opening_fee_msat` (× 1000) |
-| `min_payment_size_msat` / `max_payment_size_msat` | same names |
+| `min_payment_size_msat` / `max_payment_size_msat`, narrowed by `channel_min_sat` / `channel_max_sat` (below) | `min_payment_size_msat` / `max_payment_size_msat` |
 | `channel_size_factor` | `channel_over_provisioning_ppm` = (factor − 1) × 10⁶ |
 | `token` | `require_token` |
 | (fixed) client trusts LSP | `client_trusts_lsp = true` |
 | (fixed) | `advertise_service = false`, `min_channel_lifetime = 4320` blocks, `max_client_to_self_delay = 2016` |
 
-**Not expressible in ldk-node 0.7.1:**
+**Channel size bounds.** ldk-node 0.7.1 has no channel size setting: it
+sizes a JIT channel from the payment P as (P − fee) × factor, with
+fee = max(⌈P · `open_fee_ppm` / 10⁶⌉, `open_fee_min_sat`) and the factor
+applied as integer over-provisioning ppm. `config::effective_payment_bounds`
+narrows the configured payment bounds so that every channel lands in
+`channel_min_sat..=channel_max_sat`, using the same integer maths:
 
-- `channel_min_sat` / `channel_max_sat` are validated and published to
-  clients (`/info`, the app's limits) but **not enforced on the JIT channel**:
-  ldk-node sizes it as (payment − open fee) × `channel_size_factor`, with no
-  min/max. With the defaults (500 000 sat max payment, factor 2) a channel
-  can reach ~990 000 sat; the binary prints a note at start when
-  `max_payment_size_msat × factor > channel_max_sat`. To hold a hard cap,
-  lower `max_payment_size_msat` to `channel_max_sat / factor`.
+- max payment = ⌊`channel_max_sat` · 1000 / factor⌋ msat (a payment never
+  yields more than P × factor), at most `max_payment_size_msat`;
+- min payment = the smallest P (binary search; the channel size grows with
+  P) whose channel, fee included, reaches `channel_min_sat`, at least
+  `min_payment_size_msat`.
+
+With the defaults (1 %, 1 000 sat floor, factor 2, 100 000–500 000 sat) that
+is 51 000–250 000 sat. These effective bounds go to ldk-node, `GET /info`
+and the startup line on stderr. A config whose bounds leave no payment size
+is refused at load; `channel_size_factor` is capped at 10 and
+`max_payment_size_msat` at 21 000 000 BTC (ldk-node's own arithmetic is
+unchecked `u64`).
+
+**Spec deviation: no routing fees on JIT channels.** ldk-node 0.7.1 sets
+`forwarding_fee_base_msat` and `forwarding_fee_proportional_millionths` to 0
+on every JIT channel it opens (`liquidity.rs`, `OpenChannel`), so on those
+channels the LSP earns only the channel-opening fee; the spec's "normal
+routing fees otherwise" is not available for them.
+
+**Not available in ldk-node 0.7.1:**
+
 - `fortis_lsp_failed_forwards_total` is always 0: ldk-node handles LDK's
   `HTLCHandlingFailed` internally and emits no event for it.
 - `fortis_lsp_pending_htlcs` counts HTLCs awaiting on-chain resolution after
