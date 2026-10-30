@@ -180,13 +180,13 @@ struct Shared {
 
 /// A started ldk-node and the claim on its wallet. Fields drop in order: the
 /// node first, then the claim.
-struct Running {
-    node: Live,
+pub(crate) struct Running {
+    pub(crate) node: Live,
     _claim: Claim,
 }
 
 /// A built ldk-node (counted for the tests' "never two at once" check).
-struct Live(ldk_node::Node);
+pub(crate) struct Live(ldk_node::Node);
 
 impl Live {
     fn new(node: ldk_node::Node) -> Live {
@@ -447,7 +447,7 @@ impl Node {
         }
     }
 
-    fn running(&self) -> Option<Arc<Running>> {
+    pub(crate) fn running(&self) -> Option<Arc<Running>> {
         self.shared.inner.lock().unwrap().clone()
     }
 }
