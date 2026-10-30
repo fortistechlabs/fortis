@@ -22,7 +22,8 @@
 //! Every temp dir is `fortis-ln-test-<label>-<pid>-<n>`; on start the
 //! harness sweeps dirs left by dead test processes (and stops any bitcoind
 //! or postgres still running from them), so killed runs cannot pile up in
-//! /tmp.
+//! /tmp. That covers `fortis-lsp` too ([`Lsp`], `tests/common/lsp.rs`):
+//! its command line names its temp dir.
 
 #![allow(dead_code)]
 
@@ -36,6 +37,10 @@ use ldk_node::bitcoin::Network;
 use ldk_node::lightning::ln::msgs::SocketAddress;
 use ldk_node::{Builder, Event, Node};
 use serde_json::Value;
+
+mod lsp;
+#[allow(unused_imports)]
+pub use lsp::*;
 
 const PREFIX: &str = "fortis-ln-test-";
 
@@ -109,7 +114,7 @@ fn pid_alive(pid: u32) -> bool {
 
 /// Removes `fortis-ln-test-*-<pid>-*` dirs whose test process is gone, after
 /// killing any process still running out of them: bitcoind/postgres by
-/// pidfile, and anything (vss-server, postgres) whose cwd or command line
+/// pidfile, and anything (vss-server, postgres, fortis-lsp) whose cwd or command line
 /// names the dir.
 pub fn sweep_dead_runs() {
     let Ok(entries) = std::fs::read_dir(std::env::temp_dir()) else { return };
