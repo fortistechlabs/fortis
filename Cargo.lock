@@ -1011,6 +1011,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "fortis-lsp"
+version = "0.1.0"
+dependencies = [
+ "ldk-node",
+ "libc",
+ "serde",
+ "serde_json",
+ "tiny_http",
+ "toml",
+]
+
+[[package]]
 name = "fortis-node"
 version = "0.1.0"
 dependencies = [

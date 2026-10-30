@@ -1,0 +1,20 @@
+[package]
+name = "fortis-lsp"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "fortis Lightning service provider: ldk-node in LSPS2-service mode (JIT channels), bitcoind RPC chain source, Prometheus metrics on localhost."
+
+[[bin]]
+name = "fortis-lsp"
+path = "src/main.rs"
+
+[dependencies]
+ldk-node = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+toml = "0.5"
+tiny_http = "0.12"
+libc = "0.2"
