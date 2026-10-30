@@ -184,6 +184,83 @@ fn second_receive_within_capacity_has_zero_fee() {
     });
 }
 
+/// The client's reported inbound over the JIT channel is nominal: the LSP
+/// funded it and pays its commitment fee and anchors out of that, so an
+/// amount at (or just under) the reported inbound cannot be forwarded over
+/// it. Such a receive must be quoted as JIT (and that quote be payable),
+/// never as a plain invoice that then fails.
+#[test]
+#[ignore = "needs fortis-lsp built, FORTIS_BTC_BITCOIND, FORTIS_VSS_SERVER, initdb/pg_ctl"]
+fn receive_at_reported_inbound_needs_channel() {
+    let env = Env::start(&[]);
+    let payer = Payer::start(&env.rt, &env.lsp);
+    first_receive(&env, &payer, 100_000 * SAT);
+    env.rt.mine(6);
+
+    let inbound_msat = env.client.balances().inbound_sat * SAT;
+    eprintln!("reported inbound after the first JIT channel: {inbound_msat} msat");
+    for amount in [inbound_msat, inbound_msat - 2_000 * SAT] {
+        let q = env.client.receive(amount, "boundary").expect("quote");
+        assert!(
+            q.needs_channel,
+            "{amount} msat against {inbound_msat} msat reported inbound must go JIT: {q:?}"
+        );
+        assert_eq!(q.fee_msat, env.expected_fee_msat(amount), "{q:?}");
+    }
+
+    // The JIT quote at the reported inbound is payable: a second JIT channel.
+    let before = env.client.balances().lightning_sat;
+    let q = env
+        .client
+        .receive(inbound_msat, "boundary paid")
+        .expect("quote");
+    payer.pay(&q.invoice);
+    let got = env.wait_event("boundary PaymentReceived", 120, |e| {
+        matches!(e, LnEvent::PaymentReceived { .. })
+    });
+    assert!(
+        matches!(got, LnEvent::PaymentReceived { amount_msat, .. } if amount_msat == inbound_msat - q.fee_msat),
+        "{got:?}"
+    );
+    poll("balance after the boundary receive", 60, || {
+        (env.client.balances().lightning_sat == before + (inbound_msat - q.fee_msat) / SAT)
+            .then_some(())
+    });
+}
+
+/// The LSP's payment bounds are LSPS2 (JIT) bounds: over an existing
+/// channel a receive below the LSP minimum is a plain, fee-free invoice.
+#[test]
+#[ignore = "needs fortis-lsp built, FORTIS_BTC_BITCOIND, FORTIS_VSS_SERVER, initdb/pg_ctl"]
+fn plain_receive_below_lsp_min_over_existing_channel() {
+    let env = Env::start(&[]);
+    let payer = Payer::start(&env.rt, &env.lsp);
+    let q1 = first_receive(&env, &payer, 100_000 * SAT);
+    env.rt.mine(6);
+
+    let small = 10_000 * SAT;
+    assert!(small < env.lsp.limits().min_payment_msat);
+    let q = env
+        .client
+        .receive(small, "small")
+        .expect("plain quote below the LSP min");
+    assert!(!q.needs_channel, "{q:?}");
+    assert_eq!(q.fee_msat, 0);
+    assert_eq!(invoice_amount_msat(&q), Some(small));
+    payer.pay(&q.invoice);
+    let got = env.wait_event("small PaymentReceived", 120, |e| {
+        matches!(e, LnEvent::PaymentReceived { .. })
+    });
+    assert!(
+        matches!(got, LnEvent::PaymentReceived { amount_msat, .. } if amount_msat == small),
+        "{got:?}"
+    );
+    let expect_sat = (100_000 * SAT - q1.fee_msat + small) / SAT;
+    poll("balance after the small receive", 60, || {
+        (env.client.balances().lightning_sat == expect_sat).then_some(())
+    });
+}
+
 #[test]
 #[ignore = "needs fortis-lsp built, FORTIS_BTC_BITCOIND, FORTIS_VSS_SERVER, initdb/pg_ctl"]
 fn below_min_is_out_of_range() {
