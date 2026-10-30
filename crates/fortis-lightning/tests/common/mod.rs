@@ -39,13 +39,20 @@ use ldk_node::{Builder, Event, Node};
 use serde_json::Value;
 
 mod lsp;
+mod payer;
 #[allow(unused_imports)]
 pub use lsp::*;
+#[allow(unused_imports)]
+pub use payer::*;
 
 const PREFIX: &str = "fortis-ln-test-";
 
 pub fn free_port() -> u16 {
-    TcpListener::bind("127.0.0.1:0").unwrap().local_addr().unwrap().port()
+    TcpListener::bind("127.0.0.1:0")
+        .unwrap()
+        .local_addr()
+        .unwrap()
+        .port()
 }
 
 /// The path in env var `var`, or `None` (with a "skipping" note) when unset.
@@ -117,19 +124,28 @@ fn pid_alive(pid: u32) -> bool {
 /// pidfile, and anything (vss-server, postgres, fortis-lsp) whose cwd or command line
 /// names the dir.
 pub fn sweep_dead_runs() {
-    let Ok(entries) = std::fs::read_dir(std::env::temp_dir()) else { return };
+    let Ok(entries) = std::fs::read_dir(std::env::temp_dir()) else {
+        return;
+    };
     for e in entries.flatten() {
         let name = e.file_name().to_string_lossy().to_string();
-        let Some(rest) = name.strip_prefix(PREFIX) else { continue };
+        let Some(rest) = name.strip_prefix(PREFIX) else {
+            continue;
+        };
         // <label>-<pid>-<n>; label may contain '-'.
         let parts: Vec<&str> = rest.rsplitn(3, '-').collect();
-        let Some(pid) = parts.get(1).and_then(|p| p.parse::<u32>().ok()) else { continue };
+        let Some(pid) = parts.get(1).and_then(|p| p.parse::<u32>().ok()) else {
+            continue;
+        };
         if pid_alive(pid) {
             continue;
         }
         let dir = e.path();
         let dir_str = dir.to_str().unwrap_or("\u{0}").to_string();
-        for pidfile in [dir.join("bitcoind/regtest/bitcoind.pid"), dir.join("pg/postmaster.pid")] {
+        for pidfile in [
+            dir.join("bitcoind/regtest/bitcoind.pid"),
+            dir.join("pg/postmaster.pid"),
+        ] {
             if let Some(child) = std::fs::read_to_string(&pidfile)
                 .ok()
                 .and_then(|s| s.lines().next().and_then(|l| l.trim().parse::<u32>().ok()))
@@ -154,15 +170,19 @@ fn kill9(pid: u32) {
 /// Pids (other than ours) whose cwd or command line contains `needle`.
 pub fn procs_referencing(needle: &str) -> Vec<u32> {
     let me = std::process::id();
-    let Ok(entries) = std::fs::read_dir("/proc") else { return vec![] };
+    let Ok(entries) = std::fs::read_dir("/proc") else {
+        return vec![];
+    };
     entries
         .flatten()
         .filter_map(|e| e.file_name().to_str()?.parse::<u32>().ok())
         .filter(|&pid| pid != me)
         .filter(|pid| {
-            let cwd = std::fs::read_link(format!("/proc/{pid}/cwd")).map(|p| p.to_string_lossy().to_string());
+            let cwd = std::fs::read_link(format!("/proc/{pid}/cwd"))
+                .map(|p| p.to_string_lossy().to_string());
             let cmd = std::fs::read(format!("/proc/{pid}/cmdline")).unwrap_or_default();
-            cwd.map(|c| c.contains(needle)).unwrap_or(false) || String::from_utf8_lossy(&cmd).contains(needle)
+            cwd.map(|c| c.contains(needle)).unwrap_or(false)
+                || String::from_utf8_lossy(&cmd).contains(needle)
         })
         .collect()
 }
@@ -192,7 +212,11 @@ impl Regtest {
     pub fn start() -> Regtest {
         let bitcoind = env_bin("FORTIS_BTC_BITCOIND").expect("FORTIS_BTC_BITCOIND");
         let cli = bitcoind.with_file_name("bitcoin-cli");
-        assert!(cli.exists(), "bitcoin-cli not next to bitcoind at {}", cli.display());
+        assert!(
+            cli.exists(),
+            "bitcoin-cli not next to bitcoind at {}",
+            cli.display()
+        );
         let dir = TempDir::new("btc");
         let datadir = dir.path("bitcoind");
         std::fs::create_dir_all(&datadir).unwrap();
@@ -215,8 +239,17 @@ impl Regtest {
             .stderr(Stdio::null())
             .spawn()
             .expect("spawn bitcoind");
-        let rt = Regtest { rpc_url: format!("http://127.0.0.1:{rpc_port}"), esplora_url: String::new(), rpc_port, child, cli, dir };
-        poll("bitcoind up", 60, || rt.try_cli(&["getblockchaininfo"]).ok());
+        let rt = Regtest {
+            rpc_url: format!("http://127.0.0.1:{rpc_port}"),
+            esplora_url: String::new(),
+            rpc_port,
+            child,
+            cli,
+            dir,
+        };
+        poll("bitcoind up", 60, || {
+            rt.try_cli(&["getblockchaininfo"]).ok()
+        });
         rt.cli(&["createwallet", "miner"]);
         rt.mine(101);
         rt
@@ -233,7 +266,11 @@ impl Regtest {
     }
 
     pub fn try_cli(&self, args: &[&str]) -> Result<String, String> {
-        let out = Command::new(&self.cli).args(self.base_args()).args(args).output().map_err(|e| e.to_string())?;
+        let out = Command::new(&self.cli)
+            .args(self.base_args())
+            .args(args)
+            .output()
+            .map_err(|e| e.to_string())?;
         if out.status.success() {
             Ok(String::from_utf8_lossy(&out.stdout).trim().to_string())
         } else {
@@ -242,7 +279,8 @@ impl Regtest {
     }
 
     pub fn cli(&self, args: &[&str]) -> String {
-        self.try_cli(args).unwrap_or_else(|e| panic!("bitcoin-cli {args:?}: {e}"))
+        self.try_cli(args)
+            .unwrap_or_else(|e| panic!("bitcoin-cli {args:?}: {e}"))
     }
 
     pub fn json(&self, args: &[&str]) -> Value {
@@ -268,7 +306,12 @@ impl Regtest {
     /// Points `builder` at this node: bitcoind RPC chain source, regtest.
     pub fn chain_source(&self, builder: &mut Builder) {
         builder.set_network(Network::Regtest);
-        builder.set_chain_source_bitcoind_rpc("127.0.0.1".into(), self.rpc_port, RPC_USER.into(), RPC_PASS.into());
+        builder.set_chain_source_bitcoind_rpc(
+            "127.0.0.1".into(),
+            self.rpc_port,
+            RPC_USER.into(),
+            RPC_PASS.into(),
+        );
     }
 }
 
@@ -306,7 +349,14 @@ struct PgGuard {
 impl Drop for PgGuard {
     fn drop(&mut self) {
         let _ = Command::new(pg_bin("pg_ctl"))
-            .args(["-D", self.data.to_str().unwrap(), "-m", "immediate", "-w", "stop"])
+            .args([
+                "-D",
+                self.data.to_str().unwrap(),
+                "-m",
+                "immediate",
+                "-w",
+                "stop",
+            ])
             .output();
     }
 }
@@ -345,19 +395,49 @@ impl Vss {
         let dir = TempDir::new("vss");
         let pg_data = dir.path("pg");
         let out = Command::new(pg_bin("initdb"))
-            .args(["-D", pg_data.to_str().unwrap(), "-U", "postgres", "--auth=trust", "-E", "UTF8"])
+            .args([
+                "-D",
+                pg_data.to_str().unwrap(),
+                "-U",
+                "postgres",
+                "--auth=trust",
+                "-E",
+                "UTF8",
+            ])
             .output()
             .expect("run initdb (set FORTIS_PG_BIN or put it on PATH)");
-        assert!(out.status.success(), "initdb: {}", String::from_utf8_lossy(&out.stderr));
+        assert!(
+            out.status.success(),
+            "initdb: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
         let pg_port = free_port();
-        let opts = format!("-p {pg_port} -k {} -c listen_addresses=127.0.0.1", dir.0.display());
+        let opts = format!(
+            "-p {pg_port} -k {} -c listen_addresses=127.0.0.1",
+            dir.0.display()
+        );
         // Guard before pg_ctl: `pg_ctl -w start` can fail after postgres is up.
-        let pg = PgGuard { data: pg_data.clone() };
+        let pg = PgGuard {
+            data: pg_data.clone(),
+        };
         let out = Command::new(pg_bin("pg_ctl"))
-            .args(["-D", pg_data.to_str().unwrap(), "-o", &opts, "-l", &dir.str("pg.log"), "-w", "start"])
+            .args([
+                "-D",
+                pg_data.to_str().unwrap(),
+                "-o",
+                &opts,
+                "-l",
+                &dir.str("pg.log"),
+                "-w",
+                "start",
+            ])
             .output()
             .expect("run pg_ctl");
-        assert!(out.status.success(), "pg_ctl start: {}", String::from_utf8_lossy(&out.stderr));
+        assert!(
+            out.status.success(),
+            "pg_ctl start: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
 
         let port = free_port();
         let mut server = ChildGuard(
@@ -383,7 +463,12 @@ impl Vss {
             }
             ureq::get(&metrics).call().ok()
         });
-        Vss { url: format!("http://127.0.0.1:{port}/vss"), server, pg, dir }
+        Vss {
+            url: format!("http://127.0.0.1:{port}/vss"),
+            server,
+            pg,
+            dir,
+        }
     }
 
     pub fn log(&self) -> String {
@@ -409,7 +494,12 @@ pub fn builder(rt: &Regtest, seed: [u8; 64], storage_dir: &str) -> (Builder, Soc
 
 /// Waits up to `secs` for an event matching `pred`, acknowledging every
 /// event seen on the way. Returns the match.
-pub fn wait_event(node: &Node, what: &str, secs: u64, mut pred: impl FnMut(&Event) -> bool) -> Event {
+pub fn wait_event(
+    node: &Node,
+    what: &str,
+    secs: u64,
+    mut pred: impl FnMut(&Event) -> bool,
+) -> Event {
     let deadline = Instant::now() + Duration::from_secs(secs);
     loop {
         if let Some(e) = node.next_event() {
@@ -440,7 +530,10 @@ pub fn poll<T>(what: &str, secs: u64, mut f: impl FnMut() -> Option<T>) -> T {
 /// A random 64-byte seed (not secret: tests only).
 pub fn test_seed(tag: u8) -> [u8; 64] {
     let mut s = [0u8; 64];
-    let t = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
+    let t = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
     for (i, b) in s.iter_mut().enumerate() {
         *b = (t >> ((i % 16) * 8)) as u8 ^ tag ^ (i as u8).wrapping_mul(31);
     }
