@@ -29,6 +29,12 @@ serde-wasm-bindgen = "0.6"
 console_error_panic_hook = "0.1"
 uniffi = "0.29"
 
+# lightning (fortis-lightning only; never a dependency of wallet-core/wallet-wasm)
+ldk-node = "=0.7.1"
+# ldk-node 0.7.1 itself depends on vss-client-ng 0.4; pinned to the same release
+# so our own VSS calls (device lock) speak the exact same client/protocol.
+vss-client = { package = "vss-client-ng", version = "=0.4.1" }
+
 [profile.release]
 lto = "thin"
 

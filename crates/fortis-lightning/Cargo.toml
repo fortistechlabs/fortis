@@ -1,0 +1,16 @@
+[package]
+name = "fortis-lightning"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "fortis Lightning: the only code that touches LDK. Wraps ldk-node (LDK v0.2 line) with VSS backup; exposed to Android through wallet-ffi. Not pure (does I/O), so it lives beside wallet-core."
+
+[dependencies]
+ldk-node = { workspace = true }
+vss-client = { workspace = true }
+
+[dev-dependencies]
+serde_json = { workspace = true }
+ureq = { version = "2", default-features = false }
