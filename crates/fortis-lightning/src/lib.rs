@@ -7,3 +7,9 @@
 
 pub use ldk_node;
 pub use vss_client;
+
+mod error;
+mod parse;
+
+pub use error::{LnError, ParseError};
+pub use parse::{parse, parse_at, PaymentTarget};

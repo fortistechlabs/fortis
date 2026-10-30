@@ -1001,6 +1001,7 @@ version = "0.1.0"
 dependencies = [
  "ldk-node",
  "serde_json",
+ "thiserror 2.0.20",
  "ureq",
  "vss-client-ng",
 ]
