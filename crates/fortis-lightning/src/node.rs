@@ -1,11 +1,10 @@
 //! [`Node`]: the fortis Lightning node — ldk-node with a VSS store, keys
 //! derived from the BTC wallet's BIP-39 seed, and one LSP peer.
 //!
-//! **Keys.** The node seed is BIP-85 HEX (32 bytes, index 0) of the wallet's
-//! BIP-39 seed ([`wallet_core::bip85_hex`]). ldk-node wants 64 seed bytes, so
-//! the 32 bytes are used as BIP-39 entropy and expanded with an empty
-//! passphrase — exactly what ldk-node's own `set_entropy_bip39_mnemonic`
-//! does with a 24-word mnemonic. The VSS store id is
+//! **Keys.** The node seed is BIP-85 HEX, 64 bytes, index 0
+//! (`m/83696968'/128169'/64'/0'`) of the wallet's BIP-39 seed
+//! ([`wallet_core::bip85_hex`]); those 64 bytes are ldk-node's entropy seed
+//! as they are. The VSS store id is
 //! `hex(HMAC-SHA256(key = node seed, "fortis/ln/vss/v1"))`: stable per seed,
 //! unlinkable to the wallet.
 //!
@@ -23,11 +22,21 @@
 //!
 //! On timeout the error is that of the stage still running; the worker keeps
 //! going in the background and stops whatever node it built.
+//!
+//! **One ldk-node per wallet.** VSS writes are unconditional (spec,
+//! Findings (b)), so two ldk-nodes on one store silently corrupt channel
+//! state. A worker first takes a process-wide claim on the store id and the
+//! data dir (released only once its node is stopped and dropped), and holds
+//! a generation token that `stop()` and a caller timeout bump. It checks the
+//! token and "a node is already running" before building, before starting
+//! and before connecting, and installs its node itself, under the lock, only
+//! if the token is unchanged and none is installed. ldk-node's `stop` is never
+//! called with the lock held.
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::net::{TcpStream, ToSocketAddrs};
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicU8, Ordering};
+use std::sync::atomic::{AtomicU64, AtomicU8, Ordering};
 use std::sync::{mpsc, Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -106,10 +115,11 @@ pub enum ChainSource {
     },
 }
 
-/// Everything [`Node::new`] needs. No `Debug`: it holds the seed.
-#[derive(Clone)]
+/// Everything [`Node::new`] needs. No `Debug` or `Clone`: it holds the seed,
+/// which [`Node::new`] takes out and wipes.
 pub struct NodeConfig {
     /// The BTC wallet's 64-byte BIP-39 seed (`Mnemonic::to_seed`).
+    /// [`Node::new`] moves it into a zeroizing buffer.
     pub bip39_seed: Vec<u8>,
     pub network: Network,
     /// The node's local data (logs, ldk-node's local files); state lives in VSS.
@@ -155,27 +165,119 @@ pub struct Node {
     ldk_seed: Zeroizing<[u8; 64]>,
     store_id: String,
     node_id: String,
-    inner: Mutex<Option<Arc<ldk_node::Node>>>,
-    /// Held by a start worker for its whole life, so a worker left running
-    /// past a timeout and a new `start` never build two nodes at once.
-    starting: Arc<Mutex<()>>,
+    /// Keys of the process-wide claim: store id and absolute data dir.
+    claim_keys: Vec<String>,
+    shared: Arc<Shared>,
+}
+
+/// What a [`Node`] shares with its start workers (which may outlive it).
+struct Shared {
+    inner: Mutex<Option<Arc<Running>>>,
+    /// Bumped by `stop()` and by a timed-out `start`: a worker whose token is
+    /// stale builds/installs nothing.
+    generation: AtomicU64,
+}
+
+/// A started ldk-node and the claim on its wallet. Fields drop in order: the
+/// node first, then the claim.
+struct Running {
+    node: Live,
+    _claim: Claim,
+}
+
+/// A built ldk-node (counted for the tests' "never two at once" check).
+struct Live(ldk_node::Node);
+
+impl Live {
+    fn new(node: ldk_node::Node) -> Live {
+        let n = test_hooks::LIVE.fetch_add(1, Ordering::SeqCst) + 1;
+        test_hooks::MAX_LIVE.fetch_max(n, Ordering::SeqCst);
+        Live(node)
+    }
+}
+
+impl std::ops::Deref for Live {
+    type Target = ldk_node::Node;
+    fn deref(&self) -> &ldk_node::Node {
+        &self.0
+    }
+}
+
+impl Drop for Live {
+    fn drop(&mut self) {
+        let _ = self.0.stop();
+        test_hooks::LIVE.fetch_sub(1, Ordering::SeqCst);
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ClaimState {
+    Starting,
+    Running,
+}
+
+/// Process-wide: which wallets (store ids, data dirs) have a start worker or
+/// a running node in this process.
+static CLAIMS: Mutex<BTreeMap<String, ClaimState>> = Mutex::new(BTreeMap::new());
+
+struct Claim {
+    keys: Vec<String>,
+}
+
+impl Claim {
+    /// Takes every key, or none: `Err` names the strongest current holder.
+    fn try_acquire(keys: &[String]) -> Result<Claim, ClaimState> {
+        let mut claims = CLAIMS.lock().unwrap();
+        let held: Vec<ClaimState> = keys.iter().filter_map(|k| claims.get(k).copied()).collect();
+        if held.contains(&ClaimState::Running) {
+            return Err(ClaimState::Running);
+        }
+        if !held.is_empty() {
+            return Err(ClaimState::Starting);
+        }
+        for k in keys {
+            claims.insert(k.clone(), ClaimState::Starting);
+        }
+        Ok(Claim {
+            keys: keys.to_vec(),
+        })
+    }
+
+    fn set_running(&self) {
+        let mut claims = CLAIMS.lock().unwrap();
+        for k in &self.keys {
+            claims.insert(k.clone(), ClaimState::Running);
+        }
+    }
+}
+
+impl Drop for Claim {
+    fn drop(&mut self) {
+        let mut claims = CLAIMS.lock().unwrap();
+        for k in &self.keys {
+            claims.remove(k);
+        }
+    }
 }
 
 impl Node {
     /// Derives the node keys and validates `cfg`. No I/O.
-    pub fn new(cfg: NodeConfig) -> Result<Node, LnError> {
-        let bip39_seed: Zeroizing<[u8; 64]> = Zeroizing::new(
-            cfg.bip39_seed
-                .as_slice()
-                .try_into()
-                .map_err(|_| LnError::Other("bip39_seed must be 64 bytes".into()))?,
-        );
-        let node_seed = wallet_core::bip85_hex(&bip39_seed, cfg.network, 32, 0);
-        let mnemonic = ldk_node::bip39::Mnemonic::from_entropy(&node_seed)
-            .map_err(|e| LnError::Other(format!("node seed: {e}")))?;
-        let ldk_seed = Zeroizing::new(mnemonic.to_seed(""));
+    /// The seed is moved out of `cfg` into a zeroizing buffer.
+    pub fn new(mut cfg: NodeConfig) -> Result<Node, LnError> {
+        let taken = Zeroizing::new(std::mem::take(&mut cfg.bip39_seed));
+        if taken.len() != 64 {
+            return Err(LnError::Other("bip39_seed must be 64 bytes".into()));
+        }
+        let mut bip39_seed = Zeroizing::new([0u8; 64]);
+        bip39_seed.copy_from_slice(&taken);
+        drop(taken);
+        let node_seed = wallet_core::bip85_hex(&bip39_seed, cfg.network, 64, 0);
+        drop(bip39_seed);
+        let mut ldk_seed = Zeroizing::new([0u8; 64]);
+        ldk_seed.copy_from_slice(&node_seed);
+        drop(node_seed);
 
-        let mut e = hmac::HmacEngine::<sha256::Hash>::new(&node_seed);
+        let mut e = hmac::HmacEngine::<sha256::Hash>::new(&ldk_seed[..]);
         e.input(VSS_STORE_TAG);
         let store_id = hex::encode(hmac::Hmac::<sha256::Hash>::from_engine(e).to_byte_array());
 
@@ -189,6 +291,12 @@ impl Node {
         let lsp_addr: SocketAddress = format!("{}:{}", cfg.lsp.host, cfg.lsp.port)
             .parse()
             .map_err(|e| LnError::Other(format!("lsp address: {e:?}")))?;
+        let abs_dir = std::path::absolute(&cfg.data_dir)
+            .map_err(|e| LnError::Other(format!("data dir: {e}")))?;
+        let claim_keys = vec![
+            format!("store:{store_id}"),
+            format!("dir:{}", abs_dir.display()),
+        ];
 
         Ok(Node {
             network: cfg.network,
@@ -204,8 +312,11 @@ impl Node {
             ldk_seed,
             store_id,
             node_id,
-            inner: Mutex::new(None),
-            starting: Arc::new(Mutex::new(())),
+            claim_keys,
+            shared: Arc::new(Shared {
+                inner: Mutex::new(None),
+                generation: AtomicU64::new(0),
+            }),
         })
     }
 
@@ -219,15 +330,19 @@ impl Node {
     }
 
     /// Connects to the LSP, VSS and the chain source and starts the node.
-    /// Never blocks longer than 15 s. A no-op when already running.
+    /// Never blocks longer than 15 s. `Ok` when already running (also when a
+    /// concurrent `start` on this `Node` got there first);
+    /// `Other("already_running")` when another `Node` in this process runs
+    /// this wallet; `Other("start_in_progress")` when another start for it
+    /// is still working; `Other("cancelled")` when `stop()` came first.
     pub fn start(&self) -> Result<(), LnError> {
-        // Not held while waiting: balances/next_event stay responsive.
         if self.running().is_some() {
             return Ok(());
         }
+        let generation = self.shared.generation.load(Ordering::SeqCst);
         let deadline = Instant::now() + START_DEADLINE;
-        let stage = Arc::new(AtomicU8::new(Stage::Lsp as u8));
-        let (tx, rx) = mpsc::channel::<Result<ldk_node::Node, LnError>>();
+        let stage = Arc::new(AtomicU8::new(Stage::Claim as u8));
+        let (tx, rx) = mpsc::channel::<Result<(), LnError>>();
         let job = StartJob {
             network: self.network,
             data_dir: self.data_dir.to_string_lossy().into_owned(),
@@ -241,46 +356,30 @@ impl Node {
             ldk_seed: self.ldk_seed.clone(),
             store_id: self.store_id.clone(),
             node_id: self.node_id.clone(),
+            claim_keys: self.claim_keys.clone(),
             deadline,
             stage: Arc::clone(&stage),
+            shared: Arc::clone(&self.shared),
+            generation,
         };
-        let starting = Arc::clone(&self.starting);
         std::thread::Builder::new()
             .name("fortis-ln-start".into())
             .spawn(move || {
-                // A worker from a timed-out start may still hold this.
-                let _busy = loop {
-                    if let Ok(g) = starting.try_lock() {
-                        break g;
-                    }
-                    if Instant::now() >= job.deadline {
-                        let _ = tx.send(Err(LnError::Other("previous start still running".into())));
-                        return;
-                    }
-                    std::thread::sleep(Duration::from_millis(50));
-                };
-                let res = job.run();
-                if let Err(mpsc::SendError(Ok(node))) = tx.send(res) {
-                    // The caller gave up (timeout): don't leave a node running.
-                    let _ = node.stop();
-                }
+                let _ = tx.send(job.run());
             })
             .map_err(|e| LnError::Other(format!("spawn: {e}")))?;
 
         let wait = deadline.saturating_duration_since(Instant::now());
         match rx.recv_timeout(wait) {
-            Ok(Ok(node)) => {
-                let mut inner = self.inner.lock().unwrap();
-                if inner.is_some() {
-                    // A concurrent start won (its worker ran first): keep that one.
-                    let _ = node.stop();
-                } else {
-                    *inner = Some(Arc::new(node));
-                }
-                Ok(())
-            }
-            Ok(Err(e)) => Err(e),
+            Ok(res) => res,
             Err(mpsc::RecvTimeoutError::Timeout) => {
+                // Same lock as the worker's install: either it installed
+                // already, or it never will.
+                let inner = self.shared.inner.lock().unwrap();
+                if inner.is_some() {
+                    return Ok(());
+                }
+                self.shared.generation.fetch_add(1, Ordering::SeqCst);
                 Err(Stage::from(stage.load(Ordering::SeqCst)).timeout_error())
             }
             Err(mpsc::RecvTimeoutError::Disconnected) => {
@@ -289,11 +388,16 @@ impl Node {
         }
     }
 
-    /// Stops the node (a no-op when not running).
+    /// Stops the node and cancels any pending `start` (a no-op when neither).
     pub fn stop(&self) {
-        let node = self.inner.lock().unwrap().take();
-        if let Some(node) = node {
-            let _ = node.stop();
+        let running = {
+            let mut inner = self.shared.inner.lock().unwrap();
+            self.shared.generation.fetch_add(1, Ordering::SeqCst);
+            inner.take()
+        };
+        // Outside the lock; the claim goes when the last `Arc` drops.
+        if let Some(r) = running {
+            let _ = r.node.stop();
         }
     }
 
@@ -302,6 +406,7 @@ impl Node {
         let Some(node) = self.running() else {
             return Balances::default();
         };
+        let node = &node.node;
         let b = node.list_balances();
         let inbound_msat: u64 = node
             .list_channels()
@@ -322,7 +427,8 @@ impl Node {
     pub fn next_event(&self, timeout: Duration) -> Option<LnEvent> {
         let deadline = Instant::now() + timeout;
         loop {
-            let node = self.running()?;
+            let running = self.running()?;
+            let node = &running.node;
             if let Some(event) = node.next_event() {
                 // On failure ldk-node re-delivers the event; don't surface it twice.
                 if node.event_handled().is_err() {
@@ -341,8 +447,8 @@ impl Node {
         }
     }
 
-    fn running(&self) -> Option<Arc<ldk_node::Node>> {
-        self.inner.lock().unwrap().clone()
+    fn running(&self) -> Option<Arc<Running>> {
+        self.shared.inner.lock().unwrap().clone()
     }
 }
 
@@ -355,9 +461,11 @@ impl Drop for Node {
 /// ldk-node's node id for `ldk_seed`: its `KeysManager` is seeded with the
 /// BIP-32 master private key of the 64 seed bytes.
 fn ldk_node_id(ldk_seed: &[u8; 64], network: Network) -> Result<PublicKey, LnError> {
-    let master = Xpriv::new_master(network, ldk_seed)
+    let mut master = Xpriv::new_master(network, ldk_seed)
         .map_err(|e| LnError::Other(format!("master key: {e}")))?;
     let km_seed = Zeroizing::new(master.private_key.secret_bytes());
+    master.private_key.non_secure_erase();
+    // KeysManager keeps its derived secrets unwiped until dropped (LDK type).
     KeysManager::new(&km_seed, 0, 0, true)
         .get_node_id(Recipient::Node)
         .map_err(|_| LnError::Other("node id".into()))
@@ -417,20 +525,22 @@ fn translate(event: Event) -> Option<LnEvent> {
 #[derive(Clone, Copy)]
 #[repr(u8)]
 enum Stage {
-    Lsp = 0,
-    Vss = 1,
-    Build = 2,
-    Start = 3,
-    Connect = 4,
+    Claim = 0,
+    Lsp = 1,
+    Vss = 2,
+    Build = 3,
+    Start = 4,
+    Connect = 5,
 }
 
 impl From<u8> for Stage {
     fn from(v: u8) -> Stage {
         match v {
-            0 => Stage::Lsp,
-            1 => Stage::Vss,
-            2 => Stage::Build,
-            3 => Stage::Start,
+            0 => Stage::Claim,
+            1 => Stage::Lsp,
+            2 => Stage::Vss,
+            3 => Stage::Build,
+            4 => Stage::Start,
             _ => Stage::Connect,
         }
     }
@@ -439,6 +549,7 @@ impl From<u8> for Stage {
 impl Stage {
     fn timeout_error(self) -> LnError {
         match self {
+            Stage::Claim => LnError::Other("start_in_progress".into()),
             Stage::Lsp | Stage::Connect => LnError::LspUnreachable,
             Stage::Vss | Stage::Build => LnError::BackupUnavailable,
             Stage::Start => LnError::Other("chain_source_timeout".into()),
@@ -459,8 +570,19 @@ struct StartJob {
     ldk_seed: Zeroizing<[u8; 64]>,
     store_id: String,
     node_id: String,
+    claim_keys: Vec<String>,
     deadline: Instant,
     stage: Arc<AtomicU8>,
+    shared: Arc<Shared>,
+    generation: u64,
+}
+
+/// Why a worker gives up early: `Ok(())` = a node is already running for
+/// this `Node`, `Err` = cancelled.
+type Halt = Result<(), LnError>;
+
+fn cancelled() -> LnError {
+    LnError::Other("cancelled".into())
 }
 
 impl StartJob {
@@ -483,12 +605,50 @@ impl StartJob {
         h
     }
 
-    fn run(self) -> Result<ldk_node::Node, LnError> {
+    /// `Some(outcome)` when the worker must stop: token stale or a node
+    /// already installed.
+    fn checkpoint(&self) -> Option<Halt> {
+        if self.shared.generation.load(Ordering::SeqCst) != self.generation {
+            return Some(Err(cancelled()));
+        }
+        if self.shared.inner.lock().unwrap().is_some() {
+            return Some(Ok(()));
+        }
+        None
+    }
+
+    fn claim(&self) -> Result<Claim, Halt> {
+        loop {
+            if let Some(halt) = self.checkpoint() {
+                return Err(halt);
+            }
+            match Claim::try_acquire(&self.claim_keys) {
+                Ok(c) => return Ok(c),
+                Err(ClaimState::Running) => {
+                    return Err(Err(LnError::Other("already_running".into())))
+                }
+                Err(ClaimState::Starting) if Instant::now() >= self.deadline => {
+                    return Err(Err(LnError::Other("start_in_progress".into())))
+                }
+                Err(ClaimState::Starting) => std::thread::sleep(Duration::from_millis(50)),
+            }
+        }
+    }
+
+    fn run(self) -> Result<(), LnError> {
+        self.set(Stage::Claim);
+        let claim = match self.claim() {
+            Ok(c) => c,
+            Err(halt) => return halt,
+        };
         self.set(Stage::Lsp);
         self.probe_lsp()?;
         self.set(Stage::Vss);
         self.probe_vss()?;
 
+        if let Some(halt) = self.checkpoint() {
+            return halt;
+        }
         self.set(Stage::Build);
         let mut b = Builder::new();
         b.set_network(self.network);
@@ -520,22 +680,47 @@ impl StartJob {
                 self.vss_headers(),
             )
             .map_err(map_build_error)?;
+        test_hooks::BUILDS.fetch_add(1, Ordering::SeqCst);
+        // Dropping `Live` stops the node, outside any lock.
+        let node = Live::new(node);
         if node.node_id().to_string() != self.node_id {
             return Err(LnError::Other("node id mismatch".into()));
         }
 
+        if let Some(halt) = self.checkpoint() {
+            return halt;
+        }
         self.set(Stage::Start);
         node.start().map_err(map_node_error)?;
 
+        if let Some(halt) = self.checkpoint() {
+            return halt;
+        }
         self.set(Stage::Connect);
         if let Err(e) = node.connect(self.lsp_id, self.lsp_addr.clone(), true) {
-            let _ = node.stop();
             return Err(match e {
                 NodeError::PersistenceFailed => LnError::BackupUnavailable,
                 _ => LnError::LspUnreachable,
             });
         }
-        Ok(node)
+
+        let mut inner = self.shared.inner.lock().unwrap();
+        let outcome = if self.shared.generation.load(Ordering::SeqCst) != self.generation {
+            Err(cancelled())
+        } else if inner.is_some() {
+            Ok(())
+        } else {
+            claim.set_running();
+            *inner = Some(Arc::new(Running {
+                node,
+                _claim: claim,
+            }));
+            return Ok(());
+        };
+        drop(inner);
+        drop(node); // stops it, then the claim is released
+        drop(claim);
+        outcome
     }
 
     fn probe_lsp(&self) -> Result<(), LnError> {
@@ -596,5 +781,93 @@ fn map_node_error(e: NodeError) -> LnError {
         NodeError::ConnectionFailed => LnError::LspUnreachable,
         NodeError::PersistenceFailed => LnError::BackupUnavailable,
         other => LnError::Other(format!("start: {other}")),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn cfg(seed: Vec<u8>) -> NodeConfig {
+        NodeConfig {
+            bip39_seed: seed,
+            network: Network::Regtest,
+            data_dir: PathBuf::from("unused"),
+            chain_source: ChainSource::Esplora {
+                url: "http://192.0.2.1".into(),
+            },
+            lsp: LspInfo {
+                node_id: "0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798"
+                    .into(),
+                host: "192.0.2.1".into(),
+                port: 9735,
+                token: None,
+            },
+            vss: VssConfig {
+                url: "http://192.0.2.1/vss".into(),
+                auth_header: String::new(),
+            },
+            limits: LspLimits {
+                min_payment_msat: 1,
+                max_payment_msat: 2,
+                channel_min_sat: 3,
+                channel_max_sat: 4,
+            },
+        }
+    }
+
+    #[test]
+    fn node_seed_is_bip85_hex_64_index_0_and_store_id_its_hmac() {
+        let seed = [9u8; 64];
+        let node = Node::new(cfg(seed.to_vec())).unwrap();
+        let expect = wallet_core::bip85_hex(&seed, Network::Regtest, 64, 0);
+        assert_eq!(&node.ldk_seed[..], &expect[..]);
+        let mut e = hmac::HmacEngine::<sha256::Hash>::new(&expect);
+        e.input(b"fortis/ln/vss/v1");
+        let id = hmac::Hmac::<sha256::Hash>::from_engine(e).to_byte_array();
+        assert_eq!(node.store_id, hex::encode(id));
+        assert_eq!(
+            node.node_id,
+            ldk_node_id(&node.ldk_seed, Network::Regtest)
+                .unwrap()
+                .to_string()
+        );
+        assert_ne!(
+            node.node_id(),
+            Node::new(cfg(vec![8u8; 64])).unwrap().node_id()
+        );
+    }
+
+    #[test]
+    fn rejects_a_seed_that_is_not_64_bytes() {
+        assert!(matches!(
+            Node::new(cfg(vec![9u8; 32])),
+            Err(LnError::Other(_))
+        ));
+    }
+}
+
+/// Counters for the integration tests (not API).
+#[doc(hidden)]
+pub mod test_hooks {
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    pub(crate) static BUILDS: AtomicU64 = AtomicU64::new(0);
+    pub(crate) static LIVE: AtomicU64 = AtomicU64::new(0);
+    pub(crate) static MAX_LIVE: AtomicU64 = AtomicU64::new(0);
+
+    /// ldk-node builds in this process so far.
+    pub fn builds() -> u64 {
+        BUILDS.load(Ordering::SeqCst)
+    }
+
+    /// Most fortis ldk-nodes alive at once since the last [`reset_max_live`].
+    pub fn max_live() -> u64 {
+        MAX_LIVE.load(Ordering::SeqCst)
+    }
+
+    /// Resets [`max_live`] to the current count.
+    pub fn reset_max_live() {
+        MAX_LIVE.store(LIVE.load(Ordering::SeqCst), Ordering::SeqCst);
     }
 }

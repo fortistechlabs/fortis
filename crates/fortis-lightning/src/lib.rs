@@ -14,5 +14,7 @@ mod node;
 mod parse;
 
 pub use error::{LnError, ParseError};
+#[doc(hidden)]
+pub use node::test_hooks;
 pub use node::{Balances, ChainSource, LnEvent, LspInfo, LspLimits, Node, NodeConfig, VssConfig};
 pub use parse::{parse, parse_at, PaymentTarget};

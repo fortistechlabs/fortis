@@ -9,10 +9,13 @@
 
 mod common;
 
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use common::{builder, poll, test_seed, Regtest, TempDir, Vss};
-use fortis_lightning::{ChainSource, LnError, LspInfo, LspLimits, Node, NodeConfig, VssConfig};
+use fortis_lightning::{
+    test_hooks, ChainSource, LnError, LspInfo, LspLimits, Node, NodeConfig, VssConfig,
+};
 use ldk_node::bitcoin::Network;
 
 const LIMITS: LspLimits = LspLimits {
@@ -290,4 +293,171 @@ fn vss_down_start_returns_backup_unavailable() {
         !lsp.has_peer(&node.node_id()),
         "must not connect without a backup"
     );
+}
+
+/// No ldk-node may be up for `id` (polls for the LSP to see the disconnect,
+/// then checks it stays down).
+fn assert_not_connected(lsp: &StandInLsp, id: &str) {
+    poll("LSP sees no client", 10, || {
+        (!lsp.has_peer(id)).then_some(())
+    });
+    std::thread::sleep(Duration::from_secs(1));
+    assert!(!lsp.has_peer(id), "a node came up after stop");
+}
+
+#[test]
+#[ignore = "needs FORTIS_BTC_BITCOIND, FORTIS_VSS_SERVER, initdb/pg_ctl"]
+fn concurrent_starts_build_one_node() {
+    let rt = Regtest::start();
+    let vss = Vss::start();
+    let lsp = StandInLsp::start(&rt);
+    let dirs = TempDir::new("node-concurrent");
+    let cfg = config(
+        test_seed(5),
+        &dirs,
+        "a",
+        regtest_chain(&rt),
+        lsp.info(),
+        &vss.url,
+    );
+    let node = Arc::new(Node::new(cfg).unwrap());
+    let before = test_hooks::builds();
+    test_hooks::reset_max_live();
+    let threads: Vec<_> = (0..2)
+        .map(|_| {
+            let n = Arc::clone(&node);
+            std::thread::spawn(move || n.start())
+        })
+        .collect();
+    let results: Vec<_> = threads.into_iter().map(|t| t.join().unwrap()).collect();
+    eprintln!("concurrent starts: {results:?}");
+    assert_eq!(results, vec![Ok(()), Ok(())]);
+    assert_eq!(
+        test_hooks::builds() - before,
+        1,
+        "exactly one ldk-node built"
+    );
+    assert_eq!(test_hooks::max_live(), 1);
+    poll("LSP sees the client", 10, || {
+        lsp.has_peer(&node.node_id()).then_some(())
+    });
+    node.stop();
+    assert_not_connected(&lsp, &node.node_id());
+}
+
+#[test]
+#[ignore = "needs FORTIS_BTC_BITCOIND, FORTIS_VSS_SERVER, initdb/pg_ctl"]
+fn stop_during_pending_start_leaves_no_node_running() {
+    let rt = Regtest::start();
+    let vss = Vss::start();
+    let lsp = StandInLsp::start(&rt);
+    let dirs = TempDir::new("node-stop-pending");
+    let seed = test_seed(6);
+    for delay_ms in [0u64, 5, 20, 40, 80] {
+        let cfg = config(seed, &dirs, "a", regtest_chain(&rt), lsp.info(), &vss.url);
+        let node = Arc::new(Node::new(cfg).unwrap());
+        let id = node.node_id();
+        test_hooks::reset_max_live();
+        let n = Arc::clone(&node);
+        let pending = std::thread::spawn(move || n.start());
+        std::thread::sleep(Duration::from_millis(delay_ms));
+        node.stop();
+        // A second Node for the same wallet, while the cancelled worker may
+        // still be running: it waits for it, never runs alongside it.
+        let again = Node::new(config(
+            seed,
+            &dirs,
+            "a",
+            regtest_chain(&rt),
+            lsp.info(),
+            &vss.url,
+        ))
+        .unwrap();
+        let again_res = again.start();
+        let res = pending.join().unwrap();
+        eprintln!("stop after {delay_ms} ms: start returned {res:?}, second Node {again_res:?}");
+        assert!(
+            res == Ok(()) || res == Err(LnError::Other("cancelled".into())),
+            "{res:?}"
+        );
+        if again_res.is_err() {
+            // Only when the first start call landed after stop() (stop cancels
+            // a start in flight, not a later one): its node runs, so the second
+            // Node is refused, and starts once the first stops.
+            assert_eq!(again_res, Err(LnError::Other("already_running".into())));
+            assert_eq!(res, Ok(()));
+            node.stop();
+            again
+                .start()
+                .expect("second Node starts once the first stopped");
+        }
+        assert!(
+            test_hooks::max_live() <= 1,
+            "two ldk-nodes were alive at once"
+        );
+        poll("LSP sees the second node", 10, || {
+            lsp.has_peer(&id).then_some(())
+        });
+        again.stop();
+        assert_not_connected(&lsp, &id);
+    }
+}
+
+#[test]
+#[ignore = "needs FORTIS_BTC_BITCOIND, FORTIS_VSS_SERVER, initdb/pg_ctl"]
+fn second_node_on_same_wallet_cannot_start_alongside() {
+    let rt = Regtest::start();
+    let vss = Vss::start();
+    let lsp = StandInLsp::start(&rt);
+    let dirs = TempDir::new("node-second");
+    let seed = test_seed(7);
+    let first = Node::new(config(
+        seed,
+        &dirs,
+        "a",
+        regtest_chain(&rt),
+        lsp.info(),
+        &vss.url,
+    ))
+    .unwrap();
+    first.start().unwrap();
+
+    let before = test_hooks::builds();
+    test_hooks::reset_max_live();
+    let second = Node::new(config(
+        seed,
+        &dirs,
+        "a",
+        regtest_chain(&rt),
+        lsp.info(),
+        &vss.url,
+    ))
+    .unwrap();
+    let t = Instant::now();
+    let res = second.start();
+    eprintln!(
+        "second start while first runs: {res:?} after {:?}",
+        t.elapsed()
+    );
+    assert!(
+        matches!(&res, Err(LnError::Other(m)) if m == "already_running"),
+        "{res:?}"
+    );
+    assert!(t.elapsed() < Duration::from_secs(15));
+    assert_eq!(
+        test_hooks::builds(),
+        before,
+        "the second Node built nothing"
+    );
+    assert_eq!(test_hooks::max_live(), 1);
+    second.stop(); // must not stop the first
+    std::thread::sleep(Duration::from_millis(500));
+    assert!(lsp.has_peer(&first.node_id()));
+
+    // Once the first stops, the second may start.
+    first.stop();
+    second
+        .start()
+        .expect("second starts after the first stopped");
+    second.stop();
 }
