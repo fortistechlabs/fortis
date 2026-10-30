@@ -9,6 +9,7 @@ pub use ldk_node;
 pub use vss_client;
 
 mod error;
+pub mod lnurl;
 mod parse;
 
 pub use error::{LnError, ParseError};

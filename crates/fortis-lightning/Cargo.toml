@@ -11,7 +11,6 @@ description = "fortis Lightning: the only code that touches LDK. Wraps ldk-node 
 ldk-node = { workspace = true }
 vss-client = { workspace = true }
 thiserror = { workspace = true }
-
-[dev-dependencies]
 serde_json = { workspace = true }
-ureq = { version = "2", default-features = false }
+ureq = { version = "2", default-features = false, features = ["tls"] }
+
