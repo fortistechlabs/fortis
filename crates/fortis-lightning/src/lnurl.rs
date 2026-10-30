@@ -8,7 +8,8 @@ use std::io::Read;
 use std::str::FromStr;
 use std::time::Duration;
 
-use ldk_node::lightning_invoice::Bolt11Invoice;
+use ldk_node::bitcoin::hashes::{sha256, Hash};
+use ldk_node::lightning_invoice::{Bolt11Invoice, Bolt11InvoiceDescriptionRef};
 use serde_json::Value;
 use url::Url;
 
@@ -27,7 +28,11 @@ pub struct LnurlPayParams {
     pub callback: String,
     pub min_msat: u64,
     pub max_msat: u64,
+    /// The `text/plain` entry of `metadata`.
     pub description: String,
+    /// The raw `metadata` string as served: the invoice from the callback
+    /// must commit to its SHA-256 (LUD-06 description hash).
+    pub metadata: String,
 }
 
 fn other(s: impl Into<String>) -> LnError {
@@ -133,9 +138,14 @@ pub fn resolve(target: &PaymentTarget, http: &dyn HttpGet) -> Result<LnurlPayPar
         min_msat,
         max_msat,
         description,
+        metadata: metadata.to_string(),
     })
 }
 
+/// Fetches the invoice for `amount_msat` from the callback. The invoice must
+/// be for exactly that amount and carry a description hash equal to
+/// sha256(`params.metadata`) (LUD-06): a plain description, or another hash,
+/// is `Other("lnurl_description_hash")`.
 pub fn request_invoice(
     params: &LnurlPayParams,
     amount_msat: u64,
@@ -165,7 +175,11 @@ pub fn request_invoice(
     if inv.amount_milli_satoshis() != Some(amount_msat) {
         return Err(other("lnurl invoice amount mismatch"));
     }
-    Ok(pr)
+    let expect = sha256::Hash::hash(params.metadata.as_bytes());
+    match inv.description() {
+        Bolt11InvoiceDescriptionRef::Hash(h) if h.0 == expect => Ok(pr),
+        _ => Err(other("lnurl_description_hash")),
+    }
 }
 
 /// Reads at most [`MAX_BODY`] bytes; errors if the body is larger.
@@ -215,7 +229,7 @@ impl HttpGet for UreqGet {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use std::cell::RefCell;
     use std::collections::HashMap;
@@ -235,13 +249,41 @@ mod tests {
     // 0.025 BTC (2_500_000_000 msat) mainnet invoice (BOLT11 spec example).
     const INV_25M: &str = "lnbc25m1pvjluezpp5qqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqypqdq5vdhkven9v5sxyetpdeessp5zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zygs9q5sqqqqqqqqqqqqqqqpqsq67gye39hfg3zd8rgc80k32tvy9xk2xunwm5lzexnvpx6fd77en8qaq424dxgt56cag2dpt359k3ssyhetktkpqh24jqnjyw6uqd08sgptq44qu";
 
+    const META: &str = "[[\"text/plain\",\"coffee\"]]";
+
     fn params(cb: &str) -> LnurlPayParams {
         LnurlPayParams {
             callback: cb.into(),
             min_msat: 1000,
             max_msat: 3_000_000_000,
-            description: String::new(),
+            description: "coffee".into(),
+            metadata: META.into(),
         }
+    }
+
+    /// A signed regtest invoice for `amount_msat` committing to sha256(`metadata`)
+    /// (or, with `plain`, carrying that text as a plain description).
+    pub(crate) fn signed_invoice(amount_msat: u64, metadata: &str, plain: bool) -> String {
+        use ldk_node::bitcoin::hashes::{sha256, Hash};
+        use ldk_node::bitcoin::secp256k1::{Secp256k1, SecretKey};
+        use ldk_node::lightning::types::payment::PaymentSecret;
+        use ldk_node::lightning_invoice::{Currency, InvoiceBuilder};
+        let secp = Secp256k1::new();
+        let key = SecretKey::from_slice(&[0x42; 32]).unwrap();
+        let b = InvoiceBuilder::new(Currency::Regtest);
+        let b = if plain {
+            b.description(metadata.into())
+        } else {
+            b.description_hash(sha256::Hash::hash(metadata.as_bytes()))
+        };
+        b.payment_hash(sha256::Hash::hash(&amount_msat.to_be_bytes()))
+            .payment_secret(PaymentSecret([2; 32]))
+            .current_timestamp()
+            .min_final_cltv_expiry_delta(144)
+            .amount_milli_satoshis(amount_msat)
+            .build_signed(|m| secp.sign_ecdsa_recoverable(m, &key))
+            .unwrap()
+            .to_string()
     }
 
     fn pay_request(cb: &str) -> Value {
@@ -332,12 +374,59 @@ mod tests {
     #[test]
     fn callback_invoice_matching_amount_ok_and_existing_query() {
         let mut f = Fake::default();
+        let inv = signed_invoice(2_500_000_000, META, false);
         f.map.insert(
             "https://e.com/cb?k=v&amount=2500000000".into(),
-            serde_json::json!({ "pr": INV_25M }),
+            serde_json::json!({ "pr": inv }),
         );
         let pr = request_invoice(&params("https://e.com/cb?k=v"), 2_500_000_000, &f);
-        assert_eq!(pr.unwrap(), INV_25M);
+        assert_eq!(pr.unwrap(), inv);
+    }
+
+    fn invoice_with(inv: String) -> Result<String, LnError> {
+        let mut f = Fake::default();
+        f.map.insert(
+            "https://e.com/cb?amount=5000".into(),
+            serde_json::json!({ "pr": inv }),
+        );
+        request_invoice(&params("https://e.com/cb"), 5000, &f)
+    }
+
+    #[test]
+    fn description_hash_matching_metadata_ok() {
+        let inv = signed_invoice(5000, META, false);
+        assert_eq!(invoice_with(inv.clone()), Ok(inv));
+    }
+
+    #[test]
+    fn description_hash_mismatch_rejected() {
+        let inv = signed_invoice(5000, "[[\"text/plain\",\"tea\"]]", false);
+        assert_eq!(
+            invoice_with(inv),
+            Err(LnError::Other("lnurl_description_hash".into()))
+        );
+    }
+
+    #[test]
+    fn plain_description_instead_of_hash_rejected() {
+        // Even when the plain text is the metadata itself.
+        let inv = signed_invoice(5000, META, true);
+        assert_eq!(
+            invoice_with(inv),
+            Err(LnError::Other("lnurl_description_hash".into()))
+        );
+    }
+
+    #[test]
+    fn metadata_kept_raw() {
+        let mut f = Fake::default();
+        let req = pay_request("https://e.com/cb");
+        let raw = req["metadata"].as_str().unwrap().to_string();
+        f.map.insert("https://e.com/p".into(), req);
+        let t = PaymentTarget::LnurlPay {
+            url: "https://e.com/p".into(),
+        };
+        assert_eq!(resolve(&t, &f).unwrap().metadata, raw);
     }
 
     #[test]
