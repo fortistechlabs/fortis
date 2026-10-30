@@ -36,7 +36,7 @@
 //! VSS: after a restore on a new device the history has amounts and states
 //! but empty descriptions.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::io::Write;
 use std::path::Path;
 use std::str::FromStr;
@@ -181,27 +181,8 @@ impl Node {
         let running = self
             .running()
             .ok_or_else(|| LnError::Other("not_started".into()))?;
-        let node = &running.node;
-
-        let now_secs = now().as_secs();
-        if let Prepared::Bolt11 { invoice, .. } = &prepared {
-            let id = PaymentId(invoice.payment_hash().to_byte_array());
-            check_attempt(self.data_dir(), &hex::encode(id.0), now_secs, || {
-                node.payment(&id).is_some()
-            })?;
-        }
-
-        let sendable_msat: u64 = node
-            .list_channels()
-            .iter()
-            .filter(|c| c.is_usable)
-            .map(|c| c.next_outbound_htlc_limit_msat)
-            .sum();
-        if prepared.amount_msat() > sendable_msat {
-            return Err(LnError::InsufficientLightning);
-        }
-
-        self.pre_send_checks()?;
+        let node: &ldk_node::Node = &running.node;
+        let amount = prepared.amount_msat();
 
         let (id, description) = match prepared {
             Prepared::Bolt11 {
@@ -210,18 +191,24 @@ impl Node {
                 description,
                 ..
             } => {
-                let p = node.bolt11_payment();
-                let id = hex::encode(invoice.payment_hash().to_byte_array());
+                let pid = PaymentId(invoice.payment_hash().to_byte_array());
                 let expires_at = invoice
                     .expires_at()
                     .map_or(u64::MAX, |d| d.as_secs())
                     .saturating_add(ATTEMPT_MARGIN_SECS);
-                let id = send_recorded(self.data_dir(), &id, expires_at, now_secs, || {
-                    match amount_override {
+                let p = node.bolt11_payment();
+                let id = guarded_bolt11(
+                    self.data_dir(),
+                    &hex::encode(pid.0),
+                    expires_at,
+                    now().as_secs(),
+                    || node.payment(&pid).is_some(),
+                    || self.liquidity_and_gate(node, amount),
+                    || match amount_override {
                         Some(a) => p.send_using_amount(&invoice, a, None),
                         None => p.send(&invoice, None),
-                    }
-                })?;
+                    },
+                )?;
                 (id, description)
             }
             Prepared::Bolt12 {
@@ -230,6 +217,7 @@ impl Node {
                 description,
                 ..
             } => {
+                self.liquidity_and_gate(node, amount)?;
                 // Same ordering as BOLT11 (invoice request out, then the
                 // store insert), so the same error mapping. No attempt
                 // record: the id is random per send and an offer may be
@@ -245,6 +233,20 @@ impl Node {
         };
         self.note_description(&id, &description);
         Ok(id)
+    }
+
+    /// Steps 3 and 4: `InsufficientLightning`, then [`Self::pre_send_checks`].
+    fn liquidity_and_gate(&self, node: &ldk_node::Node, amount_msat: u64) -> Result<(), LnError> {
+        let sendable_msat: u64 = node
+            .list_channels()
+            .iter()
+            .filter(|c| c.is_usable)
+            .map(|c| c.next_outbound_htlc_limit_msat)
+            .sum();
+        if amount_msat > sendable_msat {
+            return Err(LnError::InsufficientLightning);
+        }
+        self.pre_send_checks()
     }
 
     /// The checks every send passes right before the HTLC goes to LDK.
@@ -464,16 +466,70 @@ fn to_payment(p: &PaymentDetails, notes: &Notes) -> Option<Payment> {
     })
 }
 
+/// Hex payment hashes with a `pay` between its attempt check and the end of
+/// its send in this process.
+static IN_FLIGHT: Mutex<BTreeSet<String>> = Mutex::new(BTreeSet::new());
+
+/// Holds `id` in [`IN_FLIGHT`] until dropped.
+struct HashGuard(String);
+
+impl HashGuard {
+    /// `PaymentStateUnknown` when another `pay` of the same invoice is
+    /// running: the second caller is refused, not queued (its outcome
+    /// depends on the first one's, which the caller learns from events and
+    /// `payments()`). Different hashes never block each other.
+    fn claim(id: &str) -> Result<HashGuard, LnError> {
+        let mut set = IN_FLIGHT.lock().unwrap_or_else(|e| e.into_inner());
+        if !set.insert(id.to_string()) {
+            return Err(LnError::PaymentStateUnknown);
+        }
+        Ok(HashGuard(id.to_string()))
+    }
+}
+
+impl Drop for HashGuard {
+    fn drop(&mut self) {
+        IN_FLIGHT
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .remove(&self.0);
+    }
+}
+
+/// The BOLT11 send, serialised per payment hash: claim the hash, check the
+/// attempt record, run `before_send` (liquidity, pre-send gate), then
+/// record → send → settle the record ([`send_recorded`]).
+fn guarded_bolt11(
+    dir: &Path,
+    id: &str,
+    expires_at: u64,
+    now_secs: u64,
+    in_ldk_store: impl Fn() -> bool,
+    before_send: impl FnOnce() -> Result<(), LnError>,
+    send: impl FnOnce() -> Result<PaymentId, NodeError>,
+) -> Result<String, LnError> {
+    let _guard = HashGuard::claim(id)?;
+    check_attempt(dir, id, now_secs, in_ldk_store)?;
+    before_send()?;
+    send_recorded(dir, id, expires_at, now_secs, send)
+}
+
+fn unreadable() -> LnError {
+    LnError::Other("attempt_record_unreadable".into())
+}
+
 /// `Ok` unless `id` has an unexpired attempt record and ldk-node's store
 /// (`in_ldk_store`) has no entry for it: then `PaymentStateUnknown`. A
-/// record that is expired or whose payment ldk-node lists is dropped.
+/// record that is expired or whose payment ldk-node lists is dropped. An
+/// attempts file that cannot be read or parsed refuses the payment
+/// (`Other("attempt_record_unreadable")`) and is left as it is.
 fn check_attempt(
     dir: &Path,
     id: &str,
     now_secs: u64,
     in_ldk_store: impl Fn() -> bool,
 ) -> Result<(), LnError> {
-    let Some(expires_at) = Attempts::load(dir).get(id) else {
+    let Some(expires_at) = Attempts::load(dir).map_err(|_| unreadable())?.get(id) else {
         return Ok(());
     };
     if expires_at > now_secs && !in_ldk_store() {
@@ -486,8 +542,13 @@ fn check_attempt(
 }
 
 /// Records the attempt for `id` (durably, pruning expired ones), runs
-/// `send`, and keeps the record only when the outcome is unknown
-/// (`PersistenceFailed`). Nothing is sent if the record cannot be written.
+/// `send`, then settles the record:
+/// - `PersistenceFailed` (outcome unknown): the record must stay; it is
+///   written back if it went missing.
+/// - `DuplicatePayment`: another attempt owns the hash; left alone.
+/// - anything else (sent and stored, or refused before sending): cleared.
+///
+/// Nothing is sent if the record cannot be written (or the file read).
 fn send_recorded(
     dir: &Path,
     id: &str,
@@ -495,15 +556,26 @@ fn send_recorded(
     now_secs: u64,
     send: impl FnOnce() -> Result<PaymentId, NodeError>,
 ) -> Result<String, LnError> {
-    Attempts::update(dir, now_secs, |a| {
+    let record = |a: &mut BTreeMap<String, u64>| {
         a.insert(id.to_string(), expires_at);
-    })
-    .map_err(|e| LnError::Other(format!("attempt record: {e}")))?;
+    };
+    Attempts::update(dir, now_secs, record).map_err(|e| match e.kind() {
+        std::io::ErrorKind::InvalidData | std::io::ErrorKind::PermissionDenied => unreadable(),
+        _ => LnError::Other(format!("attempt record: {e}")),
+    })?;
     let res = send();
-    if !matches!(res, Err(NodeError::PersistenceFailed)) {
-        let _ = Attempts::update(dir, now_secs, |a| {
-            a.remove(id);
-        });
+    match &res {
+        Err(NodeError::PersistenceFailed) => {
+            if Attempts::load(dir).ok().and_then(|a| a.get(id)) != Some(expires_at) {
+                let _ = Attempts::update(dir, now_secs, record);
+            }
+        }
+        Err(NodeError::DuplicatePayment) => {}
+        _ => {
+            let _ = Attempts::update(dir, now_secs, |a| {
+                a.remove(id);
+            });
+        }
     }
     res.map(|p| hex::encode(p.0)).map_err(map_send_error)
 }
@@ -511,14 +583,16 @@ fn send_recorded(
 /// Serialises read-modify-write of the data-dir JSON files in this process.
 static FILES_LOCK: Mutex<()> = Mutex::new(());
 
-/// Writes `bytes` to `dir/file` atomically (temp file, fsync, rename).
+/// Writes `bytes` to `dir/file` atomically and durably (temp file, fsync,
+/// rename, fsync of the directory).
 fn write_atomic(dir: &Path, file: &str, bytes: &[u8]) -> std::io::Result<()> {
     std::fs::create_dir_all(dir)?;
     let tmp = dir.join(format!("{file}.tmp"));
     let mut f = std::fs::File::create(&tmp)?;
     f.write_all(bytes)?;
     f.sync_all()?;
-    std::fs::rename(&tmp, dir.join(file))
+    std::fs::rename(&tmp, dir.join(file))?;
+    std::fs::File::open(dir)?.sync_all()
 }
 
 /// Payment id → description, kept in the data dir (see the module docs).
@@ -554,17 +628,22 @@ impl Notes {
 struct Attempts(BTreeMap<String, u64>);
 
 impl Attempts {
-    fn load(dir: &Path) -> Attempts {
+    fn load(dir: &Path) -> std::io::Result<Attempts> {
         let _g = FILES_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         Attempts::read(dir)
     }
 
-    fn read(dir: &Path) -> Attempts {
-        std::fs::read(dir.join(ATTEMPTS_FILE))
-            .ok()
-            .and_then(|b| serde_json::from_slice(&b).ok())
-            .map(Attempts)
-            .unwrap_or_default()
+    /// Fails closed: only a missing file is an empty set; any other read
+    /// error, or bytes that do not parse, is an error (`InvalidData` for
+    /// the latter).
+    fn read(dir: &Path) -> std::io::Result<Attempts> {
+        match std::fs::read(dir.join(ATTEMPTS_FILE)) {
+            Ok(b) => serde_json::from_slice(&b)
+                .map(Attempts)
+                .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e)),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(Attempts::default()),
+            Err(e) => Err(e),
+        }
     }
 
     fn get(&self, id: &str) -> Option<u64> {
@@ -572,13 +651,14 @@ impl Attempts {
     }
 
     /// Applies `f`, drops records expired at `now_secs`, writes durably.
+    /// Never writes over a file it could not read.
     fn update(
         dir: &Path,
         now_secs: u64,
         f: impl FnOnce(&mut BTreeMap<String, u64>),
     ) -> std::io::Result<()> {
         let _g = FILES_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-        let mut a = Attempts::read(dir);
+        let mut a = Attempts::read(dir)?;
         f(&mut a.0);
         a.0.retain(|_, exp| *exp > now_secs);
         let bytes = serde_json::to_vec(&a.0).map_err(std::io::Error::other)?;
@@ -767,17 +847,17 @@ mod tests {
         let dir = tmp_dir("attempt-unknown");
         let r = send_recorded(&dir, ID, 2_000, 1_000, || {
             // The record is on disk before ldk-node is called.
-            assert_eq!(Attempts::load(&dir).get(ID), Some(2_000));
+            assert_eq!(Attempts::load(&dir).unwrap().get(ID), Some(2_000));
             Err(NodeError::PersistenceFailed)
         });
         assert_eq!(r, Err(LnError::PaymentStateUnknown));
-        assert_eq!(Attempts::load(&dir).get(ID), Some(2_000));
+        assert_eq!(Attempts::load(&dir).unwrap().get(ID), Some(2_000));
         // A second pay for the same hash, ldk-node has no entry: refused.
         assert_eq!(
             check_attempt(&dir, ID, 1_500, || false),
             Err(LnError::PaymentStateUnknown)
         );
-        assert_eq!(Attempts::load(&dir).get(ID), Some(2_000));
+        assert_eq!(Attempts::load(&dir).unwrap().get(ID), Some(2_000));
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
@@ -787,12 +867,12 @@ mod tests {
         let _ = send_recorded(&dir, ID, 2_000, 1_000, || Err(NodeError::PersistenceFailed));
         // ldk-node's store lists it (any status): the record goes.
         assert_eq!(check_attempt(&dir, ID, 1_500, || true), Ok(()));
-        assert_eq!(Attempts::load(&dir).get(ID), None);
+        assert_eq!(Attempts::load(&dir).unwrap().get(ID), None);
 
         let _ = send_recorded(&dir, ID, 2_000, 1_000, || Err(NodeError::PersistenceFailed));
         // Expired: ignored and dropped.
         assert_eq!(check_attempt(&dir, ID, 2_000, || false), Ok(()));
-        assert_eq!(Attempts::load(&dir).get(ID), None);
+        assert_eq!(Attempts::load(&dir).unwrap().get(ID), None);
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
@@ -801,12 +881,12 @@ mod tests {
         let dir = tmp_dir("attempt-done");
         let ok = send_recorded(&dir, ID, 2_000, 1_000, || Ok(PaymentId([0xab; 32])));
         assert_eq!(ok, Ok(ID.to_string()));
-        assert_eq!(Attempts::load(&dir).get(ID), None);
+        assert_eq!(Attempts::load(&dir).unwrap().get(ID), None);
         let no_route = send_recorded(&dir, ID, 2_000, 1_000, || {
             Err(NodeError::PaymentSendingFailed)
         });
         assert_eq!(no_route, Err(LnError::NoRoute));
-        assert_eq!(Attempts::load(&dir).get(ID), None);
+        assert_eq!(Attempts::load(&dir).unwrap().get(ID), None);
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
@@ -818,8 +898,216 @@ mod tests {
             Err(NodeError::PersistenceFailed)
         });
         let _ = send_recorded(&dir, ID, 5_000, 2_000, || Err(NodeError::PersistenceFailed));
-        let a = Attempts::load(&dir);
+        let a = Attempts::load(&dir).unwrap();
         assert_eq!((a.get(&other), a.get(ID)), (None, Some(5_000)));
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    fn guarded(
+        dir: &Path,
+        id: &str,
+        sends: &std::sync::atomic::AtomicU32,
+        result: Result<PaymentId, NodeError>,
+        hold: Duration,
+    ) -> Result<String, LnError> {
+        guarded_bolt11(
+            dir,
+            id,
+            2_000,
+            1_000,
+            || false,
+            // Held after the attempt check, so that without the per-hash
+            // guard both callers would pass the check before either records.
+            || {
+                std::thread::sleep(hold);
+                Ok(())
+            },
+            || {
+                sends.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                std::thread::sleep(hold);
+                result
+            },
+        )
+    }
+
+    #[test]
+    fn concurrent_pays_of_one_hash_send_once() {
+        use std::sync::atomic::{AtomicU32, Ordering};
+        use std::sync::{Arc, Barrier};
+        // Its own hash: `IN_FLIGHT` is process-wide and tests run in parallel.
+        let id = "c0".repeat(32);
+        let dir = tmp_dir("concurrent-same");
+        let sends = Arc::new(AtomicU32::new(0));
+        let barrier = Arc::new(Barrier::new(2));
+        let handles: Vec<_> = (0..2)
+            .map(|_| {
+                let (dir, sends, barrier, id) =
+                    (dir.clone(), sends.clone(), barrier.clone(), id.clone());
+                std::thread::spawn(move || {
+                    barrier.wait();
+                    guarded(
+                        &dir,
+                        &id,
+                        &sends,
+                        Err(NodeError::PersistenceFailed),
+                        Duration::from_millis(300),
+                    )
+                })
+            })
+            .collect();
+        let res: Vec<_> = handles.into_iter().map(|h| h.join().unwrap()).collect();
+        assert_eq!(sends.load(Ordering::SeqCst), 1, "{res:?}");
+        assert!(
+            res.iter().all(|r| *r == Err(LnError::PaymentStateUnknown)),
+            "{res:?}"
+        );
+        // The owner's record survives.
+        assert_eq!(Attempts::load(&dir).unwrap().get(&id), Some(2_000));
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn concurrent_pays_of_different_hashes_both_send() {
+        use std::sync::atomic::{AtomicU32, Ordering};
+        use std::sync::{Arc, Barrier};
+        let dir = tmp_dir("concurrent-diff");
+        let sends = Arc::new(AtomicU32::new(0));
+        let barrier = Arc::new(Barrier::new(2));
+        let handles: Vec<_> = ["11", "22"]
+            .into_iter()
+            .map(|b| {
+                let (dir, sends, barrier) = (dir.clone(), sends.clone(), barrier.clone());
+                std::thread::spawn(move || {
+                    let id = b.repeat(32); // "11"/"22": used by no other test
+                    barrier.wait();
+                    guarded(
+                        &dir,
+                        &id,
+                        &sends,
+                        Ok(PaymentId([0; 32])),
+                        Duration::from_millis(300),
+                    )
+                })
+            })
+            .collect();
+        for h in handles {
+            assert!(h.join().unwrap().is_ok());
+        }
+        assert_eq!(sends.load(Ordering::SeqCst), 2);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn guarded_section_checks_then_records() {
+        use std::sync::atomic::AtomicU32;
+        let dir = tmp_dir("guarded-wiring");
+        let sends = AtomicU32::new(0);
+        // The check runs: an unknown attempt blocks the send.
+        let _ = send_recorded(&dir, ID, 2_000, 1_000, || Err(NodeError::PersistenceFailed));
+        assert_eq!(
+            guarded(&dir, ID, &sends, Ok(PaymentId([0xab; 32])), Duration::ZERO),
+            Err(LnError::PaymentStateUnknown)
+        );
+        assert_eq!(sends.load(std::sync::atomic::Ordering::SeqCst), 0);
+        // The record is written before the send.
+        let other = "cd".repeat(32);
+        let r = guarded_bolt11(
+            &dir,
+            &other,
+            2_000,
+            1_000,
+            || false,
+            || Ok(()),
+            || {
+                assert_eq!(Attempts::load(&dir).unwrap().get(&other), Some(2_000));
+                Err(NodeError::PersistenceFailed)
+            },
+        );
+        assert_eq!(r, Err(LnError::PaymentStateUnknown));
+        // A failing pre-send step sends nothing and records nothing.
+        let third = "ef".repeat(32);
+        let r = guarded_bolt11(
+            &dir,
+            &third,
+            2_000,
+            1_000,
+            || false,
+            || Err(LnError::BackupUnavailable),
+            || panic!("must not send"),
+        );
+        assert_eq!(r, Err(LnError::BackupUnavailable));
+        assert_eq!(Attempts::load(&dir).unwrap().get(&third), None);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn duplicate_payment_leaves_the_record() {
+        let dir = tmp_dir("attempt-dup");
+        let r = send_recorded(&dir, ID, 2_000, 1_000, || Err(NodeError::DuplicatePayment));
+        assert_eq!(r, Err(LnError::Other("duplicate_payment".into())));
+        assert_eq!(Attempts::load(&dir).unwrap().get(ID), Some(2_000));
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn state_unknown_writes_a_missing_record_back() {
+        let dir = tmp_dir("attempt-writeback");
+        let r = send_recorded(&dir, ID, 2_000, 1_000, || {
+            // Something removed it while the send was running.
+            Attempts::update(&dir, 1_000, |a| {
+                a.remove(ID);
+            })
+            .unwrap();
+            Err(NodeError::PersistenceFailed)
+        });
+        assert_eq!(r, Err(LnError::PaymentStateUnknown));
+        assert_eq!(Attempts::load(&dir).unwrap().get(ID), Some(2_000));
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn corrupt_attempts_file_refuses_and_is_left_alone() {
+        let dir = tmp_dir("attempt-corrupt");
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join(ATTEMPTS_FILE);
+        std::fs::write(&path, b"\x00garbage{").unwrap();
+        let refused = LnError::Other("attempt_record_unreadable".into());
+        assert_eq!(
+            check_attempt(&dir, ID, 1_000, || false),
+            Err(refused.clone())
+        );
+        assert_eq!(
+            send_recorded(&dir, ID, 2_000, 1_000, || panic!("must not send")),
+            Err(refused)
+        );
+        assert_eq!(std::fs::read(&path).unwrap(), b"\x00garbage{");
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn unreadable_attempts_file_refuses() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tmp_dir("attempt-unreadable");
+        let _ = send_recorded(&dir, ID, 2_000, 1_000, || Err(NodeError::PersistenceFailed));
+        let path = dir.join(ATTEMPTS_FILE);
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o000)).unwrap();
+        if std::fs::read(&path).is_ok() {
+            eprintln!("skipping: running with read access to mode-000 files");
+        } else {
+            let refused = LnError::Other("attempt_record_unreadable".into());
+            assert_eq!(
+                check_attempt(&dir, "11".repeat(32).as_str(), 1_000, || false),
+                Err(refused.clone())
+            );
+            assert_eq!(
+                send_recorded(&dir, &"11".repeat(32), 2_000, 1_000, || panic!(
+                    "must not send"
+                )),
+                Err(refused)
+            );
+        }
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)).unwrap();
+        assert_eq!(Attempts::load(&dir).unwrap().get(ID), Some(2_000));
         std::fs::remove_dir_all(&dir).unwrap();
     }
 

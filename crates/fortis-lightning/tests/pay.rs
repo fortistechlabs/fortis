@@ -607,3 +607,37 @@ fn payment_in_flight_survives_stop_and_restart() {
     assert_eq!(p.amount_msat, amount);
     client.stop();
 }
+
+/// `pay` goes through the attempt record (wiring): an unknown-outcome
+/// record for the invoice blocks it, an unreadable record file refuses it
+/// (and is left alone), and a real send writes and then clears the record.
+#[test]
+#[ignore = "needs fortis-lsp built, FORTIS_BTC_BITCOIND, FORTIS_VSS_SERVER, initdb/pg_ctl"]
+fn pay_honours_the_attempt_record() {
+    let env = Env::with_channel();
+    let inv = env.payer_invoice(20_000 * SAT, "guarded", 3_600);
+    let id = hex::encode(inv.payment_hash().to_byte_array());
+    let file = env.dirs.path("client").join("fortis-payment-attempts.json");
+    let far = 4_000_000_000u64;
+
+    std::fs::write(&file, format!("{{\"{id}\":{far}}}")).unwrap();
+    assert_eq!(
+        env.client.pay(&bolt11(&inv), None),
+        Err(LnError::PaymentStateUnknown)
+    );
+
+    std::fs::write(&file, b"not json").unwrap();
+    assert_eq!(
+        env.client.pay(&bolt11(&inv), None),
+        Err(LnError::Other("attempt_record_unreadable".into()))
+    );
+    assert_eq!(std::fs::read(&file).unwrap(), b"not json");
+    assert!(outs(&env.client).is_empty(), "nothing sent");
+
+    std::fs::remove_file(&file).unwrap();
+    let paid = env.client.pay(&bolt11(&inv), None).expect("pay");
+    assert_eq!(paid, id);
+    wait_sent(&env.client, &id);
+    // Written before the send (the file exists again), cleared after.
+    assert_eq!(std::fs::read_to_string(&file).unwrap(), "{}");
+}
