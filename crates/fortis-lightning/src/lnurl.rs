@@ -10,6 +10,7 @@ use std::time::Duration;
 
 use ldk_node::lightning_invoice::Bolt11Invoice;
 use serde_json::Value;
+use url::Url;
 
 use crate::error::LnError;
 use crate::parse::PaymentTarget;
@@ -33,29 +34,55 @@ fn other(s: impl Into<String>) -> LnError {
     LnError::Other(s.into())
 }
 
-fn host_of(url: &str) -> &str {
-    let rest = url.split_once("://").map(|(_, r)| r).unwrap_or(url);
-    let auth = rest.split(['/', '?', '#']).next().unwrap_or("");
-    let auth = auth.rsplit('@').next().unwrap_or(auth);
-    auth.split(':').next().unwrap_or(auth)
+fn check_scheme(url: &str) -> Result<(), LnError> {
+    if url
+        .chars()
+        .any(|c| c.is_whitespace() || c.is_control() || c == '\\')
+    {
+        return Err(other("lnurl url has invalid characters"));
+    }
+    let u = Url::parse(url).map_err(|_| other("lnurl url invalid"))?;
+    let host = u.host_str().unwrap_or("").to_ascii_lowercase();
+    if host.is_empty() {
+        return Err(other("lnurl url has no host"));
+    }
+    match u.scheme() {
+        "https" => Ok(()),
+        "http" if host.ends_with(".onion") => Ok(()),
+        _ => Err(other("lnurl url must be https")),
+    }
 }
 
-fn check_scheme(url: &str) -> Result<(), LnError> {
-    let l = url.to_ascii_lowercase();
-    if l.starts_with("https://") {
-        return Ok(());
+fn address_url(user: &str, domain: &str) -> Result<String, LnError> {
+    let d = domain.to_ascii_lowercase();
+    let labels_ok = d
+        .split('.')
+        .all(|l| !l.is_empty() && l.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-'));
+    if user.is_empty() || !labels_ok {
+        return Err(other("invalid lightning address"));
     }
-    if l.starts_with("http://") && host_of(&l).ends_with(".onion") {
-        return Ok(());
-    }
-    Err(other("lnurl url must be https"))
+    let scheme = if d.ends_with(".onion") {
+        "http"
+    } else {
+        "https"
+    };
+    let mut u =
+        Url::parse(&format!("{scheme}://{d}/")).map_err(|_| other("invalid lightning address"))?;
+    u.path_segments_mut()
+        .map_err(|_| other("invalid lightning address"))?
+        .clear()
+        .extend([".well-known", "lnurlp", user]);
+    Ok(u.into())
 }
 
 fn fetch(http: &dyn HttpGet, url: &str) -> Result<Value, LnError> {
     check_scheme(url)?;
     let v = http.get_json(url)?;
     if v.get("status").and_then(Value::as_str) == Some("ERROR") {
-        let reason = v.get("reason").and_then(Value::as_str).unwrap_or("lnurl error");
+        let reason = v
+            .get("reason")
+            .and_then(Value::as_str)
+            .unwrap_or("lnurl error");
         return Err(other(reason));
     }
     Ok(v)
@@ -64,14 +91,7 @@ fn fetch(http: &dyn HttpGet, url: &str) -> Result<Value, LnError> {
 pub fn resolve(target: &PaymentTarget, http: &dyn HttpGet) -> Result<LnurlPayParams, LnError> {
     let url = match target {
         PaymentTarget::LnurlPay { url } => url.clone(),
-        PaymentTarget::LightningAddress { user, domain } => {
-            let scheme = if domain.to_ascii_lowercase().ends_with(".onion") {
-                "http"
-            } else {
-                "https"
-            };
-            format!("{scheme}://{domain}/.well-known/lnurlp/{user}")
-        }
+        PaymentTarget::LightningAddress { user, domain } => address_url(user, domain)?,
         _ => return Err(other("not an lnurl target")),
     };
     let v = fetch(http, &url)?;
@@ -127,7 +147,11 @@ pub fn request_invoice(
             max_msat: params.max_msat,
         });
     }
-    let sep = if params.callback.contains('?') { '&' } else { '?' };
+    let sep = if params.callback.contains('?') {
+        '&'
+    } else {
+        '?'
+    };
     let url = format!("{}{sep}amount={amount_msat}", params.callback);
     let v = fetch(http, &url)?;
     let pr = v
@@ -249,8 +273,11 @@ mod tests {
     #[test]
     fn params_parsed() {
         let mut f = Fake::default();
-        f.map.insert("https://e.com/p".into(), pay_request("https://e.com/cb"));
-        let t = PaymentTarget::LnurlPay { url: "https://e.com/p".into() };
+        f.map
+            .insert("https://e.com/p".into(), pay_request("https://e.com/cb"));
+        let t = PaymentTarget::LnurlPay {
+            url: "https://e.com/p".into(),
+        };
         let p = resolve(&t, &f).unwrap();
         assert_eq!(p.callback, "https://e.com/cb");
         assert_eq!((p.min_msat, p.max_msat), (1000, 5_000_000));
@@ -267,8 +294,12 @@ mod tests {
             "https://e.com/b".into(),
             serde_json::json!({"status":"ERROR","reason":"nope"}),
         );
-        let a = PaymentTarget::LnurlPay { url: "https://e.com/a".into() };
-        let b = PaymentTarget::LnurlPay { url: "https://e.com/b".into() };
+        let a = PaymentTarget::LnurlPay {
+            url: "https://e.com/a".into(),
+        };
+        let b = PaymentTarget::LnurlPay {
+            url: "https://e.com/b".into(),
+        };
         assert!(matches!(resolve(&a, &f), Err(LnError::Other(_))));
         assert_eq!(resolve(&b, &f), Err(LnError::Other("nope".into())));
     }
@@ -279,7 +310,10 @@ mod tests {
         let e = request_invoice(&params("https://e.com/cb"), 999, &f).unwrap_err();
         assert_eq!(
             e,
-            LnError::AmountOutOfRange { min_msat: 1000, max_msat: 3_000_000_000 }
+            LnError::AmountOutOfRange {
+                min_msat: 1000,
+                max_msat: 3_000_000_000
+            }
         );
         assert!(f.seen.borrow().is_empty());
     }
@@ -309,13 +343,18 @@ mod tests {
     #[test]
     fn http_only_rejected() {
         let f = Fake::default();
-        let t = PaymentTarget::LnurlPay { url: "http://e.com/p".into() };
+        let t = PaymentTarget::LnurlPay {
+            url: "http://e.com/p".into(),
+        };
         assert!(matches!(resolve(&t, &f), Err(LnError::Other(_))));
         assert!(f.seen.borrow().is_empty());
         // hostile http callback
         let mut f = Fake::default();
-        f.map.insert("https://e.com/p".into(), pay_request("http://e.com/cb"));
-        let t = PaymentTarget::LnurlPay { url: "https://e.com/p".into() };
+        f.map
+            .insert("https://e.com/p".into(), pay_request("http://e.com/cb"));
+        let t = PaymentTarget::LnurlPay {
+            url: "https://e.com/p".into(),
+        };
         assert!(matches!(resolve(&t, &f), Err(LnError::Other(_))));
         // callback check also enforced at request time
         let e = request_invoice(&params("http://e.com/cb"), 5000, &f);
@@ -326,11 +365,86 @@ mod tests {
     #[test]
     fn onion_may_use_http() {
         let mut f = Fake::default();
-        f.map.insert("http://abc.onion/p".into(), pay_request("http://abc.onion/cb"));
-        let t = PaymentTarget::LnurlPay { url: "http://abc.onion/p".into() };
+        f.map.insert(
+            "http://abc.onion/p".into(),
+            pay_request("http://abc.onion/cb"),
+        );
+        let t = PaymentTarget::LnurlPay {
+            url: "http://abc.onion/p".into(),
+        };
         assert!(resolve(&t, &f).is_ok());
         assert!(check_scheme("http://evil.com/x.onion").is_err());
         assert!(check_scheme("http://evil.com@abc.onion.evil.com/").is_err());
+    }
+
+    #[test]
+    fn scheme_bypasses_rejected() {
+        for bad in [
+            "http://evil.com\\@abc.onion/p",
+            "http://evil.com\\.onion/p",
+            "http://evil.com/x.onion",
+            "https://",
+            "http:///p",
+            "http://",
+            "https://a b.com/",
+            "https://a.com/\n",
+        ] {
+            assert!(check_scheme(bad).is_err(), "{bad}");
+            // as first URL
+            let f = Fake::default();
+            let t = PaymentTarget::LnurlPay { url: bad.into() };
+            assert!(resolve(&t, &f).is_err(), "{bad}");
+            assert!(f.seen.borrow().is_empty(), "{bad}");
+            // as callback
+            let mut f = Fake::default();
+            f.map.insert("https://e.com/p".into(), pay_request(bad));
+            let t = PaymentTarget::LnurlPay {
+                url: "https://e.com/p".into(),
+            };
+            assert!(resolve(&t, &f).is_err(), "{bad}");
+            assert!(request_invoice(&params(bad), 5000, &f).is_err(), "{bad}");
+        }
+        // userinfo trick: host is evil.com, over https: allowed; with http it is not
+        assert!(check_scheme("https://good.com@evil.com/").is_ok());
+        assert!(check_scheme("http://good.onion@evil.com/").is_err());
+        assert!(check_scheme("http://evil.com@good.onion/").is_ok());
+    }
+
+    #[test]
+    fn address_url_validated_and_escaped() {
+        for bad in [
+            "a\\b.com", "a@b.com", "a.com?x", "a.com#x", "a.com/x", "a b.com", "a..com", "",
+        ] {
+            let f = Fake::default();
+            let t = PaymentTarget::LightningAddress {
+                user: "u".into(),
+                domain: bad.into(),
+            };
+            assert!(resolve(&t, &f).is_err(), "{bad:?}");
+            assert!(f.seen.borrow().is_empty(), "{bad:?}");
+        }
+        let f = Fake::default();
+        let t = PaymentTarget::LightningAddress {
+            user: String::new(),
+            domain: "a.com".into(),
+        };
+        assert!(resolve(&t, &f).is_err());
+        assert!(f.seen.borrow().is_empty());
+
+        let mut f = Fake::default();
+        f.map.insert(
+            "https://a.com/.well-known/lnurlp/x%2Fy%3Fz%23w".into(),
+            pay_request("https://a.com/cb"),
+        );
+        let t = PaymentTarget::LightningAddress {
+            user: "x/y?z#w".into(),
+            domain: "a.com".into(),
+        };
+        resolve(&t, &f).unwrap();
+        assert_eq!(
+            f.seen.borrow().as_slice(),
+            ["https://a.com/.well-known/lnurlp/x%2Fy%3Fz%23w"]
+        );
     }
 
     #[test]
