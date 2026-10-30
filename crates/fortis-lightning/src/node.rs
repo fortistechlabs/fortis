@@ -389,6 +389,16 @@ impl Node {
     }
 
     /// Stops the node and cancels any pending `start` (a no-op when neither).
+    ///
+    /// Returns once ldk-node has stopped. In-flight HTLC state is durable
+    /// before that: ldk-node persists each channel-monitor update to VSS
+    /// synchronously as the HTLC is added, and on stop its background
+    /// processor writes the channel manager (and the payment store is
+    /// written on every change), so a payment pending at `stop` is still
+    /// pending after a restart from the same seed. Normally well under 10 s
+    /// (the pay tests assert it); ldk-node's own bounds are 5 s for its
+    /// background tasks plus up to 30 s for the final persist when the store
+    /// stalls.
     pub fn stop(&self) {
         let running = {
             let mut inner = self.shared.inner.lock().unwrap();
@@ -449,6 +459,19 @@ impl Node {
 
     pub(crate) fn running(&self) -> Option<Arc<Running>> {
         self.shared.inner.lock().unwrap().clone()
+    }
+
+    pub(crate) fn network(&self) -> Network {
+        self.network
+    }
+
+    pub(crate) fn data_dir(&self) -> &std::path::Path {
+        &self.data_dir
+    }
+
+    /// One VSS round trip (see [`probe_vss`]), at most `timeout`.
+    pub(crate) fn probe_backup(&self, timeout: Duration) -> Result<(), LnError> {
+        probe_vss(&self.vss, &self.store_id, timeout)
     }
 }
 
@@ -598,11 +621,7 @@ impl StartJob {
     }
 
     fn vss_headers(&self) -> HashMap<String, String> {
-        let mut h = HashMap::new();
-        if !self.vss.auth_header.is_empty() {
-            h.insert("Authorization".to_string(), self.vss.auth_header.clone());
-        }
-        h
+        vss_headers(&self.vss)
     }
 
     /// `Some(outcome)` when the worker must stop: token stale or a node
@@ -736,34 +755,47 @@ impl StartJob {
         Err(LnError::LspUnreachable)
     }
 
-    /// One `getObject` of a key that need not exist: any answer from VSS
-    /// (including "no such key") means it is reachable and accepts our auth.
     fn probe_vss(&self) -> Result<(), LnError> {
-        let rt = ldk_node::tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()
-            .map_err(|e| LnError::Other(format!("runtime: {e}")))?;
-        let http = vss_client::reqwest::Client::builder()
-            .timeout(self.probe_timeout())
-            .build()
-            .map_err(|e| LnError::Other(format!("http client: {e}")))?;
-        let policy = ExponentialBackoffRetryPolicy::<VssError>::new(Duration::from_millis(10))
-            .with_max_attempts(1);
-        let client = VssClient::from_client_and_headers(
-            self.vss.url.clone(),
-            http,
-            policy,
-            Arc::new(FixedHeaders::new(self.vss_headers())),
-        );
-        let req = GetObjectRequest {
-            store_id: self.store_id.clone(),
-            key: "fortis-probe".into(),
-        };
-        match rt.block_on(client.get_object(&req)) {
-            Ok(_) | Err(VssError::NoSuchKeyError(_)) => Ok(()),
-            Err(_) => Err(LnError::BackupUnavailable),
-        }
+        probe_vss(&self.vss, &self.store_id, self.probe_timeout())
     }
+}
+
+/// One `getObject` of a key that need not exist, with no retry and at most
+/// `timeout`: any answer from VSS (including "no such key") means it is
+/// reachable and accepts our auth; anything else is `BackupUnavailable`.
+fn probe_vss(vss: &VssConfig, store_id: &str, timeout: Duration) -> Result<(), LnError> {
+    let rt = ldk_node::tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .map_err(|e| LnError::Other(format!("runtime: {e}")))?;
+    let http = vss_client::reqwest::Client::builder()
+        .timeout(timeout)
+        .build()
+        .map_err(|e| LnError::Other(format!("http client: {e}")))?;
+    let policy = ExponentialBackoffRetryPolicy::<VssError>::new(Duration::from_millis(10))
+        .with_max_attempts(1);
+    let client = VssClient::from_client_and_headers(
+        vss.url.clone(),
+        http,
+        policy,
+        Arc::new(FixedHeaders::new(vss_headers(vss))),
+    );
+    let req = GetObjectRequest {
+        store_id: store_id.to_string(),
+        key: "fortis-probe".into(),
+    };
+    match rt.block_on(client.get_object(&req)) {
+        Ok(_) | Err(VssError::NoSuchKeyError(_)) => Ok(()),
+        Err(_) => Err(LnError::BackupUnavailable),
+    }
+}
+
+fn vss_headers(vss: &VssConfig) -> HashMap<String, String> {
+    let mut h = HashMap::new();
+    if !vss.auth_header.is_empty() {
+        h.insert("Authorization".to_string(), vss.auth_header.clone());
+    }
+    h
 }
 
 fn map_build_error(e: BuildError) -> LnError {

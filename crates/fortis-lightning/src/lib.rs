@@ -12,6 +12,7 @@ mod error;
 pub mod lnurl;
 mod node;
 mod parse;
+mod pay;
 mod receive;
 
 pub use error::{LnError, ParseError};
@@ -19,4 +20,5 @@ pub use error::{LnError, ParseError};
 pub use node::test_hooks;
 pub use node::{Balances, ChainSource, LnEvent, LspInfo, LspLimits, Node, NodeConfig, VssConfig};
 pub use parse::{parse, parse_at, PaymentTarget};
+pub use pay::{Direction, Payment, Status};
 pub use receive::ReceiveQuote;

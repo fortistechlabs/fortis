@@ -71,6 +71,7 @@ impl Node {
         if amount_msat == 0 {
             return Err(out_of_range);
         }
+        let text = description;
         let description = Description::new(description.to_string())
             .map(Bolt11InvoiceDescription::Direct)
             .map_err(|_| LnError::Other("description_too_long".into()))?;
@@ -97,6 +98,7 @@ impl Node {
                 .bolt11_payment()
                 .receive(amount_msat, &description, INVOICE_EXPIRY_SECS)
                 .map_err(map_error)?;
+            self.note_description(&hex::encode(invoice.payment_hash().as_ref() as &[u8]), text);
             return Ok(ReceiveQuote {
                 invoice: invoice.to_string(),
                 amount_msat,
@@ -115,6 +117,7 @@ impl Node {
         // ldk-node stores the JIT payment (id = payment hash) with the total
         // fee it accepted as the LSP's skim limit.
         let id = PaymentId(*invoice.payment_hash().as_ref());
+        self.note_description(&hex::encode(id.0), text);
         let fee_msat = match node.payment(&id).map(|p| p.kind) {
             Some(PaymentKind::Bolt11Jit { lsp_fee_limits, .. }) => lsp_fee_limits
                 .max_total_opening_fee_msat

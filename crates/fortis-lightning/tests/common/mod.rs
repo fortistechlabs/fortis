@@ -474,6 +474,27 @@ impl Vss {
     pub fn log(&self) -> String {
         std::fs::read_to_string(self.dir.path("vss.log")).unwrap_or_default()
     }
+
+    /// Freezes vss-server (SIGSTOP): connections are accepted by the kernel
+    /// but never answered, as with a VSS host that went away. Its state is
+    /// kept; [`Vss::resume`] (or drop) lets it go on.
+    pub fn pause(&self) {
+        self.signal("-STOP");
+    }
+
+    pub fn resume(&self) {
+        self.signal("-CONT");
+    }
+
+    fn signal(&self, sig: &str) {
+        let ok = Command::new("kill")
+            .arg(sig)
+            .arg(self.server.0.id().to_string())
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(false);
+        assert!(ok, "kill {sig} vss-server");
+    }
 }
 
 // --------------------------------------------------------------------------
