@@ -20,7 +20,10 @@
 //!    ("Lightning refuses to pay while VSS is unreachable");
 //! 5. the HTLC goes to ldk-node (`bolt11_payment().send` /
 //!    `send_using_amount`, `bolt12_payment().send` / `send_using_amount`).
-//!    A synchronous routing failure is `NoRoute`.
+//!    A synchronous routing failure is `NoRoute`; a failed persist of the
+//!    payment record *after* the HTLC went out is `PaymentStateUnknown`
+//!    (see [`Node::pay`]), guarded by a local attempt record so the same
+//!    invoice is never sent twice while its outcome is unknown.
 //!
 //! `pay` returns once the payment is handed to LDK; the outcome arrives as
 //! `LnEvent::PaymentSent` / `PaymentFailed` with the same id, and in
@@ -34,12 +37,15 @@
 //! but empty descriptions.
 
 use std::collections::BTreeMap;
+use std::io::Write;
 use std::path::Path;
 use std::str::FromStr;
 use std::sync::Mutex;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use ldk_node::bitcoin::constants::ChainHash;
+use ldk_node::bitcoin::hashes::Hash;
+use ldk_node::lightning::ln::channelmanager::PaymentId;
 use ldk_node::lightning::offers::offer::{Amount, Offer};
 use ldk_node::lightning_invoice::{Bolt11Invoice, Bolt11InvoiceDescriptionRef};
 use ldk_node::payment::{PaymentDetails, PaymentDirection, PaymentKind, PaymentStatus};
@@ -51,6 +57,11 @@ use crate::{LnError, Node, PaymentTarget};
 /// Cap on the VSS reachability check before a payment.
 const PAY_VSS_PROBE_TIMEOUT: Duration = Duration::from_secs(3);
 const NOTES_FILE: &str = "fortis-payment-notes.json";
+/// BOLT11 sends handed to LDK whose outcome is not yet in ldk-node's store:
+/// payment id (hex) → unix seconds after which the record is ignored.
+const ATTEMPTS_FILE: &str = "fortis-payment-attempts.json";
+/// Kept this long past the invoice's own expiry.
+const ATTEMPT_MARGIN_SECS: u64 = 600;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Direction {
@@ -117,6 +128,15 @@ impl Node {
     ///
     /// **Blocking.** Up to 3 s for the VSS check, plus the LNURL round trips
     /// (≤ 10 s each) for LNURL targets: call it off the UI thread.
+    ///
+    /// **`BackupUnavailable` vs `PaymentStateUnknown`.** `BackupUnavailable`
+    /// comes only from the pre-send gate: nothing was sent.
+    /// `PaymentStateUnknown` means ldk-node failed to persist the payment
+    /// *after* the HTLC (or BOLT12 invoice request) went out: money may be
+    /// moving. The node keeps a local "attempted" record of the invoice
+    /// (written before the send), and while ldk-node's store has no entry
+    /// for it and it has not expired, paying the same invoice again also
+    /// returns `PaymentStateUnknown` instead of sending a second HTLC.
     pub fn pay(&self, target: &PaymentTarget, amount_msat: Option<u64>) -> Result<String, LnError> {
         self.pay_with_http(target, amount_msat, &UreqGet::new())
     }
@@ -163,6 +183,14 @@ impl Node {
             .ok_or_else(|| LnError::Other("not_started".into()))?;
         let node = &running.node;
 
+        let now_secs = now().as_secs();
+        if let Prepared::Bolt11 { invoice, .. } = &prepared {
+            let id = PaymentId(invoice.payment_hash().to_byte_array());
+            check_attempt(self.data_dir(), &hex::encode(id.0), now_secs, || {
+                node.payment(&id).is_some()
+            })?;
+        }
+
         let sendable_msat: u64 = node
             .list_channels()
             .iter()
@@ -183,11 +211,17 @@ impl Node {
                 ..
             } => {
                 let p = node.bolt11_payment();
-                let id = match amount_override {
-                    Some(a) => p.send_using_amount(&invoice, a, None),
-                    None => p.send(&invoice, None),
-                }
-                .map_err(map_send_error)?;
+                let id = hex::encode(invoice.payment_hash().to_byte_array());
+                let expires_at = invoice
+                    .expires_at()
+                    .map_or(u64::MAX, |d| d.as_secs())
+                    .saturating_add(ATTEMPT_MARGIN_SECS);
+                let id = send_recorded(self.data_dir(), &id, expires_at, now_secs, || {
+                    match amount_override {
+                        Some(a) => p.send_using_amount(&invoice, a, None),
+                        None => p.send(&invoice, None),
+                    }
+                })?;
                 (id, description)
             }
             Prepared::Bolt12 {
@@ -196,16 +230,19 @@ impl Node {
                 description,
                 ..
             } => {
+                // Same ordering as BOLT11 (invoice request out, then the
+                // store insert), so the same error mapping. No attempt
+                // record: the id is random per send and an offer may be
+                // paid more than once on purpose.
                 let p = node.bolt12_payment();
                 let id = match amount_override {
                     Some(a) => p.send_using_amount(&offer, a, None, None, None),
                     None => p.send(&offer, None, None, None),
                 }
                 .map_err(map_send_error)?;
-                (id, description)
+                (hex::encode(id.0), description)
             }
         };
-        let id = hex::encode(id.0);
         self.note_description(&id, &description);
         Ok(id)
     }
@@ -366,11 +403,16 @@ fn now() -> Duration {
         .unwrap_or_default()
 }
 
+/// Maps an error of ldk-node's `send*` (called only after the pre-send gate
+/// passed). In ldk-node 0.7.1 the HTLC / invoice request is handed to LDK
+/// *before* the payment-store insert, so `PersistenceFailed` here means
+/// "possibly in flight": `PaymentStateUnknown`, never `BackupUnavailable`
+/// (which is reserved for the gate, when nothing was sent).
 fn map_send_error(e: NodeError) -> LnError {
     match e {
         NodeError::NotRunning => LnError::Other("not_started".into()),
         NodeError::PaymentSendingFailed => LnError::NoRoute,
-        NodeError::PersistenceFailed => LnError::BackupUnavailable,
+        NodeError::PersistenceFailed => LnError::PaymentStateUnknown,
         NodeError::DuplicatePayment => LnError::Other("duplicate_payment".into()),
         NodeError::UnsupportedCurrency => LnError::Other("unsupported_currency".into()),
         other => LnError::Other(format!("pay: {other}")),
@@ -422,16 +464,70 @@ fn to_payment(p: &PaymentDetails, notes: &Notes) -> Option<Payment> {
     })
 }
 
+/// `Ok` unless `id` has an unexpired attempt record and ldk-node's store
+/// (`in_ldk_store`) has no entry for it: then `PaymentStateUnknown`. A
+/// record that is expired or whose payment ldk-node lists is dropped.
+fn check_attempt(
+    dir: &Path,
+    id: &str,
+    now_secs: u64,
+    in_ldk_store: impl Fn() -> bool,
+) -> Result<(), LnError> {
+    let Some(expires_at) = Attempts::load(dir).get(id) else {
+        return Ok(());
+    };
+    if expires_at > now_secs && !in_ldk_store() {
+        return Err(LnError::PaymentStateUnknown);
+    }
+    let _ = Attempts::update(dir, now_secs, |a| {
+        a.remove(id);
+    });
+    Ok(())
+}
+
+/// Records the attempt for `id` (durably, pruning expired ones), runs
+/// `send`, and keeps the record only when the outcome is unknown
+/// (`PersistenceFailed`). Nothing is sent if the record cannot be written.
+fn send_recorded(
+    dir: &Path,
+    id: &str,
+    expires_at: u64,
+    now_secs: u64,
+    send: impl FnOnce() -> Result<PaymentId, NodeError>,
+) -> Result<String, LnError> {
+    Attempts::update(dir, now_secs, |a| {
+        a.insert(id.to_string(), expires_at);
+    })
+    .map_err(|e| LnError::Other(format!("attempt record: {e}")))?;
+    let res = send();
+    if !matches!(res, Err(NodeError::PersistenceFailed)) {
+        let _ = Attempts::update(dir, now_secs, |a| {
+            a.remove(id);
+        });
+    }
+    res.map(|p| hex::encode(p.0)).map_err(map_send_error)
+}
+
+/// Serialises read-modify-write of the data-dir JSON files in this process.
+static FILES_LOCK: Mutex<()> = Mutex::new(());
+
+/// Writes `bytes` to `dir/file` atomically (temp file, fsync, rename).
+fn write_atomic(dir: &Path, file: &str, bytes: &[u8]) -> std::io::Result<()> {
+    std::fs::create_dir_all(dir)?;
+    let tmp = dir.join(format!("{file}.tmp"));
+    let mut f = std::fs::File::create(&tmp)?;
+    f.write_all(bytes)?;
+    f.sync_all()?;
+    std::fs::rename(&tmp, dir.join(file))
+}
+
 /// Payment id → description, kept in the data dir (see the module docs).
 #[derive(Default)]
 struct Notes(BTreeMap<String, String>);
 
-/// Serialises read-modify-write of notes files in this process.
-static NOTES_LOCK: Mutex<()> = Mutex::new(());
-
 impl Notes {
     fn load(dir: &Path) -> Notes {
-        let _g = NOTES_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _g = FILES_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         Notes::read(dir)
     }
 
@@ -444,17 +540,49 @@ impl Notes {
     }
 
     fn update(dir: &Path, f: impl FnOnce(&mut BTreeMap<String, String>)) {
-        let _g = NOTES_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _g = FILES_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let mut n = Notes::read(dir);
         f(&mut n.0);
-        let Ok(bytes) = serde_json::to_vec(&n.0) else {
-            return;
-        };
-        let _ = std::fs::create_dir_all(dir);
-        let tmp = dir.join(format!("{NOTES_FILE}.tmp"));
-        if std::fs::write(&tmp, bytes).is_ok() {
-            let _ = std::fs::rename(&tmp, dir.join(NOTES_FILE));
+        if let Ok(bytes) = serde_json::to_vec(&n.0) {
+            let _ = write_atomic(dir, NOTES_FILE, &bytes);
         }
+    }
+}
+
+/// Attempted BOLT11 sends (see [`ATTEMPTS_FILE`]).
+#[derive(Default)]
+struct Attempts(BTreeMap<String, u64>);
+
+impl Attempts {
+    fn load(dir: &Path) -> Attempts {
+        let _g = FILES_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        Attempts::read(dir)
+    }
+
+    fn read(dir: &Path) -> Attempts {
+        std::fs::read(dir.join(ATTEMPTS_FILE))
+            .ok()
+            .and_then(|b| serde_json::from_slice(&b).ok())
+            .map(Attempts)
+            .unwrap_or_default()
+    }
+
+    fn get(&self, id: &str) -> Option<u64> {
+        self.0.get(id).copied()
+    }
+
+    /// Applies `f`, drops records expired at `now_secs`, writes durably.
+    fn update(
+        dir: &Path,
+        now_secs: u64,
+        f: impl FnOnce(&mut BTreeMap<String, u64>),
+    ) -> std::io::Result<()> {
+        let _g = FILES_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let mut a = Attempts::read(dir);
+        f(&mut a.0);
+        a.0.retain(|_, exp| *exp > now_secs);
+        let bytes = serde_json::to_vec(&a.0).map_err(std::io::Error::other)?;
+        write_atomic(dir, ATTEMPTS_FILE, &bytes)
     }
 }
 
@@ -523,7 +651,11 @@ mod tests {
     }
 
     fn node(dir: &str) -> Node {
-        Node::new(NodeConfig {
+        Node::new(node_cfg(dir)).unwrap()
+    }
+
+    fn node_cfg(dir: &str) -> NodeConfig {
+        NodeConfig {
             bip39_seed: vec![3; 64],
             network: Network::Regtest,
             data_dir: std::env::temp_dir().join(dir),
@@ -547,8 +679,7 @@ mod tests {
                 channel_min_sat: 3,
                 channel_max_sat: 4,
             },
-        })
-        .unwrap()
+        }
     }
 
     fn bob() -> PaymentTarget {
@@ -590,6 +721,106 @@ mod tests {
             n.pay_with_http(&bob(), Some(5_000), &fake(Some(good))),
             Err(LnError::Other("not_started".into()))
         );
+    }
+
+    fn tmp_dir(tag: &str) -> std::path::PathBuf {
+        let d = std::env::temp_dir().join(format!("fortis-pay-unit-{tag}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        d
+    }
+
+    #[test]
+    fn send_errors_after_the_gate() {
+        // The HTLC may be out when ldk-node fails to persist the payment.
+        assert_eq!(
+            map_send_error(NodeError::PersistenceFailed),
+            LnError::PaymentStateUnknown
+        );
+        assert_eq!(
+            map_send_error(NodeError::PaymentSendingFailed),
+            LnError::NoRoute
+        );
+        assert_eq!(
+            map_send_error(NodeError::DuplicatePayment),
+            LnError::Other("duplicate_payment".into())
+        );
+    }
+
+    #[test]
+    fn gate_failure_is_backup_unavailable() {
+        // Port 1 on loopback: refused at once.
+        let n = Node::new(NodeConfig {
+            vss: VssConfig {
+                url: "http://127.0.0.1:1/vss".into(),
+                auth_header: String::new(),
+            },
+            ..node_cfg("fortis-pay-unit-gate")
+        })
+        .unwrap();
+        assert_eq!(n.pre_send_checks(), Err(LnError::BackupUnavailable));
+    }
+
+    const ID: &str = "abababababababababababababababababababababababababababababababab";
+
+    #[test]
+    fn attempt_recorded_before_send_and_kept_when_state_unknown() {
+        let dir = tmp_dir("attempt-unknown");
+        let r = send_recorded(&dir, ID, 2_000, 1_000, || {
+            // The record is on disk before ldk-node is called.
+            assert_eq!(Attempts::load(&dir).get(ID), Some(2_000));
+            Err(NodeError::PersistenceFailed)
+        });
+        assert_eq!(r, Err(LnError::PaymentStateUnknown));
+        assert_eq!(Attempts::load(&dir).get(ID), Some(2_000));
+        // A second pay for the same hash, ldk-node has no entry: refused.
+        assert_eq!(
+            check_attempt(&dir, ID, 1_500, || false),
+            Err(LnError::PaymentStateUnknown)
+        );
+        assert_eq!(Attempts::load(&dir).get(ID), Some(2_000));
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn attempt_cleared_once_ldk_lists_it_or_it_expires() {
+        let dir = tmp_dir("attempt-clear");
+        let _ = send_recorded(&dir, ID, 2_000, 1_000, || Err(NodeError::PersistenceFailed));
+        // ldk-node's store lists it (any status): the record goes.
+        assert_eq!(check_attempt(&dir, ID, 1_500, || true), Ok(()));
+        assert_eq!(Attempts::load(&dir).get(ID), None);
+
+        let _ = send_recorded(&dir, ID, 2_000, 1_000, || Err(NodeError::PersistenceFailed));
+        // Expired: ignored and dropped.
+        assert_eq!(check_attempt(&dir, ID, 2_000, || false), Ok(()));
+        assert_eq!(Attempts::load(&dir).get(ID), None);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn attempt_cleared_when_ldk_took_or_refused_it() {
+        let dir = tmp_dir("attempt-done");
+        let ok = send_recorded(&dir, ID, 2_000, 1_000, || Ok(PaymentId([0xab; 32])));
+        assert_eq!(ok, Ok(ID.to_string()));
+        assert_eq!(Attempts::load(&dir).get(ID), None);
+        let no_route = send_recorded(&dir, ID, 2_000, 1_000, || {
+            Err(NodeError::PaymentSendingFailed)
+        });
+        assert_eq!(no_route, Err(LnError::NoRoute));
+        assert_eq!(Attempts::load(&dir).get(ID), None);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn expired_attempts_pruned_on_write() {
+        let dir = tmp_dir("attempt-prune");
+        let other = "cd".repeat(32);
+        let _ = send_recorded(&dir, &other, 1_100, 1_000, || {
+            Err(NodeError::PersistenceFailed)
+        });
+        let _ = send_recorded(&dir, ID, 5_000, 2_000, || Err(NodeError::PersistenceFailed));
+        let a = Attempts::load(&dir);
+        assert_eq!((a.get(&other), a.get(ID)), (None, Some(5_000)));
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]

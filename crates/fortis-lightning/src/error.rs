@@ -35,6 +35,12 @@ pub enum LnError {
     InvoiceExpired,
     #[error("wrong_network")]
     WrongNetwork,
+    /// The payment may be in flight: the HTLC was handed to LDK but its
+    /// record could not be persisted. Check `payments()` / events; do not
+    /// retry blindly (`pay` refuses a second HTLC for the same invoice
+    /// while the outcome is unknown).
+    #[error("payment_state_unknown")]
+    PaymentStateUnknown,
     #[error("amount_out_of_range")]
     AmountOutOfRange { min_msat: u64, max_msat: u64 },
     #[error("other: {0}")]
