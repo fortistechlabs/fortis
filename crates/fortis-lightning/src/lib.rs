@@ -10,7 +10,9 @@ pub use vss_client;
 
 mod error;
 pub mod lnurl;
+mod node;
 mod parse;
 
 pub use error::{LnError, ParseError};
+pub use node::{Balances, ChainSource, LnEvent, LspInfo, LspLimits, Node, NodeConfig, VssConfig};
 pub use parse::{parse, parse_at, PaymentTarget};

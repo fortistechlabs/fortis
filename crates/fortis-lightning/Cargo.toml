@@ -8,6 +8,9 @@ repository.workspace = true
 description = "fortis Lightning: the only code that touches LDK. Wraps ldk-node (LDK v0.2 line) with VSS backup; exposed to Android through wallet-ffi. Not pure (does I/O), so it lives beside wallet-core."
 
 [dependencies]
+wallet-core = { path = "../wallet-core" }
+zeroize = { workspace = true }
+hex = { workspace = true }
 ldk-node = { workspace = true }
 vss-client = { workspace = true }
 thiserror = { workspace = true }
