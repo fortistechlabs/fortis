@@ -196,6 +196,11 @@ fn parse_lightning_address(text: &str) -> Result<PaymentTarget, ParseError> {
     Ok(PaymentTarget::LightningAddress { user, domain })
 }
 
+/// Parses a BIP21 URI. A `lightning=` (or `lno=`) value that is malformed,
+/// on the wrong network, or not a Bolt11/Bolt12 target is an error. The one
+/// deliberate exception: an EXPIRED invoice alongside an on-chain address
+/// falls back to `OnChain` (the address is what a unified QR is for); with no
+/// address it is `ParseError::Expired`.
 fn parse_bip21(rest: &str, network: Network, now_secs: u64) -> Result<PaymentTarget, ParseError> {
     let rest = rest.trim_start_matches("//");
     let (addr_part, query) = rest.split_once('?').unwrap_or((rest, ""));
@@ -211,14 +216,24 @@ fn parse_bip21(rest: &str, network: Network, now_secs: u64) -> Result<PaymentTar
             _ => {}
         }
     }
-    let lightning = lightning
-        .and_then(|l| parse_at(&l, network, now_secs).ok())
-        .filter(|t| {
-            matches!(
-                t,
-                PaymentTarget::Bolt11 { .. } | PaymentTarget::Bolt12Offer { .. }
-            )
-        });
+    // A `lightning=` value must be a usable Bolt11/Bolt12 target. Errors
+    // propagate, except `Expired` when an on-chain address is present.
+    let lightning = match lightning {
+        None => None,
+        Some(l) => match parse_at(&l, network, now_secs) {
+            Ok(t @ (PaymentTarget::Bolt11 { .. } | PaymentTarget::Bolt12Offer { .. })) => Some(t),
+            Ok(_) => {
+                return Err(ParseError::Invalid(
+                    "lightning parameter is not a bolt11 invoice or bolt12 offer".into(),
+                ))
+            }
+            Err(ParseError::Expired) if !addr_part.is_empty() => None,
+            Err(ParseError::Empty | ParseError::Unrecognised) => {
+                return Err(ParseError::Invalid("bad lightning parameter".into()))
+            }
+            Err(e) => return Err(e),
+        },
+    };
 
     if addr_part.is_empty() {
         // `bitcoin:?lightning=...` carries no on-chain fallback.
@@ -550,7 +565,7 @@ mod tests {
             }
             other => panic!("{other:?}"),
         }
-        // An unusable lightning param (expired here) falls back to on-chain only.
+        // Documented fallback: expired lightning param with an address -> on-chain.
         let t = parse(&uri, Network::Bitcoin).unwrap();
         assert!(matches!(
             t,
@@ -559,6 +574,79 @@ mod tests {
                 ..
             }
         ));
+    }
+
+    #[test]
+    fn bip21_lightning_param_errors_propagate() {
+        let now = just_after(B11_25M);
+        let p = |u: String| parse_at(&u, Network::Bitcoin, now);
+        assert_eq!(
+            parse_at(
+                &format!("bitcoin:{ADDR}?lightning={B11_25M}"),
+                Network::Testnet,
+                now
+            ),
+            Err(ParseError::WrongNetwork)
+        );
+        assert_eq!(
+            parse_at(
+                &format!("bitcoin:?lightning={B11_25M}"),
+                Network::Testnet,
+                now
+            ),
+            Err(ParseError::WrongNetwork)
+        );
+        let mut bad = B11_25M.to_string();
+        bad.pop();
+        bad.push('q');
+        assert!(matches!(
+            p(format!("bitcoin:{ADDR}?lightning={bad}")),
+            Err(ParseError::Invalid(_))
+        ));
+        assert!(matches!(
+            p(format!("bitcoin:?lightning={bad}")),
+            Err(ParseError::Invalid(_))
+        ));
+        assert!(matches!(
+            p(format!("bitcoin:{ADDR}?lightning=junk")),
+            Err(ParseError::Invalid(_))
+        ));
+        assert!(matches!(
+            p(format!("bitcoin:{ADDR}?lightning=")),
+            Err(ParseError::Invalid(_))
+        ));
+        let lnurl = lnurl("https://example.com/x");
+        assert!(matches!(
+            p(format!("bitcoin:{ADDR}?lightning={lnurl}")),
+            Err(ParseError::Invalid(_))
+        ));
+        assert!(matches!(
+            p(format!("bitcoin:?lightning={lnurl}")),
+            Err(ParseError::Invalid(_))
+        ));
+    }
+
+    #[test]
+    fn bip21_expired_lightning_param() {
+        let late = just_after(B11_25M) + 7200;
+        let with = parse_at(
+            &format!("bitcoin:{ADDR}?lightning={B11_25M}"),
+            Network::Bitcoin,
+            late,
+        );
+        assert_eq!(
+            with,
+            Ok(PaymentTarget::OnChain {
+                address: ADDR.into(),
+                amount_sat: None
+            })
+        );
+        let without = parse_at(
+            &format!("bitcoin:?lightning={B11_25M}"),
+            Network::Bitcoin,
+            late,
+        );
+        assert_eq!(without, Err(ParseError::Expired));
     }
 
     #[test]
