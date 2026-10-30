@@ -580,9 +580,12 @@ mod tests {
     fn bip21_lightning_param_errors_propagate() {
         let now = just_after(B11_25M);
         let p = |u: String| parse_at(&u, Network::Bitcoin, now);
+        // Valid testnet address + mainnet invoice: only the invoice is wrong.
+        let tb = "tb1qw508d6qejxtdg4y5r3zarvary0c5xw7kxpjzsx";
+        assert!(parse_at(tb, Network::Testnet, now).is_ok());
         assert_eq!(
             parse_at(
-                &format!("bitcoin:{ADDR}?lightning={B11_25M}"),
+                &format!("bitcoin:{tb}?lightning={B11_25M}"),
                 Network::Testnet,
                 now
             ),
