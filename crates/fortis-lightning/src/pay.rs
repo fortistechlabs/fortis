@@ -251,7 +251,8 @@ impl Node {
 
     /// The checks every send passes right before the HTLC goes to LDK.
     /// Phase 1: VSS answers (≤ 3 s). Task 10 adds the device lock here.
-    fn pre_send_checks(&self) -> Result<(), LnError> {
+    /// Also gates the channel and transit calls (`channel.rs`).
+    pub(crate) fn pre_send_checks(&self) -> Result<(), LnError> {
         self.probe_backup(PAY_VSS_PROBE_TIMEOUT)
     }
 

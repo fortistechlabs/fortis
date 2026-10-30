@@ -130,12 +130,26 @@ pub struct NodeConfig {
     pub limits: LspLimits,
 }
 
+/// The node's funds. `lightning_sat + onchain_transit_sat +
+/// pending_close_sat` counts no sat twice, but leaves out two amounts the
+/// node does hold: unconfirmed incoming transit funds, and (while a channel
+/// exists) the anchor reserve ldk-node keeps in the transit wallet.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct Balances {
-    /// Spendable-on-close Lightning balance (channels).
+    /// What the open channels hold for us (spendable on close: LDK's
+    /// claimable amount, i.e. less the commitment fee and anchors we pay as
+    /// funder).
     pub lightning_sat: u64,
-    /// ldk-node's on-chain wallet: funds on their way into or out of a channel.
+    /// Spendable now in ldk-node's on-chain wallet, the transit wallet:
+    /// funds on their way into or out of a channel. Excludes unconfirmed
+    /// incoming funds and, while a channel exists, the anchor reserve
+    /// ldk-node holds back (see `channel.rs`).
     pub onchain_transit_sat: u64,
+    /// Funds of closed or closing channels not yet spendable in the transit
+    /// wallet: a closing transaction not yet confirmed, our output under its
+    /// force-close timelock, HTLCs being resolved on chain, and ldk-node's
+    /// sweeps of those into the transit wallet until they confirm.
+    pub pending_close_sat: u64,
     /// What can be received over ready channels.
     pub inbound_sat: u64,
 }
@@ -418,15 +432,18 @@ impl Node {
         };
         let node = &node.node;
         let b = node.list_balances();
-        let inbound_msat: u64 = node
-            .list_channels()
+        let channels = node.list_channels();
+        let inbound_msat: u64 = channels
             .iter()
             .filter(|c| c.is_channel_ready)
             .map(|c| c.inbound_capacity_msat)
             .sum();
+        let open: Vec<_> = channels.iter().map(|c| c.channel_id).collect();
+        let (lightning_sat, pending_close_sat) = crate::channel::lightning_balances(&b, &open);
         Balances {
-            lightning_sat: b.total_lightning_balance_sats,
-            onchain_transit_sat: b.total_onchain_balance_sats,
+            lightning_sat,
+            onchain_transit_sat: b.spendable_onchain_balance_sats,
+            pending_close_sat,
             inbound_sat: inbound_msat / 1000,
         }
     }
@@ -463,6 +480,11 @@ impl Node {
 
     pub(crate) fn network(&self) -> Network {
         self.network
+    }
+
+    /// The LSP's node id and address.
+    pub(crate) fn lsp_peer(&self) -> (PublicKey, SocketAddress) {
+        (self.lsp_id, self.lsp_addr.clone())
     }
 
     pub(crate) fn data_dir(&self) -> &std::path::Path {

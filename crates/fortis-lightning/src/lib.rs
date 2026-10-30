@@ -8,6 +8,7 @@
 pub use ldk_node;
 pub use vss_client;
 
+mod channel;
 mod error;
 pub mod lnurl;
 mod node;
@@ -15,6 +16,7 @@ mod parse;
 mod pay;
 mod receive;
 
+pub use channel::ChannelState;
 pub use error::{LnError, ParseError};
 #[doc(hidden)]
 pub use node::test_hooks;

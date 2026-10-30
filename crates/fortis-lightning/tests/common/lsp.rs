@@ -262,6 +262,15 @@ impl Lsp {
         lines["node_id"].clone()
     }
 
+    /// Starts it again after [`Lsp::stop`] (same config and data dir);
+    /// returns the node id it printed. Panics when it is still running.
+    pub fn start_again(&mut self) -> String {
+        assert!(self.proc.is_none(), "fortis-lsp is still running");
+        let lines = self.spawn();
+        self.metrics_url = format!("http://{}/metrics", lines["metrics"]);
+        lines["node_id"].clone()
+    }
+
     pub fn pid(&self) -> Option<u32> {
         self.proc.as_ref().map(|p| p.child.id())
     }

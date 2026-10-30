@@ -144,8 +144,13 @@ fn starts_connects_to_lsp_and_stops() {
     });
     let b = node.balances();
     assert_eq!(
-        (b.lightning_sat, b.onchain_transit_sat, b.inbound_sat),
-        (0, 0, 0)
+        (
+            b.lightning_sat,
+            b.onchain_transit_sat,
+            b.pending_close_sat,
+            b.inbound_sat
+        ),
+        (0, 0, 0, 0)
     );
     assert_eq!(node.next_event(Duration::from_millis(300)), None);
     node.stop();
