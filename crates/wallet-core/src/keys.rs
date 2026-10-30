@@ -3,7 +3,7 @@
 
 use bip39::Mnemonic;
 use bitcoin::bip32::{DerivationPath, Xpriv, Xpub};
-use bitcoin::hashes::{hmac, sha256, Hash, HashEngine};
+use bitcoin::hashes::{hmac, sha256, sha512, Hash, HashEngine};
 use bitcoin::secp256k1::{Message, PublicKey, Secp256k1, SecretKey};
 use bitcoin::{CompressedPublicKey, NetworkKind, ScriptBuf, Transaction, TxOut, Witness};
 use zeroize::Zeroizing;
@@ -350,6 +350,49 @@ impl From<bitcoin::bip32::Error> for WalletError {
     }
 }
 
+/// BIP-85 "HEX" application (128169'): `num_bytes` of deterministic entropy
+/// from a BIP-39 seed (the 64 bytes `Mnemonic::to_seed` returns), at
+/// `m/83696968'/128169'/{num_bytes}'/{index}'`. The Lightning node seed is
+/// `bip85_hex(seed, network, 32, 0)`.
+///
+/// `network` only selects the master xprv's version bytes; the entropy is the
+/// same for every network (BIP-85 derives from the private key alone).
+///
+/// # Panics
+/// If `num_bytes` is outside BIP-85's `16..=64`.
+pub fn bip85_hex(
+    bip39_seed: &[u8; 64],
+    network: bitcoin::Network,
+    num_bytes: u8,
+    index: u32,
+) -> Zeroizing<Vec<u8>> {
+    let master = Xpriv::new_master(NetworkKind::from(network), bip39_seed)
+        .expect("BIP-32 master from a 64-byte seed cannot fail");
+    bip85_hex_from_master(&master, num_bytes, index)
+}
+
+/// [`bip85_hex`] from a BIP-32 master key — the form BIP-85's test vectors use.
+fn bip85_hex_from_master(master: &Xpriv, num_bytes: u8, index: u32) -> Zeroizing<Vec<u8>> {
+    assert!(
+        (16..=64).contains(&num_bytes),
+        "BIP-85 HEX num_bytes must be 16..=64, got {num_bytes}"
+    );
+    assert!(
+        index < 0x8000_0000,
+        "BIP-85 index must be < 2^31, got {index}"
+    );
+    let path = parse_path(&format!("m/83696968h/128169h/{num_bytes}h/{index}h"))
+        .expect("valid BIP-85 path");
+    let child = master
+        .derive_priv(&Secp256k1::new(), &path)
+        .expect("hardened derivation cannot fail");
+    let key = Zeroizing::new(child.private_key.secret_bytes());
+    let mut e = hmac::HmacEngine::<sha512::Hash>::new(b"bip-entropy-from-k");
+    e.input(&key[..]);
+    let full = Zeroizing::new(hmac::Hmac::<sha512::Hash>::from_engine(e).to_byte_array());
+    Zeroizing::new(full[..usize::from(num_bytes)].to_vec())
+}
+
 fn account_path(coin_type: u32, account: u32) -> Result<DerivationPath> {
     parse_path(&format!("m/84h/{coin_type}h/{account}h"))
 }
@@ -421,6 +464,43 @@ mod tests {
             child.to_string(),
             "xprv9uHRZZhk6KAJC1avXpDAp4MDc3sQKNxDiPvvkX8Br5ngLNv1TxvUxt4cV1rGL5hj6KCesnDYUhd7oWgT11eZG7XnxHrnYeSvkzY7d2bhkJ7"
         );
+    }
+
+    // BIP-85 "HEX" application test vector, verbatim from bip-0085.mediawiki:
+    //   MASTER BIP32 ROOT KEY: xprv9s21ZrQH143K2LBWUUQRFXhucrQqBpKdRRxNVq2zBqsx8HVqFk2uYo8kmbaLLHRdqtQpUm98uKfu3vca1LqdGhUtyoFnCNkfmXRyPXLjbKb
+    //   PATH: m/83696968'/128169'/64'/0'
+    //   DERIVED ENTROPY=492db4698cf3b73a5a24998aa3e9d7fa96275d85724a91e71aa2d645442f878555d078fd1f1f67e368976f04137b1f7a0d19232136ca50c44614af72b5582a5c
+    #[test]
+    fn bip85_hex_matches_bip_vector() {
+        let master: Xpriv = "xprv9s21ZrQH143K2LBWUUQRFXhucrQqBpKdRRxNVq2zBqsx8HVqFk2uYo8kmbaLLHRdqtQpUm98uKfu3vca1LqdGhUtyoFnCNkfmXRyPXLjbKb"
+            .parse()
+            .unwrap();
+        let out = bip85_hex_from_master(&master, 64, 0);
+        assert_eq!(
+            hex::encode(&*out),
+            "492db4698cf3b73a5a24998aa3e9d7fa96275d85724a91e71aa2d645442f878555d078fd1f1f67e368976f04137b1f7a0d19232136ca50c44614af72b5582a5c"
+        );
+        // num_bytes is part of the path, so 32 bytes are not a prefix of the 64.
+        let short = bip85_hex_from_master(&master, 32, 0);
+        assert_eq!(short.len(), 32);
+        assert_ne!(&short[..], &out[..32]);
+    }
+
+    #[test]
+    fn bip85_hex_32_bytes_index_0_is_deterministic_and_distinct_from_index_1() {
+        let seed = [7u8; 64];
+        let a = bip85_hex(&seed, bitcoin::Network::Bitcoin, 32, 0);
+        let a2 = bip85_hex(&seed, bitcoin::Network::Bitcoin, 32, 0);
+        let b = bip85_hex(&seed, bitcoin::Network::Bitcoin, 32, 1);
+        assert_eq!(a.len(), 32);
+        assert_eq!(*a, *a2);
+        assert_ne!(*a, *b);
+        // The seed wrapper is the master-key fn over Xpriv::new_master(seed).
+        let master = Xpriv::new_master(NetworkKind::Main, &seed).unwrap();
+        assert_eq!(*a, *bip85_hex_from_master(&master, 32, 0));
+        // The network only changes the xprv's version bytes, never the entropy.
+        assert_eq!(*a, *bip85_hex(&seed, bitcoin::Network::Regtest, 32, 0));
+        assert_ne!(*a, *bip85_hex(&[8u8; 64], bitcoin::Network::Bitcoin, 32, 0));
     }
 
     #[test]

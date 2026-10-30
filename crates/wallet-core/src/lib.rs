@@ -39,7 +39,7 @@ pub use chain::{Chain, ChainParams};
 pub use entropy::mix_entropy;
 pub use error::{Result, WalletError};
 pub use htlc::{htlc_spend_fee, HtlcContract};
-pub use keys::{bip39_wordlist, parse_account_xpub, MasterKey, SwapKey};
+pub use keys::{bip39_wordlist, bip85_hex, parse_account_xpub, MasterKey, SwapKey};
 pub use psbt::{PsbtDestination, PsbtReview};
 pub use swap::{
     finish_presigned_redeem, params_from_terms, swap_timelocks, PresignedRedeem, SwapEvent,
