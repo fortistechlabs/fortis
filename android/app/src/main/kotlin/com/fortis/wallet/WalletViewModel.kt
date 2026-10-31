@@ -1881,6 +1881,27 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
 
     fun cancelPendingLn() { if (!sending) pendingLn = null }
 
+    fun moveToLightning(amountSat: Long) {
+        val node = lightning.currentNode ?: run {
+            error = "Lightning not ready"
+            return
+        }
+        val transitAddr = runCatching { node.transitAddress() }.getOrElse {
+            error = it.message ?: it.toString()
+            return
+        }
+        lightning.requestMoveToChannel(amountSat.toULong())
+        buildPayment(
+            to = transitAddr,
+            amountSat = amountSat,
+            sweep = false,
+            feerateOverride = null,
+            confTarget = 6,
+            replayProtect = false,
+            feeFromAmount = false,
+        )
+    }
+
     fun openSendWithUri(text: String) {
         pendingSendText = text
         val btcSigning = wallets.firstOrNull { it.id == selectedId && !it.watchOnly && it.chain == "btc" }

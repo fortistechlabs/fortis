@@ -814,11 +814,23 @@ private fun SettingsTab(vm: WalletViewModel) {
 
     removing?.let { id ->
         val w = vm.wallets.firstOrNull { it.id == id }
+        val lnState by vm.lightning.state.collectAsState()
+        val lnWarnSat = if (w != null && showLightningToggle(w) && vm.isLightningEnabled(id) && id == vm.selectedId) {
+            deleteWalletLightningWarningSat(lnState)
+        } else {
+            null
+        }
+        val baseRemoveBody = stringResource(R.string.dialog_remove_body)
+        val removeBody = if (lnWarnSat != null) {
+            stringResource(R.string.dialog_remove_lightning_warning, fmt(lnWarnSat), baseRemoveBody)
+        } else {
+            baseRemoveBody
+        }
         AlertDialog(
             onDismissRequest = { removing = null },
             containerColor = Fx.panel,
             title = { Text(stringResource(R.string.dialog_remove_title, w?.display ?: stringResource(R.string.nav_wallet)), color = Fx.text) },
-            text = { Text(stringResource(R.string.dialog_remove_body), color = Fx.textDim) },
+            text = { Text(removeBody, color = if (lnWarnSat != null) Fx.warn else Fx.textDim) },
             confirmButton = { TextButton({ vm.removeWallet(id); removing = null }) { Text(stringResource(R.string.action_remove), color = Fx.bad) } },
             dismissButton = { TextButton({ removing = null }) { Text(stringResource(R.string.action_cancel), color = Fx.text) } },
         )
@@ -1175,6 +1187,7 @@ private fun SendTab(vm: WalletViewModel) {
     var resolvedLnurl by remember { mutableStateOf<uniffi.wallet_ffi.LnurlParams?>(null) }
     var lnurlError by remember { mutableStateOf<String?>(null) }
     var resolvingLnurl by remember { mutableStateOf(false) }
+    var showMoveDialog by remember { mutableStateOf<Long?>(null) }
 
     val parsedTarget = remember(to, isBtc, network) {
         if (!isBtc || to.isBlank()) null
@@ -1311,6 +1324,9 @@ private fun SendTab(vm: WalletViewModel) {
                         style = FxType.meta,
                         color = Fx.warn,
                     )
+                    GhostButton(stringResource(R.string.move_to_ln_action), dense = true) {
+                        showMoveDialog = plan.shortfallSat
+                    }
                 }
                 is SendPlan.Invalid -> {
                     ErrorText(plan.reason)
@@ -1403,12 +1419,15 @@ private fun SendTab(vm: WalletViewModel) {
             }
         }
     }
+    showMoveDialog?.let { shortfall ->
+        MoveToLightningDialog(vm, initialShortfallSat = shortfall) { showMoveDialog = null }
+    }
 }
 
 /** The "sat / BTC" (or "sat / XBT") unit picker that sits beside the Amount
  *  field. Styled to match [Field] so the two line up. */
 @Composable
-private fun AmountUnitPicker(isSat: Boolean, coinUnit: String, onChange: (Boolean) -> Unit) {
+internal fun AmountUnitPicker(isSat: Boolean, coinUnit: String, onChange: (Boolean) -> Unit) {
     var open by remember { mutableStateOf(false) }
     val satLabel = stringResource(R.string.unit_sat)
     Box {
@@ -1446,56 +1465,90 @@ private fun AmountUnitPicker(isSat: Boolean, coinUnit: String, onChange: (Boolea
 @Composable
 private fun HistoryTab(vm: WalletViewModel, unit: String) {
     val ctx = LocalContext.current
-    val chain = vm.config?.chain ?: "xbt"
-    val network = vm.config?.network ?: "mainnet"
-    if (vm.history.isEmpty()) {
+    val c = vm.config
+    val chain = c?.chain ?: "xbt"
+    val network = c?.network ?: "mainnet"
+    val lnState by vm.lightning.state.collectAsState()
+    val lnEnabled = showLightningToggle(c) && (vm.isLightningEnabled(c?.id ?: "") || lnState !is LnState.Off)
+    val lnPayments = remember(lnState, lnEnabled, vm.sentCount) {
+        if (lnEnabled) vm.lightning.payments() else emptyList()
+    }
+    val rows = remember(vm.history, lnPayments) {
+        mergeHistory(vm.history, lnPayments)
+    }
+    if (rows.isEmpty()) {
         GlassCard { Text(stringResource(R.string.history_empty), color = Fx.textFaint) }
         return
     }
     val sendLabel = stringResource(R.string.history_send)
     val receiveLabel = stringResource(R.string.history_receive)
     val internalLabel = stringResource(R.string.history_internal)
+    val lnSendLabel = stringResource(R.string.history_ln_send)
+    val lnReceiveLabel = stringResource(R.string.history_ln_receive)
     GlassCard {
-        vm.history.forEach { h ->
-            val url = explorerTxUrl(chain, network, h.txid)
+        rows.forEach { h ->
+            val url = if (!h.lightning) explorerTxUrl(chain, network, h.id) else null
             Row(
                 Modifier
                     .fillMaxWidth()
                     .combinedClickable(
-                        onClick = { if (url != null) openInBrowser(ctx, url) else copyToClipboard(ctx, "txid", h.txid) },
-                        onLongClick = { copyToClipboard(ctx, "txid", h.txid) },
+                        onClick = { if (url != null) openInBrowser(ctx, url) else copyToClipboard(ctx, "txid", h.id) },
+                        onLongClick = { copyToClipboard(ctx, "txid", h.id) },
                     )
                     .padding(vertical = 10.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
             ) {
                 Column(Modifier.weight(1f)) {
                     FlowRow(itemVerticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Text((if (h.amountSat > 0) "+" else "") + fmt(h.amountSat) + " " + unit,
-                            style = FxType.amount, color = if (h.amountSat > 0) Fx.signal else Fx.text)
+                        val amtPrefix = when {
+                            h.lightning -> "⚡ " + (if (h.amountSat > 0) "+" else "")
+                            h.amountSat > 0 -> "+"
+                            else -> ""
+                        }
+                        val amtColor = when {
+                            h.failed -> Fx.bad
+                            h.amountSat > 0 -> Fx.signal
+                            else -> Fx.text
+                        }
+                        Text(
+                            amtPrefix + fmt(h.amountSat) + " " + unit,
+                            style = FxType.amount,
+                            color = amtColor,
+                        )
                         if (h.amountSat != 0L) vm.fiatText(if (h.amountSat < 0) -h.amountSat else h.amountSat, chain)?.let {
                             Text(stringResource(R.string.fiat_approx, it), style = FxType.fiatSmall)
                         }
                     }
                     val label = when {
+                        h.lightning && h.send -> lnSendLabel
+                        h.lightning -> lnReceiveLabel
                         h.internal -> internalLabel
                         h.send -> sendLabel
                         else -> receiveLabel
                     }
-                    Text(
-                        if (h.send && h.feeSat > 0L)
-                            stringResource(R.string.history_row_subtitle_fee, label, h.txid.take(10), h.feeSat)
-                        else
-                            stringResource(R.string.history_row_subtitle, label, h.txid.take(10)),
-                        style = FxType.meta,
-                    )
+                    val baseSubtitle = if (h.feeSat > 0L && (h.send || h.lightning)) {
+                        stringResource(R.string.history_row_subtitle_fee, label, h.id.take(10), h.feeSat)
+                    } else {
+                        stringResource(R.string.history_row_subtitle, label, h.id.take(10))
+                    }
+                    val subtitle = if (h.description.isNotBlank()) "$baseSubtitle · ${h.description}" else baseSubtitle
+                    Text(subtitle, style = FxType.meta)
+                }
+                val statusText = when {
+                    h.failed -> stringResource(R.string.history_failed)
+                    h.pending -> stringResource(R.string.history_pending)
+                    !h.lightning && h.confirmations < 6 -> stringResource(R.string.history_conf_n, h.confirmations.toInt())
+                    else -> stringResource(R.string.history_confirmed)
+                }
+                val statusColor = when {
+                    h.failed -> Fx.bad
+                    h.pending -> Fx.warn
+                    else -> Fx.textDim
                 }
                 Text(
-                    when {
-                        h.confirmations < 1 -> stringResource(R.string.history_pending)
-                        h.confirmations < 6 -> stringResource(R.string.history_conf_n, h.confirmations.toInt())
-                        else -> stringResource(R.string.history_confirmed)
-                    },
-                    style = FxType.meta, color = if (h.confirmations < 1) Fx.warn else Fx.textDim,
+                    statusText,
+                    style = FxType.meta,
+                    color = statusColor,
                     modifier = Modifier.padding(start = Fx.s3),
                 )
             }
@@ -1712,6 +1765,13 @@ private fun LightningSettingsCard(vm: WalletViewModel) {
         Text(statusText, style = FxType.meta, color = statusColor)
 
         val ready = lnState as? LnState.Ready
+        var showMove by remember { mutableStateOf(false) }
+        if (enabled && ready != null) {
+            GhostButton(
+                stringResource(R.string.move_to_ln_action),
+                dense = true,
+            ) { showMove = true }
+        }
         val canCloseOrSweep = ready != null && (
             ready.channel != uniffi.wallet_ffi.LnChannelState.NONE ||
                 ready.balances.onchainTransitSat > 0uL
@@ -1722,6 +1782,9 @@ private fun LightningSettingsCard(vm: WalletViewModel) {
                 enabled = !vm.closingLightningChannel,
                 dense = true,
             ) { confirmClose = true }
+        }
+        if (showMove) {
+            MoveToLightningDialog(vm, initialShortfallSat = null) { showMove = false }
         }
     }
 

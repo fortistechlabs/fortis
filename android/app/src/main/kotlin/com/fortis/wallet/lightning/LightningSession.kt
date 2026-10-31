@@ -172,6 +172,10 @@ class LightningSession(
     var lastInfo: LnInfo? = null
         private set
 
+    @Volatile
+    var pendingMoveSat: ULong? = null
+        private set
+
     private var unlockedWalletId: String? = null
     private var unlockedSeed: ByteArray? = null
     private var lastKnownBalances: LnBalances = ZERO_LN_BALANCES
@@ -268,12 +272,26 @@ class LightningSession(
         }
     }
 
+    fun requestMoveToChannel(amountSat: ULong) {
+        pendingMoveSat = amountSat
+    }
+
+    fun payments(): List<LnPayment> =
+        currentNode?.let { runCatching { it.payments() }.getOrNull() }.orEmpty()
+
     fun refreshBalances() {
         val node = currentNode ?: return
         val cur = _state.value
         if (cur is LnState.Ready) {
-            val bal = runCatching { node.balances() }.getOrNull() ?: return
-            val ch = runCatching { node.channelState() }.getOrNull() ?: return
+            var bal = runCatching { node.balances() }.getOrNull() ?: return
+            var ch = runCatching { node.channelState() }.getOrNull() ?: return
+            val moveAmt = pendingMoveSat
+            if (moveAmt != null && bal.onchainTransitSat >= moveAmt) {
+                pendingMoveSat = null
+                runCatching { node.openChannel(moveAmt) }
+                bal = runCatching { node.balances() }.getOrDefault(bal)
+                ch = runCatching { node.channelState() }.getOrDefault(ch)
+            }
             lastKnownBalances = bal
             _state.value = LnState.Ready(bal, ch)
         }
@@ -394,7 +412,15 @@ class LightningSession(
             var bal = node.balances()
             var ch = node.channelState()
 
-            if (bal.onchainTransitSat > 0uL && ch == LnChannelState.NONE && sweepAddressProvider != null) {
+            val moveAmt = pendingMoveSat
+            if (moveAmt != null && bal.onchainTransitSat >= moveAmt) {
+                pendingMoveSat = null
+                withContext(Dispatchers.IO) {
+                    runCatching { node.openChannel(moveAmt) }
+                }
+                bal = node.balances()
+                ch = node.channelState()
+            } else if (moveAmt == null && bal.onchainTransitSat > 0uL && ch == LnChannelState.NONE && sweepAddressProvider != null) {
                 val addr = runCatching { sweepAddressProvider?.invoke(walletId) }.getOrNull()
                 if (!addr.isNullOrBlank()) {
                     withContext(Dispatchers.IO) {

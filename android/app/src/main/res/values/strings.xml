@@ -514,4 +514,13 @@
     <string name="confirm_ln_fee_estimate">Estimated routing fee</string>
     <string name="confirm_ln_fee_estimate_value">up to %1$s %2$s</string>
     <string name="toast_ln_received">Received ⚡ %1$s sat</string>
+    <string name="move_to_ln_action">Move to Lightning</string>
+    <string name="move_to_ln_title">Move to Lightning</string>
+    <string name="move_to_ln_body">Sends BTC from your on-chain wallet to open a Lightning channel (minimum %1$s sat). The channel opens automatically after 1 confirmation.</string>
+    <string name="move_to_ln_below_min">Minimum channel size is %1$s sat.</string>
+    <string name="move_to_ln_insufficient">Not enough confirmed on-chain funds to cover this amount plus the network fee.</string>
+    <string name="history_ln_send">⚡ send</string>
+    <string name="history_ln_receive">⚡ receive</string>
+    <string name="history_failed">failed</string>
+    <string name="dialog_remove_lightning_warning">You have %1$s sat on Lightning; move them out or make sure you have your phrase.\n\n%2$s</string>
 </resources>
