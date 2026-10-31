@@ -45,11 +45,12 @@ use std::sync::Mutex;
 
 use ldk_node::bitcoin::address::NetworkUnchecked;
 use ldk_node::bitcoin::hashes::Hash;
-use ldk_node::bitcoin::Address;
+use ldk_node::bitcoin::{Address, Txid};
 use ldk_node::lightning::chain::channelmonitor::BalanceSource;
 use ldk_node::lightning::events::ClosureReason;
 use ldk_node::lightning::ln::channelmanager::PaymentId;
 use ldk_node::lightning::ln::types::ChannelId;
+use ldk_node::payment::{ConfirmationStatus, PaymentKind};
 use ldk_node::{ChannelDetails, LightningBalance, NodeError, PendingSweepBalance};
 
 use crate::{Balances, LnError, Node};
@@ -173,6 +174,15 @@ pub(crate) struct MonitorBalance {
     pub kind: BalanceKind,
     /// The channel's close record.
     pub close: Option<CloseKind>,
+    /// The channel is closed and its funding transaction, which this node
+    /// built, was never seen confirmed (rule: the close record holds the
+    /// funding txid from when the channel was last listed with it
+    /// unconfirmed, and the wallet's payment store does not show it
+    /// confirmed). No commitment or closing transaction can confirm before
+    /// the funding does, so the balance is void: LDK keeps reporting a
+    /// `ClaimableOnChannelClose` for it forever. If the funding does confirm
+    /// later, the store says so and the balance counts again.
+    pub funding_void: bool,
 }
 
 /// Where one of ldk-node's sweeper outputs is.
@@ -223,6 +233,7 @@ pub(crate) struct BalanceInputs {
 pub(crate) fn closing_unresolved(i: &BalanceInputs) -> bool {
     let monitor_unresolved = i.monitors.iter().any(|m| {
         !m.channel_open
+            && !m.funding_void
             && match m.kind {
                 BalanceKind::CoopConfirmed => false,
                 BalanceKind::OnClose => m.close != Some(CloseKind::Coop),
@@ -253,12 +264,14 @@ pub(crate) fn breakdown(i: &BalanceInputs) -> Balances {
     let closed_sat: u64 = closed.iter().map(|m| m.claimable_sat).sum();
     let closed_pending: u64 = closed
         .iter()
-        .filter(|m| m.kind != BalanceKind::CoopConfirmed)
+        .filter(|m| m.kind != BalanceKind::CoopConfirmed && !m.funding_void)
         .map(|m| m.claimable_sat)
         .sum();
     let coop_in_mempool: u64 = closed
         .iter()
-        .filter(|m| m.kind == BalanceKind::OnClose && m.close == Some(CloseKind::Coop))
+        .filter(|m| {
+            m.kind == BalanceKind::OnClose && m.close == Some(CloseKind::Coop) && !m.funding_void
+        })
         .map(|m| m.claimable_sat)
         .sum();
     let sweeps_pending: u64 = i
@@ -290,42 +303,88 @@ pub(crate) fn breakdown(i: &BalanceInputs) -> Balances {
 // Close records
 // ---------------------------------------------------------------------------
 
-fn read_closes(dir: &Path) -> BTreeMap<String, String> {
+/// One channel's record: how it is being closed (if this node knows), and
+/// the txid of its funding transaction while this node funded it and the
+/// funding was last seen unconfirmed.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub(crate) struct CloseRecord {
+    pub kind: Option<CloseKind>,
+    pub unconfirmed_funding: Option<String>,
+}
+
+impl CloseRecord {
+    fn from_json(v: &serde_json::Value) -> CloseRecord {
+        match v {
+            serde_json::Value::String(k) => CloseRecord {
+                kind: CloseKind::parse(k),
+                unconfirmed_funding: None,
+            },
+            v => CloseRecord {
+                kind: v["kind"].as_str().and_then(CloseKind::parse),
+                unconfirmed_funding: v["unconfirmed_funding"].as_str().map(String::from),
+            },
+        }
+    }
+
+    fn to_json(&self) -> serde_json::Value {
+        serde_json::json!({
+            "kind": self.kind.map(CloseKind::as_str),
+            "unconfirmed_funding": self.unconfirmed_funding,
+        })
+    }
+
+    fn is_empty(&self) -> bool {
+        self.kind.is_none() && self.unconfirmed_funding.is_none()
+    }
+}
+
+/// Unreadable or missing file: no records (never evidence of a shutdown).
+fn read_closes(dir: &Path) -> BTreeMap<String, CloseRecord> {
     std::fs::read(dir.join(CLOSES_FILE))
         .ok()
-        .and_then(|b| serde_json::from_slice(&b).ok())
+        .and_then(|b| serde_json::from_slice::<BTreeMap<String, serde_json::Value>>(&b).ok())
+        .map(|m| {
+            m.iter()
+                .map(|(k, v)| (k.clone(), CloseRecord::from_json(v)))
+                .filter(|(_, r)| !r.is_empty())
+                .collect()
+        })
         .unwrap_or_default()
 }
 
-fn load_closes(dir: &Path) -> BTreeMap<String, CloseKind> {
+fn load_closes(dir: &Path) -> BTreeMap<String, CloseRecord> {
     let _g = CLOSES_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     read_closes(dir)
-        .into_iter()
-        .filter_map(|(k, v)| CloseKind::parse(&v).map(|c| (k, c)))
-        .collect()
 }
 
-/// Applies `f` to the records and writes them durably if they changed.
-fn update_closes(dir: &Path, f: impl FnOnce(&mut BTreeMap<String, String>)) -> std::io::Result<()> {
+/// Applies `f` to the records (empty ones are dropped) and writes them
+/// durably if they changed.
+fn update_closes(
+    dir: &Path,
+    f: impl FnOnce(&mut BTreeMap<String, CloseRecord>),
+) -> std::io::Result<()> {
     let _g = CLOSES_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let mut map = read_closes(dir);
     let before = map.clone();
     f(&mut map);
+    map.retain(|_, r| !r.is_empty());
     if map == before {
         return Ok(());
     }
-    let bytes = serde_json::to_vec(&map).map_err(std::io::Error::other)?;
+    let json: BTreeMap<&String, serde_json::Value> =
+        map.iter().map(|(k, r)| (k, r.to_json())).collect();
+    let bytes = serde_json::to_vec(&json).map_err(std::io::Error::other)?;
     crate::pay::write_atomic(dir, CLOSES_FILE, &bytes)
 }
 
 fn record_close(dir: &Path, id: &ChannelId, kind: CloseKind) -> std::io::Result<()> {
     update_closes(dir, |m| {
-        m.insert(id.to_string(), kind.as_str().to_string());
+        m.entry(id.to_string()).or_default().kind = Some(kind);
     })
 }
 
 /// Called by `next_event` for every `ChannelClosed`: the reason LDK gives
-/// replaces whatever the node recorded when it asked for the close.
+/// replaces whatever kind the node recorded when it asked for the close.
 pub(crate) fn record_closed_event(dir: &Path, id: &ChannelId, reason: Option<&ClosureReason>) {
     let _ = record_close(dir, id, CloseKind::of_reason(reason));
 }
@@ -343,13 +402,74 @@ fn not_started() -> LnError {
 /// transaction after `open_channel` returns and does not enter it in the
 /// transit wallet until it sees it in the mempool, so until it confirms the
 /// wallet may still offer its inputs to another transaction.
-fn funding_in_flight(c: &ChannelDetails) -> bool {
+///
+/// Not for a channel this node asked to close: a funding transaction that
+/// never confirms would otherwise block sweeps and opens for good (LDK does
+/// not time out outbound channels; ldk-node never rebroadcasts the funding).
+fn funding_in_flight(c: &ChannelDetails, closes: &BTreeMap<String, CloseRecord>) -> bool {
+    funding_unconfirmed(c)
+        && closes
+            .get(&c.channel_id.to_string())
+            .is_none_or(|r| r.kind.is_none())
+}
+
+fn funding_unconfirmed(c: &ChannelDetails) -> bool {
     c.is_outbound && (c.funding_txo.is_none() || c.confirmations.unwrap_or(0) == 0)
+}
+
+/// The funding txid of a channel we fund whose funding is built but not yet
+/// confirmed.
+fn pending_funding_txid(c: &ChannelDetails) -> Option<String> {
+    match c.funding_txo {
+        Some(o) if c.is_outbound && c.confirmations.unwrap_or(0) == 0 => Some(o.txid.to_string()),
+        _ => None,
+    }
+}
+
+/// Whether ldk-node's payment store (the transit wallet's view; updated
+/// when the wallet syncs a block or, on Esplora, any update) has `txid`
+/// confirmed.
+fn wallet_confirmed(node: &ldk_node::Node, txid: &str) -> bool {
+    let Ok(txid) = Txid::from_str(txid) else {
+        return false;
+    };
+    matches!(
+        node.payment(&PaymentId(txid.to_byte_array()))
+            .map(|p| p.kind),
+        Some(PaymentKind::Onchain {
+            status: ConfirmationStatus::Confirmed { .. },
+            ..
+        })
+    )
+}
+
+/// Keeps each listed outbound channel's unconfirmed funding txid in its
+/// record (set while unconfirmed, cleared once confirmed) and returns the
+/// records. Writes only when something changed.
+fn track_funding(dir: &Path, channels: &[ChannelDetails]) -> BTreeMap<String, CloseRecord> {
+    let closes = load_closes(dir);
+    let stale = channels.iter().any(|c| {
+        let have = closes
+            .get(&c.channel_id.to_string())
+            .and_then(|r| r.unconfirmed_funding.clone());
+        have != pending_funding_txid(c)
+    });
+    if !stale {
+        return closes;
+    }
+    let _ = update_closes(dir, |m| {
+        for c in channels {
+            m.entry(c.channel_id.to_string())
+                .or_default()
+                .unconfirmed_funding = pending_funding_txid(c);
+        }
+    });
+    load_closes(dir)
 }
 
 struct Snapshot {
     channels: Vec<ChannelDetails>,
-    closes: BTreeMap<String, CloseKind>,
+    closes: BTreeMap<String, CloseRecord>,
     inputs: BalanceInputs,
 }
 
@@ -357,12 +477,24 @@ impl Snapshot {
     fn take(node: &ldk_node::Node, dir: &Path) -> Snapshot {
         let channels = node.list_channels();
         let b = node.list_balances();
-        let closes = load_closes(dir);
+        let closes = track_funding(dir, &channels);
         let open: Vec<ChannelId> = channels.iter().map(|c| c.channel_id).collect();
+        // Closed channels whose funding we built but never saw confirmed:
+        // nothing on chain can pay out of them (see `MonitorBalance`).
+        let void: Vec<&String> = closes
+            .iter()
+            .filter(|(id, r)| {
+                !open.iter().any(|o| o.to_string() == **id)
+                    && r.unconfirmed_funding
+                        .as_deref()
+                        .is_some_and(|t| !wallet_confirmed(node, t))
+            })
+            .map(|(id, _)| id)
+            .collect();
         let monitors = b
             .lightning_balances
             .iter()
-            .map(|lb| monitor_balance(lb, &open, &closes))
+            .map(|lb| monitor_balance(lb, &open, &closes, &void))
             .collect();
         let sweeps = b
             .pending_balances_from_channel_closures
@@ -421,7 +553,10 @@ impl Snapshot {
                 .iter()
                 .map(|c| ChannelFact {
                     ready: c.is_channel_ready,
-                    close_recorded: self.closes.contains_key(&c.channel_id.to_string()),
+                    close_recorded: self
+                        .closes
+                        .get(&c.channel_id.to_string())
+                        .is_some_and(|r| r.kind.is_some()),
                 })
                 .collect(),
             closed_funds_pending: pending > 0 || closing_unresolved(&self.inputs),
@@ -480,7 +615,8 @@ fn sweep_channel(s: &PendingSweepBalance) -> Option<ChannelId> {
 fn monitor_balance(
     lb: &LightningBalance,
     open: &[ChannelId],
-    closes: &BTreeMap<String, CloseKind>,
+    closes: &BTreeMap<String, CloseRecord>,
+    void: &[&String],
 ) -> MonitorBalance {
     // Same amounts as LDK's `Balance::claimable_amount_satoshis`, which is
     // what `total_lightning_balance_sats` sums.
@@ -525,7 +661,8 @@ fn monitor_balance(
         channel_open: open.contains(id),
         claimable_sat,
         kind,
-        close: closes.get(&id.to_string()).copied(),
+        close: closes.get(&id.to_string()).and_then(|r| r.kind),
+        funding_void: void.iter().any(|v| **v == id.to_string()),
     }
 }
 
@@ -593,7 +730,12 @@ impl Node {
         let running = self.running().ok_or_else(not_started)?;
         let _ops = self.channel_ops();
         let node = &running.node;
-        if node.list_channels().iter().any(funding_in_flight) {
+        let closes = load_closes(self.data_dir());
+        if node
+            .list_channels()
+            .iter()
+            .any(|c| funding_in_flight(c, &closes))
+        {
             return Err(LnError::Other("channel_opening".into()));
         }
         let reserve = node
@@ -648,8 +790,11 @@ impl Node {
         let dir = self.data_dir();
         let closes = load_closes(dir);
         let mut result = Ok(());
+        let _ = track_funding(dir, &channels);
         for c in &channels {
-            let had_record = closes.contains_key(&c.channel_id.to_string());
+            let had_record = closes
+                .get(&c.channel_id.to_string())
+                .is_some_and(|r| r.kind.is_some());
             if !had_record && record_close(dir, &c.channel_id, CloseKind::Coop).is_err() {
                 result = result.and(Err(LnError::BackupUnavailable));
                 continue;
@@ -658,7 +803,9 @@ impl Node {
                 if !had_record {
                     let id = c.channel_id.to_string();
                     let _ = update_closes(dir, |m| {
-                        m.remove(&id);
+                        if let Some(r) = m.get_mut(&id) {
+                            r.kind = None;
+                        }
                     });
                 }
                 let err = if !peer_connected(node, &c.counterparty_node_id) {
@@ -694,6 +841,7 @@ impl Node {
             return Err(LnError::Other("no_channel".into()));
         }
         self.pre_send_checks()?;
+        let _ = track_funding(self.data_dir(), &channels);
         let mut result = Ok(());
         for c in &channels {
             let _ = record_close(self.data_dir(), &c.channel_id, CloseKind::Force);
@@ -744,7 +892,11 @@ impl Node {
         let _ops = self.channel_ops();
         let node = &running.node;
         let snap = Snapshot::take(node, self.data_dir());
-        if snap.channels.iter().any(funding_in_flight) {
+        if snap
+            .channels
+            .iter()
+            .any(|c| funding_in_flight(c, &snap.closes))
+        {
             return Err(LnError::Other("channel_opening".into()));
         }
         if closing_unresolved(&snap.inputs) {
@@ -853,6 +1005,14 @@ mod tests {
             claimable_sat: sat,
             kind,
             close,
+            funding_void: false,
+        }
+    }
+
+    fn void(m: MonitorBalance) -> MonitorBalance {
+        MonitorBalance {
+            funding_void: true,
+            ..m
         }
     }
 
@@ -1075,6 +1235,39 @@ mod tests {
     }
 
     #[test]
+    fn void_funding_neither_pending_nor_blocking() {
+        // Force-closed channel whose funding never confirmed: LDK keeps a
+        // ClaimableOnChannelClose; the deposit is back in the wallet.
+        let i = inputs(
+            149_056,
+            vec![void(mb(false, 149_056, OnClose, Some(Force)))],
+            vec![],
+            wallet(300_000, 300_000, 0),
+        );
+        let b = breakdown(&i);
+        assert_eq!((b.lightning_sat, b.pending_close_sat), (0, 0));
+        assert_eq!(sum(&b), 300_000);
+        assert!(!closing_unresolved(&i));
+        // The same channel with confirmed funding blocks and is pending.
+        let i = inputs(
+            149_056,
+            vec![mb(false, 149_056, OnClose, Some(Force))],
+            vec![],
+            wallet(150_844, 150_844, 0),
+        );
+        assert_eq!(breakdown(&i).pending_close_sat, 149_056);
+        assert!(closing_unresolved(&i));
+        // A void coop close is not deduplicated against the wallet either.
+        let i = inputs(
+            149_056,
+            vec![void(mb(false, 149_056, OnClose, Some(Coop)))],
+            vec![],
+            wallet(10_000, 0, 0),
+        );
+        assert_eq!(breakdown(&i).pending_transit_sat, 10_000);
+    }
+
+    #[test]
     fn close_kind_from_reason() {
         assert_eq!(
             CloseKind::of_reason(Some(&ClosureReason::LocallyInitiatedCooperativeClosure)),
@@ -1104,8 +1297,27 @@ mod tests {
         // The event's reason replaces what the node recorded.
         record_closed_event(&dir, &a, Some(&ClosureReason::CommitmentTxConfirmed));
         let m = load_closes(&dir);
-        assert_eq!(m.get(&a.to_string()), Some(&Force));
-        assert_eq!(m.get(&b.to_string()), Some(&Force));
+        assert_eq!(m.get(&a.to_string()).and_then(|r| r.kind), Some(Force));
+        assert_eq!(m.get(&b.to_string()).and_then(|r| r.kind), Some(Force));
+        // Funding txids kept alongside the kind; empty records dropped.
+        update_closes(&dir, |m| {
+            m.entry(a.to_string()).or_default().unconfirmed_funding = Some("ab".into());
+            m.entry(ChannelId([3; 32]).to_string()).or_default();
+        })
+        .unwrap();
+        let m = load_closes(&dir);
+        assert_eq!(
+            m.get(&a.to_string()),
+            Some(&CloseRecord {
+                kind: Some(Force),
+                unconfirmed_funding: Some("ab".into())
+            })
+        );
+        assert_eq!(m.len(), 2);
+        // The earlier format (id -> kind string) still reads.
+        std::fs::write(dir.join(CLOSES_FILE), format!("{{\"{a}\":\"coop\"}}")).unwrap();
+        assert_eq!(load_closes(&dir)[&a.to_string()].kind, Some(Coop));
+        record_close(&dir, &b, Force).unwrap();
         update_closes(&dir, |m| m.retain(|k, _| *k == b.to_string())).unwrap();
         assert_eq!(load_closes(&dir).len(), 1);
         // Unreadable file: no records (never evidence of a shutdown).

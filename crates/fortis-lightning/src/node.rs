@@ -943,6 +943,13 @@ pub mod test_hooks {
         MAX_LIVE.load(Ordering::SeqCst)
     }
 
+    /// ldk-node's `total_onchain_balance_sats` (unconfirmed included), so a
+    /// test can wait until the wallet has seen a mempool transaction.
+    pub fn wallet_total_sat(node: &crate::Node) -> u64 {
+        node.running()
+            .map_or(0, |r| r.node.list_balances().total_onchain_balance_sats)
+    }
+
     /// Resets [`max_live`] to the current count.
     pub fn reset_max_live() {
         MAX_LIVE.store(LIVE.load(Ordering::SeqCst), Ordering::SeqCst);
