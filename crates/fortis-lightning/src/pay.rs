@@ -410,7 +410,7 @@ fn parse_invoice(s: &str) -> Result<Bolt11Invoice, LnError> {
         .map_err(|e| LnError::Other(format!("invalid invoice: {e}")))
 }
 
-fn now() -> Duration {
+pub(crate) fn now() -> Duration {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()

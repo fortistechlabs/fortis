@@ -185,12 +185,13 @@ pub(crate) struct MonitorBalance {
     /// The channel is closed and its funding transaction, which this node
     /// built, was never seen confirmed (rule: the close record holds the
     /// funding txid from when the channel was last listed with it
-    /// unconfirmed, and [`funding_void`] holds: the wallet's payment store
-    /// positively shows it unconfirmed, or has no entry although it is not
-    /// behind LDK's chain view; unknown keeps blocking). No commitment or closing transaction can confirm before
-    /// the funding does, so the balance is void: LDK keeps reporting a
-    /// `ClaimableOnChannelClose` for it forever. If the funding does confirm
-    /// later, the store says so and the balance counts again.
+    /// unconfirmed, and [`funding_void`] holds: on Esplora, a wallet sync
+    /// strictly after the channel was first seen closed still does not show
+    /// it confirmed; unknown keeps blocking). No commitment or closing
+    /// transaction can confirm before the funding does, so the balance is
+    /// void: LDK keeps reporting a `ClaimableOnChannelClose` for it
+    /// forever. If the funding does confirm later, the store says so and
+    /// the balance counts again.
     pub funding_void: bool,
 }
 
@@ -321,10 +322,26 @@ pub(crate) enum FundingSeen {
     Confirmed,
 }
 
+/// Which kind of chain source the node syncs from: the void rule differs.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ChainKind {
+    /// `ChainSource::BitcoindRpc` (tests only): one sync applies a block to
+    /// the wallet and to LDK and sets both sync timestamps together.
+    Bitcoind,
+    /// `ChainSource::Esplora` (and any other non-bitcoind source): the
+    /// on-chain wallet and LDK sync on their own intervals, so the payment
+    /// store can lag LDK by one wallet sync.
+    Esplora,
+}
+
 /// What [`funding_void`] decides from.
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct FundingVoidInputs {
+    pub chain: ChainKind,
     pub seen: FundingSeen,
+    /// [`CloseRecord::closed_seen_at`]: when this node first saw the
+    /// channel closed (no longer listed). `None`: unknown.
+    pub closed_seen_at: Option<u64>,
     /// ldk-node `NodeStatus::latest_onchain_wallet_sync_timestamp` (the
     /// sync that also updates the payment store).
     pub onchain_sync_secs: Option<u64>,
@@ -334,23 +351,35 @@ pub(crate) struct FundingVoidInputs {
 
 /// Whether a closed channel's never-confirmed funding (this node built it)
 /// is void, i.e. its monitor balance neither counts nor blocks. Unknown
-/// keeps blocking:
+/// keeps blocking everywhere. A `Confirmed` entry is never void.
 ///
-/// - `Confirmed`: not void;
-/// - `Unconfirmed`: void — the wallet has positively seen it unconfirmed;
-/// - `Missing`: void only when the on-chain wallet's last sync is at least
-///   as new as LDK's last chain sync (so the store is not merely lagging
-///   what LDK knows), both known. Equal is the bitcoind source, where one
-///   sync sets both timestamps; on Esplora a store that last synced before
-///   LDK keeps the channel blocking until it catches up.
+/// - **Esplora** (any non-bitcoind source): void only when the close record
+///   has `closed_seen_at`, the on-chain wallet's last sync is **strictly**
+///   after it, and the entry is still not `Confirmed` (`Missing` or
+///   `Unconfirmed`). The store can lag LDK by one wallet sync: an
+///   `Unconfirmed` read from a sync before the close may be a funding that
+///   has confirmed since, and treating it as void would let a sweep take
+///   the anchor reserve a force close may need.
+/// - **Bitcoind** (tests only; one sync applies a block to the wallet before
+///   the ChannelManager and sets both timestamps): `Unconfirmed` is void;
+///   `Missing` is void when the on-chain sync is at least as new as LDK's
+///   (equal is the normal case there), both known.
 pub(crate) fn funding_void(i: &FundingVoidInputs) -> bool {
-    match i.seen {
-        FundingSeen::Confirmed => false,
-        FundingSeen::Unconfirmed => true,
-        FundingSeen::Missing => matches!(
-            (i.onchain_sync_secs, i.lightning_sync_secs),
-            (Some(onchain), Some(lightning)) if onchain >= lightning
+    if i.seen == FundingSeen::Confirmed {
+        return false;
+    }
+    match i.chain {
+        ChainKind::Esplora => matches!(
+            (i.closed_seen_at, i.onchain_sync_secs),
+            (Some(closed), Some(onchain)) if onchain > closed
         ),
+        ChainKind::Bitcoind => match i.seen {
+            FundingSeen::Unconfirmed => true,
+            _ => matches!(
+                (i.onchain_sync_secs, i.lightning_sync_secs),
+                (Some(onchain), Some(lightning)) if onchain >= lightning
+            ),
+        },
     }
 }
 
@@ -368,13 +397,19 @@ pub(crate) fn funding_blocks(funding_unconfirmed: bool, record: Option<&CloseRec
 // Close records
 // ---------------------------------------------------------------------------
 
-/// One channel's record: how it is being closed (if this node knows), and
-/// the txid of its funding transaction while this node funded it and the
-/// funding was last seen unconfirmed.
+/// One channel's record: how it is being closed (if this node knows), the
+/// txid of its funding transaction while this node funded it and the
+/// funding was last seen unconfirmed, and when this node first saw the
+/// channel closed.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub(crate) struct CloseRecord {
     pub kind: Option<CloseKind>,
     pub unconfirmed_funding: Option<String>,
+    /// Unix seconds when a snapshot first found the channel no longer
+    /// listed (set once, written with the record: atomic write + fsync).
+    /// Records from before this field have none until the next snapshot
+    /// sets it; [`funding_void`] treats `None` as unknown.
+    pub closed_seen_at: Option<u64>,
 }
 
 impl CloseRecord {
@@ -383,10 +418,12 @@ impl CloseRecord {
             serde_json::Value::String(k) => CloseRecord {
                 kind: CloseKind::parse(k),
                 unconfirmed_funding: None,
+                closed_seen_at: None,
             },
             v => CloseRecord {
                 kind: v["kind"].as_str().and_then(CloseKind::parse),
                 unconfirmed_funding: v["unconfirmed_funding"].as_str().map(String::from),
+                closed_seen_at: v["closed_seen_at"].as_u64(),
             },
         }
     }
@@ -395,9 +432,11 @@ impl CloseRecord {
         serde_json::json!({
             "kind": self.kind.map(CloseKind::as_str),
             "unconfirmed_funding": self.unconfirmed_funding,
+            "closed_seen_at": self.closed_seen_at,
         })
     }
 
+    /// `closed_seen_at` alone is no record (it only qualifies the others).
     fn is_empty(&self) -> bool {
         self.kind.is_none() && self.unconfirmed_funding.is_none()
     }
@@ -514,18 +553,40 @@ fn wallet_seen(node: &ldk_node::Node, txid: &str) -> FundingSeen {
     }
 }
 
+/// Sets `closed_seen_at = now` on every record whose channel is not in
+/// `listed` and has none yet (a record of an unlisted channel is one that
+/// closed). Never moves an existing one. Whether anything changed.
+pub(crate) fn mark_closed_seen(
+    m: &mut BTreeMap<String, CloseRecord>,
+    listed: &[String],
+    now: u64,
+) -> bool {
+    let mut changed = false;
+    for (id, r) in m.iter_mut() {
+        if r.closed_seen_at.is_none() && !listed.contains(id) {
+            r.closed_seen_at = Some(now);
+            changed = true;
+        }
+    }
+    changed
+}
+
 /// Keeps each listed outbound channel's unconfirmed funding txid in its
-/// record (set while unconfirmed, cleared once confirmed) and returns the
-/// records. Writes only when something changed.
+/// record (set while unconfirmed, cleared once confirmed), stamps
+/// `closed_seen_at` on records of channels no longer listed, and returns
+/// the records. Writes (atomic + fsync) only when something changed.
 fn track_funding(dir: &Path, channels: &[ChannelDetails]) -> BTreeMap<String, CloseRecord> {
-    let closes = load_closes(dir);
+    let mut closes = load_closes(dir);
+    let listed: Vec<String> = channels.iter().map(|c| c.channel_id.to_string()).collect();
     let stale = channels.iter().any(|c| {
         let have = closes
             .get(&c.channel_id.to_string())
             .and_then(|r| r.unconfirmed_funding.clone());
         have != pending_funding_txid(c)
     });
-    if !stale {
+    let now = crate::pay::now().as_secs();
+    let unstamped = mark_closed_seen(&mut closes, &listed, now);
+    if !stale && !unstamped {
         return closes;
     }
     let _ = update_closes(dir, |m| {
@@ -534,6 +595,7 @@ fn track_funding(dir: &Path, channels: &[ChannelDetails]) -> BTreeMap<String, Cl
                 .or_default()
                 .unconfirmed_funding = pending_funding_txid(c);
         }
+        mark_closed_seen(m, &listed, now);
     });
     load_closes(dir)
 }
@@ -545,7 +607,7 @@ struct Snapshot {
 }
 
 impl Snapshot {
-    fn take(node: &ldk_node::Node, dir: &Path) -> Snapshot {
+    fn take(node: &ldk_node::Node, dir: &Path, chain: ChainKind) -> Snapshot {
         let channels = node.list_channels();
         let b = node.list_balances();
         let closes = track_funding(dir, &channels);
@@ -560,7 +622,9 @@ impl Snapshot {
                 !open.iter().any(|o| o.to_string() == **id)
                     && r.unconfirmed_funding.as_deref().is_some_and(|t| {
                         funding_void(&FundingVoidInputs {
+                            chain,
                             seen: wallet_seen(node, t),
+                            closed_seen_at: r.closed_seen_at,
                             onchain_sync_secs: status.latest_onchain_wallet_sync_timestamp,
                             lightning_sync_secs: status.latest_lightning_wallet_sync_timestamp,
                         })
@@ -744,8 +808,8 @@ fn monitor_balance(
 }
 
 /// [`breakdown`] of the running node, with `inbound_sat` filled in.
-pub(crate) fn balances_of(node: &ldk_node::Node, dir: &Path) -> Balances {
-    let snap = Snapshot::take(node, dir);
+pub(crate) fn balances_of(node: &ldk_node::Node, dir: &Path, chain: ChainKind) -> Balances {
+    let snap = Snapshot::take(node, dir, chain);
     let inbound_msat: u64 = snap
         .channels
         .iter()
@@ -973,7 +1037,7 @@ impl Node {
         let running = self.running().ok_or_else(not_started)?;
         let _ops = self.channel_ops();
         let node = &running.node;
-        let snap = Snapshot::take(node, self.data_dir());
+        let snap = Snapshot::take(node, self.data_dir(), self.chain_kind());
         if snap
             .channels
             .iter()
@@ -1012,7 +1076,7 @@ impl Node {
         let Some(running) = self.running() else {
             return ChannelState::None;
         };
-        let snap = Snapshot::take(&running.node, self.data_dir());
+        let snap = Snapshot::take(&running.node, self.data_dir(), self.chain_kind());
         snap.prune(&running.node, self.data_dir());
         snap.state()
     }
@@ -1343,38 +1407,135 @@ mod tests {
         assert_eq!(breakdown(&i).pending_transit_sat, 10_000);
     }
 
-    fn vi(seen: FundingSeen, onchain: Option<u64>, lightning: Option<u64>) -> FundingVoidInputs {
+    fn vi(
+        chain: ChainKind,
+        seen: FundingSeen,
+        closed_seen_at: Option<u64>,
+        onchain: Option<u64>,
+        lightning: Option<u64>,
+    ) -> FundingVoidInputs {
         FundingVoidInputs {
+            chain,
             seen,
+            closed_seen_at,
             onchain_sync_secs: onchain,
             lightning_sync_secs: lightning,
         }
     }
 
     #[test]
-    fn funding_void_rule_unknown_keeps_blocking() {
+    fn funding_void_esplora_needs_a_wallet_sync_after_the_close() {
+        use ChainKind::Esplora as E;
         use FundingSeen::*;
-        // Confirmed: never void, whatever the sync times.
-        for (o, l) in [(None, None), (Some(5), Some(9)), (Some(9), Some(5))] {
-            assert!(!funding_void(&vi(Confirmed, o, l)), "{o:?} {l:?}");
+        // Lag: the store still reads Unconfirmed (or nothing) from a wallet
+        // sync older than when we saw the channel closed; the funding may
+        // have confirmed since. Keeps blocking.
+        assert!(!funding_void(&vi(
+            E,
+            Unconfirmed,
+            Some(200),
+            Some(150),
+            Some(210)
+        )));
+        assert!(!funding_void(&vi(
+            E,
+            Missing,
+            Some(200),
+            Some(150),
+            Some(210)
+        )));
+        // A wallet sync strictly after the close, still not confirmed: void.
+        assert!(funding_void(&vi(
+            E,
+            Unconfirmed,
+            Some(200),
+            Some(201),
+            Some(150)
+        )));
+        assert!(funding_void(&vi(
+            E,
+            Missing,
+            Some(200),
+            Some(201),
+            Some(300)
+        )));
+        // Equal is not after (strict).
+        assert!(!funding_void(&vi(
+            E,
+            Unconfirmed,
+            Some(200),
+            Some(200),
+            Some(200)
+        )));
+        assert!(!funding_void(&vi(
+            E,
+            Missing,
+            Some(200),
+            Some(200),
+            Some(200)
+        )));
+        // No closed_seen_at (record from before it existed) or no wallet
+        // sync yet: unknown, keeps blocking.
+        assert!(!funding_void(&vi(E, Unconfirmed, None, Some(999), Some(1))));
+        assert!(!funding_void(&vi(E, Unconfirmed, Some(200), None, Some(1))));
+        // Confirmed: never void.
+        assert!(!funding_void(&vi(
+            E,
+            Confirmed,
+            Some(200),
+            Some(999),
+            Some(1)
+        )));
+    }
+
+    #[test]
+    fn funding_void_bitcoind_rule_unchanged() {
+        use ChainKind::Bitcoind as B;
+        use FundingSeen::*;
+        // closed_seen_at plays no part on the (test-only) bitcoind source.
+        for c in [None, Some(500)] {
+            for (o, l) in [(None, None), (Some(5), Some(9)), (Some(9), Some(5))] {
+                assert!(
+                    !funding_void(&vi(B, Confirmed, c, o, l)),
+                    "{c:?} {o:?} {l:?}"
+                );
+                assert!(
+                    funding_void(&vi(B, Unconfirmed, c, o, l)),
+                    "{c:?} {o:?} {l:?}"
+                );
+            }
+            // Missing: void once the wallet is not behind LDK; equal is the
+            // bitcoind source (one sync sets both).
+            assert!(funding_void(&vi(B, Missing, c, Some(130), Some(130))));
+            assert!(funding_void(&vi(B, Missing, c, Some(131), Some(130))));
+            assert!(!funding_void(&vi(B, Missing, c, Some(100), Some(130))));
+            assert!(!funding_void(&vi(B, Missing, c, None, None)));
+            assert!(!funding_void(&vi(B, Missing, c, None, Some(130))));
+            assert!(!funding_void(&vi(B, Missing, c, Some(130), None)));
         }
-        // The wallet has positively seen it and it is not confirmed
-        // (in the mempool, or dropped from it): void.
-        for (o, l) in [(None, None), (Some(5), Some(9)), (Some(9), Some(5))] {
-            assert!(funding_void(&vi(Unconfirmed, o, l)), "{o:?} {l:?}");
-        }
-        // Missing from the payment store on a lagging Esplora-like input
-        // (the on-chain wallet last synced before LDK's last sync): the
-        // store may just not have caught up, so it keeps blocking.
-        assert!(!funding_void(&vi(Missing, Some(100), Some(130))));
-        // Never synced (either side): unknown, keeps blocking.
-        assert!(!funding_void(&vi(Missing, None, None)));
-        assert!(!funding_void(&vi(Missing, None, Some(130))));
-        assert!(!funding_void(&vi(Missing, Some(130), None)));
-        // The wallet's view is at least as new as LDK's and still has no
-        // entry: void. Equal is the bitcoind source (one sync sets both).
-        assert!(funding_void(&vi(Missing, Some(130), Some(130))));
-        assert!(funding_void(&vi(Missing, Some(131), Some(130))));
+    }
+
+    #[test]
+    fn closed_seen_at_set_once_for_unlisted_records() {
+        let mut m = BTreeMap::new();
+        let rec = |c: Option<u64>| CloseRecord {
+            kind: Some(Force),
+            unconfirmed_funding: Some("ab".into()),
+            closed_seen_at: c,
+        };
+        m.insert("listed".to_string(), rec(None));
+        m.insert("closed".to_string(), rec(None));
+        m.insert("seen".to_string(), rec(Some(7)));
+        assert!(mark_closed_seen(&mut m, &["listed".to_string()], 100));
+        assert_eq!(m["listed"].closed_seen_at, None, "still listed");
+        assert_eq!(
+            m["closed"].closed_seen_at,
+            Some(100),
+            "first seen closed now"
+        );
+        assert_eq!(m["seen"].closed_seen_at, Some(7), "kept, never moved");
+        assert!(!mark_closed_seen(&mut m, &["listed".to_string()], 200));
+        assert_eq!(m["closed"].closed_seen_at, Some(100));
     }
 
     #[test]
@@ -1382,6 +1543,7 @@ mod tests {
         let rec = |kind: Option<CloseKind>| CloseRecord {
             kind,
             unconfirmed_funding: Some("ab".into()),
+            closed_seen_at: None,
         };
         // Task 7 ruling (1): a listed channel this node asked to close (or
         // saw closing) no longer counts as an open in flight, even while its
@@ -1432,7 +1594,9 @@ mod tests {
         assert_eq!(m.get(&b.to_string()).and_then(|r| r.kind), Some(Force));
         // Funding txids kept alongside the kind; empty records dropped.
         update_closes(&dir, |m| {
-            m.entry(a.to_string()).or_default().unconfirmed_funding = Some("ab".into());
+            let r = m.entry(a.to_string()).or_default();
+            r.unconfirmed_funding = Some("ab".into());
+            r.closed_seen_at = Some(1_700_000_000);
             m.entry(ChannelId([3; 32]).to_string()).or_default();
         })
         .unwrap();
@@ -1441,7 +1605,8 @@ mod tests {
             m.get(&a.to_string()),
             Some(&CloseRecord {
                 kind: Some(Force),
-                unconfirmed_funding: Some("ab".into())
+                unconfirmed_funding: Some("ab".into()),
+                closed_seen_at: Some(1_700_000_000),
             })
         );
         assert_eq!(m.len(), 2);

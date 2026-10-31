@@ -495,7 +495,7 @@ impl Node {
         let Some(node) = self.running() else {
             return Balances::default();
         };
-        crate::channel::balances_of(&node.node, &self.data_dir)
+        crate::channel::balances_of(&node.node, &self.data_dir, self.chain_kind())
     }
 
     /// The next event, waiting up to `timeout`. Events are acknowledged to
@@ -551,6 +551,14 @@ impl Node {
     /// The LSP's node id and address.
     pub(crate) fn lsp_peer(&self) -> (PublicKey, SocketAddress) {
         (self.lsp_id, self.lsp_addr.clone())
+    }
+
+    /// The chain source's kind, for the void rule (`channel.rs`).
+    pub(crate) fn chain_kind(&self) -> crate::channel::ChainKind {
+        match self.chain_source {
+            ChainSource::BitcoindRpc { .. } => crate::channel::ChainKind::Bitcoind,
+            ChainSource::Esplora { .. } => crate::channel::ChainKind::Esplora,
+        }
     }
 
     pub(crate) fn data_dir(&self) -> &std::path::Path {
