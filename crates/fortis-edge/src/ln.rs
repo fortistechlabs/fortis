@@ -33,6 +33,8 @@ pub const INFO_FILE_MAX: u64 = 64 * 1024;
 pub const INFO_POLL: Duration = Duration::from_secs(1);
 /// The networks an info file may name (as fortis-lsp `/info` spells them).
 pub const NETWORKS: [&str; 4] = ["bitcoin", "testnet", "signet", "regtest"];
+/// All the bitcoin there will ever be, in sat.
+const MAX_SAT: u64 = 21_000_000 * 100_000_000;
 /// Longest operator `message` shown to users.
 const MESSAGE_MAX: usize = 1000;
 /// Longest LSPS2 token.
@@ -106,6 +108,21 @@ pub fn parse_info(bytes: &[u8]) -> Result<LnInfo> {
     }
     if info.channel_min_sat > info.channel_max_sat {
         bail!("channel_min_sat ({}) > channel_max_sat ({})", info.channel_min_sat, info.channel_max_sat);
+    }
+    // The wallet rejects a document outside these (it would otherwise treat a
+    // typo as limits): refuse to serve one, so a bad edit cannot switch
+    // Lightning off for every client at once.
+    if info.channel_min_sat == 0 {
+        bail!("channel_min_sat must be at least 1");
+    }
+    for (name, v) in [
+        ("fee.min_sat", info.fee.min_sat),
+        ("max_payment_sat", info.max_payment_sat),
+        ("channel_max_sat", info.channel_max_sat),
+    ] {
+        if v > MAX_SAT {
+            bail!("{name} ({v}) is more than the 21 million bitcoin there will ever be");
+        }
     }
     if let Some(m) = &info.message {
         if m.chars().count() > MESSAGE_MAX {
@@ -268,6 +285,29 @@ pub struct VssProxy {
     agent: ureq::Agent,
     pub max_body: usize,
     quota: Option<ByteQuota>,
+    /// All installs together: tokens are free, so the per-token quota alone
+    /// does not bound what a farm of them can write.
+    global_quota: Option<ByteQuota>,
+    /// Requests in flight (body read plus upstream call) and the most allowed.
+    in_flight: std::sync::atomic::AtomicUsize,
+    max_in_flight: usize,
+}
+
+/// `--vss-global-quota-bytes-per-hour` default: none. A shared hard budget
+/// lets anyone with a few free tokens use it up and so lock every real user
+/// out of VSS (a refused write fails a payment and the lock refresh), which is
+/// worse than a full disk the operator can see coming in the metrics.
+pub const VSS_GLOBAL_QUOTA_DEFAULT: u64 = 0;
+/// The key the global quota charges.
+const GLOBAL_QUOTA_KEY: &str = "*";
+
+/// One slot of [`VssProxy::try_acquire`], freed on drop.
+pub struct VssPermit<'a>(&'a std::sync::atomic::AtomicUsize);
+
+impl Drop for VssPermit<'_> {
+    fn drop(&mut self) {
+        self.0.fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
+    }
 }
 
 /// `--vss-quota-bytes-per-hour` default: 256 MiB of writes per install.
@@ -307,6 +347,15 @@ impl ByteQuota {
     fn with_max_keys(mut self, max_keys: usize) -> ByteQuota {
         self.max_keys = max_keys;
         self
+    }
+
+    /// Gives `bytes` back to `key`'s current window (a charge whose request
+    /// was refused for another reason).
+    pub fn refund(&self, key: &str, bytes: u64) {
+        let mut guard = self.used.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some((_, used)) = guard.entries.get_mut(key) {
+            *used = used.saturating_sub(bytes);
+        }
     }
 
     /// Takes `bytes` from `key`'s window; `false` (nothing taken) when that
@@ -372,7 +421,15 @@ impl VssProxy {
         if let Ok(tls) = native_tls::TlsConnector::new() {
             b = b.tls_connector(Arc::new(tls));
         }
-        Ok(VssProxy { base: base.to_string(), agent: b.build(), max_body, quota: None })
+        Ok(VssProxy {
+            base: base.to_string(),
+            agent: b.build(),
+            max_body,
+            quota: None,
+            global_quota: None,
+            in_flight: std::sync::atomic::AtomicUsize::new(0),
+            max_in_flight: usize::MAX,
+        })
     }
 
     /// Limits each install token to `bytes_per_hour` of `putObjects` bodies
@@ -382,10 +439,55 @@ impl VssProxy {
         self
     }
 
+    /// Limits the `putObjects` bodies of all installs together to
+    /// `bytes_per_hour` (0 = no limit).
+    pub fn with_global_quota(mut self, bytes_per_hour: u64) -> VssProxy {
+        self.global_quota =
+            (bytes_per_hour > 0).then(|| ByteQuota::new(bytes_per_hour, QUOTA_WINDOW));
+        self
+    }
+
+    /// At most `n` requests in flight at once (a slow upload holds a worker
+    /// thread for as long as the client takes; this keeps such clients from
+    /// taking every worker, and bounds the memory the proxy buffers).
+    pub fn with_max_in_flight(mut self, n: usize) -> VssProxy {
+        self.max_in_flight = n.max(1);
+        self
+    }
+
+    /// A slot for one request, or `None` when `max_in_flight` are running.
+    pub fn try_acquire(&self) -> Option<VssPermit<'_>> {
+        use std::sync::atomic::Ordering::SeqCst;
+        if self.in_flight.fetch_add(1, SeqCst) >= self.max_in_flight {
+            self.in_flight.fetch_sub(1, SeqCst);
+            return None;
+        }
+        Some(VssPermit(&self.in_flight))
+    }
+
     /// Whether `tok` may write `bytes` now. Only `putObjects` adds storage;
     /// every other call, and a proxy without a quota, is always allowed.
+    /// Both the install's quota and the global one must have room; a charge
+    /// that is then refused by the other is given back.
     pub fn allow_write(&self, op: &str, tok: &str, bytes: usize) -> bool {
-        op != "putObjects" || self.quota.as_ref().is_none_or(|q| q.charge(tok, bytes as u64))
+        if op != "putObjects" {
+            return true;
+        }
+        let bytes = bytes as u64;
+        let own = self.quota.as_ref().is_none_or(|q| q.charge(tok, bytes));
+        if !own {
+            return false;
+        }
+        let global = self
+            .global_quota
+            .as_ref()
+            .is_none_or(|q| q.charge(GLOBAL_QUOTA_KEY, bytes));
+        if !global {
+            if let Some(q) = &self.quota {
+                q.refund(tok, bytes);
+            }
+        }
+        global
     }
 
     /// POSTs `body` to `<base>/<op>` with only `Content-Type` set (ureq adds
@@ -484,6 +586,40 @@ mod tests {
             q.charge_at("k3", 10, t0 + Duration::from_secs(60)),
             "new key allowed once earlier windows expire"
         );
+    }
+
+    #[test]
+    fn global_quota_bounds_all_installs_together_and_refunds_the_loser() {
+        let p = VssProxy::new("http://h/vss", 10, Duration::from_secs(1))
+            .unwrap()
+            .with_quota(10)
+            .with_global_quota(15);
+        assert!(p.allow_write("putObjects", "a", 10));
+        // "b" has its own room, but the global budget has 5 left.
+        assert!(!p.allow_write("putObjects", "b", 10));
+        // The refused 10 was given back to "b": it can still use 5.
+        assert!(p.allow_write("putObjects", "b", 5));
+        assert!(!p.allow_write("putObjects", "c", 1), "global is spent");
+        assert!(p.allow_write("getObject", "c", 1_000_000), "reads are free");
+    }
+
+    #[test]
+    fn in_flight_requests_are_capped_and_slots_are_freed() {
+        let p = VssProxy::new("http://h/vss", 10, Duration::from_secs(1))
+            .unwrap()
+            .with_max_in_flight(2);
+        let a = p.try_acquire().expect("first");
+        let b = p.try_acquire().expect("second");
+        assert!(p.try_acquire().is_none(), "third is refused");
+        drop(a);
+        let c = p.try_acquire().expect("a freed slot is reusable");
+        assert!(p.try_acquire().is_none());
+        drop((b, c));
+        assert!(p.try_acquire().is_some());
+        // Unlimited by default.
+        let open = VssProxy::new("http://h/vss", 10, Duration::from_secs(1)).unwrap();
+        let held: Vec<_> = (0..1000).map(|_| open.try_acquire().unwrap()).collect();
+        assert_eq!(held.len(), 1000);
     }
 
     #[test]
@@ -640,5 +776,132 @@ mod tests {
         assert!(VssProxy::new("file:///etc", 1, t).is_err());
         assert!(VssProxy::new("http://h", 0, t).is_err());
         assert_eq!(VSS_MAX_BODY_DEFAULT, 4 * 1024 * 1024);
+    }
+}
+
+/// Task 19: `/ln/info` is an operator-written file, but a bad edit, a
+/// truncated write or a hostile one must never crash the edge or reach
+/// clients as something outside the limits.
+#[cfg(test)]
+mod fuzz {
+    use super::*;
+    use proptest::prelude::*;
+    use serde_json::{json, Value};
+
+    const NODE: &str = "0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798";
+
+    fn valid() -> Value {
+        json!({
+            "node_id": NODE, "host": "lsp.example.org", "port": 9735, "lsps2_token": "t",
+            "fee": { "ppm": 10000, "min_sat": 2000 },
+            "min_payment_sat": 51000, "max_payment_sat": 250000,
+            "channel_min_sat": 100000, "channel_max_sat": 1000000,
+            "enabled": true, "message": "hi", "network": "bitcoin"
+        })
+    }
+
+    fn arb_json() -> impl Strategy<Value = Value> {
+        let leaf = prop_oneof![
+            Just(Value::Null),
+            any::<bool>().prop_map(Value::Bool),
+            any::<i64>().prop_map(Value::from),
+            any::<u64>().prop_map(Value::from),
+            "\\PC{0,60}".prop_map(Value::String),
+        ];
+        leaf.prop_recursive(3, 24, 4, |inner| {
+            prop_oneof![
+                proptest::collection::vec(inner.clone(), 0..4).prop_map(Value::Array),
+                proptest::collection::vec(("[a-z_]{1,16}", inner), 0..4)
+                    .prop_map(|kv| Value::Object(kv.into_iter().collect())),
+            ]
+        })
+    }
+
+    /// The valid document with some fields replaced by arbitrary JSON.
+    fn mutated() -> impl Strategy<Value = Value> {
+        let fields = [
+            "node_id", "host", "port", "lsps2_token", "fee", "min_payment_sat", "max_payment_sat",
+            "channel_min_sat", "channel_max_sat", "enabled", "message", "network",
+        ];
+        proptest::collection::vec((0..fields.len(), arb_json(), any::<bool>()), 0..4).prop_map(
+            move |edits| {
+                let mut v = valid();
+                for (i, new, remove) in edits {
+                    let o = v.as_object_mut().unwrap();
+                    if remove {
+                        o.remove(fields[i]);
+                    } else {
+                        o.insert(fields[i].to_string(), new);
+                    }
+                }
+                v
+            },
+        )
+    }
+
+    /// What every accepted document must satisfy.
+    fn check(info: &LnInfo) -> Result<(), TestCaseError> {
+        prop_assert_eq!(info.node_id.len(), 66);
+        prop_assert!(info.node_id.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b)));
+        prop_assert!((1..=65535).contains(&info.port));
+        prop_assert!(info.fee.ppm <= 100_000);
+        prop_assert!(info.min_payment_sat <= info.max_payment_sat);
+        prop_assert!(info.channel_min_sat >= 1 && info.channel_min_sat <= info.channel_max_sat);
+        prop_assert!(info.max_payment_sat <= MAX_SAT && info.channel_max_sat <= MAX_SAT);
+        prop_assert!(info.fee.min_sat <= MAX_SAT);
+        prop_assert!(NETWORKS.contains(&info.network.as_str()));
+        prop_assert!(info.host.len() <= 253 && !info.host.contains("://"));
+        prop_assert!(info.message.as_deref().is_none_or(|m| m.chars().count() <= 1000));
+        prop_assert!(info
+            .lsps2_token
+            .as_deref()
+            .is_none_or(|t| !t.is_empty() && t.len() <= 512 && !t.chars().any(char::is_control)));
+        Ok(())
+    }
+
+    proptest! {
+        #![proptest_config(ProptestConfig { cases: 1000, ..ProptestConfig::default() })]
+
+        #[test]
+        fn arbitrary_bytes_never_panic_and_accepted_documents_are_within_limits(
+            bytes in proptest::collection::vec(any::<u8>(), 0..1500),
+        ) {
+            if let Ok(info) = parse_info(&bytes) {
+                check(&info)?;
+            }
+        }
+
+        #[test]
+        fn edits_of_a_valid_document_never_panic_and_accepted_ones_are_within_limits(doc in mutated()) {
+            if let Ok(info) = parse_info(doc.to_string().as_bytes()) {
+                check(&info)?;
+            }
+        }
+    }
+
+    #[test]
+    fn documents_the_wallet_would_reject_are_not_served() {
+        for (field, value) in [
+            ("channel_min_sat", json!(0)),
+            ("max_payment_sat", json!(MAX_SAT + 1)),
+            ("channel_max_sat", json!(u64::MAX)),
+        ] {
+            let mut v = valid();
+            v[field] = value.clone();
+            assert!(parse_info(v.to_string().as_bytes()).is_err(), "{field}={value}");
+        }
+        let mut v = valid();
+        v["fee"]["min_sat"] = json!(MAX_SAT + 1);
+        assert!(parse_info(v.to_string().as_bytes()).is_err());
+        // The largest legal values still pass.
+        let mut v = valid();
+        v["max_payment_sat"] = json!(MAX_SAT);
+        v["channel_max_sat"] = json!(MAX_SAT);
+        assert!(parse_info(v.to_string().as_bytes()).is_ok());
+    }
+
+    #[test]
+    fn the_unmodified_document_is_accepted() {
+        assert!(parse_info(valid().to_string().as_bytes()).is_ok());
     }
 }

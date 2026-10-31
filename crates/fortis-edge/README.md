@@ -195,7 +195,7 @@ token (`Authorization: Bearer`, as for `/swap/*`).
   `Cache-Control: no-store`.
 - `--vss-upstream <URL>` turns on `POST /ln/vss/<call>`, a reverse proxy to
   vss-server, e.g. `--vss-upstream http://127.0.0.1:8080/vss` (unset →
-  `404`). Optional `--vss-max-body <bytes>` (default 4194304, 4 MiB) and `--vss-quota-bytes-per-hour <bytes>` (default 268435456, 256 MiB; `0` = unlimited): the most `putObjects` body bytes one install token may send per hour, `429` over (`fortis_edge_vss_quota_exceeded_total`).
+  `404`). Optional `--vss-max-body <bytes>` (default 4194304, 4 MiB) and `--vss-quota-bytes-per-hour <bytes>` (default 268435456, 256 MiB; `0` = unlimited): the most `putObjects` body bytes one install token may send per hour, `429` over (`fortis_edge_vss_quota_exceeded_total`). Because install tokens are free (`POST /register` is open, rate-limited per IP), the per-token quota alone does not bound disk use, so there is also `--vss-global-quota-bytes-per-hour <bytes>` (default `0` = off; a shared budget can be used up by a few free tokens, which would lock every real user out of VSS, so it is for operators who set it far above real traffic) over all installs together (`429` over), and watch `fortis_edge_vss_put_bytes_total` to see the disk filling, and `--vss-max-concurrent <n>` (default a quarter of `--workers`; `503` over, `fortis_edge_vss_busy_total`) so slow uploads cannot take every worker.
 
 The info file (at most 64 KiB; unknown fields are ignored and not served;
 every field is required except `lsps2_token` and `message`):

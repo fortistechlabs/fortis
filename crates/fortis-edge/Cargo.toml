@@ -29,3 +29,6 @@ native-tls = "0.2"
 rocksdb = "0.25"
 tungstenite = { version = "0.24", default-features = false, features = ["handshake"] }
 
+[dev-dependencies]
+# Adversarial-input property tests (Task 19, `ln.rs` `fuzz` module).
+proptest = { version = "1", default-features = false, features = ["std"] }

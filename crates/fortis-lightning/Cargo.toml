@@ -27,3 +27,6 @@ getrandom = "0.2"
 [dev-dependencies]
 # Real consensus script verification of sweep transactions (tests only).
 bitcoin = { workspace = true, features = ["bitcoinconsensus"] }
+# Adversarial-input property tests (Task 19, `tests/adversarial.rs` and the
+# `fuzz` modules): no panic, no hang, bounded memory on arbitrary input.
+proptest = { version = "1", default-features = false, features = ["std"] }

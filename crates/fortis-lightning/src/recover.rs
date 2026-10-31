@@ -62,7 +62,10 @@ pub const STATIC_SCRIPT_COUNT: u32 = 2 * STATIC_PAYMENT_KEY_COUNT as u32;
 /// covers every standard destination type).
 pub const DUST_LIMIT_SAT: u64 = 546;
 /// Highest accepted sweep feerate.
-pub const MAX_FEERATE_SAT_PER_VB: u64 = 10_000;
+pub const MAX_FEERATE_SAT_PER_VB: u64 = 1_000;
+/// The sweep refuses a fee above `1 / MAX_FEE_SHARE_DIVISOR` of the swept
+/// value (`sweep: fee_too_high`): half.
+const MAX_FEE_SHARE_DIVISOR: u64 = 2;
 /// 21 million BTC.
 const MAX_MONEY_SAT: u64 = 21_000_000 * 100_000_000;
 /// Largest standard transaction weight (Bitcoin Core `MAX_STANDARD_TX_WEIGHT`).
@@ -383,6 +386,14 @@ pub fn sweep_static_outputs(
             .div_ceil(4)
             .checked_mul(feerate_sat_per_vb)
             .ok_or_else(|| invalid("fee overflow"))?;
+        // The feerate comes from a chain source we do not control: a fee of
+        // more than half of what is being rescued is refused, and reported as
+        // such rather than as "nothing to sweep" (which it would otherwise
+        // become below). Only a value too small to be worth a transaction at
+        // any fee falls through to that.
+        if required > total / MAX_FEE_SHARE_DIVISOR && total >= 2 * DUST_LIMIT_SAT {
+            return Err(invalid("fee_too_high"));
+        }
         if required == fee {
             settled = true;
             break;
@@ -398,6 +409,11 @@ pub fn sweep_static_outputs(
     }
     if total.checked_sub(fee).is_none_or(|n| n < DUST_LIMIT_SAT) {
         return Ok(None);
+    }
+    // The feerate comes from a chain source we do not control: never let a
+    // wrong estimate burn more than half of what is being rescued.
+    if fee > total / MAX_FEE_SHARE_DIVISOR {
+        return Err(invalid("fee_too_high"));
     }
     if tx.weight().to_wu() > MAX_STANDARD_WEIGHT {
         return Err(invalid("too many inputs for one transaction"));
@@ -1403,6 +1419,31 @@ mod tests {
     }
 
     #[test]
+    fn sweep_refuses_a_fee_above_half_the_value() {
+        // One anchor input is 111 vB (see the next test): at 450 sat/vB the
+        // fee is 49 950 of 100 000, at 460 it is 51 060.
+        let b = FakeBroadcast::default();
+        sweep(&[su(1, 100_000, 1)], 450, &b).unwrap().unwrap();
+        let b = FakeBroadcast::default();
+        assert_eq!(
+            sweep(&[su(1, 100_000, 1)], 460, &b),
+            Err(LnError::Other("sweep: fee_too_high".into()))
+        );
+        assert!(b.sent.borrow().is_empty(), "nothing was broadcast");
+
+        // A fee that would eat the whole value is the same refusal, not a
+        // quiet "nothing to sweep" (111 vB at 1 000 sat/vB is 111 000 sat).
+        let b = FakeBroadcast::default();
+        assert_eq!(
+            sweep(&[su(1, 100_000, 1)], MAX_FEERATE_SAT_PER_VB, &b),
+            Err(LnError::Other("sweep: fee_too_high".into()))
+        );
+        // A value too small for any transaction is still just "nothing".
+        assert_eq!(sweep(&[su(1, 500, 1)], 1, &b), Ok(None));
+        assert!(b.sent.borrow().is_empty());
+    }
+
+    #[test]
     fn sweep_fee_is_exact_for_known_input_count() {
         // One anchor input → P2WPKH: base 82 B (328 WU) + witness 113 WU
         // (marker/flag 2, item count 1, 71-byte low-R sig + push 72,
@@ -1438,9 +1479,12 @@ mod tests {
             None,
             "fee 1110 > value"
         );
+        // A fee that takes the whole value of something big enough to carry a
+        // transaction is reported as too high (the rate is the problem, not the
+        // amount), not as "nothing to sweep".
         assert_eq!(
-            sweep(&[su(1, 1110, 1)], 10, &b).unwrap(),
-            None,
+            sweep(&[su(1, 1110, 1)], 10, &b),
+            Err(LnError::Other("sweep: fee_too_high".into())),
             "fee = value"
         );
         assert_eq!(sweep(&[], 2, &b).unwrap(), None, "nothing to spend");
@@ -1912,6 +1956,74 @@ mod tests {
                 matches!(parse_scantxoutset(&bad, &s), Err(LnError::Other(m)) if m.starts_with("scan_failed:")),
                 "{bad}"
             );
+        }
+    }
+}
+
+/// Task 19: what an Esplora or bitcoind answers is attacker-controlled.
+#[cfg(test)]
+mod fuzz {
+    use super::*;
+    use proptest::prelude::*;
+
+    fn arb_json() -> impl Strategy<Value = Value> {
+        let leaf = prop_oneof![
+            Just(Value::Null),
+            any::<bool>().prop_map(Value::Bool),
+            any::<i64>().prop_map(Value::from),
+            any::<u64>().prop_map(Value::from),
+            "\\PC{0,40}".prop_map(Value::String),
+        ];
+        leaf.prop_recursive(4, 64, 6, |inner| {
+            prop_oneof![
+                proptest::collection::vec(inner.clone(), 0..6).prop_map(Value::Array),
+                proptest::collection::vec(("[a-z_]{1,16}", inner), 0..6)
+                    .prop_map(|kv| Value::Object(kv.into_iter().collect())),
+            ]
+        })
+    }
+
+    proptest! {
+        #![proptest_config(ProptestConfig { cases: 500, ..ProptestConfig::default() })]
+
+        #[test]
+        fn esplora_utxo_bodies_never_panic(
+            body in prop_oneof![
+                proptest::collection::vec(any::<u8>(), 0..800),
+                arb_json().prop_map(|v| v.to_string().into_bytes()),
+            ],
+            tip in any::<u64>(),
+        ) {
+            let _ = parse_esplora_utxos(&body, tip);
+        }
+
+        #[test]
+        fn scantxoutset_answers_never_panic(res in arb_json()) {
+            // Deriving the 2000 scripts is the slow part: do it once.
+            static SCRIPTS: std::sync::OnceLock<Vec<ScriptBuf>> = std::sync::OnceLock::new();
+            let scripts = SCRIPTS.get_or_init(|| {
+                static_scripts(&[7u8; 64], Network::Regtest)
+                    .into_iter().take(10).map(|(_, s)| s).collect()
+            });
+            if let Ok(found) = parse_scantxoutset(&res, scripts) {
+                for (i, _) in found {
+                    prop_assert!(i < scripts.len());
+                }
+            }
+        }
+
+        #[test]
+        fn a_broadcast_answer_must_be_our_txid(answer in "\\PC{0,100}") {
+            // Anything but the transaction's own id is refused.
+            let tx = Transaction {
+                version: Version::TWO,
+                lock_time: LockTime::ZERO,
+                input: vec![],
+                output: vec![],
+            };
+            let own = tx.compute_txid().to_string();
+            let r = returned_txid(answer.trim(), &tx);
+            prop_assert_eq!(r.is_ok(), answer.trim() == own);
         }
     }
 }

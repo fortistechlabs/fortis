@@ -112,6 +112,7 @@ pub(crate) fn is_public_ip(ip: IpAddr) -> bool {
                 || s[..6] == [0, 0, 0, 0, 0, 0] // ::/96 (unspecified, loopback, IPv4-compatible)
                 || (s[0] & 0xfe00) == 0xfc00 // fc00::/7 unique local
                 || (s[0] & 0xffc0) == 0xfe80 // fe80::/10 link local
+                || (s[0] & 0xffc0) == 0xfec0 // fec0::/10 site local (deprecated, still private)
                 || (s[0] == 0x2001 && s[1] == 0x0db8) // 2001:db8::/32 documentation
                 || (s[0] == 0x2001 && s[1] == 0x0000) // 2001::/32 Teredo
                 || s[0] == 0x2002 // 2002::/16 6to4
@@ -391,6 +392,7 @@ pub(crate) mod tests {
             "https://[::1]/p",
             "https://[fd00::1]/p",
             "https://[fe80::1]/p",
+            "https://[fec0::1]/p",
             "https://[::ffff:127.0.0.1]/p",
             "https://[::127.0.0.1]/p",
             "https://[2002:7f00:1::1]/p",

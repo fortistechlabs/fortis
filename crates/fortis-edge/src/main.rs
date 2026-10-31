@@ -383,6 +383,18 @@ struct Args {
     /// the VSS disk.
     #[arg(long, default_value_t = ln::VSS_QUOTA_DEFAULT)]
     vss_quota_bytes_per_hour: u64,
+    /// Largest total of `putObjects` bodies all installs together may send
+    /// per hour, bytes (429 over; 0 = unlimited, the default). Install tokens
+    /// are free, so a few of them can spend a shared budget and then every
+    /// legitimate install's writes (the device-lock refresh, every payment's
+    /// state) are refused: leave it off and watch
+    /// `fortis_edge_vss_put_bytes_total`, or set it far above real traffic.
+    #[arg(long, default_value_t = ln::VSS_GLOBAL_QUOTA_DEFAULT)]
+    vss_global_quota_bytes_per_hour: u64,
+    /// Most `/ln/vss/*` requests in flight at once (503 over; 0 = a quarter
+    /// of `--workers`). Keeps slow uploads from taking every worker.
+    #[arg(long, default_value_t = 0)]
+    vss_max_concurrent: usize,
     /// Test only: the VSS upstream read timeout, seconds (default 30).
     #[arg(long, default_value_t = ln::VSS_READ_TIMEOUT_SECS, hide = true)]
     vss_read_timeout_secs: u64,
@@ -507,7 +519,13 @@ fn run() -> Result<()> {
             args.vss_max_body,
             std::time::Duration::from_secs(args.vss_read_timeout_secs.max(1)),
         )?
-        .with_quota(args.vss_quota_bytes_per_hour)),
+        .with_quota(args.vss_quota_bytes_per_hour)
+        .with_global_quota(args.vss_global_quota_bytes_per_hour)
+        .with_max_in_flight(if args.vss_max_concurrent == 0 {
+            (args.workers / 4).max(1)
+        } else {
+            args.vss_max_concurrent
+        })),
         None => None,
     };
 
@@ -1109,6 +1127,13 @@ fn ln_vss_route(req: &mut Request, st: &State, method: &Method, rest: &str) -> R
     if req.body_length().is_some_and(|n| n > vss.max_body) {
         return too_large();
     }
+    // A client uploading slowly holds this worker until it finishes: only a
+    // few such requests may run at once, so they cannot starve the swaps and
+    // chain reads that share the worker pool.
+    let Some(_slot) = vss.try_acquire() else {
+        Metrics::inc(&st.metrics.vss_busy);
+        return err(503, "vss busy — retry shortly");
+    };
     let mut body = Vec::new();
     if req.as_reader().take(vss.max_body as u64 + 1).read_to_end(&mut body).is_err() {
         return err(400, "could not read the request body");
@@ -1124,6 +1149,9 @@ fn ln_vss_route(req: &mut Request, st: &State, method: &Method, rest: &str) -> R
         return err(429, "vss write quota exceeded");
     }
     Metrics::inc(&st.metrics.vss_requests);
+    if op == "putObjects" {
+        Metrics::add(&st.metrics.vss_put_bytes, body.len() as u64);
+    }
     let fail = |status: u16, msg: &str, log: &str| {
         Metrics::inc(&st.metrics.upstream_errors);
         Metrics::inc(&st.metrics.vss_upstream_errors);

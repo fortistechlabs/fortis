@@ -13,6 +13,11 @@ use ldk_node::lightning_invoice::{Bolt11Invoice, Bolt11InvoiceDescriptionRef};
 /// 21 million BTC in satoshis.
 const MAX_SAT: u64 = 21_000_000 * 100_000_000;
 
+/// Longest text `parse` looks at (bytes). A QR code holds at most ~3 KB, the
+/// largest real invoice or offer is a few KB; anything longer comes from a
+/// deep link or the clipboard and is refused rather than parsed.
+const MAX_INPUT_LEN: usize = 16 * 1024;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PaymentTarget {
     Bolt11 {
@@ -55,6 +60,9 @@ pub fn parse(text: &str, network: Network) -> Result<PaymentTarget, ParseError> 
 /// Same as [`parse`] with an explicit clock (unix seconds) for the expiry
 /// check, so callers and tests are deterministic.
 pub fn parse_at(text: &str, network: Network, now_secs: u64) -> Result<PaymentTarget, ParseError> {
+    if text.len() > MAX_INPUT_LEN {
+        return Err(ParseError::Invalid("input too long".into()));
+    }
     let text = text.trim();
     if text.is_empty() {
         return Err(ParseError::Empty);
@@ -96,6 +104,13 @@ pub fn parse_at(text: &str, network: Network, now_secs: u64) -> Result<PaymentTa
         }
         Err(_) => Err(ParseError::Unrecognised),
     }
+}
+
+/// Whether `s` is a `bitcoin:` URI, also behind a `lightning:` prefix.
+fn is_bip21(s: &str) -> bool {
+    let s = s.trim();
+    let s = strip_prefix_ci(s, "lightning:").unwrap_or(s).trim();
+    strip_prefix_ci(s, "bitcoin:").is_some()
 }
 
 fn strip_prefix_ci<'a>(s: &'a str, prefix: &str) -> Option<&'a str> {
@@ -220,6 +235,12 @@ fn parse_bip21(rest: &str, network: Network, now_secs: u64) -> Result<PaymentTar
     // propagate, except `Expired` when an on-chain address is present.
     let lightning = match lightning {
         None => None,
+        // A `bitcoin:` URI inside `lightning=` would nest without end.
+        Some(l) if is_bip21(&l) => {
+            return Err(ParseError::Invalid(
+                "lightning parameter is not a bolt11 invoice or bolt12 offer".into(),
+            ))
+        }
         Some(l) => match parse_at(&l, network, now_secs) {
             Ok(t @ (PaymentTarget::Bolt11 { .. } | PaymentTarget::Bolt12Offer { .. })) => Some(t),
             Ok(_) => {
@@ -574,6 +595,50 @@ mod tests {
                 ..
             }
         ));
+    }
+
+    #[test]
+    fn oversized_input_is_refused_without_parsing() {
+        let long = format!("bitcoin:?lightning={}", "a".repeat(MAX_INPUT_LEN));
+        assert!(matches!(
+            parse_at(&long, Network::Bitcoin, 0),
+            Err(ParseError::Invalid(m)) if m == "input too long"
+        ));
+        // The limit is on the raw text, whitespace included.
+        let padded = format!("{}{}", " ".repeat(MAX_INPUT_LEN), ADDR);
+        assert!(parse_at(&padded, Network::Bitcoin, 0).is_err());
+    }
+
+    #[test]
+    fn a_bitcoin_uri_inside_lightning_param_is_refused_not_followed() {
+        // Each level percent-encodes the one inside it, so a hostile link can
+        // nest as deep as its length allows: it must stop at the first level.
+        let mut inner = format!("bitcoin:{ADDR}");
+        for _ in 0..40 {
+            inner = format!("bitcoin:{ADDR}?lightning={}", pct(&inner));
+        }
+        let r = parse_at(&inner, Network::Bitcoin, 0);
+        assert!(
+            matches!(&r, Err(ParseError::Invalid(m)) if m.contains("not a bolt11")),
+            "{r:?}"
+        );
+        // Also behind a `lightning:` prefix and with other case.
+        for l in [format!("lightning:bitcoin:{ADDR}"), format!("BITCOIN:{ADDR}")] {
+            let r = parse_at(&format!("bitcoin:{ADDR}?lightning={}", pct(&l)), Network::Bitcoin, 0);
+            assert!(matches!(r, Err(ParseError::Invalid(_))), "{l}: {r:?}");
+        }
+    }
+
+    /// Percent-encodes everything but unreserved characters.
+    fn pct(s: &str) -> String {
+        s.bytes()
+            .map(|b| match b {
+                b'a'..=b'z' | b'A'..=b'Z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                    (b as char).to_string()
+                }
+                _ => format!("%{b:02X}"),
+            })
+            .collect()
     }
 
     #[test]

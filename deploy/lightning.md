@@ -39,7 +39,7 @@ Cloudflare's HTTP tunnel (`cloudflared`) does **not** carry raw Lightning P2P tr
 
 ## 2. PostgreSQL + `vss-server` on localhost
 
-`vss-server` stores client-encrypted channel backups and the per-wallet device lock (`_fortis_device_lock_v1`). It listens only on `127.0.0.1:8080` (`IPAddressAllow=localhost` in `fortis-vss.service`) and is reached exclusively through `fortis-edge`'s `POST /ln/vss/<call>` proxy, which enforces the per-install Bearer token, path allowlist (`getObject`, `putObjects`, `deleteObject`, `listKeyVersions`), 4 MiB body cap, rate limit, and 256 MiB/hour write quota.
+`vss-server` stores client-encrypted channel backups and the per-wallet device lock (`fortis/device-lock`). It listens only on `127.0.0.1:8080` (`IPAddressAllow=localhost` in `fortis-vss.service`) and is reached exclusively through `fortis-edge`'s `POST /ln/vss/<call>` proxy, which enforces the per-install Bearer token, path allowlist (`getObject`, `putObjects`, `deleteObject`, `listKeyVersions`), 4 MiB body cap, rate limit, a 256 MiB/hour write quota per install token, an optional global write quota (`--vss-global-quota-bytes-per-hour`, off by default: tokens are free, so a few of them could use a shared budget up and lock every real user out of VSS; watch `fortis_edge_vss_put_bytes_total` instead), and a cap on concurrent VSS requests so slow uploads cannot take every edge worker.
 
 1. **Build `vss-server` (pinned tag `v0.1.0-alpha.0`, commit `88a5703496386465556d920dccf49512296c53d0`):**
    ```sh

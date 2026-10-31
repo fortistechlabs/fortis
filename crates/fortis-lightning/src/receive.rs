@@ -121,9 +121,17 @@ impl Node {
             return Err(out_of_range);
         }
         self.pre_send_checks()?;
+        // Never accept an LSP's quote above the ceiling: without a limit
+        // ldk-node takes the cheapest offer whatever it costs, so a hostile
+        // or compromised LSP could skim most of the payment as its "fee".
         let invoice = node
             .bolt11_payment()
-            .receive_via_jit_channel(amount_msat, &description, INVOICE_EXPIRY_SECS, None)
+            .receive_via_jit_channel(
+                amount_msat,
+                &description,
+                INVOICE_EXPIRY_SECS,
+                Some(jit_fee_ceiling_msat(amount_msat)),
+            )
             .map_err(map_error)?;
         // ldk-node stores the JIT payment (id = payment hash) with the total
         // fee it accepted as the LSP's skim limit.
@@ -142,6 +150,24 @@ impl Node {
             needs_channel: true,
         })
     }
+}
+
+/// The most the LSP may charge to open a JIT channel, as parts per million
+/// of the payment: 10 %, the highest `fee.ppm` fortis-edge accepts in
+/// `/ln/info` (100 000, checked in its `parse_info`). The hosted LSP's real
+/// fee is 1 %.
+const JIT_FEE_CEILING_PPM: u128 = 100_000;
+/// Added to the proportional ceiling so the LSP's minimum fee on a small
+/// payment still fits (5 000 sat; the hosted LSP's minimum is 2 000).
+const JIT_FEE_CEILING_FLOOR_MSAT: u128 = 5_000_000;
+
+/// The hard ceiling (msat) on the total opening fee the client accepts for a
+/// JIT receive of `amount_msat`: `amount × 10 % + 5 000 sat`. Above it the
+/// receive fails with `lsp_fee_too_high` before anything is bought.
+fn jit_fee_ceiling_msat(amount_msat: u64) -> u64 {
+    let ceiling = u128::from(amount_msat) * JIT_FEE_CEILING_PPM / 1_000_000
+        + JIT_FEE_CEILING_FLOOR_MSAT;
+    u64::try_from(ceiling).unwrap_or(u64::MAX)
 }
 
 /// Least headroom kept under the reported inbound capacity (sat).
@@ -188,6 +214,7 @@ fn map_error(e: NodeError) -> LnError {
         NodeError::NotRunning => LnError::Other("not_started".into()),
         NodeError::ConnectionFailed | NodeError::LiquidityRequestFailed => LnError::LspUnreachable,
         NodeError::PersistenceFailed => LnError::BackupUnavailable,
+        NodeError::LiquidityFeeTooHigh => LnError::Other("lsp_fee_too_high".into()),
         other => LnError::Other(format!("receive: {other}")),
     }
 }
@@ -247,6 +274,27 @@ mod tests {
             inbound - 20_000 * SAT + 1,
             None
         ));
+    }
+
+    #[test]
+    fn jit_fee_ceiling_is_ten_percent_plus_five_thousand_sat() {
+        assert_eq!(jit_fee_ceiling_msat(0), 5_000 * SAT);
+        assert_eq!(jit_fee_ceiling_msat(100_000 * SAT), 15_000 * SAT);
+        // The hosted LSP's usual quote (1 %, at least 2 000 sat) fits easily.
+        assert!(jit_fee_ceiling_msat(51_000 * SAT) > 2_000 * SAT);
+        assert!(jit_fee_ceiling_msat(500_000 * SAT) > 5_000 * SAT);
+        // A quote of the whole payment never does.
+        assert!(jit_fee_ceiling_msat(200_000 * SAT) < 200_000 * SAT);
+        // No overflow at the top of the range.
+        assert!(jit_fee_ceiling_msat(u64::MAX) >= u64::MAX / 10);
+    }
+
+    #[test]
+    fn fee_too_high_maps_to_its_own_error() {
+        assert_eq!(
+            map_error(NodeError::LiquidityFeeTooHigh),
+            LnError::Other("lsp_fee_too_high".into())
+        );
     }
 
     #[test]

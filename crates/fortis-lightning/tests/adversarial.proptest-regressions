@@ -1,0 +1,9 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 48466bfa0e67056f22f9f016ee8725fe62f9c7e73c9b4fe081b7026a8bac4521 # shrinks to user = "a", domain = "10.0.0.5", answer = Object {"callback": String(""), "maxSendable": Number(0), "metadata": String("[[\"text/plain\",\"coffee\"]]"), "minSendable": Number(0), "tag": String("payRequest")}
+cc 8b99b3269ca3d7974a594901a175030dc4cad95be8405588cb5adcfe419f367d # shrinks to url = "https://127.0.0.1/p", answer = Object {"callback": String(""), "maxSendable": Number(0), "metadata": String("[[\"text/plain\",\"coffee\"]]"), "minSendable": Number(0), "tag": String("payRequest")}, amount = 0
+cc 7dccceaf448b534c8c354bb15c6a2fe636aa36b5c47250dbcc70b23775b892f8 # shrinks to utxos = [(0, 0, 6706, 1)], feerate = 31

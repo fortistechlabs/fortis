@@ -18,11 +18,17 @@ pub struct Metrics {
     pub vss_too_large: AtomicU64,
     pub vss_rate_limited: AtomicU64,
     pub vss_quota_exceeded: AtomicU64,
+    pub vss_busy: AtomicU64,
+    pub vss_put_bytes: AtomicU64,
 }
 
 impl Metrics {
     pub fn inc(field: &AtomicU64) {
         field.fetch_add(1, Ordering::Relaxed);
+    }
+
+    pub fn add(field: &AtomicU64, n: u64) {
+        field.fetch_add(n, Ordering::Relaxed);
     }
 
     pub fn render(&self) -> String {
@@ -42,6 +48,8 @@ impl Metrics {
             ("fortis_edge_vss_upstream_errors_total", "/ln/vss upstream failures (timeout, unreachable, oversized answer)", g(&self.vss_upstream_errors)),
             ("fortis_edge_vss_too_large_total", "/ln/vss requests refused for a body over --vss-max-body", g(&self.vss_too_large)),
             ("fortis_edge_vss_quota_exceeded_total", "/ln/vss writes refused for passing --vss-quota-bytes-per-hour", g(&self.vss_quota_exceeded)),
+            ("fortis_edge_vss_put_bytes_total", "bytes of /ln/vss putObjects bodies forwarded (watch this to see the VSS disk filling)", g(&self.vss_put_bytes)),
+            ("fortis_edge_vss_busy_total", "/ln/vss requests refused because --vss-max-concurrent were already running", g(&self.vss_busy)),
             ("fortis_edge_vss_rate_limited_total", "/ln/vss requests rejected by the VSS limiter", g(&self.vss_rate_limited)),
         ] {
             s.push_str(&format!("# HELP {name} {help}\n# TYPE {name} counter\n{name} {val}\n"));

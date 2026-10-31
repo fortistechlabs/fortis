@@ -1179,3 +1179,57 @@ mod tests {
         std::fs::remove_dir_all(&dir).unwrap();
     }
 }
+
+/// Task 19: the local record files are read from disk and may hold anything
+/// (a crash mid-write elsewhere, a full disk, tampering on a rooted phone).
+#[cfg(test)]
+mod fuzz {
+    use super::*;
+    use proptest::prelude::*;
+
+    fn unique_dir() -> std::path::PathBuf {
+        use std::sync::atomic::{AtomicU64, Ordering};
+        static N: AtomicU64 = AtomicU64::new(0);
+        let d = std::env::temp_dir().join(format!(
+            "fortis-pay-fuzz-{}-{}",
+            std::process::id(),
+            N.fetch_add(1, Ordering::SeqCst)
+        ));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(&d).unwrap();
+        d
+    }
+
+    proptest! {
+        #![proptest_config(ProptestConfig { cases: 300, ..ProptestConfig::default() })]
+
+        /// Notes and attempts readers never panic on arbitrary bytes. A
+        /// corrupt attempts file fails CLOSED: the payment is refused, `send`
+        /// is never called, and the file is left exactly as it was.
+        #[test]
+        fn record_readers_survive_arbitrary_bytes_and_a_bad_attempts_file_blocks_sending(
+            bytes in proptest::collection::vec(any::<u8>(), 0..2000),
+        ) {
+            let dir = unique_dir();
+            std::fs::write(dir.join(NOTES_FILE), &bytes).unwrap();
+            std::fs::write(dir.join(ATTEMPTS_FILE), &bytes).unwrap();
+
+            let _ = Notes::read(&dir); // must not panic
+
+            let parses = serde_json::from_slice::<BTreeMap<String, u64>>(&bytes).is_ok();
+            prop_assert_eq!(Attempts::read(&dir).is_ok(), parses);
+            if !parses {
+                prop_assert_eq!(
+                    check_attempt(&dir, "id", 0, || true),
+                    Err(LnError::Other("attempt_record_unreadable".into()))
+                );
+                let sent = send_recorded(&dir, "id", 100, 0, || -> Result<PaymentId, NodeError> {
+                    unreachable!("a payment was sent past a corrupt attempts file")
+                });
+                prop_assert!(sent.is_err());
+                prop_assert_eq!(&std::fs::read(dir.join(ATTEMPTS_FILE)).unwrap(), &bytes);
+            }
+            let _ = std::fs::remove_dir_all(&dir);
+        }
+    }
+}

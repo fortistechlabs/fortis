@@ -19,6 +19,7 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import uniffi.wallet_ffi.LnBalances
 import uniffi.wallet_ffi.LnChannelState
+import uniffi.wallet_ffi.LnDirection
 import uniffi.wallet_ffi.LnEventRecord
 import uniffi.wallet_ffi.LnFfiException
 import uniffi.wallet_ffi.LnLspLimits
@@ -148,12 +149,19 @@ class FfiLnNode(private val inner: LnNode) : LnNodeApi {
     override fun close() = inner.close()
 }
 
+/** An event poll that returns sooner than this did not wait for an event. */
+private const val IDLE_POLL_MIN_NANOS = 50_000_000L
+private const val IDLE_POLL_BACKOFF_MS = 250L
+
 class LightningSession(
     private val scope: CoroutineScope,
     private val store: LightningStore,
     private val nodeFactory: (LnNodeConfig) -> LnNodeApi = { cfg -> FfiLnNode(LnNode(cfg)) },
     private val info: LnInfoApi,
     private val sweepAddressProvider: (suspend (walletId: String) -> String?)? = null,
+    /** Called after a transit sweep to the address [sweepAddressProvider] gave
+     *  was broadcast, so the caller can move on to a fresh receive address. */
+    private val onSweepBroadcast: (suspend (walletId: String) -> Unit)? = null,
     private val ensureAuthHeader: (suspend (walletId: String) -> String)? = null,
 ) {
     private val mutex = Mutex()
@@ -301,6 +309,21 @@ class LightningSession(
     suspend fun pay(target: LnTarget, amountMsat: ULong?): String {
         val node = currentNode ?: throw LnFfiException.Other("lightning not ready")
         return withContext(Dispatchers.IO) {
+            // A BOLT11 invoice is guarded against being paid twice by its payment
+            // hash (in Rust). An LNURL, a Lightning address or a BOLT12 offer
+            // yields a fresh invoice or id every time, so nothing there can tell
+            // that "the same" payment is still in flight (e.g. after the 60 s wait
+            // below ended with the outcome unknown). Until the outbound payments
+            // that are still pending have settled, do not start one of those.
+            val freshEachTime = target is LnTarget.LnurlPay ||
+                target is LnTarget.LightningAddress ||
+                target is LnTarget.Bolt12Offer
+            if (freshEachTime) {
+                val pending = runCatching { node.payments() }.getOrNull()
+                    ?.any { it.direction == LnDirection.OUT && it.status == LnPaymentStatus.PENDING }
+                    ?: false
+                if (pending) throw LnFfiException.PaymentStateUnknown()
+            }
             val id = node.pay(target, amountMsat)
             drainImmediateEvents(node, unlockedWalletId ?: "")
             if (!node.blocksOnNextEvent) {
@@ -402,7 +425,13 @@ class LightningSession(
         var createdNode: LnNodeApi? = null
         try {
             val node = withContext(Dispatchers.IO) {
-                val n = nodeFactory(cfg)
+                // The factory copies the seed into the node; ours is not needed
+                // after that, so it does not sit in the heap until the GC runs.
+                val n = try {
+                    nodeFactory(cfg)
+                } finally {
+                    cfg.bip39Seed.fill(0)
+                }
                 createdNode = n
                 if (takeover) {
                     if (lnInfo.enabled) n.takeover() else n.takeoverWith(LnStartMode.EXIT)
@@ -426,9 +455,10 @@ class LightningSession(
             } else if (moveAmt == null && bal.onchainTransitSat > 0uL && ch == LnChannelState.NONE && sweepAddressProvider != null) {
                 val addr = runCatching { sweepAddressProvider?.invoke(walletId) }.getOrNull()
                 if (!addr.isNullOrBlank()) {
-                    withContext(Dispatchers.IO) {
-                        runCatching { node.sweepTransit(addr) }
+                    val swept = withContext(Dispatchers.IO) {
+                        runCatching { node.sweepTransit(addr) }.getOrNull()
                     }
+                    if (swept != null) runCatching { onSweepBroadcast?.invoke(walletId) }
                     bal = node.balances()
                     ch = node.channelState()
                 }
@@ -459,6 +489,9 @@ class LightningSession(
                 LnFfiException.Other(e.message ?: e.toString()),
                 lastKnownBalances,
             )
+        } finally {
+            // Also when the start was cancelled before the factory ran.
+            cfg.bip39Seed.fill(0)
         }
     }
 
@@ -473,7 +506,17 @@ class LightningSession(
         eventJob?.cancel()
         eventJob = scope.launch(Dispatchers.IO) {
             while (isActive && currentNode === node) {
-                val ev = runCatching { node.nextEvent(500uL) }.getOrNull() ?: continue
+                val startedAt = System.nanoTime()
+                val ev = runCatching { node.nextEvent(500uL) }.getOrNull()
+                if (ev == null) {
+                    // A node that waits returns after its timeout; one that
+                    // returns at once (stopped underneath us) must not make
+                    // this a busy loop.
+                    if (System.nanoTime() - startedAt < IDLE_POLL_MIN_NANOS) {
+                        kotlinx.coroutines.delay(IDLE_POLL_BACKOFF_MS)
+                    }
+                    continue
+                }
                 handleEvent(node, walletId, ev)
             }
         }
@@ -495,7 +538,8 @@ class LightningSession(
             if (ev is LnEventRecord.ChannelClosed && bal.onchainTransitSat > 0uL && ch == LnChannelState.NONE && sweepAddressProvider != null) {
                 val addr = runCatching { sweepAddressProvider?.invoke(walletId) }.getOrNull()
                 if (!addr.isNullOrBlank()) {
-                    runCatching { node.sweepTransit(addr) }
+                    val swept = runCatching { node.sweepTransit(addr) }.getOrNull()
+                    if (swept != null) runCatching { onSweepBroadcast?.invoke(walletId) }
                     bal = runCatching { node.balances() }.getOrDefault(bal)
                     ch = runCatching { node.channelState() }.getOrDefault(ch)
                 }

@@ -147,6 +147,9 @@ class LightningSessionTest {
         val store = InMemoryLightningStore(mapOf(btcMainnetWallet.id to btcMainnetWallet))
         store.setLightningEnabled(btcMainnetWallet.id, true)
         var capturedCfg: LnNodeConfig? = null
+        // The session wipes its copy of the seed once the node exists, so what
+        // the factory was given is read inside the factory.
+        var capturedSeed: List<Byte>? = null
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
         try {
             val session = LightningSession(
@@ -154,6 +157,7 @@ class LightningSessionTest {
                 store = store,
                 nodeFactory = { cfg ->
                     capturedCfg = cfg
+                    capturedSeed = cfg.bip39Seed.toList()
                     FakeNode()
                 },
                 info = LnInfoApi { sampleInfo() },
@@ -165,8 +169,8 @@ class LightningSessionTest {
             assertEquals(50_000uL, ready.balances.lightningSat)
             assertEquals(LnChannelState.READY, ready.channel)
             assertNotNull(capturedCfg)
-            assertEquals(sampleSeed.toList(), capturedCfg!!.bip39Seed.toList())
-            assertEquals("02" + "11".repeat(32), capturedCfg.lsp.nodeId)
+            assertEquals(sampleSeed.toList(), capturedSeed)
+            assertEquals("02" + "11".repeat(32), capturedCfg!!.lsp.nodeId)
         } finally {
             scope.cancel()
         }

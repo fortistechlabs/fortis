@@ -350,6 +350,10 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
             val s = ensureSession(walletId, quiet = true)
             if (w != null && s != null) s.receiveAddress(w.nextReceive).address else null
         },
+        onSweepBroadcast = { walletId ->
+            // The sweep paid the address at `nextReceive`: never hand it out again.
+            updateConfig(walletId) { it.copy(nextReceive = it.nextReceive + 1) }
+        },
         ensureAuthHeader = { walletId ->
             val tok = runCatching { ensureWalletToken(walletId) }.getOrNull().orEmpty()
             if (tok.isNotBlank()) "Bearer $tok" else ""

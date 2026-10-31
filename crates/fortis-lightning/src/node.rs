@@ -391,7 +391,7 @@ struct Claim {
 impl Claim {
     /// Takes every key, or none: `Err` names the strongest current holder.
     fn try_acquire(keys: &[String]) -> Result<Claim, ClaimState> {
-        let mut claims = CLAIMS.lock().unwrap();
+        let mut claims = CLAIMS.lock().unwrap_or_else(|e| e.into_inner());
         let held: Vec<ClaimState> = keys.iter().filter_map(|k| claims.get(k).copied()).collect();
         if held.contains(&ClaimState::Running) {
             return Err(ClaimState::Running);
@@ -411,14 +411,14 @@ impl Claim {
     }
 
     fn set_running(&self) {
-        let mut claims = CLAIMS.lock().unwrap();
+        let mut claims = CLAIMS.lock().unwrap_or_else(|e| e.into_inner());
         for k in &self.keys {
             claims.insert(k.clone(), ClaimState::Running);
         }
     }
 
     fn set_stopping(&self) {
-        let mut claims = CLAIMS.lock().unwrap();
+        let mut claims = CLAIMS.lock().unwrap_or_else(|e| e.into_inner());
         for k in &self.keys {
             claims.insert(k.clone(), ClaimState::Stopping);
         }
@@ -427,7 +427,7 @@ impl Claim {
 
 impl Drop for Claim {
     fn drop(&mut self) {
-        let mut claims = CLAIMS.lock().unwrap();
+        let mut claims = CLAIMS.lock().unwrap_or_else(|e| e.into_inner());
         for k in &self.keys {
             claims.remove(k);
         }
@@ -592,7 +592,7 @@ impl Node {
             Err(mpsc::RecvTimeoutError::Timeout) => {
                 // Same lock as the worker's install: either it installed
                 // already, or it never will.
-                let inner = self.shared.inner.lock().unwrap();
+                let inner = self.shared.inner.lock().unwrap_or_else(|e| e.into_inner());
                 if inner.is_some() {
                     return Ok(());
                 }
@@ -624,9 +624,9 @@ impl Node {
     /// [`is_quiescent`](Self::is_quiescent).
     pub fn stop(&self) {
         let running = {
-            let mut inner = self.shared.inner.lock().unwrap();
+            let mut inner = self.shared.inner.lock().unwrap_or_else(|e| e.into_inner());
             self.shared.generation.fetch_add(1, Ordering::SeqCst);
-            drop(self.shared.checker.lock().unwrap().take());
+            drop(self.shared.checker.lock().unwrap_or_else(|e| e.into_inner()).take());
             let r = inner.take();
             if let Some(ref r) = r {
                 r._claim.set_stopping();
@@ -650,7 +650,7 @@ impl Node {
     /// a stale one. `stop()` waits for this (bounded); poll it after a
     /// `stop()` that returned early or after `DeviceLockLost`.
     pub fn is_quiescent(&self) -> bool {
-        self.shared.inner.lock().unwrap().is_none() && self.shared.busy.idle()
+        self.shared.inner.lock().unwrap_or_else(|e| e.into_inner()).is_none() && self.shared.busy.idle()
     }
 
     /// The mode the running node was started in; `None` when not running.
@@ -706,7 +706,7 @@ impl Node {
     }
 
     pub(crate) fn running(&self) -> Option<Arc<Running>> {
-        self.shared.inner.lock().unwrap().clone()
+        self.shared.inner.lock().unwrap_or_else(|e| e.into_inner()).clone()
     }
 
     pub(crate) fn network(&self) -> Network {
@@ -828,12 +828,12 @@ fn refresh_lock(shared: &Shared, generation: u64, timeout: Duration) -> Result<(
 /// its background check) and queues `DeviceLockLost`, once. Returns the
 /// run for the caller to stop, outside every lock.
 fn lose_lock(shared: &Shared, generation: u64) -> Option<Arc<Running>> {
-    let mut inner = shared.inner.lock().unwrap();
+    let mut inner = shared.inner.lock().unwrap_or_else(|e| e.into_inner());
     if shared.generation.load(Ordering::SeqCst) != generation || inner.is_none() {
         return None;
     }
     shared.generation.fetch_add(1, Ordering::SeqCst);
-    drop(shared.checker.lock().unwrap().take());
+    drop(shared.checker.lock().unwrap_or_else(|e| e.into_inner()).take());
     shared.lock_lost.store(true, Ordering::SeqCst);
     let r = inner.take();
     if let Some(ref r) = r {
@@ -873,11 +873,11 @@ fn spawn_lock_checker(shared: &Arc<Shared>, generation: u64) {
     let weak: Weak<Shared> = Arc::downgrade(shared);
     let busy = BusyToken::new(&shared.busy);
     {
-        let inner = shared.inner.lock().unwrap();
+        let inner = shared.inner.lock().unwrap_or_else(|e| e.into_inner());
         if shared.generation.load(Ordering::SeqCst) != generation || inner.is_none() {
             return;
         }
-        *shared.checker.lock().unwrap() = Some(tx);
+        *shared.checker.lock().unwrap_or_else(|e| e.into_inner()) = Some(tx);
     }
     let spawned = std::thread::Builder::new()
         .name("fortis-ln-lock-check".into())
@@ -906,7 +906,7 @@ fn spawn_lock_checker(shared: &Arc<Shared>, generation: u64) {
         });
     if spawned.is_err() {
         // No background check: the checks before each action remain.
-        drop(shared.checker.lock().unwrap().take());
+        drop(shared.checker.lock().unwrap_or_else(|e| e.into_inner()).take());
     }
 }
 
@@ -1160,7 +1160,7 @@ impl StartJob {
         if self.shared.generation.load(Ordering::SeqCst) != self.generation {
             return Some(Err(cancelled()));
         }
-        if self.shared.inner.lock().unwrap().is_some() {
+        if self.shared.inner.lock().unwrap_or_else(|e| e.into_inner()).is_some() {
             return Some(Ok(()));
         }
         None
@@ -1175,7 +1175,7 @@ impl StartJob {
                 Ok(c) => return Ok(c),
                 Err(ClaimState::Running) => {
                     if self.lock_mode == LockMode::Acquire
-                        && self.shared.inner.lock().unwrap().is_some()
+                        && self.shared.inner.lock().unwrap_or_else(|e| e.into_inner()).is_some()
                     {
                         return Err(Ok(()));
                     }
@@ -1271,7 +1271,7 @@ impl StartJob {
             }
         }
 
-        let mut inner = self.shared.inner.lock().unwrap();
+        let mut inner = self.shared.inner.lock().unwrap_or_else(|e| e.into_inner());
         let outcome = if self.shared.generation.load(Ordering::SeqCst) != self.generation {
             Err(cancelled())
         } else if inner.is_some() {

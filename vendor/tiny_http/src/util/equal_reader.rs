@@ -1,7 +1,9 @@
 use std::io::Read;
 use std::io::Result as IoResult;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::channel;
 use std::sync::mpsc::{Receiver, Sender};
+use std::sync::Arc;
 
 /// A `Reader` that reads exactly the number of bytes from a sub-reader.
 ///
@@ -15,6 +17,9 @@ where
     reader: R,
     size: usize,
     last_read_signal: Sender<IoResult<()>>,
+    /// FORTIS PATCH: set when this reader is dropped with body bytes still
+    /// unread on the socket, so the connection must be closed (see `Drop`).
+    abandoned: Option<Arc<AtomicBool>>,
 }
 
 impl<R> EqualReader<R>
@@ -28,9 +33,16 @@ where
             reader,
             size,
             last_read_signal: tx,
+            abandoned: None,
         };
 
         (r, rx)
+    }
+
+    /// FORTIS PATCH: `flag` is set if the body is left unread on the socket.
+    pub fn with_abandoned_flag(mut self, flag: Arc<AtomicBool>) -> EqualReader<R> {
+        self.abandoned = Some(flag);
+        self
     }
 }
 
@@ -64,15 +76,23 @@ where
     R: Read,
 {
     fn drop(&mut self) {
-        // FORTIS PATCH (tiny_http 0.12.0 upstream allocates `vec![0; remaining]`
+        // FORTIS PATCH. Upstream tiny_http 0.12.0 allocates `vec![0; remaining]`
         // here, so a request declaring a huge Content-Length aborts the whole
-        // process on allocation failure): only drain small unread remainders
-        // (`<= MAX_DRAIN`) through a fixed stack buffer so normal keep-alive
-        // connections stay aligned, and skip draining entirely when the unread
-        // remainder exceeds `MAX_DRAIN` so a rejected oversized request cannot
-        // tie up a worker thread reading megabytes of discarded body.
+        // process on allocation failure. Now: a small unread remainder
+        // (`<= MAX_DRAIN`) is drained through a fixed stack buffer so a
+        // keep-alive connection stays aligned. A larger one is NOT read; but
+        // the bytes are still on the socket and would be parsed as the next
+        // request (request smuggling behind a proxy that reuses upstream
+        // connections), so the connection is flagged `abandoned` and the
+        // server closes it after the response (`ClientConnection::read`).
         const MAX_DRAIN: usize = 64 * 1024;
+        let abandon = |flag: &Option<Arc<AtomicBool>>| {
+            if let Some(f) = flag {
+                f.store(true, Ordering::SeqCst);
+            }
+        };
         if self.size > MAX_DRAIN {
+            abandon(&self.abandoned);
             return;
         }
         let mut remaining_to_read = self.size;
@@ -83,10 +103,12 @@ where
             match self.reader.read(&mut buf[..n]) {
                 Err(e) => {
                     self.last_read_signal.send(Err(e)).ok();
+                    abandon(&self.abandoned);
                     break;
                 }
                 Ok(0) => {
                     self.last_read_signal.send(Ok(())).ok();
+                    abandon(&self.abandoned);
                     break;
                 }
                 Ok(other) => {

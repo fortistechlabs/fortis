@@ -32,6 +32,11 @@ pub struct ClientConnection {
     // set to true if we know that the previous request is the last one
     no_more_requests: bool,
 
+    // FORTIS PATCH: the previous request's "body left unread" flag; if set by
+    // the time the next request is read, the bytes now on the stream are the
+    // rest of that body, not a request: the connection is closed instead.
+    prev_body_abandoned: Option<std::sync::Arc<std::sync::atomic::AtomicBool>>,
+
     // true if the connection goes through SSL
     secure: bool,
 }
@@ -64,6 +69,7 @@ impl ClientConnection {
             remote_addr,
             next_header_source: first_header,
             no_more_requests: false,
+            prev_body_abandoned: None,
             secure,
         }
     }
@@ -104,10 +110,22 @@ impl ClientConnection {
     /// Reads a request from the stream.
     /// Blocks until the header has been read.
     fn read(&mut self) -> Result<Request, ReadError> {
+        let prev_abandoned = self.prev_body_abandoned.take();
         let (method, path, version, headers) = {
             // reading the request line
             let (method, path, version) = {
                 let line = self.read_next_line().map_err(ReadError::ReadIoError)?;
+                // Reading only returns once the previous request is finished
+                // with the stream, so its flag is final here.
+                if prev_abandoned
+                    .as_ref()
+                    .is_some_and(|f| f.load(std::sync::atomic::Ordering::SeqCst))
+                {
+                    return Err(ReadError::ReadIoError(IoError::new(
+                        ErrorKind::ConnectionAborted,
+                        "the previous request body was not fully read",
+                    )));
+                }
 
                 parse_request_line(
                     line.as_str().trim(), // TODO: remove this conversion
@@ -163,6 +181,8 @@ impl ClientConnection {
                 }
             }
         })?;
+
+        self.prev_body_abandoned = Some(request.body_abandoned_flag());
 
         // return the request
         Ok(request)

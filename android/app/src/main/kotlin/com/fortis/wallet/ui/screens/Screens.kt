@@ -1027,6 +1027,14 @@ private fun SentDialog(vm: WalletViewModel, txid: String) {
     )
 }
 
+/** How long the receive amount must stand still before a Lightning quote is
+ *  bought for it. */
+private const val QUOTE_DEBOUNCE_MS = 1_500L
+
+/** How long the Send field must stand still before an LNURL / Lightning
+ *  address in it is looked up (it contacts that address's server). */
+private const val LNURL_DEBOUNCE_MS = 1_000L
+
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun ReceiveTab(vm: WalletViewModel) {
@@ -1047,12 +1055,15 @@ private fun ReceiveTab(vm: WalletViewModel) {
     var quote by remember { mutableStateOf<uniffi.wallet_ffi.LnReceiveQuote?>(null) }
     var quoting by remember { mutableStateOf(false) }
 
-    LaunchedEffect(amountSat, lnState, lnEnabled, remoteEnabled) {
+    // Keyed on "is it ready", not on the whole state: a balance update must not
+    // buy another quote (each one is an LSPS2 request and a stored payment).
+    val lnReady = lnState is LnState.Ready
+    LaunchedEffect(amountSat, lnReady, lnEnabled, remoteEnabled) {
         quote = null
         quoting = false
-        if (lnEnabled && amountSat != null && amountSat >= minLnSat && lnState is LnState.Ready) {
+        if (lnEnabled && amountSat != null && amountSat >= minLnSat && lnReady) {
             quoting = true
-            kotlinx.coroutines.delay(500)
+            kotlinx.coroutines.delay(QUOTE_DEBOUNCE_MS)
             quote = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
                 runCatching { vm.lightning.currentNode?.receive(amountSat.toULong() * 1_000uL, "") }
                     .getOrNull()
@@ -1216,7 +1227,7 @@ private fun SendTab(vm: WalletViewModel) {
         val t = parsedTarget
         if (lnEnabled && (t is uniffi.wallet_ffi.LnTarget.LnurlPay || t is uniffi.wallet_ffi.LnTarget.LightningAddress)) {
             resolvingLnurl = true
-            kotlinx.coroutines.delay(300)
+            kotlinx.coroutines.delay(LNURL_DEBOUNCE_MS)
             try {
                 resolvedLnurl = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
                     uniffi.wallet_ffi.lnResolveLnurl(t)

@@ -41,6 +41,10 @@ data class LnInfo(
 
 private val ALLOWED_NETWORKS = setOf("bitcoin", "mainnet", "testnet", "signet", "regtest")
 
+/** All the bitcoin there will ever be, in sat. Every amount in the info
+ *  document is held to it, which also keeps `sat * 1000` (msat) inside a ULong. */
+const val MAX_INFO_SAT = 21_000_000L * 100_000_000L
+
 fun parseLnInfo(json: String): LnInfo = parseLnInfo(JSONObject(json))
 
 fun parseLnInfo(o: JSONObject): LnInfo {
@@ -72,15 +76,19 @@ fun parseLnInfo(o: JSONObject): LnInfo {
     val feePpm = fee.getLong("ppm")
     val feeMinSat = fee.getLong("min_sat")
     require(feePpm in 0..100_000) { "fee.ppm out of range: $feePpm" }
-    require(feeMinSat >= 0) { "fee.min_sat must be non-negative" }
+    require(feeMinSat in 0..MAX_INFO_SAT) { "fee.min_sat out of range" }
 
     val minPaymentSat = o.getLong("min_payment_sat")
     val maxPaymentSat = o.getLong("max_payment_sat")
-    require(minPaymentSat >= 0 && minPaymentSat <= maxPaymentSat) { "invalid payment bounds" }
+    require(minPaymentSat >= 0 && minPaymentSat <= maxPaymentSat && maxPaymentSat <= MAX_INFO_SAT) {
+        "invalid payment bounds"
+    }
 
     val channelMinSat = o.getLong("channel_min_sat")
     val channelMaxSat = o.getLong("channel_max_sat")
-    require(channelMinSat > 0 && channelMinSat <= channelMaxSat) { "invalid channel bounds" }
+    require(channelMinSat > 0 && channelMinSat <= channelMaxSat && channelMaxSat <= MAX_INFO_SAT) {
+        "invalid channel bounds"
+    }
 
     val enabled = if (o.has("enabled") && !o.isNull("enabled")) o.getBoolean("enabled") else true
     val message = if (o.has("message") && !o.isNull("message")) {

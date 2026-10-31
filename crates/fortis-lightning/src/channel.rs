@@ -646,6 +646,10 @@ struct Snapshot {
     channels: Vec<ChannelDetails>,
     closes: BTreeMap<String, CloseRecord>,
     inputs: BalanceInputs,
+    /// Ids of the channels the monitors and the sweeper still hold a balance
+    /// for, from the same `list_balances` call as `inputs` ([`Self::prune`]
+    /// needs them and must not pay for a second call).
+    balance_channels: Vec<String>,
 }
 
 impl Snapshot {
@@ -713,9 +717,21 @@ impl Snapshot {
                 },
             })
             .collect();
+        let mut balance_channels: Vec<String> = b
+            .lightning_balances
+            .iter()
+            .map(|lb| balance_channel(lb).to_string())
+            .collect();
+        balance_channels.extend(
+            b.pending_balances_from_channel_closures
+                .iter()
+                .filter_map(sweep_channel)
+                .map(|c| c.to_string()),
+        );
         Snapshot {
             channels,
             closes,
+            balance_channels,
             inputs: BalanceInputs {
                 total_lightning_sat: b.total_lightning_balance_sats,
                 monitors,
@@ -749,31 +765,21 @@ impl Snapshot {
 
     /// Drops close records of channels that are neither listed nor hold any
     /// monitor or sweeper balance.
-    fn prune(&self, node: &ldk_node::Node, dir: &Path) {
+    fn prune(&self, dir: &Path) {
         if self.closes.is_empty() {
             return;
         }
-        let b = node.list_balances();
-        let mut live: Vec<String> = self
+        let mut live: Vec<&String> = self.balance_channels.iter().collect();
+        let listed: Vec<String> = self
             .channels
             .iter()
             .map(|c| c.channel_id.to_string())
             .collect();
-        live.extend(
-            b.lightning_balances
-                .iter()
-                .map(|lb| balance_channel(lb).to_string()),
-        );
-        live.extend(
-            b.pending_balances_from_channel_closures
-                .iter()
-                .filter_map(sweep_channel)
-                .map(|c| c.to_string()),
-        );
-        if self.closes.keys().all(|k| live.contains(k)) {
+        live.extend(listed.iter());
+        if self.closes.keys().all(|k| live.contains(&k)) {
             return;
         }
-        let _ = update_closes(dir, |m| m.retain(|k, _| live.contains(k)));
+        let _ = update_closes(dir, |m| m.retain(|k, _| live.contains(&k)));
     }
 }
 
@@ -1144,7 +1150,7 @@ impl Node {
             return ChannelState::None;
         };
         let snap = Snapshot::take(&running.node, self.data_dir(), self.chain_kind());
-        snap.prune(&running.node, self.data_dir());
+        snap.prune(self.data_dir());
         snap.state()
     }
 
@@ -1699,5 +1705,71 @@ mod tests {
         std::fs::write(dir.join(CLOSES_FILE), b"not json").unwrap();
         assert!(load_closes(&dir).is_empty());
         let _ = std::fs::remove_dir_all(&dir);
+    }
+}
+
+/// Task 19: the close-record file is read from disk and may hold anything.
+#[cfg(test)]
+mod fuzz {
+    use super::*;
+    use proptest::prelude::*;
+
+    fn arb_json() -> impl Strategy<Value = serde_json::Value> {
+        use serde_json::Value;
+        let leaf = prop_oneof![
+            Just(Value::Null),
+            any::<bool>().prop_map(Value::Bool),
+            any::<i64>().prop_map(Value::from),
+            any::<u64>().prop_map(Value::from),
+            "\\PC{0,40}".prop_map(Value::String),
+        ];
+        leaf.prop_recursive(3, 32, 5, |inner| {
+            prop_oneof![
+                proptest::collection::vec(inner.clone(), 0..5).prop_map(Value::Array),
+                proptest::collection::vec(("[a-z_]{1,24}", inner), 0..5)
+                    .prop_map(|kv| Value::Object(kv.into_iter().collect())),
+            ]
+        })
+    }
+
+    fn unique_dir() -> std::path::PathBuf {
+        use std::sync::atomic::{AtomicU64, Ordering};
+        static N: AtomicU64 = AtomicU64::new(0);
+        let d = std::env::temp_dir().join(format!(
+            "fortis-closes-fuzz-{}-{}",
+            std::process::id(),
+            N.fetch_add(1, Ordering::SeqCst)
+        ));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(&d).unwrap();
+        d
+    }
+
+    proptest! {
+        #![proptest_config(ProptestConfig { cases: 300, ..ProptestConfig::default() })]
+
+        /// Never panics on arbitrary bytes or on any JSON shape; an unreadable
+        /// file is "no records" (never evidence that a channel is closing),
+        /// and a later update still works and writes a readable file.
+        #[test]
+        fn the_close_record_reader_survives_arbitrary_files(
+            raw in proptest::collection::vec(any::<u8>(), 0..1500),
+            json in arb_json(),
+        ) {
+            for bytes in [raw, json.to_string().into_bytes()] {
+                let dir = unique_dir();
+                std::fs::write(dir.join(CLOSES_FILE), &bytes).unwrap();
+                let _ = read_closes(&dir);
+                let _ = load_closes(&dir);
+                let id = ChannelId([9; 32]);
+                prop_assert!(record_close(&dir, &id, CloseKind::Coop).is_ok());
+                let after = read_closes(&dir);
+                prop_assert_eq!(
+                    after.get(&id.to_string()).and_then(|r| r.kind),
+                    Some(CloseKind::Coop)
+                );
+                let _ = std::fs::remove_dir_all(&dir);
+            }
+        }
     }
 }

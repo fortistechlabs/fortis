@@ -5,7 +5,9 @@ use std::fmt;
 use std::net::SocketAddr;
 use std::str::FromStr;
 
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::Sender;
+use std::sync::Arc;
 
 use crate::util::{EqualReader, FusedReader};
 use crate::{HTTPVersion, Header, Method, Response, StatusCode};
@@ -74,6 +76,37 @@ pub struct Request {
 
     // If Some, a message must be sent after responding
     notify_when_responded: Option<Sender<()>>,
+
+    // FORTIS PATCH: set when the body was dropped with bytes left on the
+    // socket; the connection must then be closed, not reused.
+    body_abandoned: Arc<AtomicBool>,
+}
+
+/// FORTIS PATCH: passes reads through and, if dropped before the body reached
+/// its end, flags the connection as abandoned (used for chunked bodies, which
+/// upstream never drains).
+struct EofGuard<R: Read> {
+    inner: R,
+    eof: bool,
+    abandoned: Arc<AtomicBool>,
+}
+
+impl<R: Read> Read for EofGuard<R> {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        let n = self.inner.read(buf)?;
+        if n == 0 && !buf.is_empty() {
+            self.eof = true;
+        }
+        Ok(n)
+    }
+}
+
+impl<R: Read> Drop for EofGuard<R> {
+    fn drop(&mut self) {
+        if !self.eof {
+            self.abandoned.store(true, Ordering::SeqCst);
+        }
+    }
 }
 
 struct NotifyOnDrop<R> {
@@ -140,6 +173,8 @@ where
     R: Read + Send + 'static,
     W: Write + Send + 'static,
 {
+    let body_abandoned = Arc::new(AtomicBool::new(false));
+
     // finding the transfer-encoding header
     let transfer_encoding = headers
         .iter()
@@ -213,12 +248,17 @@ where
             Box::new(Cursor::new(buffer)) as Box<dyn Read + Send + 'static>
         } else {
             let (data_reader, _) = EqualReader::new(source_data, content_length); // TODO:
+            let data_reader = data_reader.with_abandoned_flag(body_abandoned.clone());
             Box::new(FusedReader::new(data_reader)) as Box<dyn Read + Send + 'static>
         }
     } else if transfer_encoding.is_some() {
         // if a transfer-encoding was specified, then "chunked" is ALWAYS applied
         // over the message (RFC2616 #3.6)
-        Box::new(FusedReader::new(Decoder::new(source_data))) as Box<dyn Read + Send + 'static>
+        Box::new(EofGuard {
+            inner: FusedReader::new(Decoder::new(source_data)),
+            eof: false,
+            abandoned: body_abandoned.clone(),
+        }) as Box<dyn Read + Send + 'static>
     } else {
         // if we have neither a Content-Length nor a Transfer-Encoding,
         // assuming that we have no data
@@ -238,10 +278,16 @@ where
         body_length: content_length,
         must_send_continue: expects_continue,
         notify_when_responded: None,
+        body_abandoned,
     })
 }
 
 impl Request {
+    /// FORTIS PATCH: the flag [`new_request`] hands to the body reader.
+    pub(crate) fn body_abandoned_flag(&self) -> Arc<AtomicBool> {
+        self.body_abandoned.clone()
+    }
+
     /// Returns true if the request was made through HTTPS.
     #[inline]
     pub fn secure(&self) -> bool {
