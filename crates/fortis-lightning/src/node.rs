@@ -1063,6 +1063,13 @@ pub mod test_hooks {
             .map_or(0, |r| r.node.list_balances().total_onchain_balance_sats)
     }
 
+    /// What `pay` checks an amount against (its `InsufficientLightning`
+    /// step); 0 when not running.
+    pub fn sendable_msat(node: &crate::Node) -> u64 {
+        node.running()
+            .map_or(0, |r| crate::pay::sendable_msat(&r.node))
+    }
+
     /// Resets [`max_live`] to the current count.
     pub fn reset_max_live() {
         MAX_LIVE.store(LIVE.load(Ordering::SeqCst), Ordering::SeqCst);

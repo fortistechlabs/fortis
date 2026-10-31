@@ -20,8 +20,8 @@ use std::time::{Duration, Instant};
 
 use common::{poll, test_seed, wait_event, Lsp, Payer, Regtest, TempDir, Vss};
 use fortis_lightning::{
-    ChainSource, Direction, LnError, LnEvent, LspInfo, LspLimits, Node, NodeConfig, Payment,
-    PaymentTarget, Status, VssConfig,
+    test_hooks, ChainSource, Direction, LnError, LnEvent, LspInfo, LspLimits, Node, NodeConfig,
+    Payment, PaymentTarget, Status, VssConfig,
 };
 use ldk_node::bitcoin::hashes::{sha256, Hash};
 use ldk_node::bitcoin::secp256k1::{Secp256k1, SecretKey};
@@ -36,6 +36,8 @@ use ldk_node::Event;
 const SAT: u64 = 1_000;
 
 const CLIENT_SEED: u8 = 11;
+/// The largest amount a test pays over the `with_channel` channel.
+const MAX_TEST_PAY_MSAT: u64 = 30_000 * SAT;
 
 /// Regtest, VSS, `fortis-lsp`, a started client `Node` and (optionally) the
 /// harness `Payer`. Fields drop in order: client, payer, LSP, VSS, chain, dir.
@@ -86,8 +88,13 @@ impl Env {
             matches!(e, LnEvent::PaymentReceived { .. })
         });
         env.rt.mine(6);
+        // What `pay` itself checks (`InsufficientLightning`): a usable
+        // channel whose next HTLC covers the largest test payment. The
+        // balance alone can read 99 000 while the channel is not usable yet.
         poll("client channel usable", 60, || {
-            (env.client.balances().lightning_sat == 99_000).then_some(())
+            (env.client.balances().lightning_sat == 99_000
+                && test_hooks::sendable_msat(&env.client) >= MAX_TEST_PAY_MSAT)
+                .then_some(())
         });
         env.payer = Some(payer);
         env

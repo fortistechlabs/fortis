@@ -247,13 +247,7 @@ impl Node {
 
     /// Steps 3 and 4: `InsufficientLightning`, then [`Self::pre_send_checks`].
     fn liquidity_and_gate(&self, node: &ldk_node::Node, amount_msat: u64) -> Result<(), LnError> {
-        let sendable_msat: u64 = node
-            .list_channels()
-            .iter()
-            .filter(|c| c.is_usable)
-            .map(|c| c.next_outbound_htlc_limit_msat)
-            .sum();
-        if amount_msat > sendable_msat {
+        if amount_msat > sendable_msat(node) {
             return Err(LnError::InsufficientLightning);
         }
         self.pre_send_checks()
@@ -408,6 +402,16 @@ fn target_amount_msat(target: &PaymentTarget) -> Option<u64> {
 fn parse_invoice(s: &str) -> Result<Bolt11Invoice, LnError> {
     Bolt11Invoice::from_str(&s.trim().to_ascii_lowercase())
         .map_err(|e| LnError::Other(format!("invalid invoice: {e}")))
+}
+
+/// What `pay` can send now (step 3): the sum of LDK's
+/// `next_outbound_htlc_limit_msat` over usable channels.
+pub(crate) fn sendable_msat(node: &ldk_node::Node) -> u64 {
+    node.list_channels()
+        .iter()
+        .filter(|c| c.is_usable)
+        .map(|c| c.next_outbound_htlc_limit_msat)
+        .sum()
 }
 
 pub(crate) fn now() -> Duration {
