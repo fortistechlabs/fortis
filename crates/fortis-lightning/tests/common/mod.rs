@@ -191,8 +191,8 @@ pub fn procs_referencing(needle: &str) -> Vec<u32> {
 // regtest bitcoind
 // --------------------------------------------------------------------------
 
-const RPC_USER: &str = "fortis";
-const RPC_PASS: &str = "fortis";
+pub const RPC_USER: &str = "fortis";
+pub const RPC_PASS: &str = "fortis";
 
 /// A Bitcoin Core regtest node with a funded `miner` wallet (101 blocks).
 pub struct Regtest {

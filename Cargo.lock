@@ -999,6 +999,7 @@ dependencies = [
 name = "fortis-lightning"
 version = "0.1.0"
 dependencies = [
+ "bitcoin",
  "hex",
  "ldk-node",
  "serde_json",

@@ -15,6 +15,7 @@ mod node;
 mod parse;
 mod pay;
 mod receive;
+pub mod recover;
 
 pub use channel::ChannelState;
 pub use error::{LnError, ParseError};

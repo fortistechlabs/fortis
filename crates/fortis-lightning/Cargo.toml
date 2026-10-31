@@ -17,4 +17,11 @@ thiserror = { workspace = true }
 serde_json = { workspace = true }
 url = "=2.5.8"
 ureq = { version = "2", default-features = false, features = ["tls"] }
+# Same crate/version ldk-node re-exports; direct for the recovery sweeper
+# (base64 for RPC basic auth).
+bitcoin = { workspace = true }
 
+
+[dev-dependencies]
+# Real consensus script verification of sweep transactions (tests only).
+bitcoin = { workspace = true, features = ["bitcoinconsensus"] }

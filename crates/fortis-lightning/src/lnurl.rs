@@ -17,7 +17,7 @@ use crate::error::LnError;
 use crate::parse::PaymentTarget;
 
 /// Maximum accepted response body size.
-const MAX_BODY: usize = 64 * 1024;
+pub(crate) const MAX_BODY: usize = 64 * 1024;
 
 pub trait HttpGet {
     fn get_json(&self, url: &str) -> Result<Value, LnError>;
@@ -183,7 +183,7 @@ pub fn request_invoice(
 }
 
 /// Reads at most [`MAX_BODY`] bytes; errors if the body is larger.
-fn read_capped(r: impl Read, cap: usize) -> Result<Vec<u8>, LnError> {
+pub(crate) fn read_capped(r: impl Read, cap: usize) -> Result<Vec<u8>, LnError> {
     let mut buf = Vec::new();
     r.take(cap as u64 + 1)
         .read_to_end(&mut buf)
