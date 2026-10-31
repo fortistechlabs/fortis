@@ -130,26 +130,45 @@ pub struct NodeConfig {
     pub limits: LspLimits,
 }
 
-/// The node's funds. `lightning_sat + onchain_transit_sat +
-/// pending_close_sat` counts no sat twice, but leaves out two amounts the
-/// node does hold: unconfirmed incoming transit funds, and (while a channel
-/// exists) the anchor reserve ldk-node keeps in the transit wallet.
+/// The node's funds, in five parts that never count a sat twice:
+/// `lightning_sat + onchain_transit_sat + pending_close_sat + reserved_sat +
+/// pending_transit_sat` is everything the node holds for the user, up to the
+/// amounts below. (The app's "Lightning" total is that sum; computed in
+/// `channel.rs`, `breakdown`.)
+///
+/// **Not visible** (by design, all small or transient):
+/// - in `lightning_sat`, the funder's commitment fee and the two 330-sat
+///   anchors (LDK's claimable amount excludes them; a cooperative close
+///   returns part of the fee);
+/// - outbound HTLCs still unresolved on a closed channel (LDK counts them
+///   as 0 until they time out back to us);
+/// - while a cooperative close is unconfirmed, `pending_close_sat` shows the
+///   monitor's amount, which exceeds the closing output by up to the close
+///   fee;
+/// - a transaction paying the transit wallet (deposit, sweep) between its
+///   broadcast and the wallet's next sync sees it (Esplora: the wallet sync
+///   interval).
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct Balances {
-    /// What the open channels hold for us (spendable on close: LDK's
-    /// claimable amount, i.e. less the commitment fee and anchors we pay as
-    /// funder).
+    /// What the open channels hold for us: LDK's claimable amount on close,
+    /// i.e. less the commitment fee and anchors we pay as funder.
     pub lightning_sat: u64,
-    /// Spendable now in ldk-node's on-chain wallet, the transit wallet:
-    /// funds on their way into or out of a channel. Excludes unconfirmed
-    /// incoming funds and, while a channel exists, the anchor reserve
-    /// ldk-node holds back (see `channel.rs`).
+    /// Spendable now in the transit wallet (ldk-node's on-chain wallet):
+    /// confirmed funds and our own unconfirmed change, less `reserved_sat`.
     pub onchain_transit_sat: u64,
-    /// Funds of closed or closing channels not yet spendable in the transit
-    /// wallet: a closing transaction not yet confirmed, our output under its
+    /// Funds of closed or closing channels not yet in the transit wallet: a
+    /// closing transaction not yet confirmed, our output under its
     /// force-close timelock, HTLCs being resolved on chain, and ldk-node's
-    /// sweeps of those into the transit wallet until they confirm.
+    /// sweeps of those until the wallet counts them.
     pub pending_close_sat: u64,
+    /// The anchor reserve ldk-node holds back in the transit wallet while a
+    /// channel exists (25 000 sat per channel, capped by what the wallet
+    /// holds). Spendable again once no channel is left.
+    pub reserved_sat: u64,
+    /// Unconfirmed incoming transit funds (e.g. a "Move to Lightning"
+    /// deposit before its first confirmation), excluding a cooperative close
+    /// already counted in `pending_close_sat`.
+    pub pending_transit_sat: u64,
     /// What can be received over ready channels.
     pub inbound_sat: u64,
 }
@@ -182,6 +201,8 @@ pub struct Node {
     /// Keys of the process-wide claim: store id and absolute data dir.
     claim_keys: Vec<String>,
     shared: Arc<Shared>,
+    /// Serialises the channel and transit calls (`channel.rs`).
+    channel_ops: Mutex<()>,
 }
 
 /// What a [`Node`] shares with its start workers (which may outlive it).
@@ -331,6 +352,7 @@ impl Node {
                 inner: Mutex::new(None),
                 generation: AtomicU64::new(0),
             }),
+            channel_ops: Mutex::new(()),
         })
     }
 
@@ -430,22 +452,7 @@ impl Node {
         let Some(node) = self.running() else {
             return Balances::default();
         };
-        let node = &node.node;
-        let b = node.list_balances();
-        let channels = node.list_channels();
-        let inbound_msat: u64 = channels
-            .iter()
-            .filter(|c| c.is_channel_ready)
-            .map(|c| c.inbound_capacity_msat)
-            .sum();
-        let open: Vec<_> = channels.iter().map(|c| c.channel_id).collect();
-        let (lightning_sat, pending_close_sat) = crate::channel::lightning_balances(&b, &open);
-        Balances {
-            lightning_sat,
-            onchain_transit_sat: b.spendable_onchain_balance_sats,
-            pending_close_sat,
-            inbound_sat: inbound_msat / 1000,
-        }
+        crate::channel::balances_of(&node.node, &self.data_dir)
     }
 
     /// The next event, waiting up to `timeout`. Events are acknowledged to
@@ -457,6 +464,16 @@ impl Node {
             let running = self.running()?;
             let node = &running.node;
             if let Some(event) = node.next_event() {
+                if let Event::ChannelClosed {
+                    channel_id, reason, ..
+                } = &event
+                {
+                    crate::channel::record_closed_event(
+                        &self.data_dir,
+                        channel_id,
+                        reason.as_ref(),
+                    );
+                }
                 // On failure ldk-node re-delivers the event; don't surface it twice.
                 if node.event_handled().is_err() {
                     continue;
@@ -480,6 +497,12 @@ impl Node {
 
     pub(crate) fn network(&self) -> Network {
         self.network
+    }
+
+    /// The lock serialising `open_channel`, `close_channel`,
+    /// `force_close_channel` and `sweep_transit`.
+    pub(crate) fn channel_ops(&self) -> std::sync::MutexGuard<'_, ()> {
+        self.channel_ops.lock().unwrap_or_else(|e| e.into_inner())
     }
 
     /// The LSP's node id and address.

@@ -586,7 +586,7 @@ static FILES_LOCK: Mutex<()> = Mutex::new(());
 
 /// Writes `bytes` to `dir/file` atomically and durably (temp file, fsync,
 /// rename, fsync of the directory).
-fn write_atomic(dir: &Path, file: &str, bytes: &[u8]) -> std::io::Result<()> {
+pub(crate) fn write_atomic(dir: &Path, file: &str, bytes: &[u8]) -> std::io::Result<()> {
     std::fs::create_dir_all(dir)?;
     let tmp = dir.join(format!("{file}.tmp"));
     let mut f = std::fs::File::create(&tmp)?;
