@@ -20,6 +20,8 @@ ureq = { version = "2", default-features = false, features = ["tls"] }
 # Same crate/version ldk-node re-exports; direct for the recovery sweeper
 # (base64 for RPC basic auth).
 bitcoin = { workspace = true }
+# The device id (one-active-device guard, `device.rs`).
+getrandom = "0.2"
 
 
 [dev-dependencies]

@@ -100,6 +100,7 @@ impl Node {
             !plain_receive_fits(inbound_msat, capacity_msat, amount_msat, htlc_max_msat);
 
         if !needs_channel {
+            self.pre_send_checks()?;
             let invoice = node
                 .bolt11_payment()
                 .receive(amount_msat, &description, INVOICE_EXPIRY_SECS)
@@ -116,6 +117,7 @@ impl Node {
         if amount_msat < limits.min_payment_msat || amount_msat > limits.max_payment_msat {
             return Err(out_of_range);
         }
+        self.pre_send_checks()?;
         let invoice = node
             .bolt11_payment()
             .receive_via_jit_channel(amount_msat, &description, INVOICE_EXPIRY_SECS, None)

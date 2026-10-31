@@ -523,7 +523,7 @@ fn ureq_response(
 
 impl HttpClient for UreqHttp {
     fn get(&self, url: &str) -> Result<HttpResponse, String> {
-        ureq_response(self.agent.get(url).call(), MAX_BODY)
+        ureq_response(self.agent.get(url).call(), 4 * 1024 * 1024)
     }
     fn post(&self, url: &str, content_type: &str, body: &str) -> Result<HttpResponse, String> {
         ureq_response(

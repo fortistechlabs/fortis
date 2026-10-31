@@ -425,6 +425,9 @@ pub struct Vss {
     server: ChildGuard,
     pg: PgGuard,
     dir: TempDir,
+    bin: PathBuf,
+    port: u16,
+    pg_port: u16,
 }
 
 impl Vss {
@@ -483,35 +486,29 @@ impl Vss {
         );
 
         let port = free_port();
-        let mut server = ChildGuard(
-            Command::new(bin)
-                .current_dir(&dir.0)
-                .env("VSS_BIND_ADDRESS", format!("127.0.0.1:{port}"))
-                .env("VSS_PSQL_USERNAME", "postgres")
-                .env("VSS_PSQL_PASSWORD", "unused")
-                .env("VSS_PSQL_ADDRESS", format!("127.0.0.1:{pg_port}"))
-                .env("VSS_PSQL_DEFAULT_DB", "postgres")
-                .env("VSS_PSQL_VSS_DB", "vss")
-                .env("VSS_LOG_FILE", dir.path("vss.log"))
-                .env("VSS_LOG_LEVEL", "debug")
-                .stdout(Stdio::null())
-                .stderr(Stdio::null())
-                .spawn()
-                .unwrap_or_else(|e| panic!("spawn vss-server {}: {e}", bin.display())),
-        );
-        let metrics = format!("http://127.0.0.1:{port}/metrics");
-        poll("vss-server up", 30, || {
-            if let Ok(Some(status)) = server.0.try_wait() {
-                panic!("vss-server exited during startup: {status}");
-            }
-            ureq::get(&metrics).call().ok()
-        });
+        let server = spawn_vss_server(bin, &dir, port, pg_port);
         Vss {
             url: format!("http://127.0.0.1:{port}/vss"),
             server,
             pg,
             dir,
+            bin: bin.to_path_buf(),
+            port,
+            pg_port,
         }
+    }
+
+    /// Kills vss-server (PostgreSQL and its data stay): connections are
+    /// refused, as with a VSS host that is down. [`Vss::up`] starts it
+    /// again on the same port. Unlike [`Vss::pause`], nothing sent while it
+    /// is down is executed later.
+    pub fn down(&mut self) {
+        let _ = self.server.0.kill();
+        let _ = self.server.0.wait();
+    }
+
+    pub fn up(&mut self) {
+        self.server = spawn_vss_server(&self.bin, &self.dir, self.port, self.pg_port);
     }
 
     pub fn log(&self) -> String {
@@ -538,6 +535,35 @@ impl Vss {
             .unwrap_or(false);
         assert!(ok, "kill {sig} vss-server");
     }
+}
+
+/// Starts vss-server on `port` against the PostgreSQL on `pg_port` and
+/// waits until it answers.
+fn spawn_vss_server(bin: &Path, dir: &TempDir, port: u16, pg_port: u16) -> ChildGuard {
+    let mut server = ChildGuard(
+        Command::new(bin)
+            .current_dir(&dir.0)
+            .env("VSS_BIND_ADDRESS", format!("127.0.0.1:{port}"))
+            .env("VSS_PSQL_USERNAME", "postgres")
+            .env("VSS_PSQL_PASSWORD", "unused")
+            .env("VSS_PSQL_ADDRESS", format!("127.0.0.1:{pg_port}"))
+            .env("VSS_PSQL_DEFAULT_DB", "postgres")
+            .env("VSS_PSQL_VSS_DB", "vss")
+            .env("VSS_LOG_FILE", dir.path("vss.log"))
+            .env("VSS_LOG_LEVEL", "debug")
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .unwrap_or_else(|e| panic!("spawn vss-server {}: {e}", bin.display())),
+    );
+    let metrics = format!("http://127.0.0.1:{port}/metrics");
+    poll("vss-server up", 30, || {
+        if let Ok(Some(status)) = server.0.try_wait() {
+            panic!("vss-server exited during startup: {status}");
+        }
+        ureq::get(&metrics).call().ok()
+    });
+    server
 }
 
 // --------------------------------------------------------------------------

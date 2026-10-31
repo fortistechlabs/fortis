@@ -1000,6 +1000,7 @@ name = "fortis-lightning"
 version = "0.1.0"
 dependencies = [
  "bitcoin",
+ "getrandom 0.2.17",
  "hex",
  "ldk-node",
  "serde_json",

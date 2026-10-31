@@ -873,6 +873,7 @@ impl Node {
     /// cannot persist the new address index.
     pub fn transit_address(&self) -> Result<String, LnError> {
         let running = self.running().ok_or_else(not_started)?;
+        self.pre_send_checks()?;
         running
             .node
             .onchain_payment()
@@ -1034,19 +1035,31 @@ impl Node {
             return Err(LnError::Other("no_channel".into()));
         }
         self.pre_send_checks()?;
+        let dir = self.data_dir();
+        let closes = load_closes(dir);
         let _ = track_funding(
-            self.data_dir(),
+            dir,
             &channels,
             node.status().latest_onchain_wallet_sync_timestamp,
         );
         let mut result = Ok(());
         for c in &channels {
-            let _ = record_close(self.data_dir(), &c.channel_id, CloseKind::Force);
+            let prev_kind = closes.get(&c.channel_id.to_string()).and_then(|r| r.kind);
+            if record_close(dir, &c.channel_id, CloseKind::Force).is_err() {
+                result = result.and(Err(LnError::BackupUnavailable));
+                continue;
+            }
             if let Err(e) = node.force_close_channel(
                 &c.user_channel_id,
                 c.counterparty_node_id,
                 Some("closed by the user".into()),
             ) {
+                let id = c.channel_id.to_string();
+                let _ = update_closes(dir, |m| {
+                    if let Some(r) = m.get_mut(&id) {
+                        r.kind = prev_kind;
+                    }
+                });
                 let err = if e == NodeError::PersistenceFailed {
                     LnError::BackupUnavailable
                 } else {

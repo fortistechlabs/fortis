@@ -9,6 +9,7 @@ pub use ldk_node;
 pub use vss_client;
 
 mod channel;
+mod device;
 mod error;
 pub mod lnurl;
 mod node;
@@ -22,7 +23,8 @@ pub use error::{LnError, ParseError};
 #[doc(hidden)]
 pub use node::test_hooks;
 pub use node::{
-    Balances, ChainSource, LnEvent, LspInfo, LspLimits, Node, NodeConfig, StartMode, VssConfig,
+    vss_state_exists, Balances, ChainSource, LnEvent, LspInfo, LspLimits, Node, NodeConfig,
+    StartMode, VssConfig,
 };
 pub use parse::{parse, parse_at, PaymentTarget};
 pub use pay::{Direction, Payment, Status};

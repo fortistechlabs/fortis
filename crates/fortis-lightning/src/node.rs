@@ -14,14 +14,19 @@
 //!
 //! 1. TCP reachability of the LSP → [`LnError::LspUnreachable`] (checked
 //!    first, so "no network at all" reads as `LspUnreachable`);
-//! 2. one VSS round trip (a `getObject`) → [`LnError::BackupUnavailable`];
+//! 2. the device lock (`device.rs`; two VSS round trips, which double as
+//!    the reachability check): VSS not answering →
+//!    [`LnError::BackupUnavailable`], held by another device →
+//!    [`LnError::ActiveOnAnotherDevice`] — in both cases before anything is
+//!    built;
 //! 3. building ldk-node over the VSS store (reads all state) →
 //!    `BackupUnavailable` on storage errors;
 //! 4. ldk-node `start` (fee-rate fetch from the chain source);
 //! 5. connecting to the LSP as a persisted peer → `LspUnreachable`.
 //!
 //! On timeout the error is that of the stage still running; the worker keeps
-//! going in the background and stops whatever node it built.
+//! going in the background and stops whatever node it built (and releases
+//! the device lock it took).
 //!
 //! **Exit mode.** [`StartMode::Exit`] is the recovery start for when the
 //! LSP is gone (spec: users can force-close unilaterally at any time). It
@@ -46,13 +51,27 @@
 //! and before connecting, and installs its node itself, under the lock, only
 //! if the token is unchanged and none is installed. ldk-node's `stop` is never
 //! called with the lock held.
+//!
+//! **One active device per seed.** The process-wide claim cannot see other
+//! phones; the device lock in VSS does (`device.rs`, spec Findings (b)).
+//! The running node holds it and re-checks it (a conditional rewrite, one
+//! VSS round trip ≤ 3 s) before every payment, channel and transit action
+//! ([`Node::pre_send_checks`](crate::Node)) and every
+//! [`LOCK_CHECK_INTERVAL`] (60 s) on a background thread. When another
+//! device has taken it over, the check stops this node (not under any of
+//! the node's locks), queues [`LnEvent::DeviceLockLost`] (once) and the
+//! action returns `ActiveOnAnotherDevice`; VSS not answering is
+//! `BackupUnavailable` and changes nothing. [`Node::stop`] releases the
+//! lock (≤ 3 s, best effort), so "closed the app on phone A, opened it on
+//! phone B" needs no takeover; [`Node::takeover`] is for the phone that
+//! was lost or crashed.
 
 use std::collections::{BTreeMap, HashMap};
 use std::net::{TcpStream, ToSocketAddrs};
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicU64, AtomicU8, Ordering};
-use std::sync::{mpsc, Arc, Mutex};
-use std::time::{Duration, Instant};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicU8, Ordering};
+use std::sync::{mpsc, Arc, Condvar, Mutex, Weak};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use ldk_node::bitcoin::bip32::Xpriv;
 use ldk_node::bitcoin::hashes::{hmac, sha256, Hash, HashEngine};
@@ -61,13 +80,9 @@ use ldk_node::bitcoin::Network;
 use ldk_node::lightning::ln::msgs::SocketAddress;
 use ldk_node::lightning::sign::{KeysManager, NodeSigner, Recipient};
 use ldk_node::{BuildError, Builder, Event, NodeError};
-use vss_client::client::VssClient;
-use vss_client::error::VssError;
-use vss_client::headers::FixedHeaders;
-use vss_client::types::GetObjectRequest;
-use vss_client::util::retry::{ExponentialBackoffRetryPolicy, RetryPolicy};
 use zeroize::Zeroizing;
 
+use crate::device::{self, DeviceId, Held, VssLockClient};
 use crate::LnError;
 
 /// [`Node::start`] never takes longer than this (the brief's bound is 15 s).
@@ -78,6 +93,16 @@ const PROBE_TIMEOUT: Duration = Duration::from_secs(5);
 /// costs at most this.
 const EXIT_PROBE_TIMEOUT: Duration = Duration::from_secs(2);
 const VSS_STORE_TAG: &[u8] = b"fortis/ln/vss/v1";
+/// The running node's background device-lock check: every this long
+/// (tests shorten it, [`test_hooks::set_lock_check_interval`]).
+pub(crate) const LOCK_CHECK_INTERVAL: Duration = Duration::from_secs(60);
+/// Cap on one device-lock check (background, or before an action).
+pub(crate) const LOCK_CHECK_TIMEOUT: Duration = Duration::from_secs(3);
+/// Cap on releasing the lock in `stop()`.
+const LOCK_RELEASE_TIMEOUT: Duration = Duration::from_secs(3);
+/// `stop()` waits at most this long for a cancelled start worker and the
+/// background check to finish ([`Node::is_quiescent`]).
+const QUIESCE_TIMEOUT: Duration = Duration::from_secs(10);
 
 /// Where the LSP (`fortis-lsp`) is; the app fills it from `GET /ln/info`.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -207,6 +232,10 @@ pub enum LnEvent {
     PaymentFailed { id: String, reason: String },
     ChannelReady,
     ChannelClosed { reason: String },
+    /// Another device took over this wallet's Lightning (its device lock):
+    /// this node has stopped itself. Reported once; `start` returns
+    /// `ActiveOnAnotherDevice` until [`Node::takeover`].
+    DeviceLockLost,
 }
 
 /// The fortis Lightning node. Cheap to create; [`start`](Self::start) does
@@ -232,12 +261,81 @@ pub struct Node {
     channel_ops: Mutex<()>,
 }
 
-/// What a [`Node`] shares with its start workers (which may outlive it).
+/// What a [`Node`] shares with its start workers (which may outlive it) and
+/// its background lock check (which holds it only as a `Weak`).
 struct Shared {
     inner: Mutex<Option<Arc<Running>>>,
-    /// Bumped by `stop()` and by a timed-out `start`: a worker whose token is
-    /// stale builds/installs nothing.
+    /// Bumped by `stop()`, by a timed-out `start` and by a lost device
+    /// lock: a worker whose token is stale builds/installs nothing.
     generation: AtomicU64,
+    /// The device lock this node holds: set by a start worker once acquired,
+    /// cleared on release, on loss, or when the worker gives up. Held across
+    /// each lock round trip, so checks and the release never interleave.
+    lock: Mutex<Option<HeldLock>>,
+    /// A `DeviceLockLost` not yet returned by `next_event`.
+    lock_lost: AtomicBool,
+    /// Dropping it wakes and ends the background check.
+    checker: Mutex<Option<mpsc::Sender<()>>>,
+    /// Start workers, the background check and lost-lock stoppers alive.
+    busy: Arc<Busy>,
+    vss: VssConfig,
+    store_id: String,
+    vss_client: Mutex<Option<Arc<VssLockClient>>>,
+}
+
+impl Shared {
+    fn vss_client(&self) -> Result<Arc<VssLockClient>, LnError> {
+        let mut slot = self.vss_client.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some(c) = slot.as_ref() {
+            return Ok(Arc::clone(c));
+        }
+        let c = Arc::new(VssLockClient::new(&self.vss, &self.store_id)?);
+        *slot = Some(Arc::clone(&c));
+        Ok(c)
+    }
+}
+
+#[derive(Clone, Copy)]
+struct HeldLock {
+    me: DeviceId,
+    held: Held,
+}
+
+/// A count of this node's helper threads, with a wake-up for `stop()`.
+#[derive(Default)]
+struct Busy {
+    n: Mutex<usize>,
+    idle: Condvar,
+}
+
+/// One counted helper thread (see [`Busy`]); uncounted on drop.
+struct BusyToken(Arc<Busy>);
+
+impl BusyToken {
+    fn new(b: &Arc<Busy>) -> BusyToken {
+        *b.n.lock().unwrap_or_else(|e| e.into_inner()) += 1;
+        BusyToken(Arc::clone(b))
+    }
+}
+
+impl Drop for BusyToken {
+    fn drop(&mut self) {
+        let mut n = self.0.n.lock().unwrap_or_else(|e| e.into_inner());
+        *n -= 1;
+        self.0.idle.notify_all();
+    }
+}
+
+impl Busy {
+    fn idle(&self) -> bool {
+        *self.n.lock().unwrap_or_else(|e| e.into_inner()) == 0
+    }
+
+    /// Waits until no helper thread is left, at most `timeout`.
+    fn wait_idle(&self, timeout: Duration) {
+        let n = self.n.lock().unwrap_or_else(|e| e.into_inner());
+        let _ = self.idle.wait_timeout_while(n, timeout, |n| *n > 0);
+    }
 }
 
 /// A started ldk-node and the claim on its wallet. Fields drop in order: the
@@ -245,6 +343,8 @@ struct Shared {
 pub(crate) struct Running {
     pub(crate) node: Live,
     pub(crate) mode: StartMode,
+    /// The generation token it was installed under.
+    generation: u64,
     _claim: Claim,
 }
 
@@ -277,6 +377,7 @@ impl Drop for Live {
 enum ClaimState {
     Starting,
     Running,
+    Stopping,
 }
 
 /// Process-wide: which wallets (store ids, data dirs) have a start worker or
@@ -295,6 +396,9 @@ impl Claim {
         if held.contains(&ClaimState::Running) {
             return Err(ClaimState::Running);
         }
+        if held.contains(&ClaimState::Stopping) {
+            return Err(ClaimState::Stopping);
+        }
         if !held.is_empty() {
             return Err(ClaimState::Starting);
         }
@@ -310,6 +414,13 @@ impl Claim {
         let mut claims = CLAIMS.lock().unwrap();
         for k in &self.keys {
             claims.insert(k.clone(), ClaimState::Running);
+        }
+    }
+
+    fn set_stopping(&self) {
+        let mut claims = CLAIMS.lock().unwrap();
+        for k in &self.keys {
+            claims.insert(k.clone(), ClaimState::Stopping);
         }
     }
 }
@@ -328,21 +439,8 @@ impl Node {
     /// The seed is moved out of `cfg` into a zeroizing buffer.
     pub fn new(mut cfg: NodeConfig) -> Result<Node, LnError> {
         let taken = Zeroizing::new(std::mem::take(&mut cfg.bip39_seed));
-        if taken.len() != 64 {
-            return Err(LnError::Other("bip39_seed must be 64 bytes".into()));
-        }
-        let mut bip39_seed = Zeroizing::new([0u8; 64]);
-        bip39_seed.copy_from_slice(&taken);
+        let (ldk_seed, store_id) = derive_keys(&taken, cfg.network)?;
         drop(taken);
-        let node_seed = wallet_core::bip85_hex(&bip39_seed, cfg.network, 64, 0);
-        drop(bip39_seed);
-        let mut ldk_seed = Zeroizing::new([0u8; 64]);
-        ldk_seed.copy_from_slice(&node_seed);
-        drop(node_seed);
-
-        let mut e = hmac::HmacEngine::<sha256::Hash>::new(&ldk_seed[..]);
-        e.input(VSS_STORE_TAG);
-        let store_id = hex::encode(hmac::Hmac::<sha256::Hash>::from_engine(e).to_byte_array());
 
         let node_id = ldk_node_id(&ldk_seed, cfg.network)?.to_string();
 
@@ -365,7 +463,7 @@ impl Node {
             network: cfg.network,
             data_dir: cfg.data_dir,
             chain_source: cfg.chain_source,
-            vss: cfg.vss,
+            vss: cfg.vss.clone(),
             limits: cfg.limits,
             lsp_id,
             lsp_addr,
@@ -373,12 +471,19 @@ impl Node {
             lsp_port: cfg.lsp.port,
             lsp_token: cfg.lsp.token,
             ldk_seed,
-            store_id,
+            store_id: store_id.clone(),
             node_id,
             claim_keys,
             shared: Arc::new(Shared {
                 inner: Mutex::new(None),
                 generation: AtomicU64::new(0),
+                lock: Mutex::new(None),
+                lock_lost: AtomicBool::new(false),
+                checker: Mutex::new(None),
+                busy: Arc::new(Busy::default()),
+                vss: cfg.vss.clone(),
+                store_id: store_id.clone(),
+                vss_client: Mutex::new(None),
             }),
             channel_ops: Mutex::new(()),
         })
@@ -406,12 +511,47 @@ impl Node {
     /// [`start_mode`](Self::start_mode). `Other("already_running")` when
     /// another `Node` in this process runs this wallet;
     /// `Other("start_in_progress")` when another start for it is still
-    /// working; `Other("cancelled")` when `stop()` came first. The single
-    /// entry point for every start (Task 10's device lock goes here).
+    /// working; `Other("cancelled")` when `stop()` came first.
+    ///
+    /// **Device lock** (module docs): taken before ldk-node is built; free
+    /// or held by this device (its own crash restart) → taken; held by
+    /// another device → `ActiveOnAnotherDevice` and nothing is built (offer
+    /// [`takeover`](Self::takeover)); an unparsable lock record →
+    /// `Other("device_lock_corrupt")` (also resolved by `takeover`); a
+    /// device id file in the data dir that is not valid →
+    /// `Other("device_id_corrupt")`.
     pub fn start_with(&self, mode: StartMode) -> Result<(), LnError> {
         if self.running().is_some() {
             return Ok(());
         }
+        self.start_impl(mode, LockMode::Acquire)
+    }
+
+    /// "Use Lightning here instead": takes the device lock from whichever
+    /// device holds it (read the lock, write ours at the version read — of
+    /// two concurrent takeovers exactly one write lands, the other gets
+    /// `ActiveOnAnotherDevice`), then starts as
+    /// [`start_with`](Self::start_with)`(mode)`, under the same 15 s bound
+    /// and errors. Only when this node is not running:
+    /// `Other("already_running")` otherwise.
+    ///
+    /// **The old device's window.** VSS cannot stop the old device's
+    /// ldk-node: its writes are unconditional (spec, Findings (b)). It
+    /// notices the takeover at its next check — before its next payment,
+    /// channel or transit action, or by its background check within 60 s —
+    /// and then stops itself (`DeviceLockLost`). Until then it may still
+    /// write channel state over this device's, e.g. when it forwards or
+    /// claims an incoming payment. The app must tell the user to close
+    /// Lightning on the old phone first and take over only when it is lost
+    /// or broken.
+    pub fn takeover(&self, mode: StartMode) -> Result<(), LnError> {
+        if self.running().is_some() {
+            return Err(LnError::Other("already_running".into()));
+        }
+        self.start_impl(mode, LockMode::Takeover)
+    }
+
+    fn start_impl(&self, mode: StartMode, lock_mode: LockMode) -> Result<(), LnError> {
         let generation = self.shared.generation.load(Ordering::SeqCst);
         let deadline = Instant::now() + START_DEADLINE;
         let stage = Arc::new(AtomicU8::new(Stage::Claim as u8));
@@ -431,14 +571,17 @@ impl Node {
             node_id: self.node_id.clone(),
             claim_keys: self.claim_keys.clone(),
             mode,
+            lock_mode,
             deadline,
             stage: Arc::clone(&stage),
             shared: Arc::clone(&self.shared),
             generation,
         };
+        let busy = BusyToken::new(&self.shared.busy);
         std::thread::Builder::new()
             .name("fortis-ln-start".into())
             .spawn(move || {
+                let _busy = busy;
                 let _ = tx.send(job.run());
             })
             .map_err(|e| LnError::Other(format!("spawn: {e}")))?;
@@ -473,16 +616,41 @@ impl Node {
     /// (the pay tests assert it); ldk-node's own bounds are 5 s for its
     /// background tasks plus up to 30 s for the final persist when the store
     /// stalls.
+    ///
+    /// Then the device lock is released (≤ 3 s; when VSS does not answer it
+    /// stays this device's: this device restarts as usual, another one
+    /// needs [`takeover`](Self::takeover)), and `stop` waits (≤ 10 s) for a
+    /// cancelled start and the background check to finish, see
+    /// [`is_quiescent`](Self::is_quiescent).
     pub fn stop(&self) {
         let running = {
             let mut inner = self.shared.inner.lock().unwrap();
             self.shared.generation.fetch_add(1, Ordering::SeqCst);
-            inner.take()
+            drop(self.shared.checker.lock().unwrap().take());
+            let r = inner.take();
+            if let Some(ref r) = r {
+                r._claim.set_stopping();
+            }
+            r
         };
-        // Outside the lock; the claim goes when the last `Arc` drops.
+        // Outside the lock; the claim goes when the last `Arc` drops, after
+        // the release (so no other start in this process takes the lock
+        // in between).
         if let Some(r) = running {
             let _ = r.node.stop();
+            release_lock(&self.shared);
+            drop(r);
         }
+        self.shared.busy.wait_idle(QUIESCE_TIMEOUT);
+    }
+
+    /// No node running and nothing of this `Node` still working in the
+    /// background (start worker, lock check, a stop after a lost lock), so
+    /// its data dir may be deleted or another start/takeover is not racing
+    /// a stale one. `stop()` waits for this (bounded); poll it after a
+    /// `stop()` that returned early or after `DeviceLockLost`.
+    pub fn is_quiescent(&self) -> bool {
+        self.shared.inner.lock().unwrap().is_none() && self.shared.busy.idle()
     }
 
     /// The mode the running node was started in; `None` when not running.
@@ -504,6 +672,9 @@ impl Node {
     pub fn next_event(&self, timeout: Duration) -> Option<LnEvent> {
         let deadline = Instant::now() + timeout;
         loop {
+            if self.shared.lock_lost.swap(false, Ordering::SeqCst) {
+                return Some(LnEvent::DeviceLockLost);
+            }
             let running = self.running()?;
             let node = &running.node;
             if let Some(event) = node.next_event() {
@@ -577,10 +748,200 @@ impl Node {
         Ok(())
     }
 
-    /// One VSS round trip (see [`probe_vss`]), at most `timeout`.
-    pub(crate) fn probe_backup(&self, timeout: Duration) -> Result<(), LnError> {
-        probe_vss(&self.vss, &self.store_id, timeout)
+    /// The device-lock check before an action (`pre_send_checks`): one
+    /// conditional rewrite of the lock, at most `timeout`, which doubles as
+    /// the VSS reachability check. `BackupUnavailable` when VSS does not
+    /// answer (the node keeps running); on a lost lock the node is stopped
+    /// (on another thread: callers may hold `channel_ops`),
+    /// `DeviceLockLost` is queued and the error is `ActiveOnAnotherDevice`
+    /// (or `Other("device_lock_corrupt")`). `Other("not_started")` when not
+    /// running.
+    pub(crate) fn check_device_lock(&self, timeout: Duration) -> Result<(), LnError> {
+        let running = self.running().ok_or_else(|| LnError::Other("not_started".into()))?;
+        let generation = running.generation;
+        drop(running);
+        self.check_lock_at(generation, timeout)
     }
+
+    /// Unit tests: as if a start of generation 0 had taken the lock.
+    #[cfg(test)]
+    pub(crate) fn hold_lock_for_test(&self) {
+        *self.shared.lock.lock().unwrap() = Some(HeldLock {
+            me: DeviceId::TEST,
+            held: Held { version: 1, since: 0 },
+        });
+    }
+
+    pub(crate) fn check_lock_at(&self, generation: u64, timeout: Duration) -> Result<(), LnError> {
+        match refresh_lock(&self.shared, generation, timeout) {
+            Err(e) if device::is_lost(&e) => {
+                if let Some(r) = lose_lock(&self.shared, generation) {
+                    let busy = BusyToken::new(&self.shared.busy);
+                    let spawned = std::thread::Builder::new()
+                        .name("fortis-ln-lock-lost".into())
+                        .spawn(move || {
+                            let _busy = busy;
+                            let _ = r.node.stop();
+                        });
+                    // No thread: the node stops when the last `Arc` drops
+                    // (`Live`), normally the caller's, after its locks.
+                    drop(spawned);
+                }
+                Err(e)
+            }
+            other => other,
+        }
+    }
+}
+
+/// One check of the lock held for `generation` (see
+/// [`Node::check_device_lock`]); on a lost lock the slot is cleared, the
+/// caller stops the node ([`lose_lock`]).
+fn refresh_lock(shared: &Shared, generation: u64, timeout: Duration) -> Result<(), LnError> {
+    let mut slot = shared.lock.lock().unwrap_or_else(|e| e.into_inner());
+    let not_started = || LnError::Other("not_started".into());
+    if shared.generation.load(Ordering::SeqCst) != generation {
+        return Err(not_started());
+    }
+    let Some(mut h) = *slot else {
+        return Err(not_started());
+    };
+    let client = shared.vss_client()?;
+    let store = client.with_timeout(timeout);
+    match device::refresh(&store, h.me, &mut h.held) {
+        Ok(_) => {
+            *slot = Some(h);
+            Ok(())
+        }
+        Err(e) => {
+            if device::is_lost(&e) {
+                *slot = None;
+            } else {
+                *slot = Some(h);
+            }
+            Err(e)
+        }
+    }
+}
+
+/// The lock of run `generation` is lost: uninstalls that run (cancelling
+/// its background check) and queues `DeviceLockLost`, once. Returns the
+/// run for the caller to stop, outside every lock.
+fn lose_lock(shared: &Shared, generation: u64) -> Option<Arc<Running>> {
+    let mut inner = shared.inner.lock().unwrap();
+    if shared.generation.load(Ordering::SeqCst) != generation || inner.is_none() {
+        return None;
+    }
+    shared.generation.fetch_add(1, Ordering::SeqCst);
+    drop(shared.checker.lock().unwrap().take());
+    shared.lock_lost.store(true, Ordering::SeqCst);
+    let r = inner.take();
+    if let Some(ref r) = r {
+        r._claim.set_stopping();
+    }
+    r
+}
+
+/// Releases the lock this node holds, if any (best effort, ≤ 3 s).
+fn release_lock(shared: &Shared) {
+    release_lock_if(shared, None);
+}
+
+/// [`release_lock`], only if what is held is `only` (when given): a start
+/// worker releases its own acquire, nothing newer.
+fn release_lock_if(shared: &Shared, only: Option<Held>) {
+    let mut slot = shared.lock.lock().unwrap_or_else(|e| e.into_inner());
+    let Some(h) = *slot else { return };
+    if only.is_some_and(|o| o != h.held) {
+        return;
+    }
+    *slot = None;
+    if let Ok(client) = shared.vss_client() {
+        let store = client.with_timeout(LOCK_RELEASE_TIMEOUT);
+        let _ = device::release(&store, h.held);
+    }
+}
+
+/// The background check of run `generation`: every [`LOCK_CHECK_INTERVAL`]
+/// a [`refresh_lock`]; on a lost lock it stops the node itself. Holds the
+/// node only as a `Weak` (upgraded for one check at a time); ends when
+/// `cancel`'s sender is dropped (`stop()`, a lost lock) or the generation
+/// moves on. VSS not answering changes nothing (the next action's check
+/// refuses it).
+fn spawn_lock_checker(shared: &Arc<Shared>, generation: u64) {
+    let (tx, cancel) = mpsc::channel::<()>();
+    let weak: Weak<Shared> = Arc::downgrade(shared);
+    let busy = BusyToken::new(&shared.busy);
+    {
+        let inner = shared.inner.lock().unwrap();
+        if shared.generation.load(Ordering::SeqCst) != generation || inner.is_none() {
+            return;
+        }
+        *shared.checker.lock().unwrap() = Some(tx);
+    }
+    let spawned = std::thread::Builder::new()
+        .name("fortis-ln-lock-check".into())
+        .spawn(move || {
+            let _busy = busy;
+            loop {
+                match cancel.recv_timeout(test_hooks::lock_check_interval()) {
+                    Err(mpsc::RecvTimeoutError::Timeout) => {}
+                    _ => return,
+                }
+                let Some(shared) = weak.upgrade() else { return };
+                match refresh_lock(&shared, generation, LOCK_CHECK_TIMEOUT) {
+                    Ok(()) | Err(LnError::BackupUnavailable) => {}
+                    Err(e) if device::is_lost(&e) => {
+                        let lost = lose_lock(&shared, generation);
+                        drop(shared);
+                        if let Some(r) = lost {
+                            let _ = r.node.stop();
+                        }
+                        return;
+                    }
+                    // Not running any more (stopped, or another run).
+                    Err(_) => return,
+                }
+            }
+        });
+    if spawned.is_err() {
+        // No background check: the checks before each action remain.
+        drop(shared.checker.lock().unwrap().take());
+    }
+}
+
+/// The node seed (ldk-node's entropy) and VSS store id for a BIP-39 seed
+/// (module docs).
+fn derive_keys(bip39: &[u8], network: Network) -> Result<(Zeroizing<[u8; 64]>, String), LnError> {
+    if bip39.len() != 64 {
+        return Err(LnError::Other("bip39_seed must be 64 bytes".into()));
+    }
+    let mut bip39_seed = Zeroizing::new([0u8; 64]);
+    bip39_seed.copy_from_slice(bip39);
+    let node_seed = wallet_core::bip85_hex(&bip39_seed, network, 64, 0);
+    drop(bip39_seed);
+    let mut ldk_seed = Zeroizing::new([0u8; 64]);
+    ldk_seed.copy_from_slice(&node_seed);
+    drop(node_seed);
+    let mut e = hmac::HmacEngine::<sha256::Hash>::new(&ldk_seed[..]);
+    e.input(VSS_STORE_TAG);
+    let store_id = hex::encode(hmac::Hmac::<sha256::Hash>::from_engine(e).to_byte_array());
+    Ok((ldk_seed, store_id))
+}
+
+/// Whether the VSS store of the wallet with this BIP-39 seed holds any
+/// node state (anything but the device lock), for a restore flow to choose
+/// between "restore from backup" (`true`: start a `Node`, ldk-node loads
+/// the channels) and "scan for force-closed funds" (`false` on a wallet
+/// that had Lightning: its VSS data is lost, use the seed-only sweeper,
+/// [`crate::recover`]). One VSS round trip, ≤ 5 s; `BackupUnavailable`
+/// when VSS does not answer — never a guess.
+pub fn vss_state_exists(vss: &VssConfig, bip39_seed: &[u8], network: Network) -> Result<bool, LnError> {
+    let (ldk_seed, store_id) = derive_keys(bip39_seed, network)?;
+    drop(ldk_seed);
+    let client = VssLockClient::new(vss, &store_id)?;
+    let store = client.with_timeout(PROBE_TIMEOUT);
+    device::state_exists(&store)
 }
 
 impl Drop for Node {
@@ -716,10 +1077,36 @@ struct StartJob {
     node_id: String,
     claim_keys: Vec<String>,
     mode: StartMode,
+    lock_mode: LockMode,
     deadline: Instant,
     stage: Arc<AtomicU8>,
     shared: Arc<Shared>,
     generation: u64,
+}
+
+/// How a start worker takes the device lock.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum LockMode {
+    /// Free or ours → take it; another device's → `ActiveOnAnotherDevice`.
+    Acquire,
+    /// Whoever holds it ([`Node::takeover`]).
+    Takeover,
+}
+
+/// The device lock a start worker took: released (best effort) on drop
+/// unless the worker installed its node, which then owns it.
+struct LockGuard {
+    shared: Arc<Shared>,
+    held: Held,
+    armed: bool,
+}
+
+impl Drop for LockGuard {
+    fn drop(&mut self) {
+        if self.armed {
+            release_lock_if(&self.shared, Some(self.held));
+        }
+    }
 }
 
 /// Why a worker gives up early: `Ok(())` = a node is already running for
@@ -743,7 +1130,28 @@ impl StartJob {
     }
 
     fn vss_headers(&self) -> HashMap<String, String> {
-        vss_headers(&self.vss)
+        device::vss_headers(&self.vss)
+    }
+
+    /// Stage 2: the device lock (module docs), before anything is built.
+    fn take_lock(&self) -> Result<LockGuard, LnError> {
+        let me = device::load_or_create_device_id(std::path::Path::new(&self.data_dir))?;
+        let client = self.shared.vss_client()?;
+        let store = client.with_timeout(self.probe_timeout());
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map_or(0, |d| d.as_secs());
+        let mut slot = self.shared.lock.lock().unwrap_or_else(|e| e.into_inner());
+        let held = match self.lock_mode {
+            LockMode::Acquire => device::acquire(&store, me, now)?,
+            LockMode::Takeover => device::takeover(&store, me, now, test_hooks::takeover_barrier)?,
+        };
+        *slot = Some(HeldLock { me, held });
+        Ok(LockGuard {
+            shared: Arc::clone(&self.shared),
+            held,
+            armed: true,
+        })
     }
 
     /// `Some(outcome)` when the worker must stop: token stale or a node
@@ -766,12 +1174,21 @@ impl StartJob {
             match Claim::try_acquire(&self.claim_keys) {
                 Ok(c) => return Ok(c),
                 Err(ClaimState::Running) => {
-                    return Err(Err(LnError::Other("already_running".into())))
+                    if self.lock_mode == LockMode::Acquire
+                        && self.shared.inner.lock().unwrap().is_some()
+                    {
+                        return Err(Ok(()));
+                    }
+                    return Err(Err(LnError::Other("already_running".into())));
                 }
-                Err(ClaimState::Starting) if Instant::now() >= self.deadline => {
-                    return Err(Err(LnError::Other("start_in_progress".into())))
+                Err(ClaimState::Starting | ClaimState::Stopping)
+                    if Instant::now() >= self.deadline =>
+                {
+                    return Err(Err(LnError::Other("start_in_progress".into())));
                 }
-                Err(ClaimState::Starting) => std::thread::sleep(Duration::from_millis(50)),
+                Err(ClaimState::Starting | ClaimState::Stopping) => {
+                    std::thread::sleep(Duration::from_millis(50));
+                }
             }
         }
     }
@@ -786,8 +1203,13 @@ impl StartJob {
             self.set(Stage::Lsp);
             self.probe_lsp()?;
         }
+        if let Some(halt) = self.checkpoint() {
+            return halt;
+        }
         self.set(Stage::Vss);
-        self.probe_vss()?;
+        // Dropped before `claim` (declared after it): a worker that gives up
+        // releases the lock while it still holds the claim.
+        let mut lock = self.take_lock()?;
 
         if let Some(halt) = self.checkpoint() {
             return halt;
@@ -859,18 +1281,23 @@ impl StartJob {
             let running = Arc::new(Running {
                 node,
                 mode: self.mode,
+                generation: self.generation,
                 _claim: claim,
             });
             let weak = Arc::downgrade(&running);
             *inner = Some(running);
+            // The installed node owns the lock now (`stop()` releases it).
+            lock.armed = false;
             drop(inner);
+            spawn_lock_checker(&self.shared, self.generation);
             if self.mode == StartMode::Exit {
                 self.exit_connect(&weak);
             }
             return Ok(());
         };
         drop(inner);
-        drop(node); // stops it, then the claim is released
+        drop(node); // stops it, then the lock and the claim are released
+        drop(lock);
         drop(claim);
         outcome
     }
@@ -912,48 +1339,6 @@ impl StartJob {
         }
         Err(LnError::LspUnreachable)
     }
-
-    fn probe_vss(&self) -> Result<(), LnError> {
-        probe_vss(&self.vss, &self.store_id, self.probe_timeout())
-    }
-}
-
-/// One `getObject` of a key that need not exist, with no retry and at most
-/// `timeout`: any answer from VSS (including "no such key") means it is
-/// reachable and accepts our auth; anything else is `BackupUnavailable`.
-fn probe_vss(vss: &VssConfig, store_id: &str, timeout: Duration) -> Result<(), LnError> {
-    let rt = ldk_node::tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()
-        .map_err(|e| LnError::Other(format!("runtime: {e}")))?;
-    let http = vss_client::reqwest::Client::builder()
-        .timeout(timeout)
-        .build()
-        .map_err(|e| LnError::Other(format!("http client: {e}")))?;
-    let policy = ExponentialBackoffRetryPolicy::<VssError>::new(Duration::from_millis(10))
-        .with_max_attempts(1);
-    let client = VssClient::from_client_and_headers(
-        vss.url.clone(),
-        http,
-        policy,
-        Arc::new(FixedHeaders::new(vss_headers(vss))),
-    );
-    let req = GetObjectRequest {
-        store_id: store_id.to_string(),
-        key: "fortis-probe".into(),
-    };
-    match rt.block_on(client.get_object(&req)) {
-        Ok(_) | Err(VssError::NoSuchKeyError(_)) => Ok(()),
-        Err(_) => Err(LnError::BackupUnavailable),
-    }
-}
-
-fn vss_headers(vss: &VssConfig) -> HashMap<String, String> {
-    let mut h = HashMap::new();
-    if !vss.auth_header.is_empty() {
-        h.insert("Authorization".to_string(), vss.auth_header.clone());
-    }
-    h
 }
 
 fn map_build_error(e: BuildError) -> LnError {
@@ -1041,10 +1426,63 @@ mod tests {
 #[doc(hidden)]
 pub mod test_hooks {
     use std::sync::atomic::{AtomicU64, Ordering};
+    use std::sync::{Arc, Barrier, Mutex};
+    use std::time::Duration;
 
     pub(crate) static BUILDS: AtomicU64 = AtomicU64::new(0);
     pub(crate) static LIVE: AtomicU64 = AtomicU64::new(0);
     pub(crate) static MAX_LIVE: AtomicU64 = AtomicU64::new(0);
+    static LOCK_CHECK_MS: AtomicU64 =
+        AtomicU64::new(super::LOCK_CHECK_INTERVAL.as_millis() as u64);
+    static TAKEOVER_BARRIER: Mutex<Option<Arc<Barrier>>> = Mutex::new(None);
+
+    /// The device lock's key in the node's VSS store.
+    pub const DEVICE_LOCK_KEY: &str = crate::device::LOCK_KEY;
+    /// The production background-check interval.
+    pub const DEFAULT_LOCK_CHECK_INTERVAL: Duration = super::LOCK_CHECK_INTERVAL;
+
+    /// Sets the background lock-check interval for checkers started from
+    /// now on (each reads it before every wait).
+    pub fn set_lock_check_interval(d: Duration) {
+        LOCK_CHECK_MS.store(d.as_millis().max(1) as u64, Ordering::SeqCst);
+    }
+
+    pub(crate) fn lock_check_interval() -> Duration {
+        Duration::from_millis(LOCK_CHECK_MS.load(Ordering::SeqCst))
+    }
+
+    /// Every `takeover` waits on `b` between reading the lock and writing
+    /// it (so concurrent takeovers all read the same version).
+    pub fn set_takeover_barrier(b: Option<Arc<Barrier>>) {
+        *TAKEOVER_BARRIER.lock().unwrap() = b;
+    }
+
+    pub(crate) fn takeover_barrier() {
+        let b = TAKEOVER_BARRIER.lock().unwrap().clone();
+        if let Some(b) = b {
+            b.wait();
+        }
+    }
+
+    /// A crash: the node stops without releasing its device lock (the
+    /// process is gone; the lock stays in VSS with this device's id).
+    pub fn crash(node: &crate::Node) {
+        *node.shared.lock.lock().unwrap() = None;
+        node.stop();
+    }
+
+    /// Gives `node` its own process-wide claim scope for its store, so a
+    /// test can run a second "device" for the same seed in one process
+    /// (the claim, Task 4, would refuse it before it reaches VSS; across
+    /// real devices it never applies).
+    pub fn own_claims(node: &mut crate::Node, tag: &str) {
+        node.claim_keys[0] = format!("store:{}@{tag}", node.store_id);
+    }
+
+    /// The node's VSS store id.
+    pub fn store_id(node: &crate::Node) -> String {
+        node.store_id.clone()
+    }
 
     /// ldk-node builds in this process so far.
     pub fn builds() -> u64 {

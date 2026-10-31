@@ -12,12 +12,14 @@
 //!    exactly that (a different `amount_msat` is `Other("amount_mismatch")`),
 //!    one without needs `amount_msat` (`Other("amount_required")`);
 //! 2. `Other("not_started")` unless the node runs;
-//! 3. `InsufficientLightning` when the amount exceeds what the usable
+//! 3. [`Node::pre_send_checks`]: the device-lock check, one VSS round trip
+//!    (≤ 3 s) — `BackupUnavailable` and nothing is sent when VSS does not
+//!    answer ("Lightning refuses to pay while VSS is unreachable");
+//!    `ActiveOnAnotherDevice` when another device took over (this node then
+//!    stops itself, `LnEvent::DeviceLockLost`);
+//! 4. `InsufficientLightning` when the amount exceeds what the usable
 //!    channels can send now (LDK's `next_outbound_htlc_limit_msat`, which
 //!    already keeps the channel reserve);
-//! 4. [`Node::pre_send_checks`]: a VSS round trip (≤ 3 s) —
-//!    `BackupUnavailable` and nothing is sent when VSS does not answer
-//!    ("Lightning refuses to pay while VSS is unreachable");
 //! 5. the HTLC goes to ldk-node (`bolt11_payment().send` /
 //!    `send_using_amount`, `bolt12_payment().send` / `send_using_amount`).
 //!    A synchronous routing failure is `NoRoute`; a failed persist of the
@@ -59,7 +61,7 @@ use ldk_node::NodeError;
 use crate::lnurl::{self, HttpGet, UreqGet};
 use crate::{LnError, Node, PaymentTarget};
 
-/// Cap on the VSS reachability check before a payment.
+/// Cap on the device-lock check (VSS round trip) before a payment.
 const PAY_VSS_PROBE_TIMEOUT: Duration = Duration::from_secs(3);
 const NOTES_FILE: &str = "fortis-payment-notes.json";
 /// BOLT11 sends handed to LDK whose outcome is not yet in ldk-node's store:
@@ -194,7 +196,7 @@ impl Node {
         let node: &ldk_node::Node = &running.node;
         let amount = prepared.amount_msat();
 
-        let (id, description) = match prepared {
+        match prepared {
             Prepared::Bolt11 {
                 invoice,
                 amount_override,
@@ -202,14 +204,15 @@ impl Node {
                 ..
             } => {
                 let pid = PaymentId(invoice.payment_hash().to_byte_array());
+                let id_hex = hex::encode(pid.0);
                 let expires_at = invoice
                     .expires_at()
                     .map_or(u64::MAX, |d| d.as_secs())
                     .saturating_add(ATTEMPT_MARGIN_SECS);
                 let p = node.bolt11_payment();
-                let id = guarded_bolt11(
+                let res = guarded_bolt11(
                     self.data_dir(),
-                    &hex::encode(pid.0),
+                    &id_hex,
                     expires_at,
                     now().as_secs(),
                     || node.payment(&pid).is_some(),
@@ -218,8 +221,11 @@ impl Node {
                         Some(a) => p.send_using_amount(&invoice, a, None),
                         None => p.send(&invoice, None),
                     },
-                )?;
-                (id, description)
+                );
+                if matches!(res, Ok(_) | Err(LnError::PaymentStateUnknown)) {
+                    self.note_description(&id_hex, &description);
+                }
+                res
             }
             Prepared::Bolt12 {
                 offer,
@@ -238,26 +244,36 @@ impl Node {
                     None => p.send(&offer, None, None, None),
                 }
                 .map_err(map_send_error)?;
-                (hex::encode(id.0), description)
+                let id_hex = hex::encode(id.0);
+                self.note_description(&id_hex, &description);
+                Ok(id_hex)
             }
-        };
-        self.note_description(&id, &description);
-        Ok(id)
+        }
     }
 
-    /// Steps 3 and 4: `InsufficientLightning`, then [`Self::pre_send_checks`].
+    /// Steps 3 and 4: [`Self::pre_send_checks`], then
+    /// `InsufficientLightning`. The gate comes first: a node whose lock was
+    /// taken over may also have lost its channel's peer connection to the
+    /// new device, and must report (and act on) the takeover, not the
+    /// liquidity.
     fn liquidity_and_gate(&self, node: &ldk_node::Node, amount_msat: u64) -> Result<(), LnError> {
+        self.pre_send_checks()?;
         if amount_msat > sendable_msat(node) {
             return Err(LnError::InsufficientLightning);
         }
-        self.pre_send_checks()
+        Ok(())
     }
 
-    /// The checks every send passes right before the HTLC goes to LDK.
-    /// Phase 1: VSS answers (≤ 3 s). Task 10 adds the device lock here.
-    /// Also gates the channel and transit calls (`channel.rs`).
+    /// The checks every send passes right before the HTLC goes to LDK:
+    /// this node still holds the device lock, by a conditional rewrite of it
+    /// in VSS (≤ 3 s, one round trip, which is also the "VSS answers"
+    /// check). `BackupUnavailable` when VSS does not answer;
+    /// `ActiveOnAnotherDevice` when another device took over (the node is
+    /// then stopped and `DeviceLockLost` queued, see
+    /// [`Node::check_device_lock`]). Also gates the channel and transit
+    /// calls (`channel.rs`).
     pub(crate) fn pre_send_checks(&self) -> Result<(), LnError> {
-        self.probe_backup(PAY_VSS_PROBE_TIMEOUT)
+        self.check_device_lock(PAY_VSS_PROBE_TIMEOUT)
     }
 
     /// Target checks (step 1 of the module docs).
@@ -603,7 +619,15 @@ static FILES_LOCK: Mutex<()> = Mutex::new(());
 pub(crate) fn write_atomic(dir: &Path, file: &str, bytes: &[u8]) -> std::io::Result<()> {
     std::fs::create_dir_all(dir)?;
     let tmp = dir.join(format!("{file}.tmp"));
-    let mut f = std::fs::File::create(&tmp)?;
+    let _ = std::fs::remove_file(&tmp);
+    let mut opts = std::fs::OpenOptions::new();
+    opts.write(true).create_new(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        opts.mode(0o600);
+    }
+    let mut f = opts.open(&tmp)?;
     f.write_all(bytes)?;
     f.sync_all()?;
     std::fs::rename(&tmp, dir.join(file))?;
@@ -852,7 +876,19 @@ mod tests {
             ..node_cfg("fortis-pay-unit-gate")
         })
         .unwrap();
-        assert_eq!(n.pre_send_checks(), Err(LnError::BackupUnavailable));
+        assert_eq!(n.pre_send_checks(), Err(LnError::Other("not_started".into())));
+        // Holding the lock, the check is a VSS round trip: refused.
+        n.hold_lock_for_test();
+        assert_eq!(
+            n.check_lock_at(0, PAY_VSS_PROBE_TIMEOUT),
+            Err(LnError::BackupUnavailable)
+        );
+        // Unreachable is not a lost lock: still held.
+        assert_eq!(
+            n.check_lock_at(0, PAY_VSS_PROBE_TIMEOUT),
+            Err(LnError::BackupUnavailable)
+        );
+        assert_eq!(n.next_event(Duration::ZERO), None);
     }
 
     const ID: &str = "abababababababababababababababababababababababababababababababab";
