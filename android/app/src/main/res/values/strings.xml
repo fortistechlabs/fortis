@@ -484,4 +484,15 @@
         <item quantity="one">%1$d swap needs both wallets: add the other chain\'s wallet (Also add on…), then search again.</item>
         <item quantity="other">%1$d swaps need both wallets: add the other chain\'s wallet (Also add on…), then search again.</item>
     </plurals>
+
+    <!-- Lightning (beta) -->
+    <string name="settings_lightning_title">Lightning (beta)</string>
+    <string name="settings_lightning_body">Send and receive instant Bitcoin payments over the Lightning Network.</string>
+    <string name="settings_lightning_status_off">Off</string>
+    <string name="settings_lightning_status_starting">Connecting to LSP…</string>
+    <string name="settings_lightning_status_ready">LSP connected · backup OK</string>
+    <string name="settings_lightning_close_action">Close channel and move to on-chain</string>
+    <string name="settings_lightning_close_title">Close Lightning channel?</string>
+    <string name="settings_lightning_close_body">This closes your Lightning channel and moves your funds back to your on-chain BTC wallet.</string>
+    <string name="settings_lightning_closing">Closing…</string>
 </resources>

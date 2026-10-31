@@ -76,6 +76,8 @@ import com.fortis.wallet.data.FIAT_CODES
 import com.fortis.wallet.data.defaultFiat
 import com.fortis.wallet.data.fiatLabel
 import com.fortis.wallet.data.fiatSymbol
+import com.fortis.wallet.lightning.LnState
+import com.fortis.wallet.lightning.showLightningToggle
 import com.fortis.wallet.ui.*
 import com.fortis.wallet.ui.theme.Fx
 import com.fortis.wallet.ui.theme.FxType
@@ -736,6 +738,10 @@ private fun SettingsTab(vm: WalletViewModel) {
             vm.recoverNote?.let { Text(it, style = FxType.meta, color = Fx.text) }
         }
 
+        if (showLightningToggle(vm.config)) {
+            LightningSettingsCard(vm)
+        }
+
         OwnServerCard(vm)
         LanguageCard()
         CurrencyCard(vm)
@@ -1315,6 +1321,82 @@ private fun ownServerErrorText(c: com.fortis.wallet.data.OwnServerCheck): String
     com.fortis.wallet.data.OwnServerCheck.NotEsplora -> stringResource(R.string.own_server_err_not_esplora)
     com.fortis.wallet.data.OwnServerCheck.WrongChain -> stringResource(R.string.own_server_err_wrong_chain)
     is com.fortis.wallet.data.OwnServerCheck.NotSynced -> stringResource(R.string.own_server_err_not_synced, c.tip.toString())
+}
+
+/** Settings → Lightning (beta): toggle per software mainnet BTC wallet, status line,
+ *  and "Close channel and move to on-chain". */
+@Composable
+private fun LightningSettingsCard(vm: WalletViewModel) {
+    val c = vm.config ?: return
+    if (!showLightningToggle(c)) return
+    val enabled = vm.isLightningEnabled(c.id)
+    val lnState by vm.lightning.state.collectAsState()
+    var confirmClose by remember { mutableStateOf(false) }
+
+    GlassCard {
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text(stringResource(R.string.settings_lightning_title), color = Fx.text, fontWeight = FontWeight.SemiBold)
+                Text(c.display, style = FxType.meta, color = Fx.textDim)
+            }
+            Switch(
+                checked = enabled,
+                onCheckedChange = { vm.setLightningEnabled(c.id, it) },
+            )
+        }
+        Text(stringResource(R.string.settings_lightning_body), style = FxType.meta, color = Fx.textFaint)
+        val statusText = when (val st = lnState) {
+            LnState.Off -> stringResource(R.string.settings_lightning_status_off)
+            LnState.Starting -> stringResource(R.string.settings_lightning_status_starting)
+            is LnState.Ready -> stringResource(R.string.settings_lightning_status_ready)
+            is LnState.Error -> st.error.message ?: st.error.toString()
+        }
+        val statusColor = when (lnState) {
+            is LnState.Ready -> Fx.good
+            is LnState.Error -> Fx.warn
+            else -> Fx.textDim
+        }
+        Text(statusText, style = FxType.meta, color = statusColor)
+
+        val ready = lnState as? LnState.Ready
+        val canCloseOrSweep = ready != null && (
+            ready.channel != uniffi.wallet_ffi.LnChannelState.NONE ||
+                ready.balances.onchainTransitSat > 0uL
+            )
+        if (enabled && canCloseOrSweep) {
+            GhostButton(
+                stringResource(if (vm.closingLightningChannel) R.string.settings_lightning_closing else R.string.settings_lightning_close_action),
+                enabled = !vm.closingLightningChannel,
+                dense = true,
+            ) { confirmClose = true }
+        }
+    }
+
+    if (confirmClose) {
+        AlertDialog(
+            onDismissRequest = { confirmClose = false },
+            containerColor = Fx.panel,
+            title = { Text(stringResource(R.string.settings_lightning_close_title), color = Fx.text) },
+            text = { Text(stringResource(R.string.settings_lightning_close_body), color = Fx.textDim) },
+            confirmButton = {
+                TextButton({
+                    confirmClose = false
+                    vm.closeLightningAndMoveToOnchain()
+                }) {
+                    Text(stringResource(R.string.action_confirm), color = Fx.signal)
+                }
+            },
+            dismissButton = {
+                TextButton({ confirmClose = false }) {
+                    Text(stringResource(R.string.action_cancel), color = Fx.text)
+                }
+            },
+        )
+    }
 }
 
 /** Per chain: read it from fortis servers or the user's own Esplora server. */

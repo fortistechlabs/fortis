@@ -58,6 +58,12 @@ data class WalletConfig(
         else -> ""
     }
     val otherChain: String get() = if (chain == "btc") "xbt" else "btc"
+    val supportsLightning: Boolean
+        get() = chain == "btc" &&
+            (network == "mainnet" || network == "bitcoin") &&
+            !watchOnly &&
+            !hardware &&
+            sealed != null
 
     fun toJson(): JSONObject = JSONObject().apply {
         put("id", id); put("name", name); put("chain", chain); put("network", network)
@@ -107,7 +113,7 @@ data class WalletState(
 /** One chain's own-server setting: the saved URL (if any) and whether it's in use. */
 data class OwnServerPrefs(val url: String?, val on: Boolean)
 
-class Store(private val ctx: Context) {
+class Store(private val ctx: Context) : com.fortis.wallet.lightning.LightningStore {
     private object K {
         val wallets = stringPreferencesKey("wallets")
         val selected = stringPreferencesKey("selected")
@@ -209,11 +215,53 @@ class Store(private val ctx: Context) {
         p[ownOnKey(chain)] = on
     }
 
+    private fun lnEnabledKey(walletId: String) = booleanPreferencesKey("ln_enabled_$walletId")
+
+    override suspend fun lightningEnabled(walletId: String): Boolean {
+        val p = ctx.dataStore.data.first()
+        val w = decode(p[K.wallets]).firstOrNull { it.id == walletId }
+        if (w != null && !w.supportsLightning) return false
+        return p[lnEnabledKey(walletId)] ?: false
+    }
+
+    override suspend fun setLightningEnabled(walletId: String, on: Boolean) {
+        ctx.dataStore.edit { p ->
+            val w = decode(p[K.wallets]).firstOrNull { it.id == walletId }
+            if (w != null && !w.supportsLightning) {
+                p.remove(lnEnabledKey(walletId))
+            } else if (on) {
+                p[lnEnabledKey(walletId)] = true
+            } else {
+                p.remove(lnEnabledKey(walletId))
+            }
+        }
+    }
+
+    override suspend fun walletConfig(walletId: String): WalletConfig? {
+        val p = ctx.dataStore.data.first()
+        return decode(p[K.wallets]).firstOrNull { it.id == walletId }
+    }
+
+    override suspend fun esploraUrl(walletId: String): String =
+        ownServer("btc") ?: "${com.fortis.wallet.HOSTED_EDGE}/btc"
+
+    override suspend fun vssUrl(walletId: String): String =
+        "${com.fortis.wallet.HOSTED_EDGE}/ln/vss"
+
+    override suspend fun vssAuthHeader(walletId: String): String {
+        val tok = walletConfig(walletId)?.backendToken?.takeIf { it.isNotBlank() } ?: return ""
+        return "Bearer $tok"
+    }
+
+    override fun dataDir(walletId: String): String =
+        java.io.File(ctx.filesDir, "ln/$walletId").absolutePath
+
     /** Remove one wallet from the app (the seed is not destroyed — the phrase
      *  still restores it). Returns what's left. */
     suspend fun remove(id: String): WalletState {
         lateinit var out: WalletState
         ctx.dataStore.edit { p ->
+            p.remove(lnEnabledKey(id))
             val list = decode(p[K.wallets]).filter { it.id != id }
             val sel = p[K.selected]?.takeIf { s -> list.any { it.id == s } } ?: list.firstOrNull()?.id
             val lock = if (list.isEmpty()) null else p[K.lockMode]

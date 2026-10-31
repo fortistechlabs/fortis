@@ -8,6 +8,9 @@ import androidx.compose.runtime.setValue
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.fortis.wallet.data.*
+import com.fortis.wallet.lightning.EdgeLnInfoApi
+import com.fortis.wallet.lightning.LightningSession
+import com.fortis.wallet.lightning.LnState
 import com.fortis.wallet.swap.SwapService
 import com.fortis.wallet.swap.indexUsed
 import com.fortis.wallet.swap.withFreshIndex
@@ -315,6 +318,101 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
     /** This ViewModel's funder, handed to the Application-level engine while it lives. */
     private val funder = swapFunder(fortis.swapStore)
 
+    private suspend fun ensureWalletToken(walletId: String): String {
+        val w = wallets.firstOrNull { it.id == walletId } ?: store.walletConfig(walletId)
+        val existing = w?.backendToken?.takeIf { it.isNotBlank() }
+        if (existing != null) return existing
+        val fresh = withContext(Dispatchers.IO) { edgeRegister(http, HOSTED_EDGE) }
+        updateConfig(walletId) { it.copy(backendToken = fresh) }
+        return fresh
+    }
+
+    val lightning = LightningSession(
+        scope = viewModelScope,
+        store = store,
+        info = EdgeLnInfoApi(http, HOSTED_EDGE) {
+            val id = selectedId ?: wallets.firstOrNull { it.supportsLightning }?.id
+            if (id != null) ensureWalletToken(id) else fortis.swapStore.edgeToken(http, HOSTED_EDGE)
+        },
+        sweepAddressProvider = { walletId ->
+            val w = wallets.firstOrNull { it.id == walletId }
+            val s = ensureSession(walletId, quiet = true)
+            if (w != null && s != null) s.receiveAddress(w.nextReceive).address else null
+        },
+        ensureAuthHeader = { walletId ->
+            val tok = runCatching { ensureWalletToken(walletId) }.getOrNull().orEmpty()
+            if (tok.isNotBlank()) "Bearer $tok" else ""
+        },
+    )
+
+    var lightningEnabledById by mutableStateOf<Map<String, Boolean>>(emptyMap()); private set
+    var closingLightningChannel by mutableStateOf(false); private set
+
+    fun isLightningEnabled(walletId: String): Boolean = lightningEnabledById[walletId] == true
+
+    fun setLightningEnabled(walletId: String, on: Boolean) {
+        val w = wallets.firstOrNull { it.id == walletId } ?: return
+        if (!w.supportsLightning) return
+        lightningEnabledById = lightningEnabledById + (walletId to on)
+        if (on) {
+            viewModelScope.launch(Dispatchers.Default) {
+                lightning.enable(walletId).join()
+                if (selectedId == walletId && appSecret != null) {
+                    val s = ensureSession(walletId, quiet = true)
+                    val seed = s?.copyBip39Seed()
+                    if (seed != null) {
+                        try {
+                            lightning.onUnlocked(walletId, seed)
+                        } finally {
+                            seed.fill(0)
+                        }
+                    }
+                }
+            }
+        } else {
+            lightning.disable(walletId)
+        }
+    }
+
+    fun closeLightningAndMoveToOnchain() = viewModelScope.launch {
+        if (closingLightningChannel) return@launch
+        val c = config ?: return@launch
+        val s = withContext(Dispatchers.Default) { ensureSession(c.id) } ?: return@launch
+        closingLightningChannel = true
+        error = null
+        try {
+            val addr = s.receiveAddress(c.nextReceive).address
+            val txid = lightning.closeAndSweep(addr)
+            if (txid != null) {
+                updateConfig(c.id) { it.copy(nextReceive = it.nextReceive + 1) }
+            }
+            refreshSoon()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            error = e.message ?: e.toString()
+        } finally {
+            closingLightningChannel = false
+        }
+    }
+
+    private fun syncLightningForSelected() {
+        val c = config
+        if (appSecret == null || c == null || !c.supportsLightning) {
+            lightning.onRelocked()
+            return
+        }
+        viewModelScope.launch(Dispatchers.Default) {
+            val s = ensureSession(c.id, quiet = true) ?: return@launch
+            val seed = s.copyBip39Seed() ?: return@launch
+            try {
+                lightning.onUnlocked(c.id, seed)
+            } finally {
+                seed.fill(0)
+            }
+        }
+    }
+
     init {
         fortis.unlockedFunder = funder
         viewModelScope.launch {
@@ -324,6 +422,7 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
             selectedId = s.selectedId
             lockMode = s.lockMode
             appWrapped = s.appWrapped
+            lightningEnabledById = s.wallets.associate { w -> w.id to store.lightningEnabled(w.id) }
             resolvePhase()
         }
     }
@@ -1135,6 +1234,7 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
             selectedId = id
             viewModelScope.launch { store.setSelected(id) }
             resetView()
+            syncLightningForSelected()
         }
         if (nav != NavTab.Wallet || swapRoute != null) pushPlace()
         if (swapRoute != null) { declineTaken(); swapRoute = null }
@@ -1149,6 +1249,7 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
         appSecret = secret
         resolvePhase()
         fortis.onAppUnlocked()
+        syncLightningForSelected()
     }
 
     /** Password mode: open a wallet with the password off the main thread (it
@@ -1169,10 +1270,12 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
         appSecret = pw
         resolvePhase()
         fortis.onAppUnlocked()
+        syncLightningForSelected()
     }
 
     /** Lock the whole app — clears every seed and the app secret from memory. */
     fun lock() {
+        lightning.onRelocked()
         sessions.values.forEach { it.close() }
         sessions.clear()
         appSecret = null
@@ -1229,6 +1332,7 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
         nav = NavTab.Wallet
         clearBack()
         resolvePhase()
+        syncLightningForSelected()
     }
 
     /** Import an account-level xpub with no seed at all — nothing to sign
@@ -1650,6 +1754,13 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
             newFeerates?.let { feerates = it }
             if (refreshingFor != null && freshReceive > cur) {
                 updateConfig(refreshingFor) { it.copy(nextReceive = freshReceive) }
+            }
+            if (!degraded) {
+                if (lightning.state.value is LnState.Error) {
+                    lightning.onConnectivityRestored()
+                } else {
+                    lightning.refreshBalances()
+                }
             }
         }
         try {

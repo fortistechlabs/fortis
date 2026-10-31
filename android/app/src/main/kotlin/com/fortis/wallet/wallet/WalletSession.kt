@@ -59,17 +59,25 @@ class WalletSession private constructor(
     val xpub: String,
     val fingerprint: String?,
     val view: WalletView,
+    private val bip39Seed: ByteArray? = null,
 ) {
     companion object {
         fun signing(chain: String, network: String, mnemonic: String, passphrase: String): WalletSession {
             val wallet = Wallet.fromMnemonic(mnemonic, passphrase, network)
             val xpub = wallet.accountXpub(chain, 0u)
-            return WalletSession(chain, wallet, xpub, wallet.masterFingerprint(), WalletView(chain, network, xpub))
+            val lnSeed = if (chain == "btc" && (network == "mainnet" || network == "bitcoin")) {
+                runCatching { uniffi.wallet_ffi.lnBip39Seed(mnemonic, passphrase) }.getOrNull()
+            } else {
+                null
+            }
+            return WalletSession(chain, wallet, xpub, wallet.masterFingerprint(), WalletView(chain, network, xpub), lnSeed)
         }
 
         fun watchOnly(chain: String, network: String, xpub: String) =
-            WalletSession(chain, null, xpub, null, WalletView(chain, network, xpub))
+            WalletSession(chain, null, xpub, null, WalletView(chain, network, xpub), null)
     }
+
+    fun copyBip39Seed(): ByteArray? = bip39Seed?.copyOf()
 
     fun setIndices(nextReceive: Int, nextChange: Int) =
         view.setNextIndices(nextReceive.toUInt(), nextChange.toUInt())
@@ -90,6 +98,7 @@ class WalletSession private constructor(
     }
 
     fun close() {
+        bip39Seed?.fill(0)
         wallet?.close()
         view.close()
     }
