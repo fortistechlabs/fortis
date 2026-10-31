@@ -198,7 +198,7 @@ fn run(url: String, shared: Arc<Mutex<Shared>>) {
                     let snapshot: Vec<String> = shared.lock().unwrap().tracked.iter().cloned().collect();
                     if !snapshot.is_empty() && snapshot != last_sent {
                         let msg = serde_json::json!({ "track-addresses": snapshot }).to_string();
-                        if let Err(e) = socket.send(Message::Text(msg.into())) {
+                        if let Err(e) = socket.send(Message::Text(msg)) {
                             close_reason = format!("send failed: {e}");
                             break 'conn;
                         }
@@ -328,7 +328,7 @@ mod tests {
             "bc1qazgkf85gfpy5000rl0g7595qwkfwuttg39f960".to_string(),
         ];
         let msg = serde_json::json!({ "track-addresses": addrs }).to_string();
-        socket.send(Message::Text(msg.into())).expect("send should succeed on a live connection");
+        socket.send(Message::Text(msg)).expect("send should succeed on a live connection");
         // One read attempt: either a message arrives (fine), or it times out
         // (also fine — these addresses are quiet) — anything other than a
         // hard protocol error/close means the server accepted the subscription.
