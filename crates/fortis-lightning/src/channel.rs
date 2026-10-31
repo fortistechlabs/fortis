@@ -36,7 +36,14 @@
 //! Only a record is evidence of a shutdown: an unrecorded not-ready channel
 //! is `Opening`.
 //!
+//! **Exit mode.** On a node started with [`StartMode::Exit`],
+//! `open_channel` and `close_channel` return `LspUnreachable` at once while
+//! the LSP peer is not connected; `force_close_channel`, `sweep_transit`,
+//! `transit_address`, `channel_state` and the balances never depend on the
+//! LSP and work as in Normal mode.
+//!
 //! [`Balances`]: crate::Balances
+//! [`StartMode::Exit`]: crate::StartMode::Exit
 
 use std::collections::BTreeMap;
 use std::path::Path;
@@ -53,6 +60,7 @@ use ldk_node::lightning::ln::types::ChannelId;
 use ldk_node::payment::{ConfirmationStatus, PaymentKind};
 use ldk_node::{ChannelDetails, LightningBalance, NodeError, PendingSweepBalance};
 
+use crate::node::peer_connected;
 use crate::{Balances, LnError, Node};
 
 /// ldk-node's dust limit for its own wallet outputs.
@@ -177,8 +185,9 @@ pub(crate) struct MonitorBalance {
     /// The channel is closed and its funding transaction, which this node
     /// built, was never seen confirmed (rule: the close record holds the
     /// funding txid from when the channel was last listed with it
-    /// unconfirmed, and the wallet's payment store does not show it
-    /// confirmed). No commitment or closing transaction can confirm before
+    /// unconfirmed, and [`funding_void`] holds: the wallet's payment store
+    /// positively shows it unconfirmed, or has no entry although it is not
+    /// behind LDK's chain view; unknown keeps blocking). No commitment or closing transaction can confirm before
     /// the funding does, so the balance is void: LDK keeps reporting a
     /// `ClaimableOnChannelClose` for it forever. If the funding does confirm
     /// later, the store says so and the balance counts again.
@@ -299,6 +308,62 @@ pub(crate) fn breakdown(i: &BalanceInputs) -> Balances {
     }
 }
 
+/// What ldk-node's payment store says about a funding transaction.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum FundingSeen {
+    /// No entry: the wallet never saw it — or has not caught up yet (on
+    /// Esplora the on-chain wallet syncs on its own interval; on bitcoind a
+    /// mempool transaction gets an entry only with the next block).
+    Missing,
+    /// Seen, not confirmed: in the mempool, or dropped from it (the wallet
+    /// keeps the last status of a transaction it no longer sees).
+    Unconfirmed,
+    Confirmed,
+}
+
+/// What [`funding_void`] decides from.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct FundingVoidInputs {
+    pub seen: FundingSeen,
+    /// ldk-node `NodeStatus::latest_onchain_wallet_sync_timestamp` (the
+    /// sync that also updates the payment store).
+    pub onchain_sync_secs: Option<u64>,
+    /// `NodeStatus::latest_lightning_wallet_sync_timestamp`.
+    pub lightning_sync_secs: Option<u64>,
+}
+
+/// Whether a closed channel's never-confirmed funding (this node built it)
+/// is void, i.e. its monitor balance neither counts nor blocks. Unknown
+/// keeps blocking:
+///
+/// - `Confirmed`: not void;
+/// - `Unconfirmed`: void — the wallet has positively seen it unconfirmed;
+/// - `Missing`: void only when the on-chain wallet's last sync is at least
+///   as new as LDK's last chain sync (so the store is not merely lagging
+///   what LDK knows), both known. Equal is the bitcoind source, where one
+///   sync sets both timestamps; on Esplora a store that last synced before
+///   LDK keeps the channel blocking until it catches up.
+pub(crate) fn funding_void(i: &FundingVoidInputs) -> bool {
+    match i.seen {
+        FundingSeen::Confirmed => false,
+        FundingSeen::Unconfirmed => true,
+        FundingSeen::Missing => matches!(
+            (i.onchain_sync_secs, i.lightning_sync_secs),
+            (Some(onchain), Some(lightning)) if onchain >= lightning
+        ),
+    }
+}
+
+/// Whether an outbound channel's funding still counts as an open in flight
+/// (blocks sweeps and further opens): its funding is unconfirmed and it has
+/// no close kind recorded. Once this node asked to close it (or saw it
+/// close), it no longer blocks — so `open_channel` is allowed again too,
+/// even though the old funding could in theory still confirm (Task 7
+/// ruling (1): a funding that never confirms must not block for good).
+pub(crate) fn funding_blocks(funding_unconfirmed: bool, record: Option<&CloseRecord>) -> bool {
+    funding_unconfirmed && record.is_none_or(|r| r.kind.is_none())
+}
+
 // ---------------------------------------------------------------------------
 // Close records
 // ---------------------------------------------------------------------------
@@ -407,10 +472,10 @@ fn not_started() -> LnError {
 /// never confirms would otherwise block sweeps and opens for good (LDK does
 /// not time out outbound channels; ldk-node never rebroadcasts the funding).
 fn funding_in_flight(c: &ChannelDetails, closes: &BTreeMap<String, CloseRecord>) -> bool {
-    funding_unconfirmed(c)
-        && closes
-            .get(&c.channel_id.to_string())
-            .is_none_or(|r| r.kind.is_none())
+    funding_blocks(
+        funding_unconfirmed(c),
+        closes.get(&c.channel_id.to_string()),
+    )
 }
 
 fn funding_unconfirmed(c: &ChannelDetails) -> bool {
@@ -426,21 +491,27 @@ fn pending_funding_txid(c: &ChannelDetails) -> Option<String> {
     }
 }
 
-/// Whether ldk-node's payment store (the transit wallet's view; updated
-/// when the wallet syncs a block or, on Esplora, any update) has `txid`
-/// confirmed.
-fn wallet_confirmed(node: &ldk_node::Node, txid: &str) -> bool {
+/// What ldk-node's payment store (the transit wallet's view; updated when
+/// the wallet syncs a block or, on Esplora, any update) says about `txid`.
+fn wallet_seen(node: &ldk_node::Node, txid: &str) -> FundingSeen {
     let Ok(txid) = Txid::from_str(txid) else {
-        return false;
+        return FundingSeen::Missing;
     };
-    matches!(
-        node.payment(&PaymentId(txid.to_byte_array()))
-            .map(|p| p.kind),
+    match node
+        .payment(&PaymentId(txid.to_byte_array()))
+        .map(|p| p.kind)
+    {
         Some(PaymentKind::Onchain {
             status: ConfirmationStatus::Confirmed { .. },
             ..
-        })
-    )
+        }) => FundingSeen::Confirmed,
+        Some(PaymentKind::Onchain {
+            status: ConfirmationStatus::Unconfirmed,
+            ..
+        }) => FundingSeen::Unconfirmed,
+        // No entry (or, impossibly for our own funding, not on-chain).
+        _ => FundingSeen::Missing,
+    }
 }
 
 /// Keeps each listed outbound channel's unconfirmed funding txid in its
@@ -479,15 +550,21 @@ impl Snapshot {
         let b = node.list_balances();
         let closes = track_funding(dir, &channels);
         let open: Vec<ChannelId> = channels.iter().map(|c| c.channel_id).collect();
-        // Closed channels whose funding we built but never saw confirmed:
-        // nothing on chain can pay out of them (see `MonitorBalance`).
+        // Closed channels whose funding we built and the wallet shows as not
+        // confirmed: nothing on chain can pay out of them (see
+        // `MonitorBalance` and `funding_void`).
+        let status = node.status();
         let void: Vec<&String> = closes
             .iter()
             .filter(|(id, r)| {
                 !open.iter().any(|o| o.to_string() == **id)
-                    && r.unconfirmed_funding
-                        .as_deref()
-                        .is_some_and(|t| !wallet_confirmed(node, t))
+                    && r.unconfirmed_funding.as_deref().is_some_and(|t| {
+                        funding_void(&FundingVoidInputs {
+                            seen: wallet_seen(node, t),
+                            onchain_sync_secs: status.latest_onchain_wallet_sync_timestamp,
+                            lightning_sync_secs: status.latest_lightning_wallet_sync_timestamp,
+                        })
+                    })
             })
             .map(|(id, _)| id)
             .collect();
@@ -716,6 +793,8 @@ impl Node {
     /// unspent to the wallet); `Other("insufficient_transit")` unless the
     /// spendable transit balance covers `amount_sat` plus the anchor reserve
     /// (module docs); `BackupUnavailable` from the gate; `LspUnreachable`.
+    /// Exit mode: `LspUnreachable` right after `not_started` while the LSP
+    /// is not connected.
     ///
     /// **Blocking.** The VSS check (≤ 3 s) and, when the LSP is not
     /// connected, a connection attempt: call it off the UI thread.
@@ -728,6 +807,7 @@ impl Node {
             });
         }
         let running = self.running().ok_or_else(not_started)?;
+        self.exit_gate(&running)?;
         let _ops = self.channel_ops();
         let node = &running.node;
         let closes = load_closes(self.data_dir());
@@ -773,9 +853,11 @@ impl Node {
     /// refuses a channel this node had already asked to close (ldk-node
     /// 0.7.1 does not pass LDK's reason on; LDK refuses a second shutdown);
     /// `Other("close_failed")` when LDK refuses otherwise (e.g. HTLCs in
-    /// flight).
+    /// flight). Exit mode: `LspUnreachable` right after `not_started` while
+    /// the LSP is not connected (no connection attempt).
     pub fn close_channel(&self) -> Result<(), LnError> {
         let running = self.running().ok_or_else(not_started)?;
+        self.exit_gate(&running)?;
         let _ops = self.channel_ops();
         let node = &running.node;
         let (lsp_id, lsp_addr) = self.lsp_peer();
@@ -945,12 +1027,6 @@ impl Node {
             let _ = node.connect(lsp_id, lsp_addr, true);
         }
     }
-}
-
-fn peer_connected(node: &ldk_node::Node, id: &ldk_node::bitcoin::secp256k1::PublicKey) -> bool {
-    node.list_peers()
-        .iter()
-        .any(|p| p.node_id == *id && p.is_connected)
 }
 
 #[cfg(test)]
@@ -1265,6 +1341,61 @@ mod tests {
             wallet(10_000, 0, 0),
         );
         assert_eq!(breakdown(&i).pending_transit_sat, 10_000);
+    }
+
+    fn vi(seen: FundingSeen, onchain: Option<u64>, lightning: Option<u64>) -> FundingVoidInputs {
+        FundingVoidInputs {
+            seen,
+            onchain_sync_secs: onchain,
+            lightning_sync_secs: lightning,
+        }
+    }
+
+    #[test]
+    fn funding_void_rule_unknown_keeps_blocking() {
+        use FundingSeen::*;
+        // Confirmed: never void, whatever the sync times.
+        for (o, l) in [(None, None), (Some(5), Some(9)), (Some(9), Some(5))] {
+            assert!(!funding_void(&vi(Confirmed, o, l)), "{o:?} {l:?}");
+        }
+        // The wallet has positively seen it and it is not confirmed
+        // (in the mempool, or dropped from it): void.
+        for (o, l) in [(None, None), (Some(5), Some(9)), (Some(9), Some(5))] {
+            assert!(funding_void(&vi(Unconfirmed, o, l)), "{o:?} {l:?}");
+        }
+        // Missing from the payment store on a lagging Esplora-like input
+        // (the on-chain wallet last synced before LDK's last sync): the
+        // store may just not have caught up, so it keeps blocking.
+        assert!(!funding_void(&vi(Missing, Some(100), Some(130))));
+        // Never synced (either side): unknown, keeps blocking.
+        assert!(!funding_void(&vi(Missing, None, None)));
+        assert!(!funding_void(&vi(Missing, None, Some(130))));
+        assert!(!funding_void(&vi(Missing, Some(130), None)));
+        // The wallet's view is at least as new as LDK's and still has no
+        // entry: void. Equal is the bitcoind source (one sync sets both).
+        assert!(funding_void(&vi(Missing, Some(130), Some(130))));
+        assert!(funding_void(&vi(Missing, Some(131), Some(130))));
+    }
+
+    #[test]
+    fn closed_unconfirmed_funding_is_not_in_flight() {
+        let rec = |kind: Option<CloseKind>| CloseRecord {
+            kind,
+            unconfirmed_funding: Some("ab".into()),
+        };
+        // Task 7 ruling (1): a listed channel this node asked to close (or
+        // saw closing) no longer counts as an open in flight, even while its
+        // funding is unconfirmed — so sweeps AND `open_channel` are allowed
+        // again (documented side effect: a new open may then be funded
+        // while the old funding could still confirm).
+        assert!(!funding_blocks(true, Some(&rec(Some(Force)))));
+        assert!(!funding_blocks(true, Some(&rec(Some(Coop)))));
+        // No close record, or one holding only the funding txid: in flight.
+        assert!(funding_blocks(true, None));
+        assert!(funding_blocks(true, Some(&rec(None))));
+        // Confirmed funding never blocks.
+        assert!(!funding_blocks(false, None));
+        assert!(!funding_blocks(false, Some(&rec(None))));
     }
 
     #[test]

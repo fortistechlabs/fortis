@@ -25,6 +25,11 @@
 //!    (see [`Node::pay`]), guarded by a local attempt record so the same
 //!    invoice is never sent twice while its outcome is unknown.
 //!
+//! **Exit mode.** On a node started with
+//! [`StartMode::Exit`](crate::StartMode::Exit), `pay` returns
+//! `LspUnreachable` before step 1, at once, while the LSP peer is not
+//! connected (all routes go through it).
+//!
 //! `pay` returns once the payment is handed to LDK; the outcome arrives as
 //! `LnEvent::PaymentSent` / `PaymentFailed` with the same id, and in
 //! [`Node::payments`]. The id is the hex of ldk-node's payment id (the
@@ -177,6 +182,11 @@ impl Node {
         amount_msat: Option<u64>,
         http: &dyn HttpGet,
     ) -> Result<String, LnError> {
+        // Exit mode, LSP not connected: refused before anything (LNURL
+        // lookups included). A node not running gets the usual order.
+        if let Some(running) = self.running() {
+            self.exit_gate(&running)?;
+        }
         let prepared = self.prepare(target, amount_msat, http)?;
         let running = self
             .running()

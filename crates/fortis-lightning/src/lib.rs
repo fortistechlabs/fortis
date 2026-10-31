@@ -21,7 +21,9 @@ pub use channel::ChannelState;
 pub use error::{LnError, ParseError};
 #[doc(hidden)]
 pub use node::test_hooks;
-pub use node::{Balances, ChainSource, LnEvent, LspInfo, LspLimits, Node, NodeConfig, VssConfig};
+pub use node::{
+    Balances, ChainSource, LnEvent, LspInfo, LspLimits, Node, NodeConfig, StartMode, VssConfig,
+};
 pub use parse::{parse, parse_at, PaymentTarget};
 pub use pay::{Direction, Payment, Status};
 pub use receive::ReceiveQuote;

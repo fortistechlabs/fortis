@@ -58,10 +58,16 @@ impl Node {
     /// `AmountOutOfRange` (with the LSP limits) for 0, or for a JIT receive
     /// outside them; `LspUnreachable` when the LSP does not answer the LSPS2
     /// request; `BackupUnavailable` when the payment cannot be persisted.
+    /// On a node started in [`StartMode::Exit`](crate::StartMode::Exit):
+    /// `LspUnreachable` right after `not_started`, at once, while the LSP is
+    /// not connected.
     pub fn receive(&self, amount_msat: u64, description: &str) -> Result<ReceiveQuote, LnError> {
         let running = self
             .running()
             .ok_or_else(|| LnError::Other("not_started".into()))?;
+        // Exit mode, LSP not connected: refused before anything, plain
+        // invoice included (nothing could be forwarded to us anyway).
+        self.exit_gate(&running)?;
         let node = &running.node;
         let limits = self.limits();
         let out_of_range = LnError::AmountOutOfRange {

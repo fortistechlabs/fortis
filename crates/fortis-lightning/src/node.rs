@@ -9,8 +9,8 @@
 //! unlinkable to the wallet.
 //!
 //! **Start.** [`Node::new`] only derives keys and validates the config; no
-//! I/O. [`Node::start`] runs on a worker thread under one 14 s deadline and
-//! returns the first failure as an [`LnError`]:
+//! I/O. [`Node::start_with`] runs on a worker thread under one 14 s deadline
+//! and returns the first failure as an [`LnError`]:
 //!
 //! 1. TCP reachability of the LSP → [`LnError::LspUnreachable`] (checked
 //!    first, so "no network at all" reads as `LspUnreachable`);
@@ -22,6 +22,20 @@
 //!
 //! On timeout the error is that of the stage still running; the worker keeps
 //! going in the background and stops whatever node it built.
+//!
+//! **Exit mode.** [`StartMode::Exit`] is the recovery start for when the
+//! LSP is gone (spec: users can force-close unilaterally at any time). It
+//! skips stage 1, and stage 5 is best effort and runs after the node is
+//! installed: a TCP probe of the LSP (≤ 2 s, and the time left), and
+//! `connect` only when that answers; neither failing is an error (the node
+//! is then just not connected), and a stalling LSP cannot make the start
+//! fail (the caller's deadline finds the node installed: `Ok`). Stages 2–4
+//! and their errors are as in Normal mode: VSS and the chain source are
+//! still required. ldk-node keeps trying to reconnect to its persisted peers
+//! (the LSP while a channel exists) in the background every 60 s; once it is
+//! connected, the node behaves as in Normal mode. While it is not,
+//! `receive`, `pay`, `open_channel` and `close_channel` return
+//! `LspUnreachable` at once ([`Node::exit_gate`]).
 //!
 //! **One ldk-node per wallet.** VSS writes are unconditional (spec,
 //! Findings (b)), so two ldk-nodes on one store silently corrupt channel
@@ -60,6 +74,9 @@ use crate::LnError;
 const START_DEADLINE: Duration = Duration::from_secs(14);
 /// Per-probe cap for the LSP and VSS reachability checks.
 const PROBE_TIMEOUT: Duration = Duration::from_secs(5);
+/// Exit mode's best-effort LSP probe: a host that is gone (packets dropped)
+/// costs at most this.
+const EXIT_PROBE_TIMEOUT: Duration = Duration::from_secs(2);
 const VSS_STORE_TAG: &[u8] = b"fortis/ln/vss/v1";
 
 /// Where the LSP (`fortis-lsp`) is; the app fills it from `GET /ln/info`.
@@ -173,6 +190,16 @@ pub struct Balances {
     pub inbound_sat: u64,
 }
 
+/// How [`Node::start_with`] starts the node.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StartMode {
+    /// The LSP must be reachable (`LspUnreachable` otherwise).
+    Normal,
+    /// Recovery: starts without the LSP so the user can force-close and
+    /// sweep (module docs). VSS and the chain source are still required.
+    Exit,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum LnEvent {
     PaymentReceived { id: String, amount_msat: u64 },
@@ -217,6 +244,7 @@ struct Shared {
 /// node first, then the claim.
 pub(crate) struct Running {
     pub(crate) node: Live,
+    pub(crate) mode: StartMode,
     _claim: Claim,
 }
 
@@ -365,13 +393,22 @@ impl Node {
         self.limits
     }
 
-    /// Connects to the LSP, VSS and the chain source and starts the node.
-    /// Never blocks longer than 15 s. `Ok` when already running (also when a
-    /// concurrent `start` on this `Node` got there first);
-    /// `Other("already_running")` when another `Node` in this process runs
-    /// this wallet; `Other("start_in_progress")` when another start for it
-    /// is still working; `Other("cancelled")` when `stop()` came first.
+    /// [`start_with`](Self::start_with)`(StartMode::Normal)`.
     pub fn start(&self) -> Result<(), LnError> {
+        self.start_with(StartMode::Normal)
+    }
+
+    /// Connects to VSS, the chain source and (Normal mode: required; Exit
+    /// mode: best effort) the LSP, and starts the node. Never blocks longer
+    /// than 15 s, in either mode. `Ok` when already running, in whatever
+    /// mode it runs (also when a concurrent start on this `Node` got there
+    /// first): `stop()` first to change the mode, see
+    /// [`start_mode`](Self::start_mode). `Other("already_running")` when
+    /// another `Node` in this process runs this wallet;
+    /// `Other("start_in_progress")` when another start for it is still
+    /// working; `Other("cancelled")` when `stop()` came first. The single
+    /// entry point for every start (Task 10's device lock goes here).
+    pub fn start_with(&self, mode: StartMode) -> Result<(), LnError> {
         if self.running().is_some() {
             return Ok(());
         }
@@ -393,6 +430,7 @@ impl Node {
             store_id: self.store_id.clone(),
             node_id: self.node_id.clone(),
             claim_keys: self.claim_keys.clone(),
+            mode,
             deadline,
             stage: Arc::clone(&stage),
             shared: Arc::clone(&self.shared),
@@ -445,6 +483,11 @@ impl Node {
         if let Some(r) = running {
             let _ = r.node.stop();
         }
+    }
+
+    /// The mode the running node was started in; `None` when not running.
+    pub fn start_mode(&self) -> Option<StartMode> {
+        self.running().map(|r| r.mode)
     }
 
     /// Zero when not running.
@@ -514,6 +557,18 @@ impl Node {
         &self.data_dir
     }
 
+    /// Exit mode only: `LspUnreachable` unless the LSP peer is connected
+    /// right now (ldk-node `list_peers`, no network wait). Called before any
+    /// LSP-dependent work by `receive`, `pay`, `open_channel` and
+    /// `close_channel`; in Normal mode always `Ok` (their own handling is
+    /// unchanged).
+    pub(crate) fn exit_gate(&self, running: &Running) -> Result<(), LnError> {
+        if running.mode == StartMode::Exit && !peer_connected(&running.node, &self.lsp_id) {
+            return Err(LnError::LspUnreachable);
+        }
+        Ok(())
+    }
+
     /// One VSS round trip (see [`probe_vss`]), at most `timeout`.
     pub(crate) fn probe_backup(&self, timeout: Duration) -> Result<(), LnError> {
         probe_vss(&self.vss, &self.store_id, timeout)
@@ -524,6 +579,13 @@ impl Drop for Node {
     fn drop(&mut self) {
         self.stop();
     }
+}
+
+/// Whether ldk-node has a live connection to `id`.
+pub(crate) fn peer_connected(node: &ldk_node::Node, id: &PublicKey) -> bool {
+    node.list_peers()
+        .iter()
+        .any(|p| p.node_id == *id && p.is_connected)
 }
 
 /// ldk-node's node id for `ldk_seed`: its `KeysManager` is seeded with the
@@ -599,6 +661,8 @@ enum Stage {
     Build = 3,
     Start = 4,
     Connect = 5,
+    /// Exit mode's best-effort LSP probe and connect.
+    ExitConnect = 6,
 }
 
 impl From<u8> for Stage {
@@ -609,7 +673,8 @@ impl From<u8> for Stage {
             2 => Stage::Vss,
             3 => Stage::Build,
             4 => Stage::Start,
-            _ => Stage::Connect,
+            5 => Stage::Connect,
+            _ => Stage::ExitConnect,
         }
     }
 }
@@ -621,6 +686,9 @@ impl Stage {
             Stage::Lsp | Stage::Connect => LnError::LspUnreachable,
             Stage::Vss | Stage::Build => LnError::BackupUnavailable,
             Stage::Start => LnError::Other("chain_source_timeout".into()),
+            // Not reached: the node is installed before this stage, so a
+            // caller timing out then returns `Ok`.
+            Stage::ExitConnect => LnError::Other("start_timeout".into()),
         }
     }
 }
@@ -639,6 +707,7 @@ struct StartJob {
     store_id: String,
     node_id: String,
     claim_keys: Vec<String>,
+    mode: StartMode,
     deadline: Instant,
     stage: Arc<AtomicU8>,
     shared: Arc<Shared>,
@@ -705,8 +774,10 @@ impl StartJob {
             Ok(c) => c,
             Err(halt) => return halt,
         };
-        self.set(Stage::Lsp);
-        self.probe_lsp()?;
+        if self.mode == StartMode::Normal {
+            self.set(Stage::Lsp);
+            self.probe_lsp()?;
+        }
         self.set(Stage::Vss);
         self.probe_vss()?;
 
@@ -760,12 +831,14 @@ impl StartJob {
         if let Some(halt) = self.checkpoint() {
             return halt;
         }
-        self.set(Stage::Connect);
-        if let Err(e) = node.connect(self.lsp_id, self.lsp_addr.clone(), true) {
-            return Err(match e {
-                NodeError::PersistenceFailed => LnError::BackupUnavailable,
-                _ => LnError::LspUnreachable,
-            });
+        if self.mode == StartMode::Normal {
+            self.set(Stage::Connect);
+            if let Err(e) = node.connect(self.lsp_id, self.lsp_addr.clone(), true) {
+                return Err(match e {
+                    NodeError::PersistenceFailed => LnError::BackupUnavailable,
+                    _ => LnError::LspUnreachable,
+                });
+            }
         }
 
         let mut inner = self.shared.inner.lock().unwrap();
@@ -775,10 +848,17 @@ impl StartJob {
             Ok(())
         } else {
             claim.set_running();
-            *inner = Some(Arc::new(Running {
+            let running = Arc::new(Running {
                 node,
+                mode: self.mode,
                 _claim: claim,
-            }));
+            });
+            let weak = Arc::downgrade(&running);
+            *inner = Some(running);
+            drop(inner);
+            if self.mode == StartMode::Exit {
+                self.exit_connect(&weak);
+            }
             return Ok(());
         };
         drop(inner);
@@ -787,13 +867,38 @@ impl StartJob {
         outcome
     }
 
+    /// Exit mode, after the node is installed (a caller timing out now gets
+    /// `Ok`): a best-effort connection to the LSP, never an error. Only when
+    /// the LSP answers a TCP probe within the time left, so a down LSP costs
+    /// no `connect` wait (up to 10 s in lightning-net-tokio); a handshake
+    /// that stalls just runs past the caller's deadline here (ldk-node drops
+    /// it after a timer tick, or `stop()` disconnects it). The node is held
+    /// only for the `connect` call itself.
+    fn exit_connect(&self, running: &std::sync::Weak<Running>) {
+        self.set(Stage::ExitConnect);
+        if self.probe_lsp_within(EXIT_PROBE_TIMEOUT).is_err() {
+            return;
+        }
+        if self.shared.generation.load(Ordering::SeqCst) != self.generation {
+            return;
+        }
+        if let Some(r) = running.upgrade() {
+            let _ = r.node.connect(self.lsp_id, self.lsp_addr.clone(), true);
+        }
+    }
+
     fn probe_lsp(&self) -> Result<(), LnError> {
+        self.probe_lsp_within(PROBE_TIMEOUT)
+    }
+
+    /// TCP connect to the LSP, each attempt at most `cap` and the time left.
+    fn probe_lsp_within(&self, cap: Duration) -> Result<(), LnError> {
         let addrs: Vec<_> = (self.lsp_host.as_str(), self.lsp_port)
             .to_socket_addrs()
             .map_err(|_| LnError::LspUnreachable)?
             .collect();
         for addr in addrs {
-            if TcpStream::connect_timeout(&addr, self.probe_timeout()).is_ok() {
+            if TcpStream::connect_timeout(&addr, self.probe_timeout().min(cap)).is_ok() {
                 return Ok(());
             }
         }
