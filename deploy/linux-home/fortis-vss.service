@@ -1,0 +1,69 @@
+# /etc/systemd/system/fortis-vss.service
+# LDK Versioned Storage Service (vss-server) on 127.0.0.1:8080, backed by
+# local PostgreSQL (127.0.0.1:5432) and reached only by fortis-edge's
+# /ln/vss/* proxy.
+
+[Unit]
+Description=fortis-vss (LDK Versioned Storage Service)
+After=network-online.target postgresql.service
+Wants=network-online.target
+Requires=postgresql.service
+
+[Service]
+Type=simple
+User=fortis
+Group=fortis
+WorkingDirectory=/var/lib/fortis
+EnvironmentFile=-/etc/fortis/vss.env
+Environment=VSS_BIND_ADDRESS=127.0.0.1:8080
+Environment=VSS_PSQL_USERNAME=fortis
+Environment=VSS_PSQL_PASSWORD=fortis
+Environment=VSS_PSQL_ADDRESS=127.0.0.1:5432
+Environment=VSS_PSQL_DEFAULT_DB=postgres
+Environment=VSS_PSQL_VSS_DB=vss
+Environment=VSS_LOG_FILE=/var/log/fortis/vss.log
+Environment=VSS_LOG_LEVEL=info
+ExecStart=/usr/bin/env /usr/local/bin/vss-server
+Restart=on-failure
+RestartSec=5
+StateDirectory=fortis
+LogsDirectory=fortis
+ReadWritePaths=/var/lib/fortis /var/log/fortis
+# Sandbox (check with `systemd-analyze security <unit>`): files owner-only,
+# no privileges, devices, kernel knobs or namespaces, loopback IP only.
+UMask=0077
+StateDirectoryMode=0700
+LogsDirectoryMode=0700
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+DevicePolicy=closed
+CapabilityBoundingSet=
+AmbientCapabilities=
+ProtectClock=true
+ProtectControlGroups=true
+ProtectHostname=true
+ProtectKernelLogs=true
+ProtectKernelModules=true
+ProtectKernelTunables=true
+ProtectProc=invisible
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+RemoveIPC=true
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged @resources
+SystemCallErrorNumber=EPERM
+# Talks only to local PostgreSQL and answers only the local edge.
+IPAddressAllow=localhost
+IPAddressDeny=any
+MemoryMax=1G
+
+[Install]
+WantedBy=multi-user.target

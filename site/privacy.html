@@ -148,7 +148,33 @@
   mempool.kilombino.com and mempool.guide (transaction lookups); they see your IP
   address and the transactions looked up.</p>
 
-  <h2>9. Data retention and your choices</h2>
+  <!-- DRAFT: owner review required before publishing -->
+  <h2>9. Lightning (beta) <span class="fill">[DRAFT — owner review]</span></h2>
+  <p>Lightning is optional and off by default. When you turn on
+  <em>Settings → Lightning (beta)</em> on a software Bitcoin wallet, your phone
+  runs its own non-custodial Lightning node derived from your recovery phrase
+  and connects to our Lightning Service Provider (LSP) and Versioned Storage
+  Service (VSS):</p>
+  <ul>
+    <li><strong>What our LSP sees:</strong> your Lightning node's public key
+      (node ID), your IP address while connected on TCP port 9735, the channel
+      funding and closing transactions between your node and the LSP, and the
+      <strong>amounts and timing of payments routed through the LSP</strong>
+      (along with the next hop in the Lightning route). Because Lightning uses
+      onion routing, the LSP does not see who the final recipient or sender is
+      beyond its immediate hop, and does not know who you are.</li>
+    <li><strong>What VSS stores:</strong> encrypted blobs of your channel state
+      and encrypted payment notes, plus a random 16-byte device-lock token so
+      two phones do not run the same channel at once. Channel state blobs are
+      encrypted on your phone with keys derived from your recovery phrase before
+      upload; VSS and the backend cannot decrypt them.</li>
+    <li><strong>LNURL and Lightning Addresses:</strong> when you pay an LNURL or
+      a Lightning Address (<code>name@domain</code>), your phone connects
+      directly over HTTPS to the recipient's domain to fetch the invoice; that
+      server sees your IP address and the payment amount requested.</li>
+  </ul>
+
+  <h2>10. Data retention and your choices</h2>
   <ul>
     <li>On-device data: removed on uninstall or <em>Forget this wallet</em>.</li>
     <li>Backend: no per-user account exists; per-install tokens are random and
@@ -157,17 +183,17 @@
       <a href="mailto:support@fortistechlabs.com">support@fortistechlabs.com</a>.</li>
   </ul>
 
-  <h2>10. Security</h2>
+  <h2>11. Security</h2>
   <p>Keys are encrypted at rest with a key derived from your password. The app is
   locked with your fingerprint (or your password), locks itself after a minute in
   the background, and asks again before showing a recovery phrase or sending. Every
   screen is kept out of screenshots, screen recording and the recent-apps preview.</p>
 
-  <h2>11. Children</h2>
+  <h2>12. Children</h2>
   <p>Fortis Wallet is not directed to children under 13, or under the age of digital consent
   where you live.</p>
 
-  <h2>12. Changes</h2>
+  <h2>13. Changes</h2>
   <p>We will post any changes on this page and update the effective date above.</p>
 
   <hr>

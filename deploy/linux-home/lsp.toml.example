@@ -1,0 +1,40 @@
+# /etc/fortis/lsp.toml — fortis-lsp configuration on the Linux home host.
+# Every key is optional; unknown keys are an error.
+# No secrets in this file: the bitcoind RPC password lives in
+# rpc_password_file (mode 0600, owned by fortis:fortis).
+
+# bitcoin (mainnet) | testnet | signet | regtest
+network = "bitcoin"
+
+# Lightning P2P listen address (must be reachable from the internet on TCP 9735).
+listen = "0.0.0.0:9735"
+
+# Chain source: local Bitcoin Core RPC (host:port).
+bitcoind_rpc = "127.0.0.1:8332"
+rpc_user = "fortis-lsp"
+rpc_password_file = "/etc/fortis/lsp-rpc-password"
+
+# Holds keys_seed (mode 0400 — back this up!), SQLite store and logs.
+data_dir = "/var/lib/fortis/lsp"
+
+# JIT channel-open fee: 1% (10 000 ppm), minimum 1 000 sat.
+open_fee_ppm = 10000
+open_fee_min_sat = 1000
+
+# Payment bounds narrowed so every JIT channel lands in channel_min_sat..channel_max_sat
+# (51 000..250 000 sat with these defaults).
+min_payment_size_msat = 10000000
+max_payment_size_msat = 500000000
+channel_size_factor = 2.0
+channel_min_sat = 100000
+channel_max_sat = 500000
+
+# Optional LSPS2 token clients must present (matches lsps2_token in /ln/info).
+# token = "..."
+
+# Log a warning on stderr while on-chain liquidity is below 2 000 000 sat (0.02 BTC).
+low_liquidity_sat = 2000000
+
+# Prometheus GET /metrics and GET /info (loopback only).
+metrics_listen = "127.0.0.1:9736"
+allow_public_metrics = false

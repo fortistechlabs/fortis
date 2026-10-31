@@ -1,0 +1,58 @@
+# /etc/systemd/system/fortis-lsp.service
+# Lightning Service Provider (ldk-node 0.7.1, LSPS2 zero-conf JIT channels)
+# over the local Bitcoin Core node (RPC :8332). Listens on :9735/TCP (P2P)
+# and 127.0.0.1:9736 (Prometheus /metrics and /info).
+
+[Unit]
+Description=fortis-lsp (Lightning Service Provider)
+After=network-online.target bitcoin-core.service
+Wants=network-online.target
+Requires=bitcoin-core.service
+PartOf=bitcoin-core.service
+
+[Service]
+Type=simple
+User=fortis
+Group=fortis
+SupplementaryGroups=bitcoin-core
+ExecStart=/usr/bin/env /usr/local/bin/fortis-lsp --config /etc/fortis/lsp.toml
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=60
+StateDirectory=fortis fortis/lsp
+ReadWritePaths=/var/lib/fortis
+# Sandbox (check with `systemd-analyze security <unit>`): files owner-only,
+# no privileges, devices, kernel knobs or namespaces, only IP and Unix
+# sockets and the usual service system calls (others fail with EPERM).
+UMask=0077
+StateDirectoryMode=0700
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+DevicePolicy=closed
+CapabilityBoundingSet=
+AmbientCapabilities=
+ProtectClock=true
+ProtectControlGroups=true
+ProtectHostname=true
+ProtectKernelLogs=true
+ProtectKernelModules=true
+ProtectKernelTunables=true
+ProtectProc=invisible
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+RemoveIPC=true
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged @resources
+SystemCallErrorNumber=EPERM
+MemoryMax=1G
+
+[Install]
+WantedBy=multi-user.target

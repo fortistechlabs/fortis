@@ -2,8 +2,8 @@
 # Install the fortis backend on the Linux home machine (Bitcoin Core + Knots on
 # this host, managed by ~/Work/bitcoin-nodes). Safe to re-run.
 #
-#   cargo build --release -p fortis-index -p fortis-edge     # as your user, first
-#   sudo deploy/linux-home/install.sh [--index-from DIR] [--cloudflared-from DIR]
+#   cargo build --release -p fortis-index -p fortis-edge -p fortis-lsp   # as your user, first
+#   sudo deploy/linux-home/install.sh [--index-from DIR] [--cloudflared-from DIR] [--with-lightning]
 #
 # The v2 indexes live in /var/lib/fortis/{xbt,btc}-index-v2 and sync from
 # scratch on first start (a v1 index directory is refused, never imported).
@@ -19,11 +19,12 @@ set -euo pipefail
 
 here=$(cd "$(dirname "$(readlink -f "$0")")" && pwd)
 repo=$(cd "$here/../.." && pwd)
-index_from= cf_from=
+index_from= cf_from= with_ln=0
 while (( $# )); do
   case $1 in
     --index-from) index_from=$2; shift 2 ;;
     --cloudflared-from) cf_from=$2; shift 2 ;;
+    --with-lightning) with_ln=1; shift ;;
     *) echo "unknown argument: $1" >&2; exit 2 ;;
   esac
 done
@@ -35,11 +36,24 @@ for b in fortis-index fortis-edge; do
   [[ -x $repo/target/release/$b ]] || { echo "missing $repo/target/release/$b — run cargo build --release first" >&2; exit 1; }
   install -m 0755 "$repo/target/release/$b" "/usr/local/bin/$b"
 done
+if [[ -x $repo/target/release/fortis-lsp ]]; then
+  install -m 0755 "$repo/target/release/fortis-lsp" /usr/local/bin/fortis-lsp
+elif (( with_ln )); then
+  echo "missing $repo/target/release/fortis-lsp — run cargo build --release -p fortis-lsp first" >&2
+  exit 1
+fi
+vss_bin=$repo/target/tools/vss-server-src/target/release/vss-server
+if [[ -x $vss_bin ]]; then
+  install -m 0755 "$vss_bin" /usr/local/bin/vss-server
+elif (( with_ln )) && [[ ! -x /usr/local/bin/vss-server ]]; then
+  echo "missing $vss_bin — build vss-server first (see deploy/lightning.md)" >&2
+  exit 1
+fi
 
 step "User"
 id fortis &>/dev/null || useradd --system --home-dir /var/lib/fortis --shell /usr/bin/nologin fortis
 usermod -aG bitcoin-core,bitcoin-knots fortis
-install -d -o fortis -g fortis -m 0700 /var/lib/fortis /var/lib/fortis/edge /var/log/fortis
+install -d -o fortis -g fortis -m 0700 /var/lib/fortis /var/lib/fortis/edge /var/lib/fortis/lsp /var/log/fortis
 # Owner-only, including what older installs left readable (the edge's token
 # secret, the swap and index databases, the crash log). The units keep it so:
 # StateDirectoryMode / LogsDirectoryMode 0700 and UMask 0077.
@@ -60,12 +74,17 @@ fi
 step "Units"
 install -d -m 0755 /etc/fortis
 [[ -e /etc/fortis/edge.env ]] || install -m 0644 "$here/edge.env" /etc/fortis/edge.env
-for u in fortis-xbt-index fortis-btc-index fortis-edge; do
+[[ -e /etc/fortis/lsp.toml ]] || install -m 0640 -o root -g fortis "$here/lsp.toml.example" /etc/fortis/lsp.toml
+for u in fortis-xbt-index fortis-btc-index fortis-edge fortis-lsp fortis-vss; do
   install -m 0644 "$here/$u.service" "/etc/systemd/system/$u.service"
 done
 systemctl daemon-reload
 systemctl enable fortis-xbt-index fortis-btc-index fortis-edge
 systemctl restart fortis-xbt-index fortis-btc-index fortis-edge
+if (( with_ln )); then
+  systemctl enable fortis-vss fortis-lsp
+  systemctl restart fortis-vss fortis-lsp
+fi
 
 if [[ -n $cf_from ]]; then
   step "Cloudflare tunnel"

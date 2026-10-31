@@ -1,0 +1,84 @@
+<!doctype html>
+<!-- DRAFT: owner review required before publishing -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>How Lightning works (DRAFT) — Fortis Wallet</title>
+<meta name="robots" content="noindex,nofollow">
+<meta name="description" content="Instant Bitcoin payments over the Lightning Network in Fortis Wallet: non-custodial, backed up automatically, and recoverable from your phrase.">
+<link rel="icon" href="/icon.svg">
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+
+<div class="wrap">
+  <nav>
+    <a class="brand" href="/"><img src="/icon.svg" alt=""> Fortis Tech Labs</a>
+    <span class="links">
+      <a href="/#wallet">Wallet</a>
+      <a href="/swaps">Swaps</a>
+      <a href="/lightning" aria-current="page">Lightning</a>
+      <a href="https://github.com/fortistechlabs/fortis" target="_blank" rel="noopener">Source</a>
+      <a href="/privacy">Privacy</a>
+    </span>
+  </nav>
+</div>
+
+<header class="hero">
+  <div class="wrap">
+    <div class="eyebrow">Fortis Wallet · Lightning (beta) · DRAFT</div>
+    <h1>Instant Bitcoin payments, still your keys</h1>
+    <p>Send and receive Bitcoin in seconds over the Lightning Network. Your phone runs its own Lightning node derived from your recovery phrase — we never hold your keys or your coins.</p>
+  </div>
+</header>
+
+<section>
+  <div class="wrap">
+    <h2>How it works</h2>
+    <p class="lead">Turn it on in <strong>Settings → Lightning (beta)</strong> on any software Bitcoin wallet. Your balance shows one combined BTC total, with the split between on-chain and Lightning right underneath.</p>
+
+    <dl class="facts">
+      <div>
+        <dt>Receive on one QR</dt>
+        <dd>Enter an amount on Receive and the app shows a single unified QR code that works for both on-chain and Lightning payers. If you don't have a Lightning channel yet, our Lightning Service Provider (LSP) opens one for you on the spot and shows the exact opening fee (1%, minimum 1,000&nbsp;sat) before you share the QR.</dd>
+      </div>
+      <div>
+        <dt>Send to any Lightning target</dt>
+        <dd>Scan or paste a BOLT&nbsp;11 invoice, a BOLT&nbsp;12 offer, an LNURL-pay code, a Lightning Address (<code>name@domain</code>), or a unified <code>bitcoin:</code> QR. If you have enough on Lightning, it pays instantly; if your funds are still on-chain, the app offers <strong>Move to Lightning</strong> first.</dd>
+      </div>
+      <div>
+        <dt>Encrypted channel backup</dt>
+        <dd>Lightning channel state changes with every payment. Before your phone sends or receives on Lightning, it saves an encrypted snapshot of your channel state to our Versioned Storage Service (VSS) using keys derived on your device from your recovery phrase. If you lose your phone, restoring your recovery phrase on a new phone brings your channel back automatically.</dd>
+      </div>
+      <div>
+        <dt>One active phone at a time</dt>
+        <dd>Running the same Lightning channel on two phones at once can risk channel funds. Fortis keeps a device lock in your encrypted backup store so only one phone runs Lightning for a wallet at a time, with a one-tap handover when you switch phones.</dd>
+      </div>
+      <div>
+        <dt>Always an exit to on-chain</dt>
+        <dd>You can close your channel and move your balance back to your on-chain BTC wallet at any time from <strong>Settings → Lightning (beta)</strong>, even if our LSP is unreachable.</dd>
+      </div>
+      <div>
+        <dt>Keep the app open to receive</dt>
+        <dd>Because your phone holds the keys and signs every Lightning update itself, Fortis must be open and unlocked while you receive a Lightning payment.</dd>
+      </div>
+    </dl>
+    <p class="warn" style="font-size:14px; margin-top:26px">DRAFT — Lightning is in beta (channels up to 500,000&nbsp;sat). Start with small amounts.</p>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap row">
+    <span>&copy; Fortis Tech Labs 2026</span>
+    <span>
+      <a href="/">Home</a> &nbsp;·&nbsp;
+      <a href="https://github.com/fortistechlabs/fortis" target="_blank" rel="noopener">Source</a> &nbsp;·&nbsp;
+      <a href="/privacy">Privacy Policy</a> &nbsp;·&nbsp;
+      <a href="mailto:support@fortistechlabs.com">support@fortistechlabs.com</a>
+    </span>
+  </div>
+</footer>
+
+</body>
+</html>
