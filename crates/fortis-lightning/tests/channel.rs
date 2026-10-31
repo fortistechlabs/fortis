@@ -748,36 +748,92 @@ impl Env {
         let e = self.rt.json(&["getmempoolentry", txid]);
         (e["fees"]["base"].as_f64().unwrap() * 1e8).round() as u64
     }
+}
 
-    /// Waits up to 30 s until the balance parts add up to `lo..=hi`
-    /// (the wallet picks up mempool transactions on its next poll).
-    fn reconciles(&self, stage: &str, lo: u64, hi: u64) -> Balances {
-        let deadline = Instant::now() + Duration::from_secs(30);
-        loop {
-            let b = self.client.balances();
-            if (lo..=hi).contains(&sum(&b)) {
-                eprintln!("[{stage}] sum {} in {lo}..={hi}: {b:?}", sum(&b));
-                return b;
-            }
-            assert!(
-                Instant::now() < deadline,
-                "[{stage}] sum {} not in {lo}..={hi}: {b:?}",
-                sum(&b)
-            );
-            std::thread::sleep(Duration::from_millis(300));
+impl Env {
+    fn wallet_total(&self) -> u64 {
+        fortis_lightning::test_hooks::wallet_total_sat(&self.client)
+    }
+
+    /// Waits until the client's wallet total is `sat` (it has seen the
+    /// mempool or block it is told about).
+    fn wait_wallet_total(&self, what: &str, sat: u64) {
+        poll(what, 60, || (self.wallet_total() == sat).then_some(()));
+    }
+
+    /// One reading, asserted exactly: `sum(balances) == expected`.
+    fn assert_sum(&self, stage: &str, expected: u64) -> Balances {
+        let b = self.client.balances();
+        eprintln!("[{stage}] sum {} expected {expected}: {b:?}", sum(&b));
+        assert_eq!(sum(&b), expected, "[{stage}] {b:?}");
+        b
+    }
+
+    /// Mines `skip` blocks, then one at a time until a transaction shows up
+    /// in bitcoind's mempool (ldk-node broadcasting a sweep); its txid.
+    fn mine_until_mempool(&self, what: &str, skip: u32, max_blocks: u32) -> String {
+        assert!(self.mempool().is_empty(), "{what}: mempool not empty");
+        if skip > 0 {
+            self.rt.mine(skip);
         }
+        for _ in 0..max_blocks {
+            std::thread::sleep(Duration::from_millis(1_500));
+            if let Some(t) = self.mempool().first() {
+                return t.clone();
+            }
+            self.rt.mine(1);
+        }
+        panic!("{what}: nothing broadcast after {max_blocks} blocks");
+    }
+
+    /// Opens a [`CHANNEL_SAT`] channel and waits until it is ready; returns
+    /// the funding fee.
+    fn open_and_ready(&self, what: &str, transit_before: u64) -> u64 {
+        self.client.open_channel(CHANNEL_SAT).unwrap();
+        let funding = self.wait_mempool(what);
+        assert_eq!(funding.len(), 1, "{what}: {funding:?}");
+        let fee = self.mempool_fee_sat(&funding[0]);
+        // The wallet has seen the funding transaction.
+        self.wait_wallet_total(what, transit_before - CHANNEL_SAT - fee);
+        fee
+    }
+
+    /// While ldk-node's sweep `txid` of a closed channel's `amount_sat`
+    /// output is in the mempool: waits until the wallet counts it, then
+    /// checks the reading against `held` (the total before the sweep).
+    ///
+    /// Production (Esplora): the wallet sync that picks the sweep up also
+    /// enters it in ldk-node's payment store, so `pending_close_sat` drops
+    /// it in the same step and the sum is `held − fee`. On this bitcoind
+    /// chain source, ldk-node applies mempool transactions to the wallet
+    /// without a payment-store entry (that comes with the next block), so
+    /// for this window the output is counted twice: `held − fee + amount`.
+    /// Test-only, bounded by the swept amount, gone at the next block.
+    fn check_sweep_window(&self, stage: &str, txid: &str, held: u64, wallet_before: u64) -> u64 {
+        let fee = self.mempool_fee_sat(txid);
+        let out = self.tx_outputs_sat(txid);
+        self.wait_wallet_total(stage, wallet_before + out);
+        let amount = out + fee;
+        self.assert_sum(stage, held - fee + amount);
+        fee
     }
 }
 
 /// `lightning + transit + pending_close + reserved + pending_transit`
 /// against a ledger kept from bitcoind: deposits less the fees of the
-/// client's own transactions (read from bitcoind) less, while a channel's
+/// client's own transactions (`getmempoolentry`) less, while a channel's
 /// balance is held in a commitment, the funder's commitment fee and anchors
-/// ([`FUNDER_COMMITMENT_COST_SAT`], invisible by design). Exact at every
-/// stage except two, with documented tolerances: a cooperative close in the
-/// mempool shows the monitor's amount, up to the close fee above the closing
-/// output; ldk-node's sweep of a force-closed output costs a fee bitcoind
-/// cannot attribute here (≤ [`MAX_TX_FEE_SAT`]).
+/// ([`FUNDER_COMMITMENT_COST_SAT`], invisible by design). Every stage is one
+/// reading taken after the client's wallet has seen the transaction in
+/// question, and is asserted exactly; the only deviation is the documented
+/// bitcoind-source double count of an unconfirmed sweep
+/// (`Env::check_sweep_window`). Stages: deposit unconfirmed / confirmed,
+/// opening, ready, cooperative close in the mempool (monitor balance and
+/// the wallet's unconfirmed output both present: the dedup) and confirmed;
+/// the LSP's force close (to_remote) awaiting confirmations, swept by
+/// ldk-node (in the mempool, confirmed); our own force close (commitment in
+/// the mempool, confirmed and under its CSV delay, swept by ldk-node); and
+/// the final sweep to an external address.
 #[test]
 #[ignore = "needs FORTIS_BTC_BITCOIND, FORTIS_VSS_SERVER and fortis-lsp built"]
 fn balances_reconcile_through_open_close_and_force_close() {
@@ -786,65 +842,63 @@ fn balances_reconcile_through_open_close_and_force_close() {
     }
     let mut env = Env::start();
 
-    // Transit funded, unconfirmed.
+    // Deposit, unconfirmed then confirmed.
     let addr = env.client.transit_address().unwrap();
     env.rt.fund(&addr, TRANSIT_SAT);
-    let b = env.reconciles("deposit unconfirmed", TRANSIT_SAT, TRANSIT_SAT);
+    env.wait_wallet_total("deposit seen", TRANSIT_SAT);
+    let b = env.assert_sum("deposit unconfirmed", TRANSIT_SAT);
     assert_eq!(b.pending_transit_sat, TRANSIT_SAT, "{b:?}");
-    // Confirmed.
     env.rt.mine(1);
     poll("deposit spendable", 60, || {
         (env.client.balances().onchain_transit_sat == TRANSIT_SAT).then_some(())
     });
-    env.reconciles("deposit confirmed", TRANSIT_SAT, TRANSIT_SAT);
+    env.assert_sum("deposit confirmed", TRANSIT_SAT);
 
-    // Opening: funding broadcast, unconfirmed.
-    env.client.open_channel(CHANNEL_SAT).unwrap();
-    let funding = env.wait_mempool("funding broadcast");
-    let mut ledger = TRANSIT_SAT - env.mempool_fee_sat(&funding[0]);
-    let held = ledger - FUNDER_COMMITMENT_COST_SAT;
-    let b = env.reconciles("opening", held, held);
+    // Channel 1: opening, ready, cooperative close.
+    let mut ledger = TRANSIT_SAT - env.open_and_ready("funding 1", TRANSIT_SAT);
     assert_eq!(env.client.channel_state(), ChannelState::Opening);
+    let held = ledger - FUNDER_COMMITMENT_COST_SAT;
+    let b = env.assert_sum("opening", held);
     assert_eq!(b.reserved_sat, ANCHOR_RESERVE_SAT, "{b:?}");
-    // Ready.
     env.rt.mine(6);
-    env.wait_event("ChannelReady", 90, |e| matches!(e, LnEvent::ChannelReady));
-    poll("Ready", 60, || {
+    env.wait_event("ChannelReady 1", 90, |e| matches!(e, LnEvent::ChannelReady));
+    poll("Ready 1", 60, || {
         (env.client.channel_state() == ChannelState::Ready).then_some(())
     });
-    env.reconciles("ready", held, held);
+    env.assert_sum("ready", held);
 
-    // Cooperative close in the mempool.
+    let wallet_before = env.wallet_total();
     env.client.close_channel().unwrap();
-    env.wait_event("ChannelClosed", 60, |e| {
+    env.wait_event("ChannelClosed 1", 60, |e| {
         matches!(e, LnEvent::ChannelClosed { .. })
     });
     let closing = env.wait_mempool("closing broadcast");
-    let close_fee = env.mempool_fee_sat(&closing[0]);
-    ledger -= close_fee;
-    // Shows the monitor's amount: ledger + (commitment cost − close fee)
-    // when the close fee is the larger, i.e. within one close fee above.
-    let b = env.reconciles("coop close in mempool", ledger, ledger + close_fee);
-    assert_eq!(b.lightning_sat, 0, "{b:?}");
-    // Confirmed: exact.
+    let closing_out = env.tx_outputs_sat(&closing[0]);
+    // Both present now: the monitor's ClaimableOnChannelClose and the
+    // wallet's unconfirmed closing output. Counted once, at the monitor's
+    // amount: the sum is still `held`.
+    env.wait_wallet_total("closing output seen", wallet_before + closing_out);
+    let b = env.assert_sum("coop close in mempool", held);
+    assert_eq!(
+        (b.lightning_sat, b.pending_close_sat, b.pending_transit_sat),
+        (0, CHANNEL_SAT - FUNDER_COMMITMENT_COST_SAT, 0),
+        "{b:?}"
+    );
     env.rt.mine(1);
     poll("closing output spendable", 60, || {
         (env.client.balances().pending_close_sat == 0).then_some(())
     });
-    let b = env.reconciles("coop close confirmed", ledger, ledger);
-    assert_eq!((b.pending_close_sat, b.reserved_sat), (0, 0), "{b:?}");
+    ledger = wallet_before + closing_out;
+    let b = env.assert_sum("coop close confirmed", ledger);
+    assert_eq!(b.reserved_sat, 0, "{b:?}");
 
-    // A second channel, closed by the LSP (force) while the client is stopped.
-    env.client.open_channel(CHANNEL_SAT).unwrap();
-    let funding = env.wait_mempool("second funding broadcast");
-    ledger -= env.mempool_fee_sat(&funding[0]);
+    // Channel 2: closed by the LSP (force) while the client is stopped.
+    ledger -= env.open_and_ready("funding 2", ledger);
     let held = ledger - FUNDER_COMMITMENT_COST_SAT;
-    env.reconciles("second opening", held, held);
     env.rt.mine(6);
-    env.wait_event("second ChannelReady", 90, |e| {
-        matches!(e, LnEvent::ChannelReady)
-    });
-    env.reconciles("second ready", held, held);
+    env.wait_event("ChannelReady 2", 90, |e| matches!(e, LnEvent::ChannelReady));
+    env.assert_sum("ready 2", held);
+    let wallet_before = env.wallet_total();
     let client_id = PublicKey::from_str(&env.client.node_id()).unwrap();
     env.client.stop();
     assert!(env.lsp.stop().is_some_and(|s| s.success()));
@@ -857,25 +911,135 @@ fn balances_reconcile_through_open_close_and_force_close() {
     env.rt.mine(1);
     env.lsp.start_again();
     env.client.start().unwrap();
-    // The to_remote output waits for its confirmations: still exact.
     poll("closing seen", 60, || {
         (env.client.channel_state() == ChannelState::Closing).then_some(())
     });
-    let b = env.reconciles("force close awaiting confirmations", held, held);
+    env.wait_wallet_total("reserve released", wallet_before);
+    let b = env.assert_sum("LSP force close awaiting confirmations", held);
     assert!(b.pending_close_sat > 0 && b.lightning_sat == 0, "{b:?}");
-    // Swept into transit: less ldk-node's sweep fee.
-    let deadline = Instant::now() + Duration::from_secs(180);
-    loop {
+    let sweep = env.mine_until_mempool("to_remote sweep", 0, 20);
+    let fee = env.check_sweep_window("to_remote sweep in mempool", &sweep, held, wallet_before);
+    env.rt.mine(1);
+    poll("to_remote sweep confirmed", 60, || {
+        (env.client.balances().pending_close_sat == 0).then_some(())
+    });
+    ledger = held - fee;
+    env.assert_sum("to_remote swept", ledger);
+    assert_eq!(env.client.channel_state(), ChannelState::None);
+
+    // Channel 3: our own force close; our output waits out the CSV delay.
+    ledger -= env.open_and_ready("funding 3", ledger);
+    let held = ledger - FUNDER_COMMITMENT_COST_SAT;
+    env.rt.mine(6);
+    env.wait_event("ChannelReady 3", 90, |e| matches!(e, LnEvent::ChannelReady));
+    env.assert_sum("ready 3", held);
+    let wallet_before = env.wallet_total();
+    env.client.force_close_channel().unwrap();
+    let commitment = env.wait_mempool("commitment broadcast");
+    // At regtest fees the commitment (253 sat/kWU) needs no CPFP: no fee
+    // from the wallet besides what `held` already excludes.
+    assert_eq!(commitment.len(), 1, "commitment only: {commitment:?}");
+    env.assert_sum("our force close, commitment in mempool", held);
+    env.rt.mine(1);
+    poll("commitment confirmed", 60, || {
         let b = env.client.balances();
-        if b.pending_close_sat == 0 && env.client.channel_state() == ChannelState::None {
-            break;
-        }
-        assert!(Instant::now() < deadline, "never swept: {b:?}");
-        env.rt.mine(1);
-        std::thread::sleep(Duration::from_secs(2));
+        (b.pending_close_sat > 0 && env.mempool().is_empty()).then_some(())
+    });
+    env.assert_sum("our force close, CSV wait", held);
+    let to = env.external_address();
+    assert_eq!(
+        env.client.sweep_transit(&to),
+        Err(LnError::Other("closing".into()))
+    );
+    let sweep = env.mine_until_mempool("to_local sweep", 140, 30);
+    let fee = env.check_sweep_window("to_local sweep in mempool", &sweep, held, wallet_before);
+    env.rt.mine(1);
+    poll("to_local sweep confirmed", 60, || {
+        (env.client.balances().pending_close_sat == 0
+            && env.client.channel_state() == ChannelState::None)
+            .then_some(())
+    });
+    ledger = held - fee;
+    env.assert_sum("to_local swept", ledger);
+
+    // Everything to an external address.
+    let txid = env.client.sweep_transit(&to).unwrap().expect("swept");
+    poll("sweep in mempool", 30, || {
+        env.mempool().contains(&txid).then_some(())
+    });
+    let fee = env.mempool_fee_sat(&txid);
+    env.rt.mine(1);
+    assert_eq!(env.received_sat(&to, 1), ledger - fee);
+    poll("transit empty", 60, || {
+        (sum(&env.client.balances()) == 0).then_some(())
+    });
+}
+
+/// A funding transaction that never confirms (here: dropped from bitcoind's
+/// mempool) must not strand the transit wallet. While it is pending and no
+/// close was asked for, the channel is `Opening` and sweeps refuse; after
+/// the user's force close the channel's funding-derived balance is void,
+/// and the sweep returns the deposit.
+#[test]
+#[ignore = "needs FORTIS_BTC_BITCOIND, FORTIS_VSS_SERVER and fortis-lsp built"]
+fn unconfirmed_funding_dropped_then_force_close_frees_transit() {
+    if !have_binaries() {
+        return;
     }
-    let b = env.reconciles("swept", held - MAX_TX_FEE_SAT, held - 1);
-    assert_eq!(b.onchain_transit_sat, sum(&b), "{b:?}");
+    let mut env = Env::start();
+    env.fund_transit(TRANSIT_SAT);
+    env.client.open_channel(CHANNEL_SAT).unwrap();
+    let funding = env.wait_mempool("funding broadcast");
+    assert_eq!(funding.len(), 1);
+    let to = env.external_address();
+    assert_eq!(env.client.channel_state(), ChannelState::Opening);
+    assert_eq!(
+        env.client.sweep_transit(&to),
+        Err(LnError::Other("channel_opening".into())),
+        "funding in the mempool, no close asked for"
+    );
+
+    env.rt.restart_dropping_mempool();
+    // The wallet notices the funding transaction is gone: its inputs are
+    // spendable again (less the reserve, the channel is still listed).
+    poll("funding inputs back", 90, || {
+        let b = env.client.balances();
+        (b.onchain_transit_sat + b.reserved_sat == TRANSIT_SAT && b.pending_transit_sat == 0)
+            .then_some(())
+    });
+    env.rt.mine(3);
+    std::thread::sleep(Duration::from_secs(3));
+    assert_eq!(
+        env.client.channel_state(),
+        ChannelState::Opening,
+        "no close asked for"
+    );
+    assert_eq!(
+        env.client.sweep_transit(&to),
+        Err(LnError::Other("channel_opening".into()))
+    );
+
+    env.client.force_close_channel().expect("force close");
+    poll("nothing left to resolve", 30, || {
+        (env.client.channel_state() == ChannelState::None).then_some(())
+    });
+    let b = env.client.balances();
+    assert_eq!(
+        (b.lightning_sat, b.pending_close_sat, b.onchain_transit_sat),
+        (0, 0, TRANSIT_SAT),
+        "{b:?}"
+    );
+    let txid = env
+        .client
+        .sweep_transit(&to)
+        .expect("sweep")
+        .expect("something to sweep");
+    poll("sweep in mempool", 30, || {
+        env.mempool().contains(&txid).then_some(())
+    });
+    let fee = env.mempool_fee_sat(&txid);
+    env.rt.mine(1);
+    assert_eq!(env.received_sat(&to, 1), TRANSIT_SAT - fee);
 }
 
 #[test]

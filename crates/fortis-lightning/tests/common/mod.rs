@@ -201,6 +201,8 @@ pub struct Regtest {
     /// [`Regtest::chain_source`].
     pub esplora_url: String,
     pub rpc_port: u16,
+    p2p_port: u16,
+    bitcoind: PathBuf,
     child: Child,
     cli: PathBuf,
     dir: TempDir,
@@ -221,38 +223,51 @@ impl Regtest {
         let datadir = dir.path("bitcoind");
         std::fs::create_dir_all(&datadir).unwrap();
         let (rpc_port, p2p_port) = (free_port(), free_port());
-        let child = Command::new(&bitcoind)
-            .args([
-                "-regtest".to_string(),
-                format!("-datadir={}", datadir.display()),
-                format!("-rpcport={rpc_port}"),
-                format!("-port={p2p_port}"),
-                format!("-rpcuser={RPC_USER}"),
-                format!("-rpcpassword={RPC_PASS}"),
-                "-listen=0".into(),
-                "-server=1".into(),
-                "-txindex=1".into(),
-                "-fallbackfee=0.0002".into(),
-                "-printtoconsole=0".into(),
-            ])
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .spawn()
-            .expect("spawn bitcoind");
+        let child = spawn_bitcoind(&bitcoind, &datadir, rpc_port, p2p_port, &[]);
         let rt = Regtest {
             rpc_url: format!("http://127.0.0.1:{rpc_port}"),
             esplora_url: String::new(),
             rpc_port,
+            p2p_port,
+            bitcoind,
             child,
             cli,
             dir,
         };
-        poll("bitcoind up", 60, || {
-            rt.try_cli(&["getblockchaininfo"]).ok()
-        });
+        rt.wait_up();
         rt.cli(&["createwallet", "miner"]);
         rt.mine(101);
         rt
+    }
+
+    fn wait_up(&self) {
+        poll("bitcoind up", 60, || {
+            self.try_cli(&["getblockchaininfo"]).ok()
+        });
+    }
+
+    /// Stops bitcoind and starts it again on the same data dir and ports
+    /// with `-persistmempool=0`: every unconfirmed transaction is gone (as
+    /// when a transaction falls out of the network's mempools). Reloads the
+    /// miner wallet.
+    pub fn restart_dropping_mempool(&mut self) {
+        let _ = self.try_cli(&["stop"]);
+        let deadline = Instant::now() + Duration::from_secs(30);
+        while !matches!(self.child.try_wait(), Ok(Some(_))) {
+            assert!(Instant::now() < deadline, "bitcoind did not stop");
+            std::thread::sleep(Duration::from_millis(200));
+        }
+        let datadir = self.dir.path("bitcoind");
+        self.child = spawn_bitcoind(
+            &self.bitcoind,
+            &datadir,
+            self.rpc_port,
+            self.p2p_port,
+            &["-persistmempool=0"],
+        );
+        self.wait_up();
+        let _ = self.try_cli(&["loadwallet", "miner"]);
+        assert_eq!(self.json(&["getrawmempool"]).as_array().unwrap().len(), 0);
     }
 
     fn base_args(&self) -> Vec<String> {
@@ -313,6 +328,34 @@ impl Regtest {
             RPC_PASS.into(),
         );
     }
+}
+
+fn spawn_bitcoind(
+    bitcoind: &Path,
+    datadir: &Path,
+    rpc_port: u16,
+    p2p_port: u16,
+    extra: &[&str],
+) -> Child {
+    Command::new(bitcoind)
+        .args([
+            "-regtest".to_string(),
+            format!("-datadir={}", datadir.display()),
+            format!("-rpcport={rpc_port}"),
+            format!("-port={p2p_port}"),
+            format!("-rpcuser={RPC_USER}"),
+            format!("-rpcpassword={RPC_PASS}"),
+            "-listen=0".into(),
+            "-server=1".into(),
+            "-txindex=1".into(),
+            "-fallbackfee=0.0002".into(),
+            "-printtoconsole=0".into(),
+        ])
+        .args(extra)
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .expect("spawn bitcoind")
 }
 
 impl Drop for Regtest {
