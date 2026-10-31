@@ -378,6 +378,11 @@ struct Args {
     /// Largest `/ln/vss/*` request body, bytes (413 over).
     #[arg(long, default_value_t = ln::VSS_MAX_BODY_DEFAULT)]
     vss_max_body: usize,
+    /// Largest total of `putObjects` bodies one install may send per hour,
+    /// bytes (429 over; 0 = unlimited). Bounds how fast one install can fill
+    /// the VSS disk.
+    #[arg(long, default_value_t = ln::VSS_QUOTA_DEFAULT)]
+    vss_quota_bytes_per_hour: u64,
     /// Test only: the VSS upstream read timeout, seconds (default 30).
     #[arg(long, default_value_t = ln::VSS_READ_TIMEOUT_SECS, hide = true)]
     vss_read_timeout_secs: u64,
@@ -501,7 +506,8 @@ fn run() -> Result<()> {
             url,
             args.vss_max_body,
             std::time::Duration::from_secs(args.vss_read_timeout_secs.max(1)),
-        )?),
+        )?
+        .with_quota(args.vss_quota_bytes_per_hour)),
         None => None,
     };
 
@@ -1113,6 +1119,10 @@ fn ln_vss_route(req: &mut Request, st: &State, method: &Method, rest: &str) -> R
     let content_type = ln::safe_content_type(
         req.headers().iter().find(|h| h.field.equiv("Content-Type")).map(|h| h.value.as_str()),
     );
+    if !vss.allow_write(op, &tok, body.len()) {
+        Metrics::inc(&st.metrics.vss_quota_exceeded);
+        return err(429, "vss write quota exceeded");
+    }
     Metrics::inc(&st.metrics.vss_requests);
     let fail = |status: u16, msg: &str, log: &str| {
         Metrics::inc(&st.metrics.upstream_errors);

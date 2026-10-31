@@ -35,6 +35,14 @@ ldk-node = "=0.7.1"
 # so our own VSS calls (device lock) speak the exact same client/protocol.
 vss-client = { package = "vss-client-ng", version = "=0.4.1" }
 
+# tiny_http 0.12.0 allocates a request's whole declared, unread Content-Length
+# when it drops the body reader, so one request declaring a huge length aborts
+# the process. vendor/tiny_http is 0.12.0 with that one drain loop bounded
+# (see the FORTIS PATCH comment in src/util/equal_reader.rs). Drop this patch
+# once upstream fixes it.
+[patch.crates-io]
+tiny_http = { path = "vendor/tiny_http" }
+
 [profile.release]
 lto = "thin"
 

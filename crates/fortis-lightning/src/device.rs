@@ -41,7 +41,6 @@
 //! that does not parse → `Other("device_lock_corrupt")` (only
 //! [`takeover`] overwrites it). Nothing here ever proceeds on doubt.
 
-use std::io::Write;
 use std::path::Path;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -89,32 +88,12 @@ pub(crate) fn load_or_create_device_id(dir: &Path) -> Result<DeviceId, LnError> 
             let mut b = [0u8; 16];
             getrandom::getrandom(&mut b).map_err(|e| LnError::Other(format!("device id: {e}")))?;
             let id = DeviceId(b);
-            write_private(dir, DEVICE_ID_FILE, id.hex().as_bytes())
+            crate::pay::write_atomic(dir, DEVICE_ID_FILE, id.hex().as_bytes())
                 .map_err(|e| LnError::Other(format!("device id: {e}")))?;
             Ok(id)
         }
         Err(e) => Err(LnError::Other(format!("device id: {e}"))),
     }
-}
-
-/// `dir/file` written atomically and durably with mode 0600 (temp file,
-/// fsync, rename, fsync of the directory).
-fn write_private(dir: &Path, file: &str, bytes: &[u8]) -> std::io::Result<()> {
-    std::fs::create_dir_all(dir)?;
-    let tmp = dir.join(format!("{file}.tmp"));
-    let _ = std::fs::remove_file(&tmp);
-    let mut opts = std::fs::OpenOptions::new();
-    opts.write(true).create_new(true);
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::OpenOptionsExt;
-        opts.mode(0o600);
-    }
-    let mut f = opts.open(&tmp)?;
-    f.write_all(bytes)?;
-    f.sync_all()?;
-    std::fs::rename(&tmp, dir.join(file))?;
-    std::fs::File::open(dir)?.sync_all()
 }
 
 /// The lock's value.

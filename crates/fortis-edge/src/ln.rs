@@ -267,6 +267,90 @@ pub struct VssProxy {
     base: String,
     agent: ureq::Agent,
     pub max_body: usize,
+    quota: Option<ByteQuota>,
+}
+
+/// `--vss-quota-bytes-per-hour` default: 256 MiB of writes per install.
+pub const VSS_QUOTA_DEFAULT: u64 = 256 * 1024 * 1024;
+const QUOTA_WINDOW: Duration = Duration::from_secs(3600);
+/// Keys a quota holds before it drops the expired windows.
+const QUOTA_MAX_KEYS: usize = 10_000;
+
+/// Bytes of `putObjects` body one install may send per fixed window. The
+/// proxy keeps no per-store state, so this bounds how fast any one install
+/// can fill the VSS disk; the rate limiter alone allows `max_body` per
+/// request. In memory, per instance.
+pub struct ByteQuota {
+    limit: u64,
+    window: Duration,
+    max_keys: usize,
+    used: Mutex<QuotaMap>,
+}
+
+#[derive(Default)]
+struct QuotaMap {
+    entries: std::collections::HashMap<String, (std::time::Instant, u64)>,
+    last_sweep: Option<std::time::Instant>,
+}
+
+impl ByteQuota {
+    pub fn new(limit: u64, window: Duration) -> ByteQuota {
+        ByteQuota {
+            limit,
+            window,
+            max_keys: QUOTA_MAX_KEYS,
+            used: Mutex::new(QuotaMap::default()),
+        }
+    }
+
+    #[cfg(test)]
+    fn with_max_keys(mut self, max_keys: usize) -> ByteQuota {
+        self.max_keys = max_keys;
+        self
+    }
+
+    /// Takes `bytes` from `key`'s window; `false` (nothing taken) when that
+    /// would pass the limit.
+    pub fn charge(&self, key: &str, bytes: u64) -> bool {
+        self.charge_at(key, bytes, std::time::Instant::now())
+    }
+
+    fn charge_at(&self, key: &str, bytes: u64, now: std::time::Instant) -> bool {
+        if bytes > self.limit {
+            return false;
+        }
+        let mut guard = self.used.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some((start, used)) = guard.entries.get_mut(key) {
+            if now.saturating_duration_since(*start) >= self.window {
+                *start = now;
+                *used = 0;
+            }
+            return match used.checked_add(bytes) {
+                Some(total) if total <= self.limit => {
+                    *used = total;
+                    true
+                }
+                _ => false,
+            };
+        }
+        if guard.entries.len() >= self.max_keys {
+            let sweep_due = guard
+                .last_sweep
+                .is_none_or(|t| now.saturating_duration_since(t) >= Duration::from_secs(10));
+            if sweep_due {
+                let window = self.window;
+                guard
+                    .entries
+                    .retain(|_, (start, _)| now.saturating_duration_since(*start) < window);
+                guard.last_sweep = Some(now);
+            }
+            if guard.entries.len() >= self.max_keys {
+                return false;
+            }
+        }
+        guard.entries.insert(key.to_string(), (now, bytes));
+        true
+    }
 }
 
 impl VssProxy {
@@ -288,7 +372,20 @@ impl VssProxy {
         if let Ok(tls) = native_tls::TlsConnector::new() {
             b = b.tls_connector(Arc::new(tls));
         }
-        Ok(VssProxy { base: base.to_string(), agent: b.build(), max_body })
+        Ok(VssProxy { base: base.to_string(), agent: b.build(), max_body, quota: None })
+    }
+
+    /// Limits each install token to `bytes_per_hour` of `putObjects` bodies
+    /// (0 = no limit).
+    pub fn with_quota(mut self, bytes_per_hour: u64) -> VssProxy {
+        self.quota = (bytes_per_hour > 0).then(|| ByteQuota::new(bytes_per_hour, QUOTA_WINDOW));
+        self
+    }
+
+    /// Whether `tok` may write `bytes` now. Only `putObjects` adds storage;
+    /// every other call, and a proxy without a quota, is always allowed.
+    pub fn allow_write(&self, op: &str, tok: &str, bytes: usize) -> bool {
+        op != "putObjects" || self.quota.as_ref().is_none_or(|q| q.charge(tok, bytes as u64))
     }
 
     /// POSTs `body` to `<base>/<op>` with only `Content-Type` set (ureq adds
@@ -358,6 +455,46 @@ mod tests {
         let mut v = good();
         f(&mut v);
         parse_info(&serde_json::to_vec(&v).unwrap())
+    }
+
+    #[test]
+    fn quota_limits_writes_per_window_and_key() {
+        use std::time::Instant;
+        let q = ByteQuota::new(100, Duration::from_secs(60));
+        let t0 = Instant::now();
+        assert!(q.charge_at("a", 60, t0));
+        assert!(!q.charge_at("a", 41, t0), "over the limit takes nothing");
+        assert!(q.charge_at("a", 40, t0), "the refused charge left the budget alone");
+        assert!(q.charge_at("b", 100, t0), "another key has its own budget");
+        assert!(!q.charge_at("a", 1, t0 + Duration::from_secs(59)));
+        assert!(q.charge_at("a", 100, t0 + Duration::from_secs(60)), "a new window");
+        assert!(!q.charge_at("a", u64::MAX, t0 + Duration::from_secs(61)), "no overflow");
+    }
+
+    #[test]
+    fn quota_caps_active_keys_and_sweeps_expired_ones() {
+        use std::time::Instant;
+        let q = ByteQuota::new(100, Duration::from_secs(60)).with_max_keys(2);
+        let t0 = Instant::now();
+        assert!(q.charge_at("k1", 10, t0));
+        assert!(q.charge_at("k2", 10, t0));
+        assert!(!q.charge_at("k3", 10, t0), "new key refused when at max_keys");
+        assert!(q.charge_at("k1", 20, t0), "existing key still allowed");
+        assert!(
+            q.charge_at("k3", 10, t0 + Duration::from_secs(60)),
+            "new key allowed once earlier windows expire"
+        );
+    }
+
+    #[test]
+    fn only_put_objects_spends_the_quota() {
+        let p = VssProxy::new("http://h/vss", 10, Duration::from_secs(1)).unwrap().with_quota(10);
+        assert!(p.allow_write("getObject", "t", 1_000_000));
+        assert!(p.allow_write("deleteObject", "t", 1_000_000));
+        assert!(p.allow_write("putObjects", "t", 10));
+        assert!(!p.allow_write("putObjects", "t", 1));
+        let open = VssProxy::new("http://h/vss", 10, Duration::from_secs(1)).unwrap().with_quota(0);
+        assert!(open.allow_write("putObjects", "t", usize::MAX));
     }
 
     #[test]

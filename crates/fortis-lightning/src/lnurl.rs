@@ -11,7 +11,8 @@ use std::time::Duration;
 use ldk_node::bitcoin::hashes::{sha256, Hash};
 use ldk_node::lightning_invoice::{Bolt11Invoice, Bolt11InvoiceDescriptionRef};
 use serde_json::Value;
-use url::Url;
+use url::{Host, Url};
+use std::net::IpAddr;
 
 use crate::error::LnError;
 use crate::parse::PaymentTarget;
@@ -52,9 +53,87 @@ fn check_scheme(url: &str) -> Result<(), LnError> {
         return Err(other("lnurl url has no host"));
     }
     match u.scheme() {
-        "https" => Ok(()),
-        "http" if host.ends_with(".onion") => Ok(()),
-        _ => Err(other("lnurl url must be https")),
+        "https" => {}
+        "http" if host.ends_with(".onion") => return Ok(()),
+        _ => return Err(other("lnurl url must be https")),
+    }
+    // Never reach into the user's own network (or the phone itself): an LNURL
+    // comes from a QR code or a pasted string, so its host is not trusted.
+    // `Url` has already normalised odd IPv4 spellings (0x7f.1, 2130706433).
+    let public = match u.host() {
+        Some(Host::Ipv4(ip)) => is_public_ip(IpAddr::V4(ip)),
+        Some(Host::Ipv6(ip)) => is_public_ip(IpAddr::V6(ip)),
+        Some(Host::Domain(d)) => is_public_domain(d),
+        None => false,
+    };
+    if public {
+        Ok(())
+    } else {
+        Err(other("lnurl host is not public"))
+    }
+}
+
+/// A name that cannot be a public host: single-label names and the reserved
+/// local-use suffixes.
+fn is_public_domain(d: &str) -> bool {
+    let d = d.trim_end_matches('.').to_ascii_lowercase();
+    d.contains('.')
+        && !["localhost", "local", "localdomain", "internal", "lan", "home.arpa", "intranet"]
+            .iter()
+            .any(|s| d == *s || d.ends_with(&format!(".{s}")))
+}
+
+/// Whether `ip` is a globally routable unicast address.
+pub(crate) fn is_public_ip(ip: IpAddr) -> bool {
+    match ip {
+        IpAddr::V4(v4) => {
+            let o = v4.octets();
+            !(v4.is_unspecified()
+                || v4.is_loopback()
+                || v4.is_private()
+                || v4.is_link_local()
+                || v4.is_broadcast()
+                || v4.is_documentation()
+                || v4.is_multicast()
+                || o[0] == 0
+                || o[0] >= 240
+                || (o[0] == 100 && (o[1] & 0xc0) == 64) // 100.64/10 CGNAT
+                || (o[0] == 192 && o[1] == 0 && o[2] == 0) // 192.0.0/24
+                || (o[0] == 198 && (o[1] & 0xfe) == 18)) // 198.18/15
+        }
+        IpAddr::V6(v6) => {
+            if let Some(v4) = v6.to_ipv4_mapped() {
+                return is_public_ip(IpAddr::V4(v4));
+            }
+            let s = v6.segments();
+            !(v6.is_unspecified()
+                || v6.is_loopback()
+                || v6.is_multicast()
+                || s[..6] == [0, 0, 0, 0, 0, 0] // ::/96 (unspecified, loopback, IPv4-compatible)
+                || (s[0] & 0xfe00) == 0xfc00 // fc00::/7 unique local
+                || (s[0] & 0xffc0) == 0xfe80 // fe80::/10 link local
+                || (s[0] == 0x2001 && s[1] == 0x0db8) // 2001:db8::/32 documentation
+                || (s[0] == 0x2001 && s[1] == 0x0000) // 2001::/32 Teredo
+                || s[0] == 0x2002 // 2002::/16 6to4
+                || (s[0] == 0x0064 && s[1] == 0xff9b)) // 64:ff9b::/96 & 64:ff9b:1::/48 NAT64
+        }
+    }
+}
+
+/// DNS for [`UreqGet`]: a name that resolves to a non-public address is
+/// refused (a public name pointing at the LAN).
+struct PublicResolver;
+
+impl ureq::Resolver for PublicResolver {
+    fn resolve(&self, netloc: &str) -> std::io::Result<Vec<std::net::SocketAddr>> {
+        let addrs: Vec<_> = std::net::ToSocketAddrs::to_socket_addrs(netloc)?.collect();
+        if addrs.is_empty() || addrs.iter().any(|a| !is_public_ip(a.ip())) {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::PermissionDenied,
+                "host resolves to a non-public address",
+            ));
+        }
+        Ok(addrs)
     }
 }
 
@@ -204,6 +283,7 @@ impl UreqGet {
         let agent = ureq::AgentBuilder::new()
             .timeout(Duration::from_secs(10))
             .redirects(0)
+            .resolver(PublicResolver)
             .build();
         Self { agent }
     }
@@ -292,6 +372,42 @@ pub(crate) mod tests {
             "minSendable": 1000, "maxSendable": 5000000,
             "metadata": "[[\"text/identifier\",\"name@example.com\"],[\"text/plain\",\"coffee\"]]"
         })
+    }
+
+    #[test]
+    fn private_and_local_hosts_are_refused() {
+        for bad in [
+            "https://127.0.0.1/p",
+            "https://localhost/p",
+            "https://printer.local/p",
+            "https://nas/p",
+            "https://10.1.2.3/p",
+            "https://192.168.0.5/p",
+            "https://172.16.0.1/p",
+            "https://169.254.169.254/latest",
+            "https://100.64.0.1/p",
+            "https://0x7f.1/p",
+            "https://2130706433/p",
+            "https://[::1]/p",
+            "https://[fd00::1]/p",
+            "https://[fe80::1]/p",
+            "https://[::ffff:127.0.0.1]/p",
+            "https://[::127.0.0.1]/p",
+            "https://[2002:7f00:1::1]/p",
+            "https://[2001:0000:4136:e378:8000:63bf:3fff:fdd2]/p",
+            "https://[64:ff9b:1::10.0.0.1]/p",
+            "https://0.0.0.0/p",
+        ] {
+            assert!(check_scheme(bad).is_err(), "{bad} must be refused");
+        }
+        for good in [
+            "https://example.com/p",
+            "https://8.8.8.8/p",
+            "https://[2606:4700::1111]/p",
+            "http://abcdefgh.onion/p",
+        ] {
+            assert!(check_scheme(good).is_ok(), "{good} must pass");
+        }
     }
 
     #[test]

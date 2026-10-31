@@ -1200,6 +1200,7 @@ private fun SendTab(vm: WalletViewModel) {
     val isLnurlTarget = parsedTarget is uniffi.wallet_ffi.LnTarget.LnurlPay ||
         parsedTarget is uniffi.wallet_ffi.LnTarget.LightningAddress
 
+    val ctx = LocalContext.current
     LaunchedEffect(to, isLnurlTarget, lnEnabled) {
         resolvedLnurl = null
         lnurlError = null
@@ -1212,6 +1213,8 @@ private fun SendTab(vm: WalletViewModel) {
                 resolvedLnurl = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
                     uniffi.wallet_ffi.lnResolveLnurl(t)
                 }
+            } catch (e: com.fortis.wallet.lightning.LnFfiError) {
+                lnurlError = ctx.getString(lnErrorMessage(e))
             } catch (e: Exception) {
                 lnurlError = e.message ?: e.toString()
             } finally {
@@ -1769,10 +1772,7 @@ private fun LightningSettingsCard(vm: WalletViewModel) {
         Text(statusText, style = FxType.meta, color = statusColor)
 
         if (enabled && shouldShowTakeoverBanner(lnState)) {
-            GhostButton(
-                stringResource(R.string.ln_takeover_action),
-                dense = true,
-            ) { vm.lightning.takeover() }
+            LightningTakeoverButton(vm)
         }
 
         val ready = lnState as? LnState.Ready
@@ -2032,9 +2032,34 @@ private fun LightningTakeoverBanner(vm: WalletViewModel) {
             style = FxType.meta,
             color = Fx.warn,
         )
-        GhostButton(
-            stringResource(R.string.ln_takeover_action),
-            dense = true,
-        ) { vm.lightning.takeover() }
+        LightningTakeoverButton(vm)
+    }
+}
+
+@Composable
+private fun LightningTakeoverButton(vm: WalletViewModel) {
+    var confirm by remember { mutableStateOf(false) }
+    GhostButton(
+        stringResource(R.string.ln_takeover_action),
+        dense = true,
+    ) { confirm = true }
+    if (confirm) {
+        AlertDialog(
+            onDismissRequest = { confirm = false },
+            containerColor = Fx.panel,
+            title = { Text(stringResource(R.string.ln_takeover_title), color = Fx.text) },
+            text = { Text(stringResource(R.string.ln_takeover_body), color = Fx.textDim) },
+            confirmButton = {
+                TextButton({
+                    confirm = false
+                    vm.lightning.takeover()
+                }) { Text(stringResource(R.string.action_confirm), color = Fx.signal) }
+            },
+            dismissButton = {
+                TextButton({ confirm = false }) {
+                    Text(stringResource(R.string.action_cancel), color = Fx.text)
+                }
+            },
+        )
     }
 }

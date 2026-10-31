@@ -324,8 +324,10 @@ class LightningSession(
                 }
                 kotlinx.coroutines.delay(250)
             }
+            // Neither succeeded nor failed within the deadline: the payment may
+            // still be in flight, so don't report it as sent.
             refreshBalances()
-            id
+            throw LnFfiException.PaymentStateUnknown()
         }
     }
 

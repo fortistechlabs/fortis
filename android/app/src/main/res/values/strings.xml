@@ -533,5 +533,8 @@
     <string name="ln_err_payment_state_unknown">Payment status is still being confirmed — check history before retrying.</string>
     <string name="ln_err_amount_out_of_range">Amount is outside the allowed Lightning payment range.</string>
     <string name="ln_err_other">Lightning error — try again shortly.</string>
+    <string name="ln_err_amount_out_of_range_range">Amount must be between %1$s and %2$s sat for Lightning.</string>
     <string name="ln_takeover_action">Use Lightning here instead</string>
+    <string name="ln_takeover_title">Use Lightning on this device?</string>
+    <string name="ln_takeover_body">The other device will stop using Lightning for this wallet. Only continue if you no longer use it there; running both can put your channel funds at risk.</string>
 </resources>

@@ -400,10 +400,8 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
             refreshSoon()
         } catch (e: CancellationException) {
             throw e
-        } catch (e: com.fortis.wallet.lightning.LnFfiError) {
-            error = str(com.fortis.wallet.ui.screens.lnErrorMessage(e))
         } catch (e: Exception) {
-            error = e.message ?: e.toString()
+            error = errorText(e)
         } finally {
             closingLightningChannel = false
         }
@@ -1889,11 +1887,7 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
             return
         }
         val transitAddr = runCatching { node.transitAddress() }.getOrElse {
-            error = if (it is com.fortis.wallet.lightning.LnFfiError) {
-                str(com.fortis.wallet.ui.screens.lnErrorMessage(it))
-            } else {
-                it.message ?: it.toString()
-            }
+            error = errorText(it)
             return
         }
         lightning.requestMoveToChannel(amountSat.toULong())
@@ -1967,7 +1961,13 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
             try {
                 if (!reauth.consume()) throw Exception(str(R.string.reauth_needed))
                 val p = pendingLn ?: return@wrap
-                val id = lightning.pay(p.target, p.amountMsat)
+                val id = try {
+                    lightning.pay(p.target, p.amountMsat)
+                } catch (e: com.fortis.wallet.lightning.LnFfiError) {
+                    // Outcome unknown: close the confirm sheet so it can't invite a second tap.
+                    if (e is uniffi.wallet_ffi.LnFfiException.PaymentStateUnknown) pendingLn = null
+                    throw e
+                }
                 pendingLn = null
                 lastSentTxid = id
                 sentCount++
@@ -2024,13 +2024,20 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
 
     private fun wrap(block: suspend () -> Unit) = viewModelScope.launch {
         error = null
-        runCatching { block() }.onFailure {
-            error = if (it is com.fortis.wallet.lightning.LnFfiError) {
-                str(com.fortis.wallet.ui.screens.lnErrorMessage(it))
-            } else {
-                it.message ?: it.toString()
+        runCatching { block() }.onFailure { error = errorText(it) }
+    }
+
+    /** User-facing text for a failure; Lightning errors get their localized copy. */
+    private fun errorText(t: Throwable): String = when (t) {
+        is uniffi.wallet_ffi.LnFfiException.AmountOutOfRange ->
+            str(R.string.ln_err_amount_out_of_range_range, (t.minMsat / 1000uL).toString(), (t.maxMsat / 1000uL).toString())
+        is com.fortis.wallet.lightning.LnFfiError -> {
+            if (BuildConfig.DEBUG && t is uniffi.wallet_ffi.LnFfiException.Other) {
+                android.util.Log.w("Lightning", "unclassified error: ${t.reason}")
             }
+            str(com.fortis.wallet.ui.screens.lnErrorMessage(t))
         }
+        else -> t.message ?: t.toString()
     }
 }
 

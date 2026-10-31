@@ -17,6 +17,7 @@ pub struct Metrics {
     pub vss_upstream_errors: AtomicU64,
     pub vss_too_large: AtomicU64,
     pub vss_rate_limited: AtomicU64,
+    pub vss_quota_exceeded: AtomicU64,
 }
 
 impl Metrics {
@@ -40,6 +41,7 @@ impl Metrics {
             ("fortis_edge_vss_requests_total", "/ln/vss requests forwarded to the VSS upstream", g(&self.vss_requests)),
             ("fortis_edge_vss_upstream_errors_total", "/ln/vss upstream failures (timeout, unreachable, oversized answer)", g(&self.vss_upstream_errors)),
             ("fortis_edge_vss_too_large_total", "/ln/vss requests refused for a body over --vss-max-body", g(&self.vss_too_large)),
+            ("fortis_edge_vss_quota_exceeded_total", "/ln/vss writes refused for passing --vss-quota-bytes-per-hour", g(&self.vss_quota_exceeded)),
             ("fortis_edge_vss_rate_limited_total", "/ln/vss requests rejected by the VSS limiter", g(&self.vss_rate_limited)),
         ] {
             s.push_str(&format!("# HELP {name} {help}\n# TYPE {name} counter\n{name} {val}\n"));
