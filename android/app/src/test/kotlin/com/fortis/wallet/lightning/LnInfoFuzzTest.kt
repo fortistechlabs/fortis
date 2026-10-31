@@ -66,6 +66,33 @@ class LnInfoFuzzTest {
     }
 
     @Test
+    fun the_kill_switch_fields_are_read_and_default_to_on() {
+        val on = parseLnInfo(valid)
+        assertTrue(on.enabled)
+        assertEquals("hi", on.message)
+
+        val withoutSwitch = parseLnInfo(valid.replace("\"enabled\":true,\"message\":\"hi\",", ""))
+        assertTrue("the fields really were removed", !valid.replace("\"enabled\":true,\"message\":\"hi\",", "").contains("enabled"))
+        assertTrue("absent means enabled", withoutSwitch.enabled)
+        assertEquals(null, withoutSwitch.message)
+
+        val off = parseLnInfo(
+            valid.replace("\"enabled\":true", "\"enabled\":false")
+                .replace("\"message\":\"hi\"", "\"message\":\"Paused for upgrade \u2014 exits work.\""),
+        )
+        assertEquals(false, off.enabled)
+        assertEquals("Paused for upgrade \u2014 exits work.", off.message)
+        // A blank message is no message.
+        assertEquals(null, parseLnInfo(valid.replace("\"message\":\"hi\"", "\"message\":\"  \"")).message)
+        // The kill switch is not a way round the limits.
+        assertTrue(
+            runCatching {
+                parseLnInfo(valid.replace("\"port\":9735", "\"port\":0").replace("\"enabled\":true", "\"enabled\":false"))
+            }.isFailure,
+        )
+    }
+
+    @Test
     fun mutated_documents_are_either_within_limits_or_rejected_cleanly() {
         val r = Random(0x19L) // fixed seed: failures reproduce
         repeat(20_000) { check(mutate(r)) }
