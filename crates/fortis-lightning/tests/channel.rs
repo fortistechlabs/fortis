@@ -29,7 +29,8 @@ use std::time::{Duration, Instant};
 
 use common::{poll, test_seed, Lsp, Regtest, TempDir, Vss};
 use fortis_lightning::{
-    ChainSource, ChannelState, LnError, LnEvent, LspInfo, LspLimits, Node, NodeConfig, VssConfig,
+    Balances, ChainSource, ChannelState, LnError, LnEvent, LspInfo, LspLimits, Node, NodeConfig,
+    VssConfig,
 };
 use ldk_node::bitcoin::secp256k1::PublicKey;
 use ldk_node::bitcoin::Network;
@@ -262,6 +263,8 @@ fn fund_transit_then_open_channel_becomes_ready_after_one_conf() {
         "{b:?}"
     );
     assert_eq!(b.pending_close_sat, 0, "{b:?}");
+    assert_eq!(b.reserved_sat, ANCHOR_RESERVE_SAT, "{b:?}");
+    assert_eq!(b.pending_transit_sat, 0, "{b:?}");
     // Transit keeps the rest less the funding fee, minus the anchor reserve
     // ldk-node holds back while the channel exists.
     let rest = TRANSIT_SAT - CHANNEL_SAT - ANCHOR_RESERVE_SAT;
@@ -569,6 +572,10 @@ fn close_without_channel_errors() {
 /// The explicit last resort: our own force close. The funds come back to
 /// transit after the to_self delay (the LSP's `to_self_delay` for our
 /// output), so this test only checks the immediate effect.
+/// The explicit last resort: our own force close. Our output waits out the
+/// LSP's `to_self_delay` (LDK default 144 blocks); until ldk-node's sweep
+/// of it confirms, `sweep_transit` refuses with `Other("closing")` (the
+/// anchor reserve may be needed to fee-bump) and sends nothing.
 #[test]
 #[ignore = "needs FORTIS_BTC_BITCOIND, FORTIS_VSS_SERVER and fortis-lsp built"]
 fn force_close_channel_broadcasts_and_shows_closing() {
@@ -579,7 +586,20 @@ fn force_close_channel_broadcasts_and_shows_closing() {
     env.open_ready_channel();
     let before = env.client.balances();
     env.client.force_close_channel().expect("force close");
-    env.wait_mempool("commitment broadcast");
+    let in_mempool = env.wait_mempool("commitment broadcast");
+    let to = env.external_address();
+    assert_eq!(
+        env.client.sweep_transit(&to),
+        Err(LnError::Other("closing".into())),
+        "commitment unconfirmed"
+    );
+    std::thread::sleep(Duration::from_secs(2));
+    assert_eq!(
+        env.mempool().len(),
+        in_mempool.len(),
+        "nothing new broadcast"
+    );
+
     env.rt.mine(1);
     poll("closing", 30, || {
         (env.client.channel_state() == ChannelState::Closing).then_some(())
@@ -590,6 +610,272 @@ fn force_close_channel_broadcasts_and_shows_closing() {
         b.pending_close_sat > 0 && b.pending_close_sat <= before.lightning_sat,
         "{b:?}"
     );
+    assert_eq!(
+        env.client.sweep_transit(&to),
+        Err(LnError::Other("closing".into())),
+        "to_self output under its CSV"
+    );
+    assert!(env.mempool().is_empty(), "nothing broadcast");
+
+    // Past the CSV delay ldk-node sweeps our output into transit.
+    env.rt.mine(150);
+    let deadline = Instant::now() + Duration::from_secs(180);
+    loop {
+        let b = env.client.balances();
+        if b.pending_close_sat == 0 && env.client.channel_state() == ChannelState::None {
+            break;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "force close never resolved: {b:?}"
+        );
+        env.rt.mine(1);
+        std::thread::sleep(Duration::from_secs(2));
+    }
+    let txid = env
+        .client
+        .sweep_transit(&to)
+        .expect("sweep after resolution")
+        .expect("something to sweep");
+    poll("sweep in mempool", 30, || {
+        env.mempool().contains(&txid).then_some(())
+    });
+}
+
+/// `open_channel` returns before ldk-node builds the funding transaction
+/// (and the funding transaction is not in the transit wallet until it is
+/// seen in the mempool): a sweep right after must not take those funds.
+#[test]
+#[ignore = "needs FORTIS_BTC_BITCOIND, FORTIS_VSS_SERVER and fortis-lsp built"]
+fn sweep_right_after_open_is_refused_and_open_completes() {
+    if !have_binaries() {
+        return;
+    }
+    let env = Env::start();
+    env.fund_transit(TRANSIT_SAT);
+    env.client.open_channel(CHANNEL_SAT).expect("open_channel");
+    let to = env.external_address();
+    assert_eq!(
+        env.client.sweep_transit(&to),
+        Err(LnError::Other("channel_opening".into()))
+    );
+    // A second open is refused too until the first funding confirmed.
+    assert_eq!(
+        env.client.open_channel(CHANNEL_SAT),
+        Err(LnError::Other("channel_opening".into()))
+    );
+    let m = env.wait_mempool("funding transaction broadcast");
+    assert_eq!(m.len(), 1, "only the funding transaction: {m:?}");
+    assert_eq!(
+        env.client.sweep_transit(&to),
+        Err(LnError::Other("channel_opening".into())),
+        "funding unconfirmed"
+    );
+    env.rt.mine(6);
+    env.wait_event("ChannelReady", 90, |e| matches!(e, LnEvent::ChannelReady));
+    poll("channel Ready", 60, || {
+        (env.client.channel_state() == ChannelState::Ready).then_some(())
+    });
+    assert_eq!(env.received_sat(&to, 0), 0, "the sweep sent nothing");
+}
+
+/// Funding confirmed but the LSP's `channel_ready` never arrived (LSP down
+/// at the 6th confirmation): LDK reports the channel not ready, exactly as
+/// for one that is shutting down. Without evidence of a shutdown it is
+/// `Opening`, and `close_channel` acts (here: `LspUnreachable`, never a
+/// silent `Ok`). After a restart with the LSP back it becomes `Ready`, and
+/// `close_channel` then really closes it.
+#[test]
+#[ignore = "needs FORTIS_BTC_BITCOIND, FORTIS_VSS_SERVER and fortis-lsp built"]
+fn funding_confirmed_without_channel_ready_is_opening_and_close_is_real() {
+    if !have_binaries() {
+        return;
+    }
+    let mut env = Env::start();
+    env.fund_transit(TRANSIT_SAT);
+    env.client.open_channel(CHANNEL_SAT).expect("open_channel");
+    env.wait_mempool("funding transaction broadcast");
+    env.rt.mine(5);
+    std::thread::sleep(Duration::from_secs(3));
+    let status = env.lsp.stop();
+    assert!(
+        status.is_some_and(|s| s.success()),
+        "fortis-lsp stopped: {status:?}"
+    );
+    env.rt.mine(3);
+    // Let the client see the blocks (it polls bitcoind every few seconds).
+    std::thread::sleep(Duration::from_secs(8));
+    assert_eq!(env.client.channel_state(), ChannelState::Opening);
+    assert_eq!(env.client.close_channel(), Err(LnError::LspUnreachable));
+    assert_eq!(env.client.channel_state(), ChannelState::Opening);
+    assert!(env.mempool().is_empty(), "nothing broadcast");
+
+    env.client.stop();
+    assert_eq!(env.lsp.start_again(), env.lsp.node_id);
+    env.client.start().expect("client starts again");
+    let deadline = Instant::now() + Duration::from_secs(60);
+    loop {
+        let s = env.client.channel_state();
+        assert_ne!(s, ChannelState::Closing, "never Closing without a close");
+        if s == ChannelState::Ready {
+            break;
+        }
+        assert!(Instant::now() < deadline, "channel never Ready: {s:?}");
+        std::thread::sleep(Duration::from_millis(200));
+    }
+
+    env.client.close_channel().expect("close_channel");
+    assert_eq!(env.client.channel_state(), ChannelState::Closing);
+    env.wait_event("ChannelClosed", 60, |e| {
+        matches!(e, LnEvent::ChannelClosed { .. })
+    });
+    env.wait_mempool("closing transaction broadcast");
+    assert_eq!(env.client.channel_state(), ChannelState::Closing);
+}
+
+/// The five parts of `Balances`.
+fn sum(b: &Balances) -> u64 {
+    b.lightning_sat
+        + b.onchain_transit_sat
+        + b.pending_close_sat
+        + b.reserved_sat
+        + b.pending_transit_sat
+}
+
+impl Env {
+    /// A mempool transaction's fee (sat).
+    fn mempool_fee_sat(&self, txid: &str) -> u64 {
+        let e = self.rt.json(&["getmempoolentry", txid]);
+        (e["fees"]["base"].as_f64().unwrap() * 1e8).round() as u64
+    }
+
+    /// Waits up to 30 s until the balance parts add up to `lo..=hi`
+    /// (the wallet picks up mempool transactions on its next poll).
+    fn reconciles(&self, stage: &str, lo: u64, hi: u64) -> Balances {
+        let deadline = Instant::now() + Duration::from_secs(30);
+        loop {
+            let b = self.client.balances();
+            if (lo..=hi).contains(&sum(&b)) {
+                eprintln!("[{stage}] sum {} in {lo}..={hi}: {b:?}", sum(&b));
+                return b;
+            }
+            assert!(
+                Instant::now() < deadline,
+                "[{stage}] sum {} not in {lo}..={hi}: {b:?}",
+                sum(&b)
+            );
+            std::thread::sleep(Duration::from_millis(300));
+        }
+    }
+}
+
+/// `lightning + transit + pending_close + reserved + pending_transit`
+/// against a ledger kept from bitcoind: deposits less the fees of the
+/// client's own transactions (read from bitcoind) less, while a channel's
+/// balance is held in a commitment, the funder's commitment fee and anchors
+/// ([`FUNDER_COMMITMENT_COST_SAT`], invisible by design). Exact at every
+/// stage except two, with documented tolerances: a cooperative close in the
+/// mempool shows the monitor's amount, up to the close fee above the closing
+/// output; ldk-node's sweep of a force-closed output costs a fee bitcoind
+/// cannot attribute here (≤ [`MAX_TX_FEE_SAT`]).
+#[test]
+#[ignore = "needs FORTIS_BTC_BITCOIND, FORTIS_VSS_SERVER and fortis-lsp built"]
+fn balances_reconcile_through_open_close_and_force_close() {
+    if !have_binaries() {
+        return;
+    }
+    let mut env = Env::start();
+
+    // Transit funded, unconfirmed.
+    let addr = env.client.transit_address().unwrap();
+    env.rt.fund(&addr, TRANSIT_SAT);
+    let b = env.reconciles("deposit unconfirmed", TRANSIT_SAT, TRANSIT_SAT);
+    assert_eq!(b.pending_transit_sat, TRANSIT_SAT, "{b:?}");
+    // Confirmed.
+    env.rt.mine(1);
+    poll("deposit spendable", 60, || {
+        (env.client.balances().onchain_transit_sat == TRANSIT_SAT).then_some(())
+    });
+    env.reconciles("deposit confirmed", TRANSIT_SAT, TRANSIT_SAT);
+
+    // Opening: funding broadcast, unconfirmed.
+    env.client.open_channel(CHANNEL_SAT).unwrap();
+    let funding = env.wait_mempool("funding broadcast");
+    let mut ledger = TRANSIT_SAT - env.mempool_fee_sat(&funding[0]);
+    let held = ledger - FUNDER_COMMITMENT_COST_SAT;
+    let b = env.reconciles("opening", held, held);
+    assert_eq!(env.client.channel_state(), ChannelState::Opening);
+    assert_eq!(b.reserved_sat, ANCHOR_RESERVE_SAT, "{b:?}");
+    // Ready.
+    env.rt.mine(6);
+    env.wait_event("ChannelReady", 90, |e| matches!(e, LnEvent::ChannelReady));
+    poll("Ready", 60, || {
+        (env.client.channel_state() == ChannelState::Ready).then_some(())
+    });
+    env.reconciles("ready", held, held);
+
+    // Cooperative close in the mempool.
+    env.client.close_channel().unwrap();
+    env.wait_event("ChannelClosed", 60, |e| {
+        matches!(e, LnEvent::ChannelClosed { .. })
+    });
+    let closing = env.wait_mempool("closing broadcast");
+    let close_fee = env.mempool_fee_sat(&closing[0]);
+    ledger -= close_fee;
+    // Shows the monitor's amount: ledger + (commitment cost − close fee)
+    // when the close fee is the larger, i.e. within one close fee above.
+    let b = env.reconciles("coop close in mempool", ledger, ledger + close_fee);
+    assert_eq!(b.lightning_sat, 0, "{b:?}");
+    // Confirmed: exact.
+    env.rt.mine(1);
+    poll("closing output spendable", 60, || {
+        (env.client.balances().pending_close_sat == 0).then_some(())
+    });
+    let b = env.reconciles("coop close confirmed", ledger, ledger);
+    assert_eq!((b.pending_close_sat, b.reserved_sat), (0, 0), "{b:?}");
+
+    // A second channel, closed by the LSP (force) while the client is stopped.
+    env.client.open_channel(CHANNEL_SAT).unwrap();
+    let funding = env.wait_mempool("second funding broadcast");
+    ledger -= env.mempool_fee_sat(&funding[0]);
+    let held = ledger - FUNDER_COMMITMENT_COST_SAT;
+    env.reconciles("second opening", held, held);
+    env.rt.mine(6);
+    env.wait_event("second ChannelReady", 90, |e| {
+        matches!(e, LnEvent::ChannelReady)
+    });
+    env.reconciles("second ready", held, held);
+    let client_id = PublicKey::from_str(&env.client.node_id()).unwrap();
+    env.client.stop();
+    assert!(env.lsp.stop().is_some_and(|s| s.success()));
+    lsp_force_close(
+        &env.rt,
+        &env.lsp.dir().join("data"),
+        &env.lsp.node_id,
+        client_id,
+    );
+    env.rt.mine(1);
+    env.lsp.start_again();
+    env.client.start().unwrap();
+    // The to_remote output waits for its confirmations: still exact.
+    poll("closing seen", 60, || {
+        (env.client.channel_state() == ChannelState::Closing).then_some(())
+    });
+    let b = env.reconciles("force close awaiting confirmations", held, held);
+    assert!(b.pending_close_sat > 0 && b.lightning_sat == 0, "{b:?}");
+    // Swept into transit: less ldk-node's sweep fee.
+    let deadline = Instant::now() + Duration::from_secs(180);
+    loop {
+        let b = env.client.balances();
+        if b.pending_close_sat == 0 && env.client.channel_state() == ChannelState::None {
+            break;
+        }
+        assert!(Instant::now() < deadline, "never swept: {b:?}");
+        env.rt.mine(1);
+        std::thread::sleep(Duration::from_secs(2));
+    }
+    let b = env.reconciles("swept", held - MAX_TX_FEE_SAT, held - 1);
+    assert_eq!(b.onchain_transit_sat, sum(&b), "{b:?}");
 }
 
 #[test]
