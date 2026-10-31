@@ -529,7 +529,17 @@ private fun DrawScope.drawTab(on: Boolean) {
  */
 @Composable
 fun Shell(vm: WalletViewModel) {
+    val ctx = LocalContext.current
     val unit = if (vm.config?.chain == "btc") "BTC" else "XBT"
+    val rxToastFmt = stringResource(R.string.toast_ln_received)
+    LaunchedEffect(vm.lightning) {
+        vm.lightning.events.collect { ev ->
+            if (ev is uniffi.wallet_ffi.LnEventRecord.PaymentReceived) {
+                val sat = displaySatFromMsat(ev.amountMsat)
+                Toast.makeText(ctx, rxToastFmt.format(fmt(sat)), Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
     LaunchedEffect(vm.nav, vm.wallets.map { it.id }) {
         while (vm.nav == NavTab.Home || vm.nav == NavTab.Settings || vm.nav == NavTab.Swaps) {
             vm.refreshAllBalances()
@@ -566,6 +576,7 @@ fun Shell(vm: WalletViewModel) {
         }
     }
     vm.pending?.let { ConfirmSheet(vm, it, unit) }
+    vm.pendingLn?.let { LnConfirmSheet(vm, it, unit) }
     if (vm.hwOfferXbtFor != null) XbtOfferSheet(vm)
 }
 
@@ -948,6 +959,11 @@ private fun WalletTab(vm: WalletViewModel) {
             style = FxType.meta, color = Fx.warn,
         )
         val tabKeys = if (c.watchOnly) listOf("receive", "history") else listOf("receive", "send", "history")
+        LaunchedEffect(vm.pendingSendText, c.id) {
+            if (vm.pendingSendText != null && "send" in tabKeys) {
+                tab = "send"
+            }
+        }
         if (tab !in tabKeys) tab = "receive" // e.g. a stale "send" selection on a watch-only wallet
         val tabLabels = mapOf(
             "receive" to stringResource(R.string.tab_receive),
@@ -1131,7 +1147,7 @@ private fun ReceiveTab(vm: WalletViewModel) {
 
 @Composable
 private fun SendTab(vm: WalletViewModel) {
-    var to by remember { mutableStateOf("") }
+    var to by remember { mutableStateOf(vm.consumePendingSendText() ?: "") }
     var amount by remember { mutableStateOf("") }
     var amountInSat by remember { mutableStateOf(true) }
     var sweep by remember { mutableStateOf(false) }
@@ -1139,16 +1155,92 @@ private fun SendTab(vm: WalletViewModel) {
     var target by remember { mutableStateOf(6) }
     var custom by remember { mutableStateOf("") }
     var replayProtect by remember { mutableStateOf(false) }
-    val isBtc = vm.config?.chain == "btc"
+    val c = vm.config
+    val isBtc = c?.chain == "btc"
+    val network = c?.network ?: "bitcoin"
     val coinUnit = if (isBtc) "BTC" else "XBT"
     val amountSat = amountToSat(amount, amountInSat)
+    val lnState by vm.lightning.state.collectAsState()
+    val lnEnabled = showLightningToggle(c) && (vm.isLightningEnabled(c?.id ?: "") || lnState !is LnState.Off)
+    val effectiveLnState = if (lnEnabled) lnState else LnState.Off
+    val onchainSat = vm.balances?.confirmedSat ?: 0L
+    val limits = remember(vm.lightning.lastInfo) {
+        vm.lightning.lastInfo?.toLspLimits() ?: DEFAULT_LN_LIMITS
+    }
+
+    LaunchedEffect(vm.pendingSendText) {
+        vm.consumePendingSendText()?.let { to = it }
+    }
+
+    var resolvedLnurl by remember { mutableStateOf<uniffi.wallet_ffi.LnurlParams?>(null) }
+    var lnurlError by remember { mutableStateOf<String?>(null) }
+    var resolvingLnurl by remember { mutableStateOf(false) }
+
+    val parsedTarget = remember(to, isBtc, network) {
+        if (!isBtc || to.isBlank()) null
+        else runCatching { parseScan(to, network) }.getOrNull()
+    }
+    val isLnurlTarget = parsedTarget is uniffi.wallet_ffi.LnTarget.LnurlPay ||
+        parsedTarget is uniffi.wallet_ffi.LnTarget.LightningAddress
+
+    LaunchedEffect(to, isLnurlTarget, lnEnabled) {
+        resolvedLnurl = null
+        lnurlError = null
+        resolvingLnurl = false
+        val t = parsedTarget
+        if (lnEnabled && (t is uniffi.wallet_ffi.LnTarget.LnurlPay || t is uniffi.wallet_ffi.LnTarget.LightningAddress)) {
+            resolvingLnurl = true
+            kotlinx.coroutines.delay(300)
+            try {
+                resolvedLnurl = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                    uniffi.wallet_ffi.lnResolveLnurl(t)
+                }
+            } catch (e: Exception) {
+                lnurlError = e.message ?: e.toString()
+            } finally {
+                resolvingLnurl = false
+            }
+        }
+    }
+
+    val sendPlan = remember(
+        to, isBtc, network, onchainSat, effectiveLnState, limits, amountSat,
+        resolvedLnurl, lnurlError, isLnurlTarget,
+    ) {
+        if (!isBtc || to.isBlank()) null
+        else if (isLnurlTarget && effectiveLnState !is LnState.Off && resolvedLnurl == null) {
+            if (lnurlError != null) SendPlan.Invalid(lnurlError!!) else null
+        } else {
+            planSend(
+                text = to,
+                onchainSat = onchainSat,
+                ln = effectiveLnState,
+                network = network,
+                limits = limits,
+                userAmountMsat = amountSat?.takeIf { it > 0L }?.let { it.toULong() * 1_000uL },
+                lnurlResolver = {
+                    resolvedLnurl ?: throw IllegalStateException(lnurlError ?: "Resolving LNURL…")
+                },
+            )
+        }
+    }
+
+    LaunchedEffect(sendPlan) {
+        if (sendPlan is SendPlan.OnChain && sendPlan.amountSat != null && amount.isEmpty()) {
+            amountInSat = true
+            amount = sendPlan.amountSat.toString()
+        }
+    }
+
     val scanPrompt = stringResource(R.string.scan_prompt)
     val scan = rememberLauncherForActivityResult(ScanContract()) { r ->
-        r.contents?.let { to = addressFromScan(it) }
+        r.contents?.let { raw ->
+            to = if (isBtc) (textFromIntent(raw) ?: raw.trim()) else addressFromScan(raw)
+        }
     }
     GlassCard {
         Text(stringResource(R.string.tab_send), color = Fx.text, fontWeight = FontWeight.SemiBold)
-        // An address never contains whitespace; stripping it on input kills the
+        // An address or invoice never contains whitespace; stripping it on input kills the
         // cryptic "base58 error" you otherwise get from a pasted trailing newline.
         Field(to, { new -> to = new.filterNot(Char::isWhitespace) }, stringResource(R.string.field_to_address), mono = true)
         GhostButton(stringResource(R.string.action_scan_qr)) {
@@ -1161,69 +1253,154 @@ private fun SendTab(vm: WalletViewModel) {
                 },
             )
         }
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Checkbox(sweep, { sweep = it }); Text(stringResource(R.string.send_sweep), color = Fx.text)
-        }
-        if (!sweep) {
-            Text(caps(stringResource(R.string.field_amount)), style = FxType.label)
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(Fx.s2),
-                verticalAlignment = Alignment.Top,
-            ) {
-                Field(
-                    amount, { amount = it }, null,
-                    keyboardType = if (amountInSat) KeyboardType.Number else KeyboardType.Decimal,
-                    modifier = Modifier.weight(1f),
+
+        val isLightningFlow = isBtc && to.isNotBlank() && sendPlan != null && sendPlan !is SendPlan.OnChain
+        if (resolvingLnurl) {
+            Text(stringResource(R.string.send_ln_resolving), style = FxType.meta, color = Fx.textDim)
+        } else if (isLightningFlow) {
+            val baseNeedsAmount = remember(to, isBtc, network, onchainSat, effectiveLnState, limits, resolvedLnurl) {
+                if (isLnurlTarget && resolvedLnurl == null) null
+                else planSend(
+                    text = to,
+                    onchainSat = onchainSat,
+                    ln = effectiveLnState,
+                    network = network,
+                    limits = limits,
+                    userAmountMsat = null,
+                    lnurlResolver = { resolvedLnurl ?: throw IllegalStateException() },
+                ) as? SendPlan.NeedsAmount
+            }
+
+            if (baseNeedsAmount != null) {
+                val minSat = displaySatFromMsat(baseNeedsAmount.minMsat)
+                val maxSat = displaySatFromMsat(baseNeedsAmount.maxMsat)
+                Text(
+                    caps(stringResource(R.string.send_ln_amount_range, fmt(minSat), fmt(maxSat))),
+                    style = FxType.label,
                 )
-                AmountUnitPicker(amountInSat, coinUnit) { amountInSat = it }
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(Fx.s2),
+                    verticalAlignment = Alignment.Top,
+                ) {
+                    Field(
+                        amount, { amount = it }, null,
+                        keyboardType = if (amountInSat) KeyboardType.Number else KeyboardType.Decimal,
+                        modifier = Modifier.weight(1f),
+                    )
+                    AmountUnitPicker(amountInSat, coinUnit) { amountInSat = it }
+                }
             }
-            amountSat?.let { sat ->
-                val alt = if (amountInSat) stringResource(R.string.send_alt_coin, fmt(sat), coinUnit)
-                    else stringResource(R.string.send_alt_sat, sat.toString())
-                val fiat = vm.fiatText(sat, if (isBtc) "btc" else "xbt")
-                    ?.let { stringResource(R.string.send_alt_fiat, it) } ?: ""
-                Text(alt + fiat, style = FxType.fiatSmall)
+
+            when (val plan = sendPlan) {
+                is SendPlan.Lightning -> {
+                    val sat = plan.amountMsat?.let { displaySatFromMsat(it) } ?: amountSat ?: 0L
+                    kv(stringResource(R.string.confirm_amount), "${fmt(sat)} $coinUnit")
+                    val desc = when (val t = plan.target) {
+                        is uniffi.wallet_ffi.LnTarget.Bolt11 -> t.description
+                        is uniffi.wallet_ffi.LnTarget.Bolt12Offer -> t.description
+                        else -> resolvedLnurl?.description.orEmpty()
+                    }
+                    if (desc.isNotBlank()) {
+                        kv(stringResource(R.string.confirm_ln_description), desc)
+                    }
+                }
+                is SendPlan.NeedsAmount -> {}
+                is SendPlan.NeedsMove -> {
+                    Text(
+                        stringResource(R.string.send_ln_needs_move, fmt(plan.shortfallSat), coinUnit),
+                        style = FxType.meta,
+                        color = Fx.warn,
+                    )
+                }
+                is SendPlan.Invalid -> {
+                    ErrorText(plan.reason)
+                }
+                is SendPlan.OnChain -> {}
             }
+
+            ErrorText(vm.error)
+            val focus = LocalFocusManager.current
+            val lnReadyPlan = sendPlan as? SendPlan.Lightning
+            PrimaryButton(
+                stringResource(R.string.action_review),
+                enabled = lnReadyPlan != null && (lnReadyPlan.amountMsat ?: 0uL) > 0uL,
+                working = vm.reviewing,
+            ) {
+                focus.clearFocus()
+                if (lnReadyPlan != null && lnReadyPlan.amountMsat != null) {
+                    vm.buildLightningPayment(
+                        target = lnReadyPlan.target,
+                        amountMsat = lnReadyPlan.amountMsat,
+                        descriptionOverride = resolvedLnurl?.description,
+                    )
+                }
+            }
+        } else {
+            val effectiveAddress = (sendPlan as? SendPlan.OnChain)?.address ?: addressFromScan(to)
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Checkbox(feeFromAmount, { feeFromAmount = it })
-                Text(stringResource(R.string.send_fee_from_amount), color = Fx.text)
+                Checkbox(sweep, { sweep = it }); Text(stringResource(R.string.send_sweep), color = Fx.text)
             }
-            if (feeFromAmount) Text(
-                stringResource(R.string.send_fee_from_amount_note),
-                style = FxType.meta, color = Fx.textFaint,
-            )
-        }
-        Segmented(
-            listOf(
-                "1" to stringResource(R.string.fee_fast),
-                "6" to stringResource(R.string.fee_normal),
-                "144" to stringResource(R.string.fee_slow),
-            ),
-            target.toString(), { target = it.toInt(); custom = "" },
-        )
-        Field(custom, { custom = it }, stringResource(R.string.field_custom_feerate), keyboardType = KeyboardType.Number)
-        if (isBtc && !sweep) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Checkbox(replayProtect, { replayProtect = it })
-                Text(stringResource(R.string.send_replay_protect), color = Fx.text)
+            if (!sweep) {
+                Text(caps(stringResource(R.string.field_amount)), style = FxType.label)
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(Fx.s2),
+                    verticalAlignment = Alignment.Top,
+                ) {
+                    Field(
+                        amount, { amount = it }, null,
+                        keyboardType = if (amountInSat) KeyboardType.Number else KeyboardType.Decimal,
+                        modifier = Modifier.weight(1f),
+                    )
+                    AmountUnitPicker(amountInSat, coinUnit) { amountInSat = it }
+                }
+                amountSat?.let { sat ->
+                    val alt = if (amountInSat) stringResource(R.string.send_alt_coin, fmt(sat), coinUnit)
+                        else stringResource(R.string.send_alt_sat, sat.toString())
+                    val fiat = vm.fiatText(sat, if (isBtc) "btc" else "xbt")
+                        ?.let { stringResource(R.string.send_alt_fiat, it) } ?: ""
+                    Text(alt + fiat, style = FxType.fiatSmall)
+                }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Checkbox(feeFromAmount, { feeFromAmount = it })
+                    Text(stringResource(R.string.send_fee_from_amount), color = Fx.text)
+                }
+                if (feeFromAmount) Text(
+                    stringResource(R.string.send_fee_from_amount_note),
+                    style = FxType.meta, color = Fx.textFaint,
+                )
             }
-            if (replayProtect) Text(stringResource(R.string.send_replay_note), style = FxType.meta, color = Fx.textFaint)
-        }
-        vm.status?.pricing?.let {
-            Text(
-                stringResource(R.string.send_service_fee, "%.2f".format(it.bps / 100.0), it.floorSat),
-                style = FxType.meta, color = Fx.textFaint,
+            Segmented(
+                listOf(
+                    "1" to stringResource(R.string.fee_fast),
+                    "6" to stringResource(R.string.fee_normal),
+                    "144" to stringResource(R.string.fee_slow),
+                ),
+                target.toString(), { target = it.toInt(); custom = "" },
             )
-        }
-        ErrorText(vm.error)
-        val focus = LocalFocusManager.current
-        PrimaryButton(
-            stringResource(R.string.action_review),
-            enabled = to.isNotBlank() && (sweep || (amountSat != null && amountSat > 0)),
-            working = vm.reviewing,
-        ) {
-            focus.clearFocus() // the keyboard goes, and the address field lets go
-            vm.buildPayment(to, amountSat ?: 0L, sweep, custom.toLongOrNull(), target, replayProtect && isBtc, feeFromAmount && !sweep)
+            Field(custom, { custom = it }, stringResource(R.string.field_custom_feerate), keyboardType = KeyboardType.Number)
+            if (isBtc && !sweep) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Checkbox(replayProtect, { replayProtect = it })
+                    Text(stringResource(R.string.send_replay_protect), color = Fx.text)
+                }
+                if (replayProtect) Text(stringResource(R.string.send_replay_note), style = FxType.meta, color = Fx.textFaint)
+            }
+            vm.status?.pricing?.let {
+                Text(
+                    stringResource(R.string.send_service_fee, "%.2f".format(it.bps / 100.0), it.floorSat),
+                    style = FxType.meta, color = Fx.textFaint,
+                )
+            }
+            ErrorText(vm.error)
+            val focus = LocalFocusManager.current
+            PrimaryButton(
+                stringResource(R.string.action_review),
+                enabled = effectiveAddress.isNotBlank() && (sweep || (amountSat != null && amountSat > 0)),
+                working = vm.reviewing,
+            ) {
+                focus.clearFocus() // the keyboard goes, and the address field lets go
+                vm.buildPayment(effectiveAddress, amountSat ?: 0L, sweep, custom.toLongOrNull(), target, replayProtect && isBtc, feeFromAmount && !sweep)
+            }
         }
     }
 }
@@ -1390,6 +1567,85 @@ private fun ConfirmSheet(vm: WalletViewModel, p: PlanPreview, unit: String) {
                 }
                 PrimaryButton(stringResource(R.string.action_sign_send), Modifier.weight(1f), working = vm.sending) {
                     gate.require(vm, gateAct, gateScope) { vm.confirmSend() }
+                }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun LnConfirmSheet(vm: WalletViewModel, p: com.fortis.wallet.LnPlanPreview, unit: String) {
+    val gate = com.fortis.wallet.ui.rememberIdentityGate()
+    val gateAct = com.fortis.wallet.ui.rememberFragmentActivity()
+    val gateScope = rememberCoroutineScope()
+    com.fortis.wallet.ui.ConfirmIdentityDialog(gate, vm)
+    val sheet = rememberModalBottomSheetState(
+        skipPartiallyExpanded = true,
+        confirmValueChange = { it != SheetValue.Hidden || !vm.sending },
+    )
+    ModalBottomSheet(
+        onDismissRequest = { if (!vm.sending) vm.cancelPendingLn() },
+        sheetState = sheet,
+        containerColor = Fx.panel,
+    ) {
+        Column(
+            Modifier.verticalScroll(rememberScrollState()).padding(horizontal = Fx.s5).padding(top = Fx.s2, bottom = Fx.s6),
+            verticalArrangement = Arrangement.spacedBy(Fx.s4),
+        ) {
+            Text(
+                stringResource(R.string.confirm_payment_title),
+                style = MaterialTheme.typography.titleLarge, color = Fx.text,
+            )
+            val chain = vm.config?.chain ?: "btc"
+            val amountSat = displaySatFromMsat(p.amountMsat)
+            val feeEstimateSat = displaySatFromMsat(p.feeEstimateMsat)
+
+            @Composable
+            fun amountLine(sat: Long): String {
+                val fiat = vm.fiatText(sat, chain)
+                return if (fiat != null) stringResource(R.string.value_with_fiat, fmt(sat), unit, fiat)
+                else "${fmt(sat)} $unit"
+            }
+
+            Column(verticalArrangement = Arrangement.spacedBy(Fx.s1)) {
+                Text(stringResource(R.string.confirm_to), style = FxType.body, color = Fx.textDim)
+                Text(
+                    if (p.recipientLabel.length > 48) "${p.recipientLabel.take(24)}…${p.recipientLabel.takeLast(16)}" else p.recipientLabel,
+                    style = FxType.amount,
+                    color = Fx.text,
+                )
+            }
+            kv(stringResource(R.string.confirm_amount), amountLine(amountSat))
+            if (p.description.isNotBlank()) {
+                kv(stringResource(R.string.confirm_ln_description), p.description)
+            }
+            p.expirySecs?.let { exp ->
+                val expLabel = if (exp >= 60uL) {
+                    stringResource(R.string.confirm_ln_expiry_mins, (exp / 60uL).toInt())
+                } else {
+                    stringResource(R.string.confirm_ln_expiry_secs, exp.toInt())
+                }
+                kv(stringResource(R.string.confirm_ln_expiry), expLabel)
+            }
+            kv(
+                stringResource(R.string.confirm_ln_fee_estimate),
+                stringResource(R.string.confirm_ln_fee_estimate_value, fmt(feeEstimateSat), unit),
+            )
+            if (vm.sending) {
+                Text(stringResource(R.string.send_ln_sending), style = FxType.meta, color = Fx.textDim)
+            }
+            ErrorText(vm.error)
+            Row(horizontalArrangement = Arrangement.spacedBy(Fx.s2)) {
+                GhostButton(stringResource(R.string.action_cancel), Modifier.weight(1f), enabled = !vm.sending) {
+                    if (!vm.sending) vm.cancelPendingLn()
+                }
+                PrimaryButton(
+                    stringResource(if (vm.sending) R.string.send_ln_sending else R.string.action_sign_send),
+                    Modifier.weight(1f),
+                    working = vm.sending,
+                ) {
+                    gate.require(vm, gateAct, gateScope) { vm.confirmLightningSend() }
                 }
             }
         }

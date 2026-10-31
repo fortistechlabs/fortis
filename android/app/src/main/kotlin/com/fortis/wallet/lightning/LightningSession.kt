@@ -25,6 +25,7 @@ import uniffi.wallet_ffi.LnLspLimits
 import uniffi.wallet_ffi.LnNode
 import uniffi.wallet_ffi.LnNodeConfig
 import uniffi.wallet_ffi.LnPayment
+import uniffi.wallet_ffi.LnPaymentStatus
 import uniffi.wallet_ffi.LnReceiveQuote
 import uniffi.wallet_ffi.LnStartMode
 import uniffi.wallet_ffi.LnTarget
@@ -275,6 +276,38 @@ class LightningSession(
             val ch = runCatching { node.channelState() }.getOrNull() ?: return
             lastKnownBalances = bal
             _state.value = LnState.Ready(bal, ch)
+        }
+    }
+
+    /** Pay [target] and wait until `PaymentSent` or `PaymentFailed` (or terminal payment status). */
+    suspend fun pay(target: LnTarget, amountMsat: ULong?): String {
+        val node = currentNode ?: throw LnFfiException.Other("lightning not ready")
+        return withContext(Dispatchers.IO) {
+            val id = node.pay(target, amountMsat)
+            drainImmediateEvents(node, unlockedWalletId ?: "")
+            if (!node.blocksOnNextEvent) {
+                val p = runCatching { node.payments().firstOrNull { it.id == id } }.getOrNull()
+                refreshBalances()
+                if (p?.status == LnPaymentStatus.FAILED) {
+                    throw LnFfiException.Other("Payment failed")
+                }
+                return@withContext id
+            }
+            val deadline = System.currentTimeMillis() + 60_000L
+            while (System.currentTimeMillis() < deadline && currentNode === node) {
+                val p = runCatching { node.payments().firstOrNull { it.id == id } }.getOrNull()
+                if (p?.status == LnPaymentStatus.SUCCEEDED) {
+                    refreshBalances()
+                    return@withContext id
+                }
+                if (p?.status == LnPaymentStatus.FAILED) {
+                    refreshBalances()
+                    throw LnFfiException.Other("Payment failed")
+                }
+                kotlinx.coroutines.delay(250)
+            }
+            refreshBalances()
+            id
         }
     }
 

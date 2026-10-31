@@ -75,6 +75,15 @@ data class PlanPreview(
     val sweep: Boolean, val replayProtected: Boolean = false,
 )
 
+data class LnPlanPreview(
+    val target: uniffi.wallet_ffi.LnTarget,
+    val amountMsat: ULong,
+    val feeEstimateMsat: ULong,
+    val description: String,
+    val expirySecs: ULong?,
+    val recipientLabel: String,
+)
+
 /** The result of setting up the app lock, produced by the UI for the first wallet. */
 data class LockSetup(val mode: String, val secret: String, val appWrapped: String?)
 
@@ -249,6 +258,8 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
     var history by mutableStateOf<List<HistoryEntry>>(emptyList()); private set
     var feerates by mutableStateOf<Map<Int, Long>>(emptyMap()); private set
     var pending by mutableStateOf<PlanPreview?>(null); private set
+    var pendingLn by mutableStateOf<LnPlanPreview?>(null); private set
+    var pendingSendText by mutableStateOf<String?>(null); private set
     var lastSentTxid by mutableStateOf<String?>(null); private set
 
     /** Bumped by every payment sent: the Send form starts over. */
@@ -434,7 +445,22 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
             appSecret == null -> Phase.AppLock
             else -> Phase.Shell
         }
-        if (phase == Phase.Shell) enterTab()
+        if (phase == Phase.Shell) {
+            if (pendingSendText != null) {
+                val targetWallet = wallets.firstOrNull { it.id == selectedId && !it.watchOnly && it.chain == "btc" }
+                    ?: wallets.firstOrNull { !it.watchOnly && it.chain == "btc" }
+                    ?: wallets.firstOrNull { !it.watchOnly }
+                if (targetWallet != null) {
+                    if (selectedId != targetWallet.id) {
+                        selectedId = targetWallet.id
+                        viewModelScope.launch { store.setSelected(targetWallet.id) }
+                        resetView()
+                    }
+                    nav = NavTab.Wallet
+                }
+            }
+            enterTab()
+        }
     }
 
     /** Prepare state for the nav tab currently in view. The Wallet tab's
@@ -1130,7 +1156,7 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
     private fun resetView() {
         backend = null; fallback = null; usingFallback = false
         status = null; history = emptyList(); feerates = emptyMap()
-        pending = null; lastSentTxid = null
+        pending = null; pendingLn = null; lastSentTxid = null
         serverHistory = emptyList(); refreshAgain = false
         // Seed with the last successful refresh's balance rather than a blank
         // 0, so opening a wallet shows *something* immediately instead of
@@ -1852,6 +1878,77 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun cancelPending() { pending = null }
+
+    fun cancelPendingLn() { if (!sending) pendingLn = null }
+
+    fun openSendWithUri(text: String) {
+        pendingSendText = text
+        val btcSigning = wallets.firstOrNull { it.id == selectedId && !it.watchOnly && it.chain == "btc" }
+            ?: wallets.firstOrNull { !it.watchOnly && it.chain == "btc" }
+            ?: wallets.firstOrNull { !it.watchOnly }
+        if (btcSigning != null && phase == Phase.Shell) {
+            selectWallet(btcSigning.id)
+        }
+    }
+
+    fun consumePendingSendText(): String? {
+        val v = pendingSendText
+        pendingSendText = null
+        return v
+    }
+
+    fun buildLightningPayment(
+        target: uniffi.wallet_ffi.LnTarget,
+        amountMsat: ULong,
+        descriptionOverride: String? = null,
+    ) {
+        error = null
+        val feeMsat = lightning.currentNode?.estimateFeeMsat(target, amountMsat)
+            ?: uniffi.wallet_ffi.lnEstimateFeeMsat(target, amountMsat)
+        val (desc, expiry, recipient) = when (target) {
+            is uniffi.wallet_ffi.LnTarget.Bolt11 ->
+                Triple(target.description, target.expirySecs, target.invoice)
+            is uniffi.wallet_ffi.LnTarget.Bolt12Offer ->
+                Triple(target.description, null, target.offer)
+            is uniffi.wallet_ffi.LnTarget.LnurlPay ->
+                Triple(descriptionOverride.orEmpty(), null, target.url)
+            is uniffi.wallet_ffi.LnTarget.LightningAddress ->
+                Triple(descriptionOverride.orEmpty(), null, "${target.user}@${target.domain}")
+            is uniffi.wallet_ffi.LnTarget.Unified -> when (val l = target.lightning) {
+                is uniffi.wallet_ffi.LnUnifiedLightning.Bolt11 ->
+                    Triple(l.description, l.expirySecs, l.invoice)
+                is uniffi.wallet_ffi.LnUnifiedLightning.Bolt12Offer ->
+                    Triple(l.description, null, l.offer)
+            }
+            is uniffi.wallet_ffi.LnTarget.OnChain ->
+                Triple("", null, target.address)
+        }
+        pendingLn = LnPlanPreview(
+            target = target,
+            amountMsat = amountMsat,
+            feeEstimateMsat = feeMsat,
+            description = desc,
+            expirySecs = expiry,
+            recipientLabel = recipient,
+        )
+    }
+
+    fun confirmLightningSend() {
+        if (sending) return
+        sending = true
+        wrap {
+            try {
+                if (!reauth.consume()) throw Exception(str(R.string.reauth_needed))
+                val p = pendingLn ?: return@wrap
+                val id = lightning.pay(p.target, p.amountMsat)
+                pendingLn = null
+                lastSentTxid = id
+                sentCount++
+            } finally {
+                sending = false
+            }
+        }
+    }
 
     /** Sign and send the pending payment — only right after [confirmIdentity]. */
     fun confirmSend() {

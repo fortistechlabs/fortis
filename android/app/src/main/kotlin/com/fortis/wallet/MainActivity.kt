@@ -1,6 +1,7 @@
 package com.fortis.wallet
 
 import android.content.Context
+import android.content.Intent
 import android.os.Bundle
 import androidx.activity.compose.setContent
 import androidx.activity.viewModels
@@ -9,6 +10,7 @@ import com.fortis.wallet.security.AutoLock
 import androidx.activity.enableEdgeToEdge
 import androidx.fragment.app.FragmentActivity
 import com.fortis.wallet.ui.localeWrap
+import com.fortis.wallet.ui.textFromIntent
 
 // FragmentActivity (not ComponentActivity) so androidx.biometric's BiometricPrompt
 // can attach — it needs a FragmentManager.
@@ -27,7 +29,16 @@ class MainActivity : FragmentActivity() {
         if (BuildConfig.DEBUG && intent?.getBooleanExtra("crash", false) == true) {
             throw RuntimeException("test crash via intent")
         }
+        if (savedInstanceState == null) {
+            textFromIntent(intent?.dataString)?.let { vm.openSendWithUri(it) }
+        }
         setContent { FortisApp(vm) }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        textFromIntent(intent.dataString)?.let { vm.openSendWithUri(it) }
     }
 
     override fun onStop() {
