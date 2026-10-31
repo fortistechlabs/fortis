@@ -999,22 +999,98 @@ private fun SentDialog(vm: WalletViewModel, txid: String) {
 @Composable
 private fun ReceiveTab(vm: WalletViewModel) {
     val ctx = LocalContext.current
-    val i = vm.config?.nextReceive ?: 0
+    val c = vm.config
+    val i = c?.nextReceive ?: 0
+    val unit = if (c?.chain == "btc") "BTC" else "XBT"
     val addr = remember(i, vm.session) { runCatching { vm.session?.receiveAddress(i)?.address }.getOrNull() ?: "…" }
+    val lnState by vm.lightning.state.collectAsState()
+    val lnEnabled = showLightningToggle(c) && (vm.isLightningEnabled(c?.id ?: "") || lnState !is LnState.Off)
+    val minLnSat = vm.lightning.lastInfo?.minPaymentSat ?: 10_000L
+
+    var amount by remember { mutableStateOf("") }
+    var amountInSat by remember { mutableStateOf(true) }
+    val amountSat = if (lnEnabled) amountToSat(amount, amountInSat) else null
+    var quote by remember { mutableStateOf<uniffi.wallet_ffi.LnReceiveQuote?>(null) }
+    var quoting by remember { mutableStateOf(false) }
+
+    LaunchedEffect(amountSat, lnState, lnEnabled) {
+        quote = null
+        quoting = false
+        if (lnEnabled && amountSat != null && amountSat >= minLnSat && lnState is LnState.Ready) {
+            quoting = true
+            kotlinx.coroutines.delay(500)
+            quote = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                runCatching { vm.lightning.currentNode?.receive(amountSat.toULong() * 1_000uL, "") }.getOrNull()
+            }
+            quoting = false
+        }
+    }
+
+    val rxQr = remember(addr, amountSat, quote, minLnSat, lnEnabled) {
+        buildReceiveQr(
+            address = addr,
+            amountSat = amountSat,
+            quote = quote,
+            minLnSat = if (lnEnabled) minLnSat else 0L,
+            lightningEnabled = lnEnabled,
+        )
+    }
+
     val chooserTitle = stringResource(R.string.share_address_chooser)
-    val copy = { copyToClipboard(ctx, "address", addr) }
+    val copyPayload = if (rxQr.lightning || (amountSat != null && amountSat > 0L)) rxQr.uri else addr
+    val copy = { copyToClipboard(ctx, "address", copyPayload) }
     val share = {
         ctx.startActivity(
             Intent.createChooser(
-                Intent(Intent.ACTION_SEND).apply { type = "text/plain"; putExtra(Intent.EXTRA_TEXT, addr) },
+                Intent(Intent.ACTION_SEND).apply { type = "text/plain"; putExtra(Intent.EXTRA_TEXT, copyPayload) },
                 chooserTitle,
             ),
         )
     }
     GlassCard {
         Text(stringResource(R.string.tab_receive), color = Fx.text, fontWeight = FontWeight.SemiBold)
+        if (lnEnabled) {
+            Text(caps(stringResource(R.string.receive_amount_optional)), style = FxType.label)
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(Fx.s2),
+                verticalAlignment = Alignment.Top,
+            ) {
+                Field(
+                    amount, { amount = it }, null,
+                    keyboardType = if (amountInSat) KeyboardType.Number else KeyboardType.Decimal,
+                    modifier = Modifier.weight(1f),
+                )
+                AmountUnitPicker(amountInSat, unit) { amountInSat = it }
+            }
+            if (quoting) {
+                Text(stringResource(R.string.receive_ln_quoting), style = FxType.meta, color = Fx.textDim)
+            } else if (rxQr.lightning && rxQr.feeSat != null && rxQr.feeSat > 0L && rxQr.youGetSat != null && amountSat != null) {
+                Text(
+                    stringResource(
+                        R.string.receive_ln_fee_summary,
+                        fmt(amountSat),
+                        unit,
+                        fmt(rxQr.feeSat),
+                        fmt(rxQr.youGetSat),
+                    ),
+                    style = FxType.meta,
+                    color = Fx.warn,
+                )
+            }
+            when (rxQr.hint) {
+                ReceiveHint.AddAmountForLightning ->
+                    Text(stringResource(R.string.receive_ln_needs_amount), style = FxType.meta, color = Fx.textDim)
+                ReceiveHint.BelowLightningMin ->
+                    Text(
+                        stringResource(R.string.receive_ln_below_min, fmt(minLnSat), unit),
+                        style = FxType.meta,
+                        color = Fx.textDim,
+                    )
+                null -> {}
+            }
+        }
         if (addr.length > 3) {
-            val qr = remember(addr) { qrBitmap(addr) }
+            val qr = remember(rxQr.uri) { qrBitmap(rxQr.uri) }
             val copyQr = { copyImageToClipboard(ctx, qr) }
             Image(
                 bitmap = qr.asImageBitmap(),
