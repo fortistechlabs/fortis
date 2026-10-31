@@ -13,6 +13,7 @@ mod cache;
 mod haskoin;
 mod fx;
 mod limit;
+mod ln;
 mod mempool_ws;
 mod metrics;
 mod price;
@@ -360,6 +361,26 @@ struct Args {
     /// the wall clock, so an end-to-end test reaches refund times at once.
     #[arg(long, default_value_t = 0, hide = true)]
     swap_clock_offset_secs: u64,
+    /// Lightning: the JSON file served at `GET /ln/info` (the LSP's node id,
+    /// host, port, fees, effective payment bounds, channel bounds, network and
+    /// the `enabled` / `message` kill switch). Validated at startup (an
+    /// invalid file stops the edge) and re-read within a few seconds of any
+    /// change, no restart; an invalid change is ignored and logged, the last
+    /// good file stays served. Unset → `/ln/info` 404s.
+    #[arg(long, value_name = "FILE")]
+    ln_info_file: Option<PathBuf>,
+    /// Lightning: the vss-server base URL `/ln/vss/<call>` forwards to, e.g.
+    /// http://127.0.0.1:8080/vss. Only `getObject`, `putObjects`,
+    /// `deleteObject` and `listKeyVersions` (POST) pass. Unset → `/ln/vss/*`
+    /// 404s.
+    #[arg(long, value_name = "URL")]
+    vss_upstream: Option<String>,
+    /// Largest `/ln/vss/*` request body, bytes (413 over).
+    #[arg(long, default_value_t = ln::VSS_MAX_BODY_DEFAULT)]
+    vss_max_body: usize,
+    /// Test only: the VSS upstream read timeout, seconds (default 30).
+    #[arg(long, default_value_t = ln::VSS_READ_TIMEOUT_SECS, hide = true)]
+    vss_read_timeout_secs: u64,
 }
 
 struct State {
@@ -399,6 +420,13 @@ struct State {
     metrics: Metrics,
     /// P2P swaps; `None` unless `--swap`.
     swap: Option<swap::Swap>,
+    /// `GET /ln/info`; `None` unless `--ln-info-file`.
+    ln_info: Option<Arc<ln::LnInfoSource>>,
+    /// `/ln/vss/*`; `None` unless `--vss-upstream`.
+    vss: Option<ln::VssProxy>,
+    /// `limiter`'s settings, but VSS's own buckets: a node's write bursts
+    /// must not starve the same install's swaps or chain reads, nor they VSS.
+    vss_limiter: RateLimiter,
 }
 
 fn main() -> ExitCode {
@@ -458,6 +486,21 @@ fn run() -> Result<()> {
             args.service_fee_bps,
             args.service_fee_floor_sat,
             args.service_fee_cap_sat,
+        )?),
+        None => None,
+    };
+
+    let ln_info = match &args.ln_info_file {
+        Some(path) => Some(Arc::new(
+            ln::LnInfoSource::open(path).map_err(|e| anyhow!("--ln-info-file {}: {e:#}", path.display()))?,
+        )),
+        None => None,
+    };
+    let vss = match &args.vss_upstream {
+        Some(url) => Some(ln::VssProxy::new(
+            url,
+            args.vss_max_body,
+            std::time::Duration::from_secs(args.vss_read_timeout_secs.max(1)),
         )?),
         None => None,
     };
@@ -643,6 +686,9 @@ fn run() -> Result<()> {
         btc_mempool_ws: args.btc_mempool_ws_url.clone().map(mempool_ws::MempoolWs::spawn),
         metrics: Metrics::default(),
         swap,
+        ln_info,
+        vss,
+        vss_limiter: RateLimiter::new(args.rate_per_min, args.rate_burst),
     });
 
     let server = Arc::new(
@@ -736,6 +782,27 @@ fn run() -> Result<()> {
             "(disabled)".into()
         },
     );
+
+    eprintln!(
+        "  ln info        {}",
+        match (&state.ln_info, &args.ln_info_file) {
+            (Some(src), Some(path)) => {
+                let i = src.info();
+                format!("{} ({}, {}, reloaded on change)", path.display(), i.network, if i.enabled { "enabled" } else { "disabled" })
+            }
+            _ => "(disabled)".into(),
+        },
+    );
+    eprintln!(
+        "  vss proxy      {}",
+        match &args.vss_upstream {
+            Some(u) => format!("{u} (max body {} bytes)", args.vss_max_body),
+            None => "(disabled)".into(),
+        },
+    );
+    if let Some(src) = &state.ln_info {
+        src.watch(ln::INFO_POLL);
+    }
 
     if let (Some(sw), Some(reader)) = (&state.swap, swap_reader) {
         let tick = std::time::Duration::from_secs(args.swap_tick_secs.max(1));
@@ -836,6 +903,8 @@ fn build_swap(args: &Args, token_key: &[u8]) -> Result<swap::Swap> {
 enum Reply {
     Json(u16, serde_json::Value),
     Raw(u16, String, Vec<u8>),
+    /// `Raw`, plus `Cache-Control: no-store`.
+    NoStore(u16, String, Vec<u8>),
     Empty(u16),
 }
 fn err(status: u16, msg: &str) -> Reply {
@@ -921,6 +990,8 @@ fn handle(req: &mut Request, st: &State) -> Reply {
 
     let url = req.url().to_string();
     let (path, query) = url.split_once('?').unwrap_or((url.as_str(), ""));
+    // `/ln/*` matches the path as sent (no trailing-slash trimming).
+    let raw_path = path;
     let path = path.trim_end_matches('/');
 
     match (&method, path) {
@@ -958,6 +1029,8 @@ fn handle(req: &mut Request, st: &State) -> Reply {
         }
         (Method::Post, "/crash") => crash_report(req, st),
         (_, p) if p == "/swap" || p.starts_with("/swap/") => swap_route(req, st, &method, p),
+        _ if raw_path == "/ln/info" => ln_info_route(req, st, &method),
+        _ if raw_path.starts_with("/ln/vss/") => ln_vss_route(req, st, &method, &raw_path["/ln/vss/".len()..]),
         (_, p) if p.starts_with("/xbt/") || p.starts_with("/btc/") => {
             proxy_chain(req, st, &method, p, query)
         }
@@ -980,6 +1053,79 @@ fn swap_route(req: &mut Request, st: &State, method: &Method, path: &str) -> Rep
         return err(429, "rate limit exceeded");
     }
     swap::route(req, method, path, &tok, sw)
+}
+
+/// `GET /ln/info`: 404 unless `--ln-info-file`; needs a valid install token.
+fn ln_info_route(req: &Request, st: &State, method: &Method) -> Reply {
+    let Some(info) = &st.ln_info else {
+        return err(404, "no such route");
+    };
+    let Some(tok) = bearer(req).filter(|t| token::verify(&st.secret, t)) else {
+        Metrics::inc(&st.metrics.unauthorized);
+        return err(401, "missing or invalid token — POST /register first");
+    };
+    if method != &Method::Get {
+        return err(405, "method not allowed");
+    }
+    if !st.limiter.check(&tok) {
+        Metrics::inc(&st.metrics.rate_limited);
+        return err(429, "rate limit exceeded");
+    }
+    Reply::NoStore(200, "application/json".into(), info.body().to_vec())
+}
+
+/// `POST /ln/vss/<call>` → `--vss-upstream`/`<call>`: 404 unless configured;
+/// a valid install token and VSS's own rate-limit bucket; the body capped at
+/// `--vss-max-body` (413, nothing sent); only `Content-Type` and the body go
+/// upstream; the answer is relayed unchanged (409 included). Logs never carry
+/// a body, a token or a store id.
+fn ln_vss_route(req: &mut Request, st: &State, method: &Method, rest: &str) -> Reply {
+    let Some(vss) = &st.vss else {
+        return err(404, "no such route");
+    };
+    let Some(tok) = bearer(req).filter(|t| token::verify(&st.secret, t)) else {
+        Metrics::inc(&st.metrics.unauthorized);
+        return err(401, "missing or invalid token — POST /register first");
+    };
+    let op = match ln::vss_op(method, rest) {
+        Ok(op) => op,
+        Err(r) => return r,
+    };
+    if !st.vss_limiter.check(&tok) {
+        Metrics::inc(&st.metrics.rate_limited);
+        Metrics::inc(&st.metrics.vss_rate_limited);
+        return err(429, "rate limit exceeded");
+    }
+    let too_large = || {
+        Metrics::inc(&st.metrics.vss_too_large);
+        err(413, "request body too large")
+    };
+    if req.body_length().is_some_and(|n| n > vss.max_body) {
+        return too_large();
+    }
+    let mut body = Vec::new();
+    if req.as_reader().take(vss.max_body as u64 + 1).read_to_end(&mut body).is_err() {
+        return err(400, "could not read the request body");
+    }
+    if body.len() > vss.max_body {
+        return too_large();
+    }
+    let content_type = ln::safe_content_type(
+        req.headers().iter().find(|h| h.field.equiv("Content-Type")).map(|h| h.value.as_str()),
+    );
+    Metrics::inc(&st.metrics.vss_requests);
+    let fail = |status: u16, msg: &str, log: &str| {
+        Metrics::inc(&st.metrics.upstream_errors);
+        Metrics::inc(&st.metrics.vss_upstream_errors);
+        eprintln!("fortis-edge: vss upstream ({op}): {log}");
+        err(status, msg)
+    };
+    match vss.forward(op, &content_type, &body) {
+        Ok(r) => Reply::NoStore(r.status, r.content_type, r.body),
+        Err(ln::VssFail::Timeout) => fail(504, "vss upstream timed out", "timed out"),
+        Err(ln::VssFail::TooLarge) => fail(502, "vss upstream answer too large", "answer over the size cap"),
+        Err(ln::VssFail::Unavailable(e)) => fail(502, "vss upstream is unavailable", &e),
+    }
 }
 
 /// Append one crash report to the NDJSON log. Body is opaque client JSON, capped
@@ -1649,12 +1795,22 @@ fn scan_chain(req: &mut Request, st: &State, chain: &str, tok: Option<&str>, aut
 }
 
 fn respond(req: Request, reply: Reply, allow_origin: &str) -> std::io::Result<()> {
+    let mut no_store = false;
     let (status, ctype, data): (u16, String, Vec<u8>) = match reply {
         Reply::Empty(s) => (s, "text/plain".into(), Vec::new()),
         Reply::Json(s, v) => (s, "application/json".into(), serde_json::to_vec(&v).unwrap_or_default()),
         Reply::Raw(s, ct, b) => (s, ct, b),
+        Reply::NoStore(s, ct, b) => {
+            no_store = true;
+            (s, ct, b)
+        }
     };
     let mut resp = Response::from_data(data).with_status_code(status);
+    if no_store {
+        if let Ok(h) = Header::from_bytes(&b"Cache-Control"[..], &b"no-store"[..]) {
+            resp.add_header(h);
+        }
+    }
     for (k, v) in [
         ("Access-Control-Allow-Origin", allow_origin),
         ("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS"),

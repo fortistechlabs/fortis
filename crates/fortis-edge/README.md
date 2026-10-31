@@ -181,6 +181,99 @@ Two hidden flags exist **for tests only**:
 
 Both are used by `tests/swap_e2e.rs`. Never set them in production.
 
+### Lightning (`/ln/*`)
+
+Two flags, each turning on one route group; both routes need a valid install
+token (`Authorization: Bearer`, as for `/swap/*`).
+
+- `--ln-info-file <FILE>` serves `GET /ln/info` from a JSON file the operator
+  writes (unset → `404`). It is validated at startup (an invalid file stops
+  the edge with `error: --ln-info-file <path>: <reason>`) and re-read within
+  about a second of any change (mtime, size or inode), no restart. An invalid
+  change is ignored and logged (`ln info: ignoring invalid … keeping the last
+  good one`); the last good file stays served. Answers carry
+  `Cache-Control: no-store`.
+- `--vss-upstream <URL>` turns on `POST /ln/vss/<call>`, a reverse proxy to
+  vss-server, e.g. `--vss-upstream http://127.0.0.1:8080/vss` (unset →
+  `404`). Optional `--vss-max-body <bytes>` (default 4194304, 4 MiB).
+
+The info file (at most 64 KiB; unknown fields are ignored and not served;
+every field is required except `lsps2_token` and `message`):
+
+```json
+{
+  "node_id": "0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+  "host": "lsp.example.org",
+  "port": 9735,
+  "lsps2_token": null,
+  "fee": { "ppm": 10000, "min_sat": 2000 },
+  "min_payment_sat": 51000,
+  "max_payment_sat": 250000,
+  "channel_min_sat": 100000,
+  "channel_max_sat": 1000000,
+  "enabled": true,
+  "message": null,
+  "network": "bitcoin"
+}
+```
+
+Rules: `node_id` a compressed public key (66 hex digits; served lower-case);
+`host` a bare hostname or IP (letters, digits, `.`, `-`, `:`, `[`, `]`; no
+scheme, path or whitespace); `port` 1–65535; `fee.ppm` ≤ 100000;
+`min_payment_sat` ≤ `max_payment_sat`; `channel_min_sat` ≤ `channel_max_sat`;
+`network` one of `bitcoin`, `testnet`, `signet`, `regtest`; `message` at most
+1000 characters; `lsps2_token`, when set, 1–512 printable characters.
+
+`enabled: false` (with a `message` saying why) is the kill switch: clients
+stop starting new Lightning use. It never affects `/ln/vss/*`: backups must
+keep working so users can still close out.
+
+Filling it from fortis-lsp's `GET /info` (on its localhost metrics listener),
+which publishes the **effective** payment bounds (the ones that keep every
+JIT channel within `channel_min_sat`..`channel_max_sat`, not the raw config):
+
+| info file | fortis-lsp `/info` |
+|---|---|
+| `node_id` | `node_id` |
+| `network` | `network` |
+| `fee.ppm` / `fee.min_sat` | `open_fee_ppm` / `open_fee_min_sat` |
+| `min_payment_sat` | `min_payment_size_msat` ÷ 1000, **rounded up** |
+| `max_payment_sat` | `max_payment_size_msat` ÷ 1000, **rounded down** |
+| `channel_min_sat` / `channel_max_sat` | `channel_min_sat` / `channel_max_sat` |
+| `lsps2_token` | the LSP config's `token` when `token_required` is `true`, else `null` |
+| `host` / `port` | the public address phones reach the LSP at (the port of `listen`; never `0.0.0.0`) |
+
+```sh
+curl -s http://127.0.0.1:<lsp-metrics-port>/info | jq '{node_id, network,
+  fee: {ppm: .open_fee_ppm, min_sat: .open_fee_min_sat},
+  min_payment_sat: ((.min_payment_size_msat + 999) / 1000 | floor),
+  max_payment_sat: (.max_payment_size_msat / 1000 | floor),
+  channel_min_sat, channel_max_sat}'
+```
+
+With the LSP's defaults that gives 51 000–250 000 sat. Write the file
+somewhere only the operator can edit, then add `host`, `port`,
+`lsps2_token`, `enabled`, `message`; a write-then-rename is picked up too.
+
+The VSS proxy forwards exactly `getObject`, `putObjects`, `deleteObject` and
+`listKeyVersions`, POST only (any other path `404`, another method `405`; dot
+segments, double slashes and percent-encodings never match). vss-server runs
+with its no-op authorizer: a user's namespace is the 256-bit store id their
+seed derives, inside the client-encrypted body, so seed-only restore works on
+a new device (a per-install credential would not). The edge's part is abuse
+control:
+- the install token and a rate-limit bucket of VSS's own (the
+  `--rate-per-min` / `--rate-burst` settings, separate buckets from swaps and
+  chain reads);
+- the body cap (`413`, nothing sent upstream); only `Content-Type` and the
+  body go upstream (no `Authorization`, cookies, `X-Forwarded-*`, query);
+- upstream timeouts (connect 5 s, read 30 s → `504`), an unreachable upstream
+  → `502`, an answer over 8 MiB → `502`;
+- the upstream's status and body relayed unchanged, `409` included.
+Nothing logs a body, token or store id. Metrics:
+`fortis_edge_vss_{requests,upstream_errors,too_large,rate_limited}_total`.
+`--vss-read-timeout-secs` is a hidden test-only flag.
+
 The wallet points its XBT explorer URL at `https://<host>/xbt` and its BTC one at
 `https://<host>/btc`, sending `Authorization: Bearer <token>` (only there: a token in the URL is refused, since URLs end up in logs).
 
@@ -196,6 +289,8 @@ The wallet points its XBT explorer URL at `https://<host>/xbt` and its BTC one a
 | `POST /crash` | `204`; appends the body to `--crash-log` (else `404`) |
 | `GET /pricing` | `{address, bps, floor_sat, cap_sat}` when a service fee is set (else `404`) |
 | `GET /metrics` | Prometheus text |
+| `GET /ln/info` | the `--ln-info-file` document (token required; else `404`) — see Lightning above |
+| `POST /ln/vss/{getObject,putObjects,deleteObject,listKeyVersions}` | → `--vss-upstream` (token required; else `404`) |
 | `GET /` | health + which chains are served |
 
 Swap routes (with `--swap`). Every `/swap/*` request needs a valid install
@@ -257,6 +352,9 @@ cargo build --workspace
 FORTIS_BITCOIND=…/knots/bitcoind FORTIS_BTC_BITCOIND=…/core/bitcoind \
   cargo test -p fortis-edge --test swap_e2e -- --nocapture
 ```
+
+`tests/ln_routes.rs` runs `/ln/info` and `/ln/vss/*` against a real edge
+and an in-test VSS stub; it needs nothing outside localhost and always runs.
 
 ## Not yet
 

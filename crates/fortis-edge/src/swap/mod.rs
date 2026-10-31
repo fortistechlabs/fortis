@@ -4280,6 +4280,9 @@ mod tests {
             btc_mempool_ws: None,
             metrics: crate::Metrics::default(),
             swap,
+            ln_info: None,
+            vss: None,
+            vss_limiter: crate::RateLimiter::new(600, 300),
         };
         (st, dir)
     }
