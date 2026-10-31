@@ -394,7 +394,23 @@ impl ByteQuota {
                 guard.last_sweep = Some(now);
             }
             if guard.entries.len() >= self.max_keys {
-                return false;
+                // Every window is still live. Tokens are free, so a farm of
+                // them could otherwise fill the map and lock every genuine
+                // install out of its first write. Make room by dropping the
+                // accounts that have used the least (a tenth of the map at a
+                // time, so the scan is amortised): the heavy writers, which
+                // are what the quota exists to bound, keep their accounts,
+                // and a dropped light one only gets a fresh budget.
+                let mut by_used: Vec<(u64, String)> = guard
+                    .entries
+                    .iter()
+                    .map(|(k, (_, used))| (*used, k.clone()))
+                    .collect();
+                by_used.sort_unstable();
+                let drop_n = (self.max_keys / 10).max(1);
+                for (_, k) in by_used.into_iter().take(drop_n) {
+                    guard.entries.remove(&k);
+                }
             }
         }
         guard.entries.insert(key.to_string(), (now, bytes));
@@ -490,6 +506,23 @@ impl VssProxy {
         global
     }
 
+    /// Gives back what [`allow_write`](Self::allow_write) took for a write
+    /// that did not reach the store (a conflict, an error status, an
+    /// upstream that could not be reached): a client retrying through those
+    /// must not burn its hourly budget on writes that never landed.
+    pub fn refund_write(&self, op: &str, tok: &str, bytes: usize) {
+        if op != "putObjects" {
+            return;
+        }
+        let bytes = bytes as u64;
+        if let Some(q) = &self.quota {
+            q.refund(tok, bytes);
+        }
+        if let Some(q) = &self.global_quota {
+            q.refund(GLOBAL_QUOTA_KEY, bytes);
+        }
+    }
+
     /// POSTs `body` to `<base>/<op>` with only `Content-Type` set (ureq adds
     /// Host, Content-Length, User-Agent, Accept; nothing from the client).
     pub fn forward(&self, op: &str, content_type: &str, body: &[u8]) -> Result<Relay, VssFail> {
@@ -580,12 +613,53 @@ mod tests {
         let t0 = Instant::now();
         assert!(q.charge_at("k1", 10, t0));
         assert!(q.charge_at("k2", 10, t0));
-        assert!(!q.charge_at("k3", 10, t0), "new key refused when at max_keys");
         assert!(q.charge_at("k1", 20, t0), "existing key still allowed");
         assert!(
             q.charge_at("k3", 10, t0 + Duration::from_secs(60)),
             "new key allowed once earlier windows expire"
         );
+    }
+
+    #[test]
+    fn full_quota_map_makes_room_by_dropping_the_lightest_accounts() {
+        use std::time::Instant;
+        let q = ByteQuota::new(100, Duration::from_secs(60)).with_max_keys(3);
+        let t0 = Instant::now();
+        assert!(q.charge_at("heavy", 90, t0));
+        assert!(q.charge_at("spam1", 1, t0));
+        assert!(q.charge_at("spam2", 1, t0));
+        // The map is full of live windows: a genuine install still gets in.
+        assert!(q.charge_at("genuine", 10, t0), "not locked out by a full map");
+        // The heavy writer kept its account, so its limit still holds.
+        assert!(!q.charge_at("heavy", 11, t0), "the heavy account was not dropped");
+        assert!(q.charge_at("heavy", 10, t0));
+    }
+
+    #[test]
+    fn a_swarm_of_new_keys_never_locks_out_a_new_key() {
+        use std::time::Instant;
+        let q = ByteQuota::new(100, Duration::from_secs(60)).with_max_keys(50);
+        let t0 = Instant::now();
+        for i in 0..500 {
+            assert!(q.charge_at(&format!("t{i}"), 1, t0), "key {i}");
+        }
+        let held = q.used.lock().unwrap().entries.len();
+        assert!(held <= 50, "the map stays bounded ({held})");
+    }
+
+    #[test]
+    fn a_failed_write_is_given_back_to_both_quotas() {
+        let p = VssProxy::new("http://h/vss", 10, Duration::from_secs(1))
+            .unwrap()
+            .with_quota(10)
+            .with_global_quota(10);
+        assert!(p.allow_write("putObjects", "a", 10));
+        assert!(!p.allow_write("putObjects", "a", 1), "spent");
+        p.refund_write("putObjects", "a", 10);
+        assert!(p.allow_write("putObjects", "a", 10), "the failed write cost nothing");
+        // Only putObjects was ever charged, so only putObjects is refunded.
+        p.refund_write("getObject", "a", 10);
+        assert!(!p.allow_write("putObjects", "a", 1));
     }
 
     #[test]

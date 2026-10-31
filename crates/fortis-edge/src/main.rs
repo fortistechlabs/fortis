@@ -1159,10 +1159,21 @@ fn ln_vss_route(req: &mut Request, st: &State, method: &Method, rest: &str) -> R
         err(status, msg)
     };
     match vss.forward(op, &content_type, &body) {
-        Ok(r) => Reply::NoStore(r.status, r.content_type, r.body),
+        Ok(r) => {
+            // A conflict (routine while two devices race for the lock) or any
+            // other non-2xx wrote nothing: do not charge the install for it.
+            if !(200..300).contains(&r.status) {
+                vss.refund_write(op, &tok, body.len());
+            }
+            Reply::NoStore(r.status, r.content_type, r.body)
+        }
+        // A timeout stays charged: the upstream may have stored the write.
         Err(ln::VssFail::Timeout) => fail(504, "vss upstream timed out", "timed out"),
         Err(ln::VssFail::TooLarge) => fail(502, "vss upstream answer too large", "answer over the size cap"),
-        Err(ln::VssFail::Unavailable(e)) => fail(502, "vss upstream is unavailable", &e),
+        Err(ln::VssFail::Unavailable(e)) => {
+            vss.refund_write(op, &tok, body.len());
+            fail(502, "vss upstream is unavailable", &e)
+        }
     }
 }
 
@@ -1440,6 +1451,10 @@ fn proxy_chain(req: &mut Request, st: &State, method: &Method, path: &str, query
     // Cache hits never touch the upstream, so they don't spend rate budget —
     // check the cache before the limiter.
     let cache_key = format!("{chain}/{rest}?{query}");
+    // Only a query-less GET is cached, on purpose: `ttl_for` matches on the
+    // path alone, so caching `?…` URLs would let anyone fill the bounded
+    // cache with junk keys (`/blocks/tip/height?x=1`, `?x=2`, …) and push out
+    // the real entries. No cached endpoint is called with a query.
     let ttl = if method == &Method::Get && query.is_empty() {
         cache::ttl_for(path, None)
     } else {

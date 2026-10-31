@@ -41,7 +41,17 @@ interface LightningStore {
     suspend fun vssUrl(walletId: String): String = "$HOSTED_EDGE/ln/vss"
     suspend fun vssAuthHeader(walletId: String): String = ""
     fun dataDir(walletId: String): String = "/tmp/fortis-ln/$walletId"
+
+    /** A "Move to Lightning" deposit that was broadcast and has not been turned into a channel yet. Survives a process death. */
+    suspend fun pendingMove(walletId: String): PendingMove? = null
+    suspend fun setPendingMove(walletId: String, move: PendingMove?) {}
 }
+
+/** [amountSat] was sent to the node's transit address at [atMs] (epoch ms), to become a channel. */
+data class PendingMove(val amountSat: Long, val atMs: Long)
+
+/** How long a broadcast deposit may take to arrive before the intent is dropped. */
+const val PENDING_MOVE_MAX_AGE_MS = 48L * 60 * 60 * 1000
 
 class InMemoryLightningStore(
     private val wallets: Map<String, WalletConfig> = emptyMap(),
@@ -49,6 +59,13 @@ class InMemoryLightningStore(
     private val vss: String = "$HOSTED_EDGE/ln/vss",
 ) : LightningStore {
     private val enabledMap = ConcurrentHashMap<String, Boolean>()
+    private val moves = ConcurrentHashMap<String, PendingMove>()
+
+    override suspend fun pendingMove(walletId: String): PendingMove? = moves[walletId]
+
+    override suspend fun setPendingMove(walletId: String, move: PendingMove?) {
+        if (move == null) moves.remove(walletId) else moves[walletId] = move
+    }
 
     override suspend fun lightningEnabled(walletId: String): Boolean {
         val w = wallets[walletId]
@@ -152,6 +169,9 @@ class FfiLnNode(private val inner: LnNode) : LnNodeApi {
 /** An event poll that returns sooner than this did not wait for an event. */
 private const val IDLE_POLL_MIN_NANOS = 50_000_000L
 private const val IDLE_POLL_BACKOFF_MS = 250L
+
+/** The `reason` of the error `close_channel` gives for a channel that is already being closed. */
+private const val CLOSE_IN_PROGRESS = "close_in_progress"
 
 class LightningSession(
     private val scope: CoroutineScope,
@@ -280,26 +300,72 @@ class LightningSession(
         }
     }
 
+    /** Arms an in-memory move of [amountSat]. Nothing is persisted: if the process dies, or the
+     *  deposit is never sent, the intent is gone. The app calls [commitMove] once the deposit has
+     *  actually been broadcast, which also survives a restart. */
     fun requestMoveToChannel(amountSat: ULong) {
         pendingMoveSat = amountSat
     }
 
+    /** The deposit for a move to Lightning of [amountSat] was broadcast: remember it (also on
+     *  disk), so the funds arriving in transit become a channel rather than being swept back,
+     *  whether or not the app is restarted before they do. */
+    suspend fun commitMove(amountSat: ULong) {
+        pendingMoveSat = amountSat
+        val id = unlockedWalletId ?: return
+        runCatching { store.setPendingMove(id, PendingMove(amountSat.toLong(), System.currentTimeMillis())) }
+    }
+
+    /** The move intent: the in-memory one, else the persisted one if it is not stale. */
+    private suspend fun activeMove(walletId: String): ULong? {
+        pendingMoveSat?.let { return it }
+        val persisted = runCatching { store.pendingMove(walletId) }.getOrNull() ?: return null
+        if (System.currentTimeMillis() - persisted.atMs > PENDING_MOVE_MAX_AGE_MS || persisted.amountSat <= 0) {
+            runCatching { store.setPendingMove(walletId, null) }
+            return null
+        }
+        return persisted.amountSat.toULong()
+    }
+
+    private suspend fun consumeMove(walletId: String) {
+        pendingMoveSat = null
+        runCatching { store.setPendingMove(walletId, null) }
+    }
+
+    /** True when [walletId]'s seed is held here, i.e. [onUnlocked] already ran for it. */
+    fun isUnlockedFor(walletId: String): Boolean = unlockedWalletId == walletId && unlockedSeed != null
+
     fun payments(): List<LnPayment> =
         currentNode?.let { runCatching { it.payments() }.getOrNull() }.orEmpty()
 
-    fun refreshBalances() {
+    /** Re-reads balances and channel state, and opens the channel for a move whose deposit has
+     *  arrived. Blocking node calls run on the IO dispatcher. A start, stop or close in progress
+     *  publishes its own state, and these calls must not overlap it, so then this does nothing. */
+    suspend fun refreshBalances() {
+        if (!mutex.tryLock()) return
+        try {
+            withContext(Dispatchers.IO) { refreshBalancesLocked() }
+        } finally {
+            mutex.unlock()
+        }
+    }
+
+    private suspend fun refreshBalancesLocked() {
         val node = currentNode ?: return
-        val cur = _state.value
-        if (cur is LnState.Ready) {
-            var bal = runCatching { node.balances() }.getOrNull() ?: return
-            var ch = runCatching { node.channelState() }.getOrNull() ?: return
-            val moveAmt = pendingMoveSat
-            if (moveAmt != null && bal.onchainTransitSat >= moveAmt && lastInfo?.enabled != false) {
-                pendingMoveSat = null
-                runCatching { node.openChannel(moveAmt) }
-                bal = runCatching { node.balances() }.getOrDefault(bal)
-                ch = runCatching { node.channelState() }.getOrDefault(ch)
-            }
+        if (_state.value !is LnState.Ready) return
+        var bal = runCatching { node.balances() }.getOrNull() ?: return
+        var ch = runCatching { node.channelState() }.getOrNull() ?: return
+        val walletId = unlockedWalletId
+        val moveAmt = walletId?.let { activeMove(it) }
+        if (walletId != null && moveAmt != null && bal.onchainTransitSat >= moveAmt && lastInfo?.enabled != false) {
+            // The intent is spent only once LDK accepted the open; after a failure (LSP briefly
+            // unreachable, ...) it stays, so the next refresh retries instead of the deposit
+            // being swept back. It expires on its own (PENDING_MOVE_MAX_AGE_MS).
+            if (runCatching { node.openChannel(moveAmt) }.isSuccess) consumeMove(walletId)
+            bal = runCatching { node.balances() }.getOrDefault(bal)
+            ch = runCatching { node.channelState() }.getOrDefault(ch)
+        }
+        if (currentNode === node) {
             lastKnownBalances = bal
             _state.value = LnState.Ready(bal, ch)
         }
@@ -354,13 +420,27 @@ class LightningSession(
         }
     }
 
-    /** Close the active channel (if any) and sweep settled transit funds to [toAddress]. */
-    suspend fun closeAndSweep(toAddress: String): String? = mutex.withLock {
+    /** Close the active channel (if any) and sweep settled transit funds to [toAddress].
+     *
+     *  The close is cooperative. If the LSP cannot be reached, or LDK refuses, the error is thrown
+     *  and nothing is force-closed: a force close broadcasts the latest commitment, locks the funds
+     *  behind the LSP's `to_self_delay` and costs more in fees, so it is only done with
+     *  `force = true`, which the app passes after the user has chosen it. A close that is already
+     *  under way is not an error: the sweep below proceeds. */
+    suspend fun closeAndSweep(toAddress: String, force: Boolean = false): String? = mutex.withLock {
         val node = currentNode ?: throw LnFfiException.Other("lightning not ready")
         withContext(Dispatchers.IO) {
-            if (node.channelState() != LnChannelState.NONE) {
-                runCatching { node.closeChannel() }
-                    .onFailure { runCatching { node.forceCloseChannel() } }
+            val state = node.channelState()
+            if (state != LnChannelState.NONE && state != LnChannelState.CLOSING) {
+                if (force) {
+                    node.forceCloseChannel()
+                } else {
+                    try {
+                        node.closeChannel()
+                    } catch (e: LnFfiException.Other) {
+                        if (e.reason != CLOSE_IN_PROGRESS) throw e
+                    }
+                }
             }
             val txid = if (node.balances().onchainTransitSat > 0uL) {
                 node.sweepTransit(toAddress)
@@ -444,12 +524,12 @@ class LightningSession(
             var bal = node.balances()
             var ch = node.channelState()
 
-            val moveAmt = pendingMoveSat
+            val moveAmt = activeMove(walletId)
             if (moveAmt != null && bal.onchainTransitSat >= moveAmt) {
-                pendingMoveSat = null
-                withContext(Dispatchers.IO) {
-                    runCatching { node.openChannel(moveAmt) }
+                val opened = withContext(Dispatchers.IO) {
+                    runCatching { node.openChannel(moveAmt) }.isSuccess
                 }
+                if (opened) consumeMove(walletId)
                 bal = node.balances()
                 ch = node.channelState()
             } else if (moveAmt == null && bal.onchainTransitSat > 0uL && ch == LnChannelState.NONE && sweepAddressProvider != null) {

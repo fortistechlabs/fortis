@@ -494,6 +494,9 @@
     <string name="settings_lightning_close_action">Close channel and move to on-chain</string>
     <string name="settings_lightning_close_title">Close Lightning channel?</string>
     <string name="settings_lightning_close_body">This closes your Lightning channel and moves your funds back to your on-chain BTC wallet.</string>
+    <string name="settings_lightning_force_title">Force close the channel?</string>
+    <string name="settings_lightning_force_body">The Lightning provider could not be reached, so the channel cannot be closed cooperatively. A force close works without it, but your funds are locked for a while before they return to your on-chain wallet, and the network fee is higher. Try again later if you can wait.</string>
+    <string name="settings_lightning_force_action">Force close</string>
     <string name="settings_lightning_closing">Closing…</string>
     <string name="wallet_split_onchain">On-chain</string>
     <string name="wallet_split_lightning">Lightning</string>

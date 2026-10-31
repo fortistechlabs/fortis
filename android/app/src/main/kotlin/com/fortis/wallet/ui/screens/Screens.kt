@@ -1829,6 +1829,28 @@ private fun LightningSettingsCard(vm: WalletViewModel) {
         }
     }
 
+    if (vm.offerForceClose) {
+        AlertDialog(
+            onDismissRequest = { vm.dismissForceCloseOffer() },
+            containerColor = Fx.panel,
+            title = { Text(stringResource(R.string.settings_lightning_force_title), color = Fx.text) },
+            text = { Text(stringResource(R.string.settings_lightning_force_body), color = Fx.textDim) },
+            confirmButton = {
+                TextButton({
+                    vm.dismissForceCloseOffer()
+                    vm.closeLightningAndMoveToOnchain(force = true)
+                }) {
+                    Text(stringResource(R.string.settings_lightning_force_action), color = Fx.warn)
+                }
+            },
+            dismissButton = {
+                TextButton({ vm.dismissForceCloseOffer() }) {
+                    Text(stringResource(R.string.action_cancel), color = Fx.text)
+                }
+            },
+        )
+    }
+
     if (confirmClose) {
         AlertDialog(
             onDismissRequest = { confirmClose = false },

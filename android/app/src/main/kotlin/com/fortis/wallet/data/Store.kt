@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.intPreferencesKey
+import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.first
@@ -233,6 +234,28 @@ class Store(private val ctx: Context) : com.fortis.wallet.lightning.LightningSto
                 p[lnEnabledKey(walletId)] = true
             } else {
                 p.remove(lnEnabledKey(walletId))
+            }
+        }
+    }
+
+    private fun lnMoveSatKey(walletId: String) = longPreferencesKey("ln_move_sat_$walletId")
+    private fun lnMoveAtKey(walletId: String) = longPreferencesKey("ln_move_at_$walletId")
+
+    override suspend fun pendingMove(walletId: String): com.fortis.wallet.lightning.PendingMove? {
+        val p = ctx.dataStore.data.first()
+        val sat = p[lnMoveSatKey(walletId)] ?: return null
+        val at = p[lnMoveAtKey(walletId)] ?: return null
+        return com.fortis.wallet.lightning.PendingMove(sat, at)
+    }
+
+    override suspend fun setPendingMove(walletId: String, move: com.fortis.wallet.lightning.PendingMove?) {
+        ctx.dataStore.edit { p ->
+            if (move == null) {
+                p.remove(lnMoveSatKey(walletId))
+                p.remove(lnMoveAtKey(walletId))
+            } else {
+                p[lnMoveSatKey(walletId)] = move.amountSat
+                p[lnMoveAtKey(walletId)] = move.atMs
             }
         }
     }

@@ -427,11 +427,22 @@ class LightningSessionTest {
             session.refreshBalances()
             assertNull(node.openedChannelSat)
 
-            // Exit path (close + sweep) still works and falls back to force-close when coop close fails.
-            val txid = session.closeAndSweep("bc1qar0srrr7xfkvy5l643lydnw9re59gtzzwf5mdq")
+            // A cooperative close that cannot reach the LSP is an error, never a silent force close.
+            val addr = "bc1qar0srrr7xfkvy5l643lydnw9re59gtzzwf5mdq"
+            try {
+                session.closeAndSweep(addr)
+                org.junit.Assert.fail("expected the failed cooperative close to be thrown")
+            } catch (e: LnFfiException.LspUnreachable) {
+                // expected
+            }
+            assertFalse(node.forceClosed)
+            assertNull(node.sweptTo)
+
+            // The user's explicit choice does force-close, then sweeps.
+            val txid = session.closeAndSweep(addr, force = true)
             assertTrue(node.forceClosed)
             assertEquals("txid-swept", txid)
-            assertEquals("bc1qar0srrr7xfkvy5l643lydnw9re59gtzzwf5mdq", node.sweptTo)
+            assertEquals(addr, node.sweptTo)
         } finally {
             scope.cancel()
         }
