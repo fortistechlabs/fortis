@@ -89,6 +89,7 @@ android {
 // then generate the Kotlin bindings (package uniffi.wallet_ffi) in library mode.
 cargo {
     packageDirectory = layout.projectDirectory.dir("../../crates/wallet-ffi")
+    features.add("lightning")
 }
 
 // Gobley wires a workspace-wide `cargo clean` into `gradlew clean`. This machine

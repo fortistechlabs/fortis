@@ -10,6 +10,11 @@ uniffi::setup_scaffolding!();
 mod swap;
 pub use swap::*;
 
+#[cfg(feature = "lightning")]
+pub mod lightning;
+#[cfg(feature = "lightning")]
+pub use lightning::*;
+
 use std::str::FromStr;
 use std::sync::Mutex;
 

@@ -3462,6 +3462,8 @@ dependencies = [
 name = "wallet-ffi"
 version = "0.1.0"
 dependencies = [
+ "bip39",
+ "fortis-lightning",
  "hex",
  "serde",
  "serde_json",
@@ -3469,6 +3471,7 @@ dependencies = [
  "uniffi",
  "ur",
  "wallet-core",
+ "zeroize",
 ]
 
 [[package]]
