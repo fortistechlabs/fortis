@@ -14,6 +14,7 @@
 
 mod common;
 
+use std::str::FromStr;
 use std::time::{Duration, Instant};
 
 use common::{poll, test_seed, Lsp, Payer, Regtest, TempDir, Vss};
@@ -22,7 +23,7 @@ use fortis_lightning::{
     PaymentTarget, StartMode, VssConfig,
 };
 use ldk_node::bitcoin::hashes::{sha256, Hash};
-use ldk_node::bitcoin::secp256k1::{Secp256k1, SecretKey};
+use ldk_node::bitcoin::secp256k1::{PublicKey, Secp256k1, SecretKey};
 use ldk_node::bitcoin::Network;
 use ldk_node::lightning::types::payment::PaymentSecret;
 use ldk_node::lightning_invoice::{
@@ -555,6 +556,24 @@ fn exit_mode_with_lsp_online_blocks_new_channels_and_jit_but_allows_pay_and_clos
 
     // Paying out over the existing channel still works.
     let payer = Payer::start(&env.rt, &env.lsp);
+    // The payer's channel to the LSP is funded by the payer alone, so the LSP
+    // has nothing on its side to forward to it and the client's payment would
+    // have no route (`RouteNotFound`). The other tests give it a balance by
+    // having the payer pay a JIT invoice first; Exit mode refuses that (as
+    // asserted above), so the payer sends the LSP a keysend instead.
+    let lsp_id = PublicKey::from_str(&env.lsp.node_id).unwrap();
+    let keysend = payer
+        .node
+        .spontaneous_payment()
+        .send(100_000 * SAT, lsp_id, None)
+        .expect("payer sends the LSP a keysend");
+    common::wait_event(&payer.node, "payer keysend to the LSP", 60, |e| match e {
+        ldk_node::Event::PaymentSuccessful { payment_id, .. } => *payment_id == Some(keysend),
+        ldk_node::Event::PaymentFailed {
+            payment_id, reason, ..
+        } if *payment_id == Some(keysend) => panic!("keysend failed: {reason:?}"),
+        _ => false,
+    });
     let inv = payer
         .node
         .bolt11_payment()
