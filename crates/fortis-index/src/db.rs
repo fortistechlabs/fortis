@@ -100,6 +100,7 @@ pub const RENDER_MAX_ROWS: u64 = 1_000_000;
 struct RenderCap {
     rows: std::sync::atomic::AtomicU64,
     max: std::sync::atomic::AtomicU64,
+    trimming: std::sync::atomic::AtomicBool,
 }
 
 impl RenderCap {
@@ -108,7 +109,11 @@ impl RenderCap {
             .cf_handle(CF_RENDER)
             .and_then(|cf| db.property_int_value_cf(&cf, "rocksdb.estimate-num-keys").ok().flatten())
             .unwrap_or(0);
-        Arc::new(RenderCap { rows: rows.into(), max: RENDER_MAX_ROWS.into() })
+        Arc::new(RenderCap {
+            rows: rows.into(),
+            max: RENDER_MAX_ROWS.into(),
+            trimming: false.into(),
+        })
     }
 }
 
@@ -596,7 +601,22 @@ impl Db {
     /// Drop the oldest render rows (lowest txnums), keeping half the cap.
     /// Two key scans: rare (once per half a cap of new rows), so cheap overall.
     fn trim_render(&self) -> Result<()> {
-        use std::sync::atomic::Ordering::Relaxed;
+        use std::sync::atomic::Ordering::{Acquire, Relaxed, Release};
+        if self
+            .render
+            .trimming
+            .compare_exchange(false, true, Acquire, Relaxed)
+            .is_err()
+        {
+            return Ok(());
+        }
+        struct Reset<'a>(&'a std::sync::atomic::AtomicBool);
+        impl Drop for Reset<'_> {
+            fn drop(&mut self) {
+                self.0.store(false, Release);
+            }
+        }
+        let _guard = Reset(&self.render.trimming);
         let cf = self.cf(CF_RENDER);
         let keep = self.render.max.load(Relaxed) / 2;
         let total = self.db.iterator_cf(cf, rocksdb::IteratorMode::Start).count() as u64;

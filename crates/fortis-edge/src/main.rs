@@ -1300,6 +1300,13 @@ fn proxy_chain(req: &mut Request, st: &State, method: &Method, path: &str, query
             Metrics::inc(&st.metrics.unauthorized);
             return err(401, "missing or invalid token — POST /register first");
         }
+        let rl_key = tok
+            .clone()
+            .unwrap_or_else(|| format!("ip:{}", client_ip(req, st.trust_forwarded_for)));
+        if !st.limiter.check(&rl_key) {
+            Metrics::inc(&st.metrics.rate_limited);
+            return err(429, "rate limit exceeded");
+        }
         let mut raw = Vec::new();
         let _ = req.as_reader().take(256 * 1024).read_to_end(&mut raw);
         // 1000, not the old 80: that was sized for a guessed near-next-index
@@ -1395,7 +1402,11 @@ fn proxy_chain(req: &mut Request, st: &State, method: &Method, path: &str, query
     // Cache hits never touch the upstream, so they don't spend rate budget —
     // check the cache before the limiter.
     let cache_key = format!("{chain}/{rest}?{query}");
-    let ttl = if method == &Method::Get { cache::ttl_for(path, None) } else { None };
+    let ttl = if method == &Method::Get && query.is_empty() {
+        cache::ttl_for(path, None)
+    } else {
+        None
+    };
     if ttl.is_some() {
         if let Some(hit) = st.cache.get(&cache_key) {
             Metrics::inc(&st.metrics.cache_hits);

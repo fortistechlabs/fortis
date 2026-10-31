@@ -325,7 +325,10 @@ class SwapStore(
         var out = 0
         edit { doc ->
             val next = doc.optJSONObject("swap_next") ?: JSONObject()
-            val taken = records(doc).map { it.swapIndex }.toMutableSet()
+            val taken = records(doc)
+                .filter { it.seed == null || it.seed == seed }
+                .map { it.swapIndex }
+                .toMutableSet()
             out = next.optInt(seed, 0)
             while (out in taken) out++
             doc.put("swap_next", next.put(seed, out + 1))

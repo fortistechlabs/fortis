@@ -214,6 +214,16 @@ fn attribute(params: &ChainParams, master_key: &MasterKey, account: u32, psbt_ba
             .checked_add(txout.value)
             .ok_or_else(|| WalletError::InvalidInput("output value overflows".into()))?;
         if txout.script_pubkey.is_op_return() {
+            if txout.value != Amount::ZERO {
+                return Err(WalletError::InvalidInput(
+                    "OP_RETURN output must have zero value".into(),
+                ));
+            }
+            if op_return.is_some() {
+                return Err(WalletError::InvalidInput(
+                    "PSBT has multiple OP_RETURN outputs".into(),
+                ));
+            }
             // OP_RETURN itself, then one push — correctly handles a push long
             // enough to need OP_PUSHDATA1 (this wallet's replay-protection
             // payload is ~100 bytes, past the 75-byte direct-push limit), unlike
@@ -324,6 +334,12 @@ pub fn finalize_externally_signed_psbt(params: &ChainParams, psbt_base64: &str) 
             )));
         }
         let (pubkey, sig) = input.partial_sigs.iter().next().expect("checked len == 1 above");
+        if sig.sighash_type != bitcoin::sighash::EcdsaSighashType::All {
+            return Err(WalletError::InvalidInput(format!(
+                "input {i}: expected SIGHASH_ALL signature, got {:?}",
+                sig.sighash_type
+            )));
+        }
         let compressed = CompressedPublicKey::try_from(*pubkey)
             .map_err(|_| WalletError::InvalidInput(format!("input {i}: signing key is not compressed")))?;
         let expected_spk = ScriptBuf::new_p2wpkh(&compressed.wpubkey_hash());
@@ -589,7 +605,7 @@ mod tests {
         let mut der = sig.signature.serialize_der().to_vec();
         der[10] ^= 0xFF;
         sig.signature = bitcoin::secp256k1::ecdsa::Signature::from_der(&der)
-            .unwrap_or_else(|_| sig.signature); // if corruption made it unparsable, the original still won't verify below
+            .unwrap_or(sig.signature); // if corruption made it unparsable, the original still won't verify below
         psbt.inputs[0].partial_sigs.insert(pubkey, sig);
 
         assert!(finalize_externally_signed_psbt(&params, &psbt.to_string()).is_err());
@@ -634,5 +650,47 @@ mod tests {
         let psbt = build_unsigned_psbt(&xbt, view.xpub(), 0, key.master_fingerprint(), &plan).unwrap();
         let err = finalize_externally_signed_psbt(&xbt, &psbt.to_string()).unwrap_err();
         assert!(err.to_string().contains("Bitcoin"), "unexpected error: {err}");
+    }
+
+    #[test]
+    fn review_rejects_nonzero_or_multiple_op_return_outputs() {
+        let (key, params) = seeded(15);
+        let mut view = funded_view(&key, &params);
+        let u = utxo_at(&view, 0, 0, 500_000, 0x55);
+        let out = TxOut { value: Amount::from_sat(400_000), script_pubkey: dest() };
+        let plan = view.plan_payment(&[u], vec![out], 5, 1, None, false).unwrap();
+        let base_psbt = build_unsigned_psbt(&params, view.xpub(), 0, key.master_fingerprint(), &plan).unwrap();
+        let op_spk = ScriptBuf::new_op_return(b"note");
+
+        // Non-zero OP_RETURN burns BTC without showing in destinations or fee.
+        let mut psbt = base_psbt.clone();
+        psbt.unsigned_tx.output.push(TxOut {
+            value: Amount::from_sat(10_000),
+            script_pubkey: op_spk.clone(),
+        });
+        psbt.outputs.push(bitcoin::psbt::Output::default());
+        assert!(review_unsigned_psbt(&params, &key, 0, &psbt.to_string()).is_err());
+
+        // Multiple OP_RETURN outputs.
+        let mut psbt2 = base_psbt;
+        for _ in 0..2 {
+            psbt2.unsigned_tx.output.push(TxOut {
+                value: Amount::ZERO,
+                script_pubkey: op_spk.clone(),
+            });
+            psbt2.outputs.push(bitcoin::psbt::Output::default());
+        }
+        assert!(review_unsigned_psbt(&params, &key, 0, &psbt2.to_string()).is_err());
+    }
+
+    #[test]
+    fn finalize_externally_signed_psbt_rejects_non_all_sighash_type() {
+        let (key, params) = seeded(16);
+        let mut view = funded_view(&key, &params);
+        let (mut psbt, _direct) = psbt_with_external_signature(&key, &params, &mut view);
+        let (pubkey, mut sig) = psbt.inputs[0].partial_sigs.iter().next().map(|(k, v)| (*k, *v)).unwrap();
+        sig.sighash_type = bitcoin::sighash::EcdsaSighashType::None;
+        psbt.inputs[0].partial_sigs.insert(pubkey, sig);
+        assert!(finalize_externally_signed_psbt(&params, &psbt.to_string()).is_err());
     }
 }

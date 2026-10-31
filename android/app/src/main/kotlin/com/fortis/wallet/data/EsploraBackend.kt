@@ -629,9 +629,9 @@ class EsploraBackend(
         if (!bulkPrewarm || batchOn) return // a batched scan makes the per-address prewarm pointless
         val now = System.currentTimeMillis()
         if (now - lastPrewarm < 45_000) return
-        val body = JSONArray(guessWatchAddresses()).toString()
         val ok = runCatching {
             withContext(Dispatchers.IO) {
+                val body = JSONArray(guessWatchAddresses()).toString()
                 send {
                     Request.Builder().url("$base/prewarm")
                         .post(body.toRequestBody("application/json".toMediaTypeOrNull()))

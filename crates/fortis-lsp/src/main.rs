@@ -22,7 +22,7 @@ use std::time::{Duration, Instant};
 use config::LspConfig;
 use ldk_node::lightning::ln::msgs::SocketAddress;
 use ldk_node::{Builder, Event};
-use metrics::{Counters, Snapshot};
+use metrics::Counters;
 
 /// How often the on-chain balance is checked against `low_liquidity_sat`.
 const LIQUIDITY_CHECK: Duration = Duration::from_secs(60);
@@ -181,7 +181,7 @@ fn serve(
         }
         if Instant::now() >= next_check {
             next_check = Instant::now() + LIQUIDITY_CHECK;
-            let onchain = Snapshot::read(node, &counters).onchain_sat;
+            let onchain = node.list_balances().spendable_onchain_balance_sats;
             if metrics::low_liquidity(onchain, cfg.low_liquidity_sat) {
                 eprintln!(
                     "fortis-lsp: WARNING low liquidity: on-chain {onchain} sat < low_liquidity_sat {}",

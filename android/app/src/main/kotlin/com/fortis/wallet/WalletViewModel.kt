@@ -1460,12 +1460,13 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    private suspend fun updateConfig(id: String, f: (WalletConfig) -> WalletConfig) {
-        val cur = wallets.firstOrNull { it.id == id } ?: return
-        val next = f(cur)
-        store.save(next)
-        wallets = wallets.map { if (it.id == id) next else it }
-    }
+    private suspend fun updateConfig(id: String, f: (WalletConfig) -> WalletConfig) =
+        withContext(Dispatchers.Main.immediate) {
+            val cur = wallets.firstOrNull { it.id == id } ?: return@withContext
+            val next = f(cur)
+            store.save(next)
+            wallets = wallets.map { if (it.id == id) next else it }
+        }
 
     private fun ensureBackend() {
         val c = config ?: return

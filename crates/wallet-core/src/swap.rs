@@ -889,7 +889,7 @@ mod tests {
         let to = ScriptBuf::from(vec![0u8; 22]);
         let txs = am.signed_refund(op, to, &alice.xbt, &[100_000]).unwrap();
         assert_eq!(fee_of(&c, &txs[0]), htlc_spend_fee(&c, HtlcPath::Refund, MAX_SWAP_FEERATE_SAT_VB).to_sat());
-        assert!(MAX_SWAP_FEERATE_SAT_VB <= 1_000);
+        const { assert!(MAX_SWAP_FEERATE_SAT_VB <= 1_000); }
         // Two absurd rates collapse to one capped variant.
         let (alice, _b, mut am, _bm, _p) = pair();
         am.build_our_contract(&xbt).unwrap();
