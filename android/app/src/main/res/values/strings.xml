@@ -523,4 +523,15 @@
     <string name="history_ln_receive">⚡ receive</string>
     <string name="history_failed">failed</string>
     <string name="dialog_remove_lightning_warning">You have %1$s sat on Lightning; move them out or make sure you have your phrase.\n\n%2$s</string>
+    <string name="ln_err_backup_unavailable">Lightning backup unavailable, try again shortly.</string>
+    <string name="ln_err_active_on_another_device">Lightning is active on another device.</string>
+    <string name="ln_err_lsp_unreachable">Can\'t reach the Lightning service right now.</string>
+    <string name="ln_err_insufficient_lightning">Not enough funds on Lightning for this payment.</string>
+    <string name="ln_err_no_route">Couldn\'t find a Lightning route to the recipient.</string>
+    <string name="ln_err_invoice_expired">This Lightning invoice has expired.</string>
+    <string name="ln_err_wrong_network">This payment request is for a different Bitcoin network.</string>
+    <string name="ln_err_payment_state_unknown">Payment status is still being confirmed — check history before retrying.</string>
+    <string name="ln_err_amount_out_of_range">Amount is outside the allowed Lightning payment range.</string>
+    <string name="ln_err_other">Lightning error — try again shortly.</string>
+    <string name="ln_takeover_action">Use Lightning here instead</string>
 </resources>

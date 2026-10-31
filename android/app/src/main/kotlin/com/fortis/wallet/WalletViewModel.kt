@@ -400,6 +400,8 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
             refreshSoon()
         } catch (e: CancellationException) {
             throw e
+        } catch (e: com.fortis.wallet.lightning.LnFfiError) {
+            error = str(com.fortis.wallet.ui.screens.lnErrorMessage(e))
         } catch (e: Exception) {
             error = e.message ?: e.toString()
         } finally {
@@ -1887,7 +1889,11 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
             return
         }
         val transitAddr = runCatching { node.transitAddress() }.getOrElse {
-            error = it.message ?: it.toString()
+            error = if (it is com.fortis.wallet.lightning.LnFfiError) {
+                str(com.fortis.wallet.ui.screens.lnErrorMessage(it))
+            } else {
+                it.message ?: it.toString()
+            }
             return
         }
         lightning.requestMoveToChannel(amountSat.toULong())
@@ -2018,7 +2024,13 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
 
     private fun wrap(block: suspend () -> Unit) = viewModelScope.launch {
         error = null
-        runCatching { block() }.onFailure { error = it.message ?: it.toString() }
+        runCatching { block() }.onFailure {
+            error = if (it is com.fortis.wallet.lightning.LnFfiError) {
+                str(com.fortis.wallet.ui.screens.lnErrorMessage(it))
+            } else {
+                it.message ?: it.toString()
+            }
+        }
     }
 }
 

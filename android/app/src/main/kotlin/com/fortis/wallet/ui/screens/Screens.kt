@@ -601,6 +601,7 @@ private fun HomeTab(vm: WalletViewModel) = Column(
 ) {
     // Running swaps first, while there are any.
     ActiveSwapsSection(vm.swaps, vm::openSwap)
+    LightningTakeoverBanner(vm)
     Text(stringResource(R.string.home_title), style = MaterialTheme.typography.titleMedium, color = Fx.text)
     // Each wallet is its own key — pressable like a button, not a line in a list.
     Column(verticalArrangement = Arrangement.spacedBy(Fx.s2)) {
@@ -870,6 +871,9 @@ private fun WalletTab(vm: WalletViewModel) {
         Modifier.fillMaxSize().padding(top = Fx.s2),
         verticalArrangement = Arrangement.spacedBy(Fx.s4),
     ) {
+        if (lnEnabled) {
+            LightningTakeoverBanner(vm)
+        }
         GlassCard(hero = true) {
             Column(Modifier.fillMaxWidth()) {
                 // Lock shares the label's line, so the balance below gets the
@@ -1755,7 +1759,7 @@ private fun LightningSettingsCard(vm: WalletViewModel) {
             LnState.Off -> stringResource(R.string.settings_lightning_status_off)
             LnState.Starting -> stringResource(R.string.settings_lightning_status_starting)
             is LnState.Ready -> stringResource(R.string.settings_lightning_status_ready)
-            is LnState.Error -> st.error.message ?: st.error.toString()
+            is LnState.Error -> stringResource(lnErrorMessage(st.error))
         }
         val statusColor = when (lnState) {
             is LnState.Ready -> Fx.good
@@ -1763,6 +1767,13 @@ private fun LightningSettingsCard(vm: WalletViewModel) {
             else -> Fx.textDim
         }
         Text(statusText, style = FxType.meta, color = statusColor)
+
+        if (enabled && shouldShowTakeoverBanner(lnState)) {
+            GhostButton(
+                stringResource(R.string.ln_takeover_action),
+                dense = true,
+            ) { vm.lightning.takeover() }
+        }
 
         val ready = lnState as? LnState.Ready
         var showMove by remember { mutableStateOf(false) }
@@ -1989,5 +2000,41 @@ private fun LanguageCard() {
             confirmButton = {},
             dismissButton = { TextButton({ open = false }) { Text(stringResource(R.string.action_cancel), color = Fx.text) } },
         )
+    }
+}
+
+/** Map every [com.fortis.wallet.lightning.LnFfiError] variant to a user-facing string resource. */
+@androidx.annotation.StringRes
+fun lnErrorMessage(e: com.fortis.wallet.lightning.LnFfiError): Int = when (e) {
+    is uniffi.wallet_ffi.LnFfiException.BackupUnavailable -> R.string.ln_err_backup_unavailable
+    is uniffi.wallet_ffi.LnFfiException.ActiveOnAnotherDevice -> R.string.ln_err_active_on_another_device
+    is uniffi.wallet_ffi.LnFfiException.LspUnreachable -> R.string.ln_err_lsp_unreachable
+    is uniffi.wallet_ffi.LnFfiException.InsufficientLightning -> R.string.ln_err_insufficient_lightning
+    is uniffi.wallet_ffi.LnFfiException.NoRoute -> R.string.ln_err_no_route
+    is uniffi.wallet_ffi.LnFfiException.InvoiceExpired -> R.string.ln_err_invoice_expired
+    is uniffi.wallet_ffi.LnFfiException.WrongNetwork -> R.string.ln_err_wrong_network
+    is uniffi.wallet_ffi.LnFfiException.PaymentStateUnknown -> R.string.ln_err_payment_state_unknown
+    is uniffi.wallet_ffi.LnFfiException.AmountOutOfRange -> R.string.ln_err_amount_out_of_range
+    is uniffi.wallet_ffi.LnFfiException.Other -> R.string.ln_err_other
+}
+
+/** True when the Lightning node is stopped because another device holds the VSS lock. */
+fun shouldShowTakeoverBanner(state: LnState): Boolean =
+    state is LnState.Error && state.error is uniffi.wallet_ffi.LnFfiException.ActiveOnAnotherDevice
+
+@Composable
+private fun LightningTakeoverBanner(vm: WalletViewModel) {
+    val lnState by vm.lightning.state.collectAsState()
+    if (!shouldShowTakeoverBanner(lnState)) return
+    GlassCard {
+        Text(
+            stringResource(R.string.ln_err_active_on_another_device),
+            style = FxType.meta,
+            color = Fx.warn,
+        )
+        GhostButton(
+            stringResource(R.string.ln_takeover_action),
+            dense = true,
+        ) { vm.lightning.takeover() }
     }
 }
