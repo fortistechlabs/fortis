@@ -334,14 +334,24 @@ pub(crate) enum ChainKind {
     Esplora,
 }
 
+/// How long after `closed_seen_at` an on-chain wallet sync must end before
+/// it counts as one that fetched its data after the close:
+/// `BDK_WALLET_SYNC_TIMEOUT_SECS` (ldk-node 0.7.1 `config.rs`: 20 s, the
+/// longest a wallet sync runs before it applies its update and stamps
+/// `latest_onchain_wallet_sync_timestamp`) + 30 s margin.
+pub(crate) const SYNC_SLACK_SECS: u64 = 20 + 30;
+
 /// What [`funding_void`] decides from.
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct FundingVoidInputs {
     pub chain: ChainKind,
     pub seen: FundingSeen,
     /// [`CloseRecord::closed_seen_at`]: when this node first saw the
-    /// channel closed (no longer listed). `None`: unknown.
+    /// channel closed (no longer listed). `None` or 0: unknown.
     pub closed_seen_at: Option<u64>,
+    /// [`CloseRecord::onchain_sync_at_close_seen`]: the on-chain wallet's
+    /// last sync when `closed_seen_at` was stamped. `None`: unknown.
+    pub onchain_sync_at_close_seen: Option<u64>,
     /// ldk-node `NodeStatus::latest_onchain_wallet_sync_timestamp` (the
     /// sync that also updates the payment store).
     pub onchain_sync_secs: Option<u64>,
@@ -353,13 +363,18 @@ pub(crate) struct FundingVoidInputs {
 /// is void, i.e. its monitor balance neither counts nor blocks. Unknown
 /// keeps blocking everywhere. A `Confirmed` entry is never void.
 ///
-/// - **Esplora** (any non-bitcoind source): void only when the close record
-///   has `closed_seen_at`, the on-chain wallet's last sync is **strictly**
-///   after it, and the entry is still not `Confirmed` (`Missing` or
-///   `Unconfirmed`). The store can lag LDK by one wallet sync: an
-///   `Unconfirmed` read from a sync before the close may be a funding that
+/// - **Esplora** (any non-bitcoind source): void only when ALL of: the
+///   record has `closed_seen_at` (non-zero); the on-chain wallet's last
+///   sync is at least `closed_seen_at + SYNC_SLACK_SECS`; that sync is
+///   strictly newer than the one seen at stamp time
+///   (`onchain_sync_at_close_seen`, required); and the entry is still not
+///   `Confirmed` (`Missing` or `Unconfirmed`). The store can lag LDK by
+///   one wallet sync, and ldk-node stamps a sync only after it has applied
+///   its update (a sync fetches for up to 20 s first): an `Unconfirmed`
+///   read from a sync that fetched before the close may be a funding that
 ///   has confirmed since, and treating it as void would let a sweep take
-///   the anchor reserve a force close may need.
+///   the anchor reserve a force close may need. The slack makes sure the
+///   sync that counts started after the close.
 /// - **Bitcoind** (tests only; one sync applies a block to the wallet before
 ///   the ChannelManager and sets both timestamps): `Unconfirmed` is void;
 ///   `Missing` is void when the on-chain sync is at least as new as LDK's
@@ -369,10 +384,14 @@ pub(crate) fn funding_void(i: &FundingVoidInputs) -> bool {
         return false;
     }
     match i.chain {
-        ChainKind::Esplora => matches!(
-            (i.closed_seen_at, i.onchain_sync_secs),
-            (Some(closed), Some(onchain)) if onchain > closed
-        ),
+        ChainKind::Esplora => {
+            let closed = i.closed_seen_at.filter(|&c| c != 0);
+            matches!(
+                (closed, i.onchain_sync_at_close_seen, i.onchain_sync_secs),
+                (Some(closed), Some(then), Some(now))
+                    if now >= closed.saturating_add(SYNC_SLACK_SECS) && now > then
+            )
+        }
         ChainKind::Bitcoind => match i.seen {
             FundingSeen::Unconfirmed => true,
             _ => matches!(
@@ -408,8 +427,13 @@ pub(crate) struct CloseRecord {
     /// Unix seconds when a snapshot first found the channel no longer
     /// listed (set once, written with the record: atomic write + fsync).
     /// Records from before this field have none until the next snapshot
-    /// sets it; [`funding_void`] treats `None` as unknown.
+    /// sets it; [`funding_void`] treats `None` (and 0) as unknown.
     pub closed_seen_at: Option<u64>,
+    /// ldk-node's `latest_onchain_wallet_sync_timestamp` when
+    /// `closed_seen_at` was stamped, written with it. `None`: unknown (no
+    /// sync yet then, or a record from before this field; the next
+    /// snapshot stamps both again once a sync is known).
+    pub onchain_sync_at_close_seen: Option<u64>,
 }
 
 impl CloseRecord {
@@ -419,11 +443,13 @@ impl CloseRecord {
                 kind: CloseKind::parse(k),
                 unconfirmed_funding: None,
                 closed_seen_at: None,
+                onchain_sync_at_close_seen: None,
             },
             v => CloseRecord {
                 kind: v["kind"].as_str().and_then(CloseKind::parse),
                 unconfirmed_funding: v["unconfirmed_funding"].as_str().map(String::from),
                 closed_seen_at: v["closed_seen_at"].as_u64(),
+                onchain_sync_at_close_seen: v["onchain_sync_at_close_seen"].as_u64(),
             },
         }
     }
@@ -433,10 +459,11 @@ impl CloseRecord {
             "kind": self.kind.map(CloseKind::as_str),
             "unconfirmed_funding": self.unconfirmed_funding,
             "closed_seen_at": self.closed_seen_at,
+            "onchain_sync_at_close_seen": self.onchain_sync_at_close_seen,
         })
     }
 
-    /// `closed_seen_at` alone is no record (it only qualifies the others).
+    /// The close stamps alone are no record (they only qualify the others).
     fn is_empty(&self) -> bool {
         self.kind.is_none() && self.unconfirmed_funding.is_none()
     }
@@ -553,18 +580,29 @@ fn wallet_seen(node: &ldk_node::Node, txid: &str) -> FundingSeen {
     }
 }
 
-/// Sets `closed_seen_at = now` on every record whose channel is not in
-/// `listed` and has none yet (a record of an unlisted channel is one that
-/// closed). Never moves an existing one. Whether anything changed.
+/// Stamps `closed_seen_at = now` and `onchain_sync_at_close_seen =
+/// onchain_sync` on every record whose channel is not in `listed` (a record
+/// of an unlisted channel is one that closed) and that has no usable stamp:
+/// none, 0 (clock before 1970), or — once a sync is known — no stamp-time
+/// sync (no sync yet then, or a record from before that field). Restamping
+/// only moves the stamp later, which only delays a void. Never touches a
+/// complete stamp. Whether anything changed.
 pub(crate) fn mark_closed_seen(
     m: &mut BTreeMap<String, CloseRecord>,
     listed: &[String],
     now: u64,
+    onchain_sync: Option<u64>,
 ) -> bool {
     let mut changed = false;
     for (id, r) in m.iter_mut() {
-        if r.closed_seen_at.is_none() && !listed.contains(id) {
+        if listed.contains(id) {
+            continue;
+        }
+        let unstamped = r.closed_seen_at.is_none_or(|c| c == 0);
+        let no_sync_then = r.onchain_sync_at_close_seen.is_none() && onchain_sync.is_some();
+        if unstamped || no_sync_then {
             r.closed_seen_at = Some(now);
+            r.onchain_sync_at_close_seen = onchain_sync;
             changed = true;
         }
     }
@@ -575,7 +613,11 @@ pub(crate) fn mark_closed_seen(
 /// record (set while unconfirmed, cleared once confirmed), stamps
 /// `closed_seen_at` on records of channels no longer listed, and returns
 /// the records. Writes (atomic + fsync) only when something changed.
-fn track_funding(dir: &Path, channels: &[ChannelDetails]) -> BTreeMap<String, CloseRecord> {
+fn track_funding(
+    dir: &Path,
+    channels: &[ChannelDetails],
+    onchain_sync: Option<u64>,
+) -> BTreeMap<String, CloseRecord> {
     let mut closes = load_closes(dir);
     let listed: Vec<String> = channels.iter().map(|c| c.channel_id.to_string()).collect();
     let stale = channels.iter().any(|c| {
@@ -585,7 +627,7 @@ fn track_funding(dir: &Path, channels: &[ChannelDetails]) -> BTreeMap<String, Cl
         have != pending_funding_txid(c)
     });
     let now = crate::pay::now().as_secs();
-    let unstamped = mark_closed_seen(&mut closes, &listed, now);
+    let unstamped = mark_closed_seen(&mut closes, &listed, now, onchain_sync);
     if !stale && !unstamped {
         return closes;
     }
@@ -595,7 +637,7 @@ fn track_funding(dir: &Path, channels: &[ChannelDetails]) -> BTreeMap<String, Cl
                 .or_default()
                 .unconfirmed_funding = pending_funding_txid(c);
         }
-        mark_closed_seen(m, &listed, now);
+        mark_closed_seen(m, &listed, now, onchain_sync);
     });
     load_closes(dir)
 }
@@ -610,12 +652,12 @@ impl Snapshot {
     fn take(node: &ldk_node::Node, dir: &Path, chain: ChainKind) -> Snapshot {
         let channels = node.list_channels();
         let b = node.list_balances();
-        let closes = track_funding(dir, &channels);
+        let status = node.status();
+        let closes = track_funding(dir, &channels, status.latest_onchain_wallet_sync_timestamp);
         let open: Vec<ChannelId> = channels.iter().map(|c| c.channel_id).collect();
         // Closed channels whose funding we built and the wallet shows as not
         // confirmed: nothing on chain can pay out of them (see
         // `MonitorBalance` and `funding_void`).
-        let status = node.status();
         let void: Vec<&String> = closes
             .iter()
             .filter(|(id, r)| {
@@ -625,6 +667,7 @@ impl Snapshot {
                             chain,
                             seen: wallet_seen(node, t),
                             closed_seen_at: r.closed_seen_at,
+                            onchain_sync_at_close_seen: r.onchain_sync_at_close_seen,
                             onchain_sync_secs: status.latest_onchain_wallet_sync_timestamp,
                             lightning_sync_secs: status.latest_lightning_wallet_sync_timestamp,
                         })
@@ -936,7 +979,11 @@ impl Node {
         let dir = self.data_dir();
         let closes = load_closes(dir);
         let mut result = Ok(());
-        let _ = track_funding(dir, &channels);
+        let _ = track_funding(
+            dir,
+            &channels,
+            node.status().latest_onchain_wallet_sync_timestamp,
+        );
         for c in &channels {
             let had_record = closes
                 .get(&c.channel_id.to_string())
@@ -987,7 +1034,11 @@ impl Node {
             return Err(LnError::Other("no_channel".into()));
         }
         self.pre_send_checks()?;
-        let _ = track_funding(self.data_dir(), &channels);
+        let _ = track_funding(
+            self.data_dir(),
+            &channels,
+            node.status().latest_onchain_wallet_sync_timestamp,
+        );
         let mut result = Ok(());
         for c in &channels {
             let _ = record_close(self.data_dir(), &c.channel_id, CloseKind::Force);
@@ -1418,81 +1469,76 @@ mod tests {
             chain,
             seen,
             closed_seen_at,
+            onchain_sync_at_close_seen: None,
             onchain_sync_secs: onchain,
             lightning_sync_secs: lightning,
         }
     }
 
+    /// Esplora: stamped closed at `closed` when the wallet's last sync was
+    /// `at_close`; the wallet's last sync is now `onchain`.
+    fn es(
+        seen: FundingSeen,
+        closed: Option<u64>,
+        at_close: Option<u64>,
+        onchain: Option<u64>,
+    ) -> bool {
+        funding_void(&FundingVoidInputs {
+            chain: ChainKind::Esplora,
+            seen,
+            closed_seen_at: closed,
+            onchain_sync_at_close_seen: at_close,
+            onchain_sync_secs: onchain,
+            // Plays no part on Esplora.
+            lightning_sync_secs: Some(1),
+        })
+    }
+
     #[test]
-    fn funding_void_esplora_needs_a_wallet_sync_after_the_close() {
-        use ChainKind::Esplora as E;
+    fn funding_void_esplora_needs_a_sync_started_after_the_close() {
         use FundingSeen::*;
-        // Lag: the store still reads Unconfirmed (or nothing) from a wallet
-        // sync older than when we saw the channel closed; the funding may
-        // have confirmed since. Keeps blocking.
-        assert!(!funding_void(&vi(
-            E,
-            Unconfirmed,
-            Some(200),
-            Some(150),
-            Some(210)
-        )));
-        assert!(!funding_void(&vi(
-            E,
-            Missing,
-            Some(200),
-            Some(150),
-            Some(210)
-        )));
-        // A wallet sync strictly after the close, still not confirmed: void.
-        assert!(funding_void(&vi(
-            E,
-            Unconfirmed,
-            Some(200),
-            Some(201),
-            Some(150)
-        )));
-        assert!(funding_void(&vi(
-            E,
-            Missing,
-            Some(200),
-            Some(201),
-            Some(300)
-        )));
-        // Equal is not after (strict).
-        assert!(!funding_void(&vi(
-            E,
-            Unconfirmed,
-            Some(200),
-            Some(200),
-            Some(200)
-        )));
-        assert!(!funding_void(&vi(
-            E,
-            Missing,
-            Some(200),
-            Some(200),
-            Some(200)
-        )));
-        // No closed_seen_at (record from before it existed) or no wallet
-        // sync yet: unknown, keeps blocking.
-        assert!(!funding_void(&vi(E, Unconfirmed, None, Some(999), Some(1))));
-        assert!(!funding_void(&vi(E, Unconfirmed, Some(200), None, Some(1))));
+        const C: u64 = 1_000;
+        let slack = SYNC_SLACK_SECS;
+        assert_eq!(slack, 50);
+        for seen in [Unconfirmed, Missing] {
+            // Lag: the last sync ended before the close was seen.
+            assert!(!es(seen, Some(C), Some(C - 30), Some(C - 30)), "{seen:?}");
+            // A sync ending inside closed..closed+slack may have fetched its
+            // data before the close (a sync runs up to 20 s, then applies
+            // and stamps): not void, however much it moved.
+            for end in [C, C + 1, C + slack / 2, C + slack - 1] {
+                assert!(
+                    !es(seen, Some(C), Some(C - 30), Some(end)),
+                    "{seen:?} {end}"
+                );
+            }
+            // At exactly closed+slack, and newer than the stamp-time sync:
+            // void.
+            assert!(es(seen, Some(C), Some(C - 30), Some(C + slack)), "{seen:?}");
+            assert!(es(seen, Some(C), Some(C - 30), Some(C + 500)), "{seen:?}");
+            // Not newer than the sync seen at stamp time: no sync since the
+            // close, not void (only possible with a clock jump).
+            assert!(!es(seen, Some(C), Some(C + 500), Some(C + 500)), "{seen:?}");
+            assert!(!es(seen, Some(C), Some(C + 600), Some(C + 500)), "{seen:?}");
+            // Stamp 0 (clock before 1970) is unknown.
+            assert!(!es(seen, Some(0), Some(0), Some(C + 500)), "{seen:?}");
+            assert!(!es(seen, Some(0), None, Some(C + 500)), "{seen:?}");
+            // No stamp, no stamp-time sync (a record from before the
+            // field, re-stamped on the next snapshot), or no sync now:
+            // unknown.
+            assert!(!es(seen, None, Some(C - 30), Some(C + 500)), "{seen:?}");
+            assert!(!es(seen, Some(C), None, Some(C + 500)), "{seen:?}");
+            assert!(!es(seen, Some(C), Some(C - 30), None), "{seen:?}");
+        }
         // Confirmed: never void.
-        assert!(!funding_void(&vi(
-            E,
-            Confirmed,
-            Some(200),
-            Some(999),
-            Some(1)
-        )));
+        assert!(!es(Confirmed, Some(C), Some(C - 30), Some(C + 500)));
     }
 
     #[test]
     fn funding_void_bitcoind_rule_unchanged() {
         use ChainKind::Bitcoind as B;
         use FundingSeen::*;
-        // closed_seen_at plays no part on the (test-only) bitcoind source.
+        // The close stamps play no part on the (test-only) bitcoind source.
         for c in [None, Some(500)] {
             for (o, l) in [(None, None), (Some(5), Some(9)), (Some(9), Some(5))] {
                 assert!(
@@ -1516,26 +1562,40 @@ mod tests {
     }
 
     #[test]
-    fn closed_seen_at_set_once_for_unlisted_records() {
-        let mut m = BTreeMap::new();
-        let rec = |c: Option<u64>| CloseRecord {
+    fn close_stamp_set_once_with_the_sync_seen_then() {
+        let rec = |c: Option<u64>, at: Option<u64>| CloseRecord {
             kind: Some(Force),
             unconfirmed_funding: Some("ab".into()),
             closed_seen_at: c,
+            onchain_sync_at_close_seen: at,
         };
-        m.insert("listed".to_string(), rec(None));
-        m.insert("closed".to_string(), rec(None));
-        m.insert("seen".to_string(), rec(Some(7)));
-        assert!(mark_closed_seen(&mut m, &["listed".to_string()], 100));
-        assert_eq!(m["listed"].closed_seen_at, None, "still listed");
-        assert_eq!(
-            m["closed"].closed_seen_at,
-            Some(100),
-            "first seen closed now"
-        );
-        assert_eq!(m["seen"].closed_seen_at, Some(7), "kept, never moved");
-        assert!(!mark_closed_seen(&mut m, &["listed".to_string()], 200));
-        assert_eq!(m["closed"].closed_seen_at, Some(100));
+        let listed = ["listed".to_string()];
+        let mut m = BTreeMap::new();
+        m.insert("listed".to_string(), rec(None, None));
+        m.insert("closed".to_string(), rec(None, None));
+        m.insert("seen".to_string(), rec(Some(7), Some(5)));
+        // Stamped in fix round 1, before the stamp-time sync existed.
+        m.insert("old".to_string(), rec(Some(7), None));
+        // Stamp 0: unknown, stamped again.
+        m.insert("zero".to_string(), rec(Some(0), Some(0)));
+        assert!(mark_closed_seen(&mut m, &listed, 100, Some(90)));
+        assert_eq!(m["listed"], rec(None, None), "still listed");
+        assert_eq!(m["closed"], rec(Some(100), Some(90)), "first seen closed");
+        assert_eq!(m["seen"], rec(Some(7), Some(5)), "never moved");
+        assert_eq!(m["old"], rec(Some(100), Some(90)), "re-stamped");
+        assert_eq!(m["zero"], rec(Some(100), Some(90)), "re-stamped");
+        assert!(!mark_closed_seen(&mut m, &listed, 200, Some(190)));
+        assert_eq!(m["closed"], rec(Some(100), Some(90)));
+
+        // No wallet sync yet at stamp time: stamped without it, then once
+        // more (only) when a sync is known.
+        let mut m = BTreeMap::new();
+        m.insert("c".to_string(), rec(None, None));
+        assert!(mark_closed_seen(&mut m, &[], 100, None));
+        assert_eq!(m["c"], rec(Some(100), None));
+        assert!(!mark_closed_seen(&mut m, &[], 150, None), "no rewrite");
+        assert!(mark_closed_seen(&mut m, &[], 200, Some(180)));
+        assert_eq!(m["c"], rec(Some(200), Some(180)));
     }
 
     #[test]
@@ -1544,6 +1604,7 @@ mod tests {
             kind,
             unconfirmed_funding: Some("ab".into()),
             closed_seen_at: None,
+            onchain_sync_at_close_seen: None,
         };
         // Task 7 ruling (1): a listed channel this node asked to close (or
         // saw closing) no longer counts as an open in flight, even while its
@@ -1597,6 +1658,7 @@ mod tests {
             let r = m.entry(a.to_string()).or_default();
             r.unconfirmed_funding = Some("ab".into());
             r.closed_seen_at = Some(1_700_000_000);
+            r.onchain_sync_at_close_seen = Some(1_699_999_990);
             m.entry(ChannelId([3; 32]).to_string()).or_default();
         })
         .unwrap();
@@ -1607,6 +1669,7 @@ mod tests {
                 kind: Some(Force),
                 unconfirmed_funding: Some("ab".into()),
                 closed_seen_at: Some(1_700_000_000),
+                onchain_sync_at_close_seen: Some(1_699_999_990),
             })
         );
         assert_eq!(m.len(), 2);
