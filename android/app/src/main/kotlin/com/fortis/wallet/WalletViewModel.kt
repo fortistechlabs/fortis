@@ -1940,6 +1940,52 @@ data class OverviewBalances(
     fun without(id: String) = OverviewBalances(confirmed - id, pending - id)
 }
 
+data class HomeBalance(
+    val totalSat: Long,
+    val onchainSat: Long,
+    val lightningSat: Long,
+    val moving: Boolean,
+)
+
+fun homeBalance(
+    onchainSat: Long,
+    ln: LnState,
+    lastKnownLightningSat: Long = 0L,
+): HomeBalance = when (ln) {
+    LnState.Off, LnState.Starting -> HomeBalance(
+        totalSat = onchainSat,
+        onchainSat = onchainSat,
+        lightningSat = 0L,
+        moving = false,
+    )
+    is LnState.Ready -> {
+        val b = ln.balances
+        val movingSat = (b.onchainTransitSat + b.pendingCloseSat + b.pendingTransitSat).toLong()
+        val lnSat = b.lightningSat.toLong() + movingSat
+        val moving = movingSat > 0L ||
+            ln.channel == uniffi.wallet_ffi.LnChannelState.OPENING ||
+            ln.channel == uniffi.wallet_ffi.LnChannelState.CLOSING
+        HomeBalance(
+            totalSat = onchainSat + lnSat,
+            onchainSat = onchainSat,
+            lightningSat = lnSat,
+            moving = moving,
+        )
+    }
+    is LnState.Error -> {
+        val b = ln.lastBalances
+        val movingSat = (b.onchainTransitSat + b.pendingCloseSat + b.pendingTransitSat).toLong()
+        val fromErr = b.lightningSat.toLong() + movingSat
+        val lnSat = if (fromErr > 0L) fromErr else lastKnownLightningSat
+        HomeBalance(
+            totalSat = onchainSat + lnSat,
+            onchainSat = onchainSat,
+            lightningSat = lnSat,
+            moving = movingSat > 0L,
+        )
+    }
+}
+
 /**
  * A payment this phone broadcast that the server hasn't listed yet. Until it
  * does, the wallet shows it (a pending history row, the new balance) and the

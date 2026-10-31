@@ -72,6 +72,7 @@ import com.fortis.wallet.PlanPreview
 import com.fortis.wallet.R
 import com.fortis.wallet.SwapRoute
 import com.fortis.wallet.WalletViewModel
+import com.fortis.wallet.homeBalance
 import com.fortis.wallet.data.FIAT_CODES
 import com.fortis.wallet.data.defaultFiat
 import com.fortis.wallet.data.fiatLabel
@@ -831,6 +832,9 @@ private fun WalletTab(vm: WalletViewModel) {
     var tab by remember { mutableStateOf("receive") }
     val unit = if (c.chain == "btc") "BTC" else "XBT"
     val b = vm.balances
+    val lnState by vm.lightning.state.collectAsState()
+    val lnEnabled = showLightningToggle(c) && (vm.isLightningEnabled(c.id) || lnState !is LnState.Off)
+    val hb = b?.let { homeBalance(it.confirmedSat, if (lnEnabled) lnState else LnState.Off) }
 
     LaunchedEffect(vm.selectedId) {
         while (true) {
@@ -855,15 +859,28 @@ private fun WalletTab(vm: WalletViewModel) {
                     // Whole part, fraction and unit as separate items: a figure too
                     // wide for the card wraps at the decimal point, never mid-number.
                     FlowRow {
-                        val (whole, fraction) = splitAmount(if (b != null) fmt(countUpSat(b.confirmedSat)) else "—")
+                        val (whole, fraction) = splitAmount(if (hb != null) fmt(countUpSat(hb.totalSat)) else "—")
                         Text(whole, style = FxType.balance, modifier = Modifier.alignByBaseline())
                         if (fraction.isNotEmpty()) Text(fraction, style = FxType.balance, modifier = Modifier.alignByBaseline())
                         Text(unit, style = FxType.label, color = Fx.signal, modifier = Modifier.alignByBaseline().padding(start = 6.dp))
                     }
-                    b?.let { bal ->
-                        vm.fiatText(bal.confirmedSat, c.chain)?.let {
+                    hb?.let { bal ->
+                        vm.fiatText(bal.totalSat, c.chain)?.let {
                             Text(stringResource(R.string.fiat_approx, it), style = FxType.fiat)
                         }
+                    }
+                    if (lnEnabled && hb != null) {
+                        Text(
+                            fmtSplitLine(
+                                onchainLabel = stringResource(R.string.wallet_split_onchain),
+                                onchainSat = hb.onchainSat,
+                                lightningLabel = stringResource(R.string.wallet_split_lightning),
+                                lightningSat = hb.lightningSat,
+                                movingLabel = if (hb.moving) stringResource(R.string.wallet_split_moving) else null,
+                            ),
+                            style = FxType.meta,
+                            color = Fx.textDim,
+                        )
                     }
                     if (b != null && b.pendingSat != 0L) Text(
                         stringResource(

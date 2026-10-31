@@ -495,4 +495,7 @@
     <string name="settings_lightning_close_title">Close Lightning channel?</string>
     <string name="settings_lightning_close_body">This closes your Lightning channel and moves your funds back to your on-chain BTC wallet.</string>
     <string name="settings_lightning_closing">Closing…</string>
+    <string name="wallet_split_onchain">On-chain</string>
+    <string name="wallet_split_lightning">Lightning</string>
+    <string name="wallet_split_moving">Moving…</string>
 </resources>
