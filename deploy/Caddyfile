@@ -8,6 +8,16 @@
 api.fortis.example {
 	encode zstd gzip
 
+	# SECURITY: refuse oversized request bodies HERE. fortis-edge's HTTP library
+	# (tiny_http 0.12) allocates the client's declared Content-Length when it
+	# drains an unread body, so a single request declaring a huge length aborts
+	# the whole edge process. The largest legitimate body is a VSS putObjects
+	# (edge --vss-max-body, default 4 MiB). Keep this above that and far below
+	# anything that could exhaust memory.
+	request_body {
+		max_size 5MB
+	}
+
 	# fortis-edge speaks plain HTTP on localhost; TLS terminates here.
 	reverse_proxy 127.0.0.1:8098 {
 		header_up X-Forwarded-For {remote_host}
@@ -26,6 +36,9 @@ api.fortis.example {
 #
 # localhost:8443 {
 # 	tls internal
+# 	request_body {
+# 		max_size 5MB
+# 	}
 # 	reverse_proxy 127.0.0.1:8098 {
 # 		header_up X-Forwarded-For {remote_host}
 # 	}
