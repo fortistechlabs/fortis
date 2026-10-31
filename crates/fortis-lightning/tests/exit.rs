@@ -520,3 +520,58 @@ fn exit_mode_then_normal_when_lsp_returns() {
         _ => false,
     });
 }
+
+/// Kill-switch state (`GET /ln/info` `"enabled": false` while the LSP is still
+/// online): starting in `StartMode::Exit` connects to the LSP best-effort so
+/// paying out and closing existing channels work, while refusing `open_channel`
+/// and JIT `receive` (`needs_channel == true`).
+#[test]
+#[ignore = "needs FORTIS_BTC_BITCOIND, FORTIS_VSS_SERVER and fortis-lsp built"]
+fn exit_mode_with_lsp_online_blocks_new_channels_and_jit_but_allows_pay_and_close() {
+    if !have_binaries() {
+        return;
+    }
+    let env = Env::start();
+    env.open_ready_channel();
+    env.client.stop();
+
+    timed_start(&env.client, StartMode::Exit).expect("exit start with LSP online");
+    assert_eq!(env.client.start_mode(), Some(StartMode::Exit));
+    poll("channel ready in exit mode with LSP online", 30, || {
+        (env.client.channel_state() == ChannelState::Ready
+            && env.client.balances().lightning_sat > 0)
+            .then_some(())
+    });
+
+    // New channel open and JIT receive are refused in Exit mode even when the LSP is connected.
+    assert_eq!(
+        env.client.open_channel(CHANNEL_SAT),
+        Err(LnError::Other("lightning_disabled".into()))
+    );
+    assert_eq!(
+        env.client.receive(200_000 * SAT, "jit blocked"),
+        Err(LnError::Other("lightning_disabled".into()))
+    );
+
+    // Paying out over the existing channel still works.
+    let payer = Payer::start(&env.rt, &env.lsp);
+    let inv = payer
+        .node
+        .bolt11_payment()
+        .receive(
+            10_000 * SAT,
+            &Bolt11InvoiceDescription::Direct(Description::new("exit pay".into()).unwrap()),
+            3_600,
+        )
+        .unwrap();
+    let target = fortis_lightning::parse(&inv.to_string(), Network::Regtest).unwrap();
+    let id = env.client.pay(&target, None).expect("pay in exit mode");
+    env.wait_event("PaymentSent", 120, |e| match e {
+        LnEvent::PaymentSent { id: i, .. } => *i == id,
+        LnEvent::PaymentFailed { id: i, reason } if *i == id => panic!("failed: {reason}"),
+        _ => false,
+    });
+
+    // Cooperative close also works while the LSP is online.
+    env.client.close_channel().expect("close in exit mode");
+}

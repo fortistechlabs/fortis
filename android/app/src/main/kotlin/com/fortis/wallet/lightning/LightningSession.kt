@@ -286,7 +286,7 @@ class LightningSession(
             var bal = runCatching { node.balances() }.getOrNull() ?: return
             var ch = runCatching { node.channelState() }.getOrNull() ?: return
             val moveAmt = pendingMoveSat
-            if (moveAmt != null && bal.onchainTransitSat >= moveAmt) {
+            if (moveAmt != null && bal.onchainTransitSat >= moveAmt && lastInfo?.enabled != false) {
                 pendingMoveSat = null
                 runCatching { node.openChannel(moveAmt) }
                 bal = runCatching { node.balances() }.getOrDefault(bal)
@@ -337,6 +337,7 @@ class LightningSession(
         withContext(Dispatchers.IO) {
             if (node.channelState() != LnChannelState.NONE) {
                 runCatching { node.closeChannel() }
+                    .onFailure { runCatching { node.forceCloseChannel() } }
             }
             val txid = if (node.balances().onchainTransitSat > 0uL) {
                 node.sweepTransit(toAddress)

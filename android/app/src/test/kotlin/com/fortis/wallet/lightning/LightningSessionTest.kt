@@ -33,7 +33,11 @@ class LightningSessionTest {
         backendToken = "tok-123",
     )
 
-    private fun sampleInfo(nodeIdSuffix: String = "11", enabled: Boolean = true) = LnInfo(
+    private fun sampleInfo(
+        nodeIdSuffix: String = "11",
+        enabled: Boolean = true,
+        message: String? = null,
+    ) = LnInfo(
         nodeId = "02" + nodeIdSuffix.repeat(32),
         host = "lsp.fortis.test",
         port = 9735,
@@ -45,7 +49,7 @@ class LightningSessionTest {
         channelMinSat = 100_000L,
         channelMaxSat = 500_000L,
         enabled = enabled,
-        message = null,
+        message = message,
         network = "bitcoin",
     )
 
@@ -62,14 +66,26 @@ class LightningSessionTest {
         private val onStart: () -> Unit = {},
         private val onStop: () -> Unit = {},
         private val onSweep: (String) -> String? = { "txid-swept" },
+        private val failCoopClose: Boolean = false,
     ) : LnNodeApi {
         var started = false
+        var startMode: uniffi.wallet_ffi.LnStartMode? = null
         var stopped = false
         var sweptTo: String? = null
+        var openedChannelSat: ULong? = null
+        var coopClosed = false
+        var forceClosed = false
 
         override fun start() {
             onStart()
             started = true
+            startMode = uniffi.wallet_ffi.LnStartMode.NORMAL
+        }
+
+        override fun startWith(mode: uniffi.wallet_ffi.LnStartMode) {
+            onStart()
+            started = true
+            startMode = mode
         }
 
         override fun stop() {
@@ -80,6 +96,21 @@ class LightningSessionTest {
         override fun balances(): LnBalances = balancesValue
 
         override fun channelState(): LnChannelState = channelValue
+
+        override fun openChannel(amountSat: ULong) {
+            openedChannelSat = amountSat
+        }
+
+        override fun closeChannel() {
+            if (failCoopClose) throw LnFfiException.LspUnreachable()
+            coopClosed = true
+            channelValue = LnChannelState.CLOSING
+        }
+
+        override fun forceCloseChannel() {
+            forceClosed = true
+            channelValue = LnChannelState.CLOSING
+        }
 
         override fun sweepTransit(toAddress: String): String? {
             sweptTo = toAddress
@@ -351,6 +382,113 @@ class LightningSessionTest {
             assertTrue(showLightningToggle(btcMainnetWallet))
         } finally {
             scope.cancel()
+        }
+    }
+
+    @Test
+    fun remote_kill_switch_starts_in_exit_mode_blocks_move_and_allows_force_close_and_sweep() = runBlocking {
+        val store = InMemoryLightningStore(mapOf(btcMainnetWallet.id to btcMainnetWallet))
+        store.setLightningEnabled(btcMainnetWallet.id, true)
+        lateinit var node: FakeNode
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        try {
+            val session = LightningSession(
+                scope = scope,
+                store = store,
+                nodeFactory = {
+                    FakeNode(
+                        balancesValue = LnBalances(
+                            lightningSat = 50_000uL,
+                            onchainTransitSat = 150_000uL,
+                            pendingCloseSat = 0uL,
+                            reservedSat = 0uL,
+                            pendingTransitSat = 0uL,
+                            inboundSat = 50_000uL,
+                        ),
+                        channelValue = LnChannelState.READY,
+                        failCoopClose = true,
+                    ).also { node = it }
+                },
+                info = LnInfoApi {
+                    sampleInfo(enabled = false, message = "Lightning maintenance in progress.")
+                },
+            )
+            session.onUnlocked(btcMainnetWallet.id, sampleSeed).join()
+            assertEquals(uniffi.wallet_ffi.LnStartMode.EXIT, node.startMode)
+            assertFalse(session.lastInfo!!.enabled)
+            assertEquals("Lightning maintenance in progress.", session.lastInfo!!.message)
+
+            // Move-to-channel auto-open is suppressed while remote kill switch is active.
+            session.requestMoveToChannel(100_000uL)
+            session.refreshBalances()
+            assertNull(node.openedChannelSat)
+
+            // Exit path (close + sweep) still works and falls back to force-close when coop close fails.
+            val txid = session.closeAndSweep("bc1qar0srrr7xfkvy5l643lydnw9re59gtzzwf5mdq")
+            assertTrue(node.forceClosed)
+            assertEquals("txid-swept", txid)
+            assertEquals("bc1qar0srrr7xfkvy5l643lydnw9re59gtzzwf5mdq", node.sweptTo)
+        } finally {
+            scope.cancel()
+        }
+    }
+
+    @Test
+    fun parse_ln_info_json_handles_adversarial_and_kill_switch_inputs() {
+        val validEnabled = """
+            {
+              "node_id": "02${"11".repeat(32)}",
+              "host": "lsp.fortis.test",
+              "port": 9735,
+              "lsps2_token": "tok",
+              "fee_ppm": 10000,
+              "fee_min_sat": 1000,
+              "min_payment_sat": 10000,
+              "max_payment_sat": 500000,
+              "channel_min_sat": 100000,
+              "channel_max_sat": 500000,
+              "enabled": true,
+              "network": "bitcoin"
+            }
+        """.trimIndent()
+        val parsed = parseLnInfoJson(validEnabled)
+        assertTrue(parsed.enabled)
+        assertNull(parsed.message)
+
+        val validDisabled = """
+            {
+              "node_id": "02${"11".repeat(32)}",
+              "host": "lsp.fortis.test",
+              "port": 9735,
+              "fee_ppm": 10000,
+              "fee_min_sat": 1000,
+              "min_payment_sat": 10000,
+              "max_payment_sat": 500000,
+              "channel_min_sat": 100000,
+              "channel_max_sat": 500000,
+              "enabled": false,
+              "message": "Paused for upgrade — exits work."
+            }
+        """.trimIndent()
+        val disabled = parseLnInfoJson(validDisabled)
+        assertFalse(disabled.enabled)
+        assertEquals("Paused for upgrade — exits work.", disabled.message)
+
+        val malformedInputs = listOf(
+            "",
+            "not json",
+            "[]",
+            "{}",
+            """{"node_id":"","host":"a","port":9735}""",
+            """{"node_id":"0211","host":"","port":9735}""",
+            """{"node_id":"0211","host":"a","port":0}""",
+            """{"node_id":"0211","host":"a","port":70000}""",
+            "\u0000\u0001\uffff",
+            "{" + "\"x\":1,".repeat(5000) + "\"node_id\":\"\"}",
+        )
+        for (bad in malformedInputs) {
+            val res = runCatching { parseLnInfoJson(bad) }
+            assertTrue("expected failure for input ${bad.take(40)}", res.isFailure)
         }
     }
 }

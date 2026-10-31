@@ -114,6 +114,9 @@ impl Node {
             });
         }
 
+        if running.mode == crate::StartMode::Exit {
+            return Err(LnError::Other("lightning_disabled".into()));
+        }
         if amount_msat < limits.min_payment_msat || amount_msat > limits.max_payment_msat {
             return Err(out_of_range);
         }

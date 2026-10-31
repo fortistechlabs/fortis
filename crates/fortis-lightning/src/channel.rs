@@ -916,6 +916,9 @@ impl Node {
         }
         let running = self.running().ok_or_else(not_started)?;
         self.exit_gate(&running)?;
+        if running.mode == crate::StartMode::Exit {
+            return Err(LnError::Other("lightning_disabled".into()));
+        }
         let _ops = self.channel_ops();
         let node = &running.node;
         let closes = load_closes(self.data_dir());

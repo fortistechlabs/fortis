@@ -1038,6 +1038,8 @@ private fun ReceiveTab(vm: WalletViewModel) {
     val lnState by vm.lightning.state.collectAsState()
     val lnEnabled = showLightningToggle(c) && (vm.isLightningEnabled(c?.id ?: "") || lnState !is LnState.Off)
     val minLnSat = vm.lightning.lastInfo?.minPaymentSat ?: 10_000L
+    val remoteEnabled = vm.lightning.lastInfo?.enabled != false
+    val remoteMessage = vm.lightning.lastInfo?.message?.takeIf { it.isNotBlank() }
 
     var amount by remember { mutableStateOf("") }
     var amountInSat by remember { mutableStateOf(true) }
@@ -1045,14 +1047,16 @@ private fun ReceiveTab(vm: WalletViewModel) {
     var quote by remember { mutableStateOf<uniffi.wallet_ffi.LnReceiveQuote?>(null) }
     var quoting by remember { mutableStateOf(false) }
 
-    LaunchedEffect(amountSat, lnState, lnEnabled) {
+    LaunchedEffect(amountSat, lnState, lnEnabled, remoteEnabled) {
         quote = null
         quoting = false
         if (lnEnabled && amountSat != null && amountSat >= minLnSat && lnState is LnState.Ready) {
             quoting = true
             kotlinx.coroutines.delay(500)
             quote = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-                runCatching { vm.lightning.currentNode?.receive(amountSat.toULong() * 1_000uL, "") }.getOrNull()
+                runCatching { vm.lightning.currentNode?.receive(amountSat.toULong() * 1_000uL, "") }
+                    .getOrNull()
+                    ?.takeIf { remoteEnabled || !it.needsChannel }
             }
             quoting = false
         }
@@ -1109,16 +1113,20 @@ private fun ReceiveTab(vm: WalletViewModel) {
                     color = Fx.warn,
                 )
             }
-            when (rxQr.hint) {
-                ReceiveHint.AddAmountForLightning ->
-                    Text(stringResource(R.string.receive_ln_needs_amount), style = FxType.meta, color = Fx.textDim)
-                ReceiveHint.BelowLightningMin ->
-                    Text(
-                        stringResource(R.string.receive_ln_below_min, fmt(minLnSat), unit),
-                        style = FxType.meta,
-                        color = Fx.textDim,
-                    )
-                null -> {}
+            if (!remoteEnabled && remoteMessage != null) {
+                Text(remoteMessage, style = FxType.meta, color = Fx.warn)
+            } else {
+                when (rxQr.hint) {
+                    ReceiveHint.AddAmountForLightning ->
+                        Text(stringResource(R.string.receive_ln_needs_amount), style = FxType.meta, color = Fx.textDim)
+                    ReceiveHint.BelowLightningMin ->
+                        Text(
+                            stringResource(R.string.receive_ln_below_min, fmt(minLnSat), unit),
+                            style = FxType.meta,
+                            color = Fx.textDim,
+                        )
+                    null -> {}
+                }
             }
         }
         if (addr.length > 3) {
@@ -1326,13 +1334,19 @@ private fun SendTab(vm: WalletViewModel) {
                 }
                 is SendPlan.NeedsAmount -> {}
                 is SendPlan.NeedsMove -> {
+                    val remoteEnabled = vm.lightning.lastInfo?.enabled != false
+                    val remoteMessage = vm.lightning.lastInfo?.message?.takeIf { it.isNotBlank() }
                     Text(
                         stringResource(R.string.send_ln_needs_move, fmt(plan.shortfallSat), coinUnit),
                         style = FxType.meta,
                         color = Fx.warn,
                     )
-                    GhostButton(stringResource(R.string.move_to_ln_action), dense = true) {
-                        showMoveDialog = plan.shortfallSat
+                    if (remoteEnabled) {
+                        GhostButton(stringResource(R.string.move_to_ln_action), dense = true) {
+                            showMoveDialog = plan.shortfallSat
+                        }
+                    } else if (remoteMessage != null) {
+                        Text(remoteMessage, style = FxType.meta, color = Fx.warn)
                     }
                 }
                 is SendPlan.Invalid -> {
@@ -1776,8 +1790,13 @@ private fun LightningSettingsCard(vm: WalletViewModel) {
         }
 
         val ready = lnState as? LnState.Ready
+        val remoteEnabled = vm.lightning.lastInfo?.enabled != false
+        val remoteMessage = vm.lightning.lastInfo?.message?.takeIf { it.isNotBlank() }
+        if (enabled && !remoteEnabled && remoteMessage != null) {
+            Text(remoteMessage, style = FxType.meta, color = Fx.warn)
+        }
         var showMove by remember { mutableStateOf(false) }
-        if (enabled && ready != null) {
+        if (enabled && ready != null && remoteEnabled) {
             GhostButton(
                 stringResource(R.string.move_to_ln_action),
                 dense = true,
