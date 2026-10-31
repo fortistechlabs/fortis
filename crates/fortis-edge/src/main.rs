@@ -1450,16 +1450,13 @@ fn proxy_chain(req: &mut Request, st: &State, method: &Method, path: &str, query
 
     // Cache hits never touch the upstream, so they don't spend rate budget —
     // check the cache before the limiter.
+    // A GET whose query is only cache-busters is cached (and asked of the
+    // upstream) under the empty query; any other query is never cached. See
+    // `cache::cacheable_query` for why the key must not take what a client appends.
+    let cache_query = if method == &Method::Get { cache::cacheable_query(query) } else { None };
+    let query = cache_query.unwrap_or(query);
     let cache_key = format!("{chain}/{rest}?{query}");
-    // Only a query-less GET is cached, on purpose: `ttl_for` matches on the
-    // path alone, so caching `?…` URLs would let anyone fill the bounded
-    // cache with junk keys (`/blocks/tip/height?x=1`, `?x=2`, …) and push out
-    // the real entries. No cached endpoint is called with a query.
-    let ttl = if method == &Method::Get && query.is_empty() {
-        cache::ttl_for(path, None)
-    } else {
-        None
-    };
+    let ttl = if cache_query.is_some() { cache::ttl_for(path, None) } else { None };
     if ttl.is_some() {
         if let Some(hit) = st.cache.get(&cache_key) {
             Metrics::inc(&st.metrics.cache_hits);

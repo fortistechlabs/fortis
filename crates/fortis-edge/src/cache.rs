@@ -219,6 +219,38 @@ pub fn ttl_for(path: &str, body: Option<&[u8]>) -> Option<Duration> {
     }
 }
 
+/// Query parameters that only defeat a cache (a client's cache-buster) and
+/// that none of the cached routes read.
+const CACHE_BUSTERS: [&str; 5] = ["_", "cb", "nocache", "t", "ts"];
+/// The longest query worth looking at.
+const MAX_CACHE_QUERY: usize = 256;
+
+/// The query a cached response is stored under, or `None` when a request with
+/// this `query` must not be cached.
+///
+/// None of the cached routes (see [`ttl_for`]) takes a parameter, so the key
+/// must not depend on what a client appends: if it did, anyone could fill the
+/// bounded cache with junk keys (`?x=1`, `?x=2`, …) and push out real entries.
+/// So a query is cacheable only when every parameter is a known cache-buster;
+/// those are dropped, and the answer is stored (and the upstream asked) under
+/// the empty query, so `?_=1` and `?_=2` share one entry. Any other parameter
+/// makes the request uncacheable, as before.
+pub fn cacheable_query(query: &str) -> Option<&'static str> {
+    if query.is_empty() {
+        return Some("");
+    }
+    if query.len() > MAX_CACHE_QUERY {
+        return None;
+    }
+    query
+        .split('&')
+        .all(|kv| {
+            let name = kv.split_once('=').map_or(kv, |(n, _)| n);
+            CACHE_BUSTERS.iter().any(|b| name.eq_ignore_ascii_case(b))
+        })
+        .then_some("")
+}
+
 fn contains(haystack: &[u8], needle: &[u8]) -> bool {
     haystack.windows(needle.len()).any(|w| w == needle)
 }
@@ -246,6 +278,18 @@ mod tests {
         // still available as stale within the grace window
         assert_eq!(c.get_stale("k", Duration::from_secs(5)).unwrap().body, b"v");
         assert!(c.get_stale("k", Duration::from_secs(0)).is_none());
+    }
+
+    #[test]
+    fn only_cache_busters_make_a_query_cacheable_and_share_one_key() {
+        assert_eq!(cacheable_query(""), Some(""));
+        assert_eq!(cacheable_query("_=1700000000"), Some(""));
+        assert_eq!(cacheable_query("_=1&cb=2&T=3"), Some(""));
+        assert_eq!(cacheable_query("nocache"), Some(""));
+        assert_eq!(cacheable_query("x=1"), None, "an unknown parameter is not cached");
+        assert_eq!(cacheable_query("_=1&x=1"), None, "one unknown parameter is enough");
+        assert_eq!(cacheable_query("&"), None, "an empty name is not a buster");
+        assert_eq!(cacheable_query(&format!("_={}", "9".repeat(300))), None, "too long");
     }
 
     #[test]
