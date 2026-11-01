@@ -1,0 +1,14 @@
+{
+  "node_id": "REPLACE_WITH_66_HEX_NODE_ID_FROM_fortis-lsp_/info",
+  "host": "lsp.fortistechlabs.com",
+  "port": 9735,
+  "lsps2_token": null,
+  "fee": { "ppm": 10000, "min_sat": 1000 },
+  "min_payment_sat": 51000,
+  "max_payment_sat": 250000,
+  "channel_min_sat": 100000,
+  "channel_max_sat": 500000,
+  "enabled": true,
+  "message": null,
+  "network": "bitcoin"
+}

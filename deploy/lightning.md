@@ -47,23 +47,11 @@ Cloudflare's HTTP tunnel (`cloudflared`) does **not** carry raw Lightning P2P tr
    ```
    *(Because `vss-server` is bound to `127.0.0.1:8080` behind `fortis-edge`'s token gate and systemd `IPAddressAllow=localhost`, the local build uses `noop_authorizer`; client isolation is enforced by the 256-bit HMAC store ID derived on-device from the BIP-85 Lightning seed.)*
 
-2. **Create the PostgreSQL role, database, and `vss_db` table:**
+2. **Create the PostgreSQL role and an empty database** (`vss-server` creates and migrates the `vss_db` table itself on first start; a table created by hand as `postgres` is owned by the wrong role and makes its migrations fail):
    ```sh
    sudo -u postgres psql <<'SQL'
    CREATE ROLE fortis WITH LOGIN PASSWORD 'fortis';
    CREATE DATABASE vss OWNER fortis;
-   \c vss
-   CREATE TABLE IF NOT EXISTS vss_db (
-     user_token VARCHAR(120) NOT NULL,
-     store_id VARCHAR(120) NOT NULL,
-     key VARCHAR(600) NOT NULL,
-     value BYTEA NULL,
-     version BIGINT NOT NULL,
-     created_at TIMESTAMPTZ,
-     last_updated_at TIMESTAMPTZ,
-     PRIMARY KEY (user_token, store_id, key)
-   );
-   GRANT ALL PRIVILEGES ON TABLE vss_db TO fortis;
    SQL
    ```
 
@@ -95,7 +83,7 @@ Cloudflare's HTTP tunnel (`cloudflared`) does **not** carry raw Lightning P2P tr
    - `channel_size_factor`: `2.0` (JIT channel size = `(payment - fee) × factor`).
    - `channel_min_sat` / `channel_max_sat`: `100000` / `500000` sat (`500_000` sat canary cap).
    - `token`: optional LSPS2 token string (if set, must match `lsps2_token` in `/etc/fortis/ln-info.json`).
-   - `low_liquidity_sat`: `2000000` (logs a warning on stderr every 60s when on-chain balance drops below 0.02 BTC).
+   - `low_liquidity_sat`: `2000000` (logs a warning on stderr every 60s when on-chain balance drops below 0.02 BTC). Use `300000` for the 0.005 BTC canary (§4).
    - `metrics_listen`: `"127.0.0.1:9736"` (`GET /metrics` and `GET /info`).
 
 3. **Install and start:**
@@ -115,11 +103,28 @@ Cloudflare's HTTP tunnel (`cloudflared`) does **not** carry raw Lightning P2P tr
 
 ## 4. Funding the LSP and opening outbound channels
 
-1. **Fund the LSP on-chain wallet with ~0.05 BTC (5,000,000 sat):**
-   Send 0.05 BTC to the `onchain_address` printed by `fortis-lsp` on startup. Once confirmed, `curl -s http://127.0.0.1:9736/metrics | grep fortis_lsp_onchain_sat` will report `5000000` and the `low_liquidity_sat` warning will clear.
+Sized for the **canary** (one or two test phones). For a live service with many users, raise these, and raise `low_liquidity_sat` with them.
 
-2. **Open 1–2 outbound channels to well-connected routing nodes:**
-   So clients can pay arbitraryBOLT 11/12 recipients across the wider network (and receive from outside wallets like Phoenix), open 1–2 public or private channels (e.g. 2,000,000 sat each to ACINQ `03864ef025fde8fb587d989186ce6a4a186895ee44a926bfc370e2c366597a3f8f@3.33.236.230:9735` or LQWD), leaving ~1,000,000–2,000,000 sat on-chain for JIT channel opens to Fortis users.
+1. **Fund the LSP on-chain wallet with ~0.005 BTC (500,000 sat):**
+   - Send 0.005 BTC to the `onchain_address` printed by `fortis-lsp` on startup (`journalctl -u fortis-lsp | grep onchain_address`).
+   - Back up `/var/lib/fortis/lsp/keys_seed` off the host **before** funding.
+   - Set `low_liquidity_sat = 300000` in `/etc/fortis/lsp.toml` and restart `fortis-lsp`, or the default (2,000,000 sat) logs a low-liquidity warning every 60s.
+   - Once confirmed, `curl -s http://127.0.0.1:9736/metrics | grep fortis_lsp_onchain_sat` reports `500000`.
+
+   Where the 500,000 sat goes:
+
+   | Use | Sat |
+   |---|---|
+   | One outbound channel to a routing node | 100,000–150,000 |
+   | JIT channels for test phones (100,000–500,000 each; ~100,000–300,000 for two) | 100,000–300,000 |
+   | Anchor reserve (25,000 per channel, held back by ldk-node) | ~75,000 |
+   | On-chain fees for opens | the rest |
+
+   A retry budget is 0.01 BTC.
+
+2. **Open one outbound channel to a well-connected routing node** (e.g. ACINQ `03864ef025fde8fb587d989186ce6a4a186895ee44a926bfc370e2c366597a3f8f@3.33.236.230:9735` or LQWD) of 100,000–150,000 sat, so Fortis users can pay BOLT 11/12 recipients across the wider network. Leave the rest on-chain for JIT channel opens.
+
+3. **Inbound liquidity.** A channel the LSP opens starts with all funds on the LSP's side: outbound capacity, no inbound. Paying out to outside invoices works from the start. Receiving from outside wallets (Phoenix and others) needs balance on the *peer's* side of an LSP channel, which appears only after the LSP has sent payments out through it. In the canary, test sending before receiving, and see whether the first outside receive fails. If it does, send a small payment out through the channel first, or ask the peer to open a channel to the LSP.
 
 ---
 
@@ -137,12 +142,10 @@ Create `/etc/fortis/ln-info.json` using the `node_id` and effective bounds from 
     "ppm": 10000,
     "min_sat": 1000
   },
-  "limits": {
-    "min_payment_sat": 51000,
-    "max_payment_sat": 250000,
-    "channel_min_sat": 100000,
-    "channel_max_sat": 500000
-  },
+  "min_payment_sat": 51000,
+  "max_payment_sat": 250000,
+  "channel_min_sat": 100000,
+  "channel_max_sat": 500000,
   "enabled": true,
   "message": null,
   "network": "bitcoin"
@@ -239,6 +242,7 @@ If home reachability on TCP 9735 is unreliable or capacity grows:
 
 Before enabling Lightning (beta) for general users, run the mainnet canary with `channel_max_sat = 500000` using `.dev` and `.dev2` debug builds on the Pixel (never overwrite the store app):
 
+- [ ] **Backend prerequisites:** `keys_seed` backed up off-host; LSP funded with ~0.005 BTC (§4) and `low_liquidity_sat = 300000`; one outbound channel open (§4); `lsp.fortistechlabs.com:9735` reachable from mobile data (direct, or through the relay in `deploy/relay/`); `GET /ln/info` on `api.fortistechlabs.com` returns 401 without an install token (not 404).
 - [ ] **LSP live on mainnet (`channel_max_sat = 500000`):** `curl -s http://127.0.0.1:9736/info` reports `channel_max_sat: 500000`, `min_payment_size_msat: 51000000`, `max_payment_size_msat: 250000000`; `GET /ln/info` on `api.fortistechlabs.com` matches.
 - [ ] **Enable Lightning on `.dev`:** *Settings → Lightning (beta)* toggle on a software mainnet BTC wallet transitions `Off → Starting → Ready` (*"LSP connected · backup OK"*).
 - [ ] **First receive via JIT channel (50,000+ sat from Phoenix):** Enter `55,000 sat` on Receive; verify the fee quote line (*"Receiving 55,000 sat · fee 1,000 · you get 54,000"*) and unified BIP21 QR (`bitcoin:...?amount=...&lightning=lnbc...`); pay from Phoenix; verify JIT channel opens at 0-conf, toast *"Received ⚡ 54,000 sat"* appears, and Home hero shows combined total + *On-chain · Lightning* split.
@@ -251,4 +255,4 @@ Before enabling Lightning (beta) for general users, run the mainnet canary with 
 - [ ] **Review Focus 5 (LSP closes channel while app is closed):** Force-close or coop-close the channel from the LSP while `.dev` is force-stopped; once confirmed on-chain, open `.dev` and verify the balance is never shown as 0 — settled close funds appear in `onchainTransitSat` and are automatically swept to the main BTC wallet.
 
 ### Canary run log
-- Status: Pending owner mainnet LSP funding and Pixel `.dev`/`.dev2` execution.
+- Status: Backend deployed (edge `/ln/info` and `/ln/vss`, VSS, LSP); relay `lsp.fortistechlabs.com` → e2-micro → home LSP verified for TCP. Pending: LSP funding (0.005 BTC canary) and Pixel `.dev`/`.dev2` execution. Note: test sending before receiving from an outside wallet (§4, inbound liquidity).
