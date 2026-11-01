@@ -462,6 +462,7 @@
     <string name="move_to_ln_action">轉入閃電網路</string>
     <string name="move_to_ln_below_min">通道最小容量為 %1$s sat。</string>
     <string name="move_to_ln_body">從你的鏈上錢包傳送 BTC 以開啟閃電網路通道（最少 %1$s sat）。通道將在 1 次確認後自動開啟。</string>
+    <string name="move_to_ln_reserve_note">額外的 %1$s sat 會一併傳送，並作為閃電網路通道所需的儲備金留在你的鏈上錢包中。</string>
     <string name="move_to_ln_insufficient">已確認的鏈上資金不足以支付此金額加上網路手續費。</string>
     <string name="move_to_ln_title">轉入閃電網路</string>
     <string name="own_server_dialog_title">%1$s 伺服器</string>
@@ -490,6 +491,9 @@
     <string name="settings_lightning_close_action">關閉通道並轉回鏈上</string>
     <string name="settings_lightning_close_body">這會關閉你的閃電網路通道，並將資金轉回你的鏈上 BTC 錢包。</string>
     <string name="settings_lightning_close_title">要關閉閃電網路通道嗎？</string>
+    <string name="settings_lightning_force_title">強制關閉通道？</string>
+    <string name="settings_lightning_force_body">無法連線到閃電網路服務供應商，因此無法協商關閉通道。強制關閉不需對方配合，但資金會被鎖定一段時間後才回到你的鏈上錢包，且網路手續費較高。如果可以等待，請稍後再試。</string>
+    <string name="settings_lightning_force_action">強制關閉</string>
     <string name="settings_lightning_closing">關閉中…</string>
     <string name="settings_lightning_status_off">關閉</string>
     <string name="settings_lightning_status_ready">已連線至 LSP · 備份正常</string>

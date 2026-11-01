@@ -465,6 +465,7 @@
     <string name="move_to_ln_action">Zu Lightning verschieben</string>
     <string name="move_to_ln_below_min">Die Mindestkanalgröße beträgt %1$s sat.</string>
     <string name="move_to_ln_body">Sendet BTC aus deiner On-Chain-Wallet, um einen Lightning-Kanal zu öffnen (mindestens %1$s sat). Der Kanal öffnet sich automatisch nach 1 Bestätigung.</string>
+    <string name="move_to_ln_reserve_note">%1$s sat mehr werden mitgesendet und bleiben als Reserve, die ein Lightning-Kanal braucht, On-Chain in deiner Wallet.</string>
     <string name="move_to_ln_insufficient">Nicht genug bestätigte On-Chain-Mittel für diesen Betrag plus Netzwerkgebühr.</string>
     <string name="move_to_ln_title">Zu Lightning verschieben</string>
     <string name="own_server_dialog_title">%1$s-Server</string>
@@ -493,6 +494,9 @@
     <string name="settings_lightning_close_action">Kanal schließen und On-Chain verschieben</string>
     <string name="settings_lightning_close_body">Dadurch wird dein Lightning-Kanal geschlossen und dein Guthaben zurück in deine On-Chain-BTC-Wallet verschoben.</string>
     <string name="settings_lightning_close_title">Lightning-Kanal schließen?</string>
+    <string name="settings_lightning_force_title">Kanal zwangsweise schließen?</string>
+    <string name="settings_lightning_force_body">Der Lightning-Anbieter war nicht erreichbar, daher kann der Kanal nicht einvernehmlich geschlossen werden. Eine erzwungene Schließung funktioniert auch ohne ihn, aber dein Guthaben ist danach eine Weile gesperrt, bevor es in deine On-Chain-Wallet zurückkehrt, und die Netzwerkgebühr ist höher. Versuche es später erneut, wenn du warten kannst.</string>
+    <string name="settings_lightning_force_action">Zwangsschließung</string>
     <string name="settings_lightning_closing">Wird geschlossen …</string>
     <string name="settings_lightning_status_off">Aus</string>
     <string name="settings_lightning_status_ready">LSP verbunden · Backup OK</string>

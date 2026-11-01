@@ -465,6 +465,7 @@
     <string name="move_to_ln_action">Mover para o Lightning</string>
     <string name="move_to_ln_below_min">O tamanho mínimo do canal é %1$s sat.</string>
     <string name="move_to_ln_body">Envia BTC da sua carteira on-chain para abrir um canal Lightning (mínimo de %1$s sat). O canal abre automaticamente após 1 confirmação.</string>
+    <string name="move_to_ln_reserve_note">Mais %1$s sat são enviados e ficam na sua carteira on-chain como a reserva de que um canal Lightning necessita.</string>
     <string name="move_to_ln_insufficient">Não há fundos on-chain confirmados suficientes para cobrir este montante mais a comissão de rede.</string>
     <string name="move_to_ln_title">Mover para o Lightning</string>
     <string name="own_server_dialog_title">Servidor %1$s</string>
@@ -493,6 +494,9 @@
     <string name="settings_lightning_close_action">Fechar canal e mover para on-chain</string>
     <string name="settings_lightning_close_body">Isto fecha o seu canal Lightning e devolve os seus fundos à sua carteira BTC on-chain.</string>
     <string name="settings_lightning_close_title">Fechar canal Lightning?</string>
+    <string name="settings_lightning_force_title">Forçar o encerramento do canal?</string>
+    <string name="settings_lightning_force_body">Não foi possível contactar o fornecedor Lightning, pelo que o canal não pode ser encerrado por acordo. Um encerramento forçado funciona sem ele, mas os seus fundos ficam bloqueados durante algum tempo antes de voltarem à sua carteira on-chain, e a taxa de rede é mais elevada. Tente novamente mais tarde se puder esperar.</string>
+    <string name="settings_lightning_force_action">Forçar encerramento</string>
     <string name="settings_lightning_closing">A fechar…</string>
     <string name="settings_lightning_status_off">Desativado</string>
     <string name="settings_lightning_status_ready">LSP ligado · cópia de segurança OK</string>
