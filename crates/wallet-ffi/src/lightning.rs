@@ -190,6 +190,9 @@ pub struct LnNodeConfig {
     pub network: String,
     pub data_dir: String,
     pub esplora_url: String,
+    /// `Authorization` value for `esplora_url`, for the hosted edge only (it
+    /// requires a token); empty for a server of the user's own.
+    pub esplora_auth_header: String,
     pub lsp: LnLspInfo,
     pub vss: LnVssConfig,
     pub limits: LnLspLimits,
@@ -657,21 +660,11 @@ pub fn ln_bip39_seed(mnemonic: String, passphrase: String) -> Result<Vec<u8>, Ln
     Ok(seed.to_vec())
 }
 
-/// Upper-bound routing fee estimate (`1 % + 50 sat`) for `target` / `amount_msat`.
+/// Upper-bound routing fee estimate (`1 % + 50 sat`) for `target` / `amount_msat`:
+/// the rule `LnNode::pay` enforces, from `fortis_lightning` (not a copy of it).
 #[uniffi::export]
 pub fn ln_estimate_fee_msat(target: LnTarget, amount_msat: u64) -> u64 {
-    let eff = match &target {
-        LnTarget::Bolt11 { amount_msat: a, .. }
-        | LnTarget::Bolt12Offer { amount_msat: a, .. } => a.unwrap_or(amount_msat),
-        LnTarget::Unified { lightning, .. } => match lightning {
-            LnUnifiedLightning::Bolt11 { amount_msat: a, .. }
-            | LnUnifiedLightning::Bolt12Offer { amount_msat: a, .. } => a.unwrap_or(amount_msat),
-        },
-        LnTarget::LnurlPay { .. } | LnTarget::LightningAddress { .. } | LnTarget::OnChain { .. } => {
-            amount_msat
-        }
-    };
-    (eff / 100).saturating_add(50_000)
+    fortis_lightning::estimate_routing_fee_msat(&PaymentTarget::from(target), amount_msat)
 }
 
 #[uniffi::export]
@@ -701,10 +694,11 @@ pub fn ln_recover_scan(
     bip39_seed: Vec<u8>,
     network: String,
     esplora_url: String,
+    esplora_auth_header: String,
 ) -> Result<Vec<LnStaticUtxo>, LnFfiError> {
     let net = parse_network(&network)?;
     let node_seed = derive_node_seed(bip39_seed, net)?;
-    let source = EsploraScan::new(&esplora_url);
+    let source = EsploraScan::with_auth(&esplora_url, Some(esplora_auth_header));
     let utxos = recover::scan_static_outputs(&node_seed, net, &source, &mut |_, _| {})?;
     Ok(utxos.into_iter().map(Into::into).collect())
 }
@@ -717,6 +711,7 @@ pub fn ln_recover_sweep(
     to_address: String,
     feerate_sat_per_vb: u64,
     esplora_url: String,
+    esplora_auth_header: String,
 ) -> Result<Option<String>, LnFfiError> {
     let net = parse_network(&network)?;
     let node_seed = derive_node_seed(bip39_seed, net)?;
@@ -730,7 +725,7 @@ pub fn ln_recover_sweep(
         })?
         .require_network(net)
         .map_err(|_| LnFfiError::WrongNetwork)?;
-    let broadcaster = EsploraBroadcast::new(&esplora_url);
+    let broadcaster = EsploraBroadcast::with_auth(&esplora_url, Some(esplora_auth_header));
     let txid = recover::sweep_static_outputs(
         &node_seed,
         net,
@@ -762,6 +757,7 @@ impl LnNode {
             data_dir: PathBuf::from(cfg.data_dir),
             chain_source: ChainSource::Esplora {
                 url: cfg.esplora_url,
+                auth_header: Some(cfg.esplora_auth_header).filter(|h| !h.is_empty()),
             },
             lsp: cfg.lsp.into(),
             vss: cfg.vss.into(),
@@ -776,6 +772,12 @@ impl LnNode {
 
     pub fn limits(&self) -> LnLspLimits {
         self.inner.limits().into()
+    }
+
+    /// Sats a move to Lightning must deposit on top of the channel size: the
+    /// anchor reserve `open_channel` needs left in the transit wallet.
+    pub fn anchor_reserve_sat(&self) -> u64 {
+        Node::anchor_reserve_sat()
     }
 
     pub fn start(&self) -> Result<(), LnFfiError> {
@@ -826,6 +828,11 @@ impl LnNode {
     pub fn estimate_fee_msat(&self, target: LnTarget, amount_msat: u64) -> u64 {
         let core_target = PaymentTarget::from(target);
         self.inner.estimate_fee_msat(&core_target, amount_msat)
+    }
+
+    /// Msat `pay` can send now (LDK's outbound HTLC limit over usable channels).
+    pub fn sendable_msat(&self) -> u64 {
+        self.inner.sendable_msat()
     }
 
     pub fn payments(&self) -> Vec<LnPayment> {

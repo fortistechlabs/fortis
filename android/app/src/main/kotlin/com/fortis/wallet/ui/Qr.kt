@@ -170,6 +170,8 @@ fun planSend(
     limits: LnLspLimits = DEFAULT_LN_LIMITS,
     userAmountMsat: ULong? = null,
     lnurlResolver: (LnTarget) -> LnurlParams = ::lnResolveLnurl,
+    /** What the channels can send now (the outbound HTLC limit, below the balance by the channel reserve); the balance when unknown. */
+    sendableMsat: ULong? = null,
 ): SendPlan {
     val trimmed = text.trim()
     if (trimmed.isEmpty()) return SendPlan.Invalid("empty")
@@ -192,6 +194,9 @@ fun planSend(
         LnState.Off, LnState.Starting -> 0L
     }
 
+    // What a payment is judged against: what can be sent now, which is less than the balance.
+    val sendableSat = minOf(lightningSat, sendableMsat?.let { displaySatFromMsat(it) } ?: lightningSat)
+
     return when (target) {
         is LnTarget.OnChain -> SendPlan.OnChain(
             address = target.address,
@@ -206,7 +211,7 @@ fun planSend(
 
             if (ln is LnState.Ready && lnAmountMsat != null) {
                 val neededSat = displaySatFromMsat(lnAmountMsat)
-                if (lightningSat >= neededSat) {
+                if (sendableSat >= neededSat) {
                     return SendPlan.Lightning(target = lnPart, amountMsat = lnAmountMsat)
                 }
             }
@@ -219,26 +224,30 @@ fun planSend(
             if (ln is LnState.Off) {
                 return SendPlan.Invalid("Lightning is disabled — enable it in Settings → Lightning (beta)")
             }
+            // The LSP's payment bounds are for what it forwards to us; they do not limit what we send.
             planLightningWithAmount(
                 target = target,
                 fixedAmountMsat = target.amountMsat,
                 userAmountMsat = userAmountMsat,
-                minMsat = maxOf(1_000uL, limits.minPaymentMsat),
-                maxMsat = limits.maxPaymentMsat,
-                lightningSat = lightningSat,
+                minMsat = 1_000uL,
+                maxMsat = maxOf(1_000uL, sendableSat.toULong() * 1_000uL),
+                enforceMax = false,
+                lightningSat = sendableSat,
             )
         }
         is LnTarget.Bolt12Offer -> {
             if (ln is LnState.Off) {
                 return SendPlan.Invalid("Lightning is disabled — enable it in Settings → Lightning (beta)")
             }
+            // The LSP's payment bounds are for what it forwards to us; they do not limit what we send.
             planLightningWithAmount(
                 target = target,
                 fixedAmountMsat = target.amountMsat,
                 userAmountMsat = userAmountMsat,
-                minMsat = maxOf(1_000uL, limits.minPaymentMsat),
-                maxMsat = limits.maxPaymentMsat,
-                lightningSat = lightningSat,
+                minMsat = 1_000uL,
+                maxMsat = maxOf(1_000uL, sendableSat.toULong() * 1_000uL),
+                enforceMax = false,
+                lightningSat = sendableSat,
             )
         }
         is LnTarget.LnurlPay, is LnTarget.LightningAddress -> {
@@ -258,7 +267,7 @@ fun planSend(
                 userAmountMsat = userAmountMsat,
                 minMsat = params.minMsat,
                 maxMsat = params.maxMsat,
-                lightningSat = lightningSat,
+                lightningSat = sendableSat,
             )
         }
     }
@@ -271,6 +280,8 @@ private fun planLightningWithAmount(
     minMsat: ULong,
     maxMsat: ULong,
     lightningSat: Long,
+    /** False when [maxMsat] is only a hint: a larger amount is then a shortfall to move, not out of range. */
+    enforceMax: Boolean = true,
 ): SendPlan {
     val effectiveMsat = if (fixedAmountMsat != null) {
         fixedAmountMsat
@@ -278,7 +289,7 @@ private fun planLightningWithAmount(
         if (userAmountMsat == null || userAmountMsat == 0uL) {
             return SendPlan.NeedsAmount(target = target, minMsat = minMsat, maxMsat = maxMsat)
         }
-        if (userAmountMsat < minMsat || userAmountMsat > maxMsat) {
+        if (userAmountMsat < minMsat || (enforceMax && userAmountMsat > maxMsat)) {
             return SendPlan.Invalid("Amount out of range (${displaySatFromMsat(minMsat)}–${displaySatFromMsat(maxMsat)} sat)")
         }
         userAmountMsat

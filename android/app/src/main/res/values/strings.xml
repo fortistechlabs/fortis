@@ -518,6 +518,7 @@
     <string name="confirm_ln_fee_estimate_value">up to %1$s %2$s</string>
     <string name="toast_ln_received">Received ⚡ %1$s sat</string>
     <string name="move_to_ln_action">Move to Lightning</string>
+    <string name="move_to_ln_reserve_note">%1$s sat more are sent along and stay in your wallet on-chain as the reserve a Lightning channel needs.</string>
     <string name="move_to_ln_title">Move to Lightning</string>
     <string name="move_to_ln_body">Sends BTC from your on-chain wallet to open a Lightning channel (minimum %1$s sat). The channel opens automatically after 1 confirmation.</string>
     <string name="move_to_ln_below_min">Minimum channel size is %1$s sat.</string>

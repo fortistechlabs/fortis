@@ -208,7 +208,7 @@ class LightningReviewFixesTest {
             first.commitMove(100_000uL)
 
             // The process dies; the deposit arrives while the app is closed.
-            val node = Node(transit = 100_000uL, channel = LnChannelState.NONE)
+            val node = Node(transit = 125_000uL, channel = LnChannelState.NONE) // + 25 000 sat anchor reserve
             val second = session(scope, store, node, sweepTo = addr)
             second.onUnlocked(wallet.id, seed).join()
             assertEquals(100_000uL, node.opened)
@@ -253,7 +253,7 @@ class LightningReviewFixesTest {
             val s = session(scope, store, node, sweepTo = addr)
             s.onUnlocked(wallet.id, seed).join()
             s.commitMove(100_000uL)
-            node.transit = 100_000uL
+            node.transit = 125_000uL
             s.refreshBalances()
             assertNull(node.opened)
             assertEquals(100_000L, store.pendingMove(wallet.id)?.amountSat)
@@ -295,6 +295,64 @@ class LightningReviewFixesTest {
             assertFalse(s.isUnlockedFor("other"))
             s.onRelocked().join()
             assertFalse(s.isUnlockedFor(wallet.id))
+        } finally {
+            scope.cancel()
+        }
+    }
+
+    @Test
+    fun a_channel_closed_event_does_not_sweep_a_pending_move_deposit() = runBlocking {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        try {
+            val store = newStore()
+            val events = java.util.concurrent.LinkedBlockingQueue<uniffi.wallet_ffi.LnEventRecord>()
+            val node = object : Node(transit = 0uL, channel = LnChannelState.NONE) {
+                override val blocksOnNextEvent = true
+                override fun nextEvent(timeoutMs: ULong): uniffi.wallet_ffi.LnEventRecord? =
+                    events.poll(timeoutMs.toLong().coerceAtMost(50), TimeUnit.MILLISECONDS)
+            }
+            val s = session(scope, store, node, sweepTo = addr)
+            s.onUnlocked(wallet.id, seed).join()
+            s.commitMove(100_000uL)
+            node.transit = 50_000uL // part of the deposit has landed; not enough to open yet
+            events.add(uniffi.wallet_ffi.LnEventRecord.ChannelClosed("done"))
+            val deadline = System.currentTimeMillis() + 3_000
+            while (events.isNotEmpty() && System.currentTimeMillis() < deadline) Thread.sleep(20)
+            Thread.sleep(300)
+            assertNull("the pending deposit must not be swept back", node.swept)
+
+            // Without a pending move, the same event does sweep the orphan balance.
+            store.setPendingMove(wallet.id, null)
+            s.onRelocked().join()
+            val other = Node(transit = 50_000uL, channel = LnChannelState.NONE)
+            val s2 = session(scope, store, other, sweepTo = addr)
+            s2.onUnlocked(wallet.id, seed).join()
+            assertEquals(addr, other.swept)
+        } finally {
+            scope.cancel()
+        }
+    }
+
+    @Test
+    fun the_hosted_edge_gets_the_token_and_a_servers_of_the_users_own_does_not() = runBlocking {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        try {
+            val seen = mutableListOf<Pair<String, String>>()
+            fun run(esplora: String) {
+                val store = InMemoryLightningStore(mapOf(wallet.id to wallet), esplora = esplora)
+                runBlocking { store.setLightningEnabled(wallet.id, true) }
+                val s = LightningSession(
+                    scope = scope,
+                    store = store,
+                    nodeFactory = { cfg -> seen += cfg.esploraUrl to cfg.esploraAuthHeader; Node() },
+                    info = LnInfoApi { info },
+                )
+                runBlocking { s.onUnlocked(wallet.id, seed).join() }
+            }
+            run("${com.fortis.wallet.HOSTED_EDGE}/btc")
+            run("https://my-own-esplora.example/api")
+            assertEquals("Bearer tok", seen[0].second)
+            assertEquals("", seen[1].second)
         } finally {
             scope.cancel()
         }

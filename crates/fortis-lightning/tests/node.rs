@@ -227,6 +227,7 @@ fn start_without_network_returns_lsp_unreachable_within_15s() {
     };
     let chain = ChainSource::Esplora {
         url: "http://192.0.2.1:3002".into(),
+        auth_header: None,
     };
     let node = Node::new(config(
         test_seed(3),

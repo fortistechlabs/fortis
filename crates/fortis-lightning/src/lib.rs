@@ -27,5 +27,5 @@ pub use node::{
     StartMode, VssConfig,
 };
 pub use parse::{parse, parse_at, PaymentTarget};
-pub use pay::{Direction, Payment, Status};
+pub use pay::{estimate_routing_fee_msat, Direction, Payment, Status};
 pub use receive::ReceiveQuote;

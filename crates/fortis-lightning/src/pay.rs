@@ -174,7 +174,14 @@ impl Node {
     /// no pre-send estimate. The amount is the target's own when it has one,
     /// else `amount_msat`.
     pub fn estimate_fee_msat(&self, target: &PaymentTarget, amount_msat: u64) -> u64 {
-        routing_fee_cap_msat(target_amount_msat(target).unwrap_or(amount_msat))
+        estimate_routing_fee_msat(target, amount_msat)
+    }
+
+    /// What [`pay`](Self::pay) can send now: LDK's `next_outbound_htlc_limit_msat`
+    /// summed over the usable channels (the channel reserve is already kept
+    /// back). Zero when the node is not running.
+    pub fn sendable_msat(&self) -> u64 {
+        self.running().map_or(0, |r| sendable_msat(&r.node))
     }
 
     /// [`pay`](Self::pay) with the LNURL HTTP client injected.
@@ -390,6 +397,13 @@ fn fixed_or_given(fixed: Option<u64>, given: Option<u64>) -> Result<(Option<u64>
         (None, Some(g)) if g > 0 => Ok((Some(g), g)),
         (None, _) => Err(LnError::Other("amount_required".into())),
     }
+}
+
+/// The routing fee [`Node::pay`] allows for `target` (its own amount when it
+/// has one, else `amount_msat`): the one rule the node, the FFI and the app's
+/// preview all use. It needs no node.
+pub fn estimate_routing_fee_msat(target: &PaymentTarget, amount_msat: u64) -> u64 {
+    routing_fee_cap_msat(target_amount_msat(target).unwrap_or(amount_msat))
 }
 
 /// LDK's default maximum total routing fee for a payment of `amount_msat`:
@@ -780,6 +794,7 @@ mod tests {
             data_dir: std::env::temp_dir().join(dir),
             chain_source: ChainSource::Esplora {
                 url: "http://192.0.2.1".into(),
+                auth_header: None,
             },
             lsp: LspInfo {
                 node_id: "0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798"

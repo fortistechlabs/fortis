@@ -2,6 +2,32 @@
 
 Fortis Wallet (Android). Versions are `versionName (versionCode)`.
 
+## 0.6.0 (23) — 2026-11-01
+
+- Lightning (beta) for BTC wallets. Settings → Lightning turns it on; it is off
+  by default. Your Lightning keys stay on your phone, derived from your seed,
+  and the wallet is backed up so it can be restored from the seed alone. Only
+  one device can run a wallet's Lightning at a time; another device can take
+  over from Settings.
+- Receive: show a Lightning invoice. The first one opens a channel with the
+  fortis Lightning provider and takes a fee, shown before you share it; later
+  ones inside the channel's capacity are free.
+- Send: pay Lightning invoices, offers, Lightning addresses and LNURL, or a
+  `bitcoin:` link that carries an invoice. You see the fee cap before you
+  confirm, and a payment is never sent twice. Amounts are checked against what
+  the channel can actually send now, which is a little less than its balance.
+- Move to Lightning: put on-chain funds into a channel. The deposit is sent with
+  the 25,000 sat reserve a channel needs; that reserve stays in your wallet
+  on-chain and still counts in your total.
+- Close channel and move to on-chain: Settings → Lightning. It asks the provider
+  to close cooperatively. If the provider can't be reached you are offered a
+  force close, which works without it but locks your funds for a while and
+  costs a higher network fee; it is never done for you.
+- The home total adds on-chain and Lightning, with the split underneath.
+- `lightning:` and `bitcoin:` links open the wallet's Send screen, and no longer
+  start a second copy of the app.
+- Payment history shows Lightning payments with your on-chain ones.
+
 ## 0.5.4 (22) — 2026-10-22
 
 - Use your own server: Settings → Your server. BTC and XBT can each read the

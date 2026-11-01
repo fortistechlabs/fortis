@@ -89,8 +89,9 @@ class SendRoutingTest {
         assertTrue("expected NeedsAmount, got $plan", plan is SendPlan.NeedsAmount)
         val na = plan as SendPlan.NeedsAmount
         assertTrue(na.target is LnTarget.Bolt11)
-        assertEquals(10_000_000uL, na.minMsat)
-        assertEquals(500_000_000uL, na.maxMsat)
+        // The range hint is what we can send (1 sat to the 3 000 000 sat balance), not the LSP's receive bounds.
+        assertEquals(1_000uL, na.minMsat)
+        assertEquals(3_000_000_000uL, na.maxMsat)
     }
 
     @Test

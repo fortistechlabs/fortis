@@ -143,10 +143,16 @@ impl std::fmt::Debug for VssConfig {
 }
 
 /// Where the node gets chain data.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub enum ChainSource {
     /// Production (Android): the edge's Esplora, or the user's own server.
-    Esplora { url: String },
+    /// `auth_header` is sent as `Authorization` on every request: the hosted
+    /// edge runs with `--require-token` and refuses chain reads without it.
+    /// Pass it for the hosted edge only, never for a server of the user's own.
+    Esplora {
+        url: String,
+        auth_header: Option<String>,
+    },
     /// Tests only (regtest harness: no Esplora on the dev host). A bitcoind-RPC
     /// node syncs from the current tip without rescanning history.
     BitcoindRpc {
@@ -155,6 +161,25 @@ pub enum ChainSource {
         user: String,
         password: String,
     },
+}
+
+impl std::fmt::Debug for ChainSource {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ChainSource::Esplora { url, auth_header } => f
+                .debug_struct("Esplora")
+                .field("url", url)
+                .field("auth_header", &auth_header.as_ref().map(|_| "<redacted>"))
+                .finish(),
+            ChainSource::BitcoindRpc { host, port, user, .. } => f
+                .debug_struct("BitcoindRpc")
+                .field("host", host)
+                .field("port", port)
+                .field("user", user)
+                .field("password", &"<redacted>")
+                .finish(),
+        }
+    }
 }
 
 /// Everything [`Node::new`] needs. No `Debug` or `Clone`: it holds the seed,
@@ -498,6 +523,14 @@ impl Node {
         self.limits
     }
 
+    /// What ldk-node holds back in the transit wallet for each anchor channel
+    /// (see [`Balances::reserved_sat`]). `open_channel` needs the spendable
+    /// transit balance to cover its amount plus this, so a move to Lightning
+    /// has to deposit that much more than the channel size.
+    pub fn anchor_reserve_sat() -> u64 {
+        ldk_node::config::AnchorChannelsConfig::default().per_channel_reserve_sats
+    }
+
     /// [`start_with`](Self::start_with)`(StartMode::Normal)`.
     pub fn start(&self) -> Result<(), LnError> {
         self.start_with(StartMode::Normal)
@@ -671,6 +704,9 @@ impl Node {
     /// `None` at once when the node is not running.
     pub fn next_event(&self, timeout: Duration) -> Option<LnEvent> {
         let deadline = Instant::now() + timeout;
+        // The event whose close was already recorded in this call: a failed
+        // `event_handled` makes ldk-node hand the same event out again.
+        let mut recorded_close = None;
         loop {
             if self.shared.lock_lost.swap(false, Ordering::SeqCst) {
                 return Some(LnEvent::DeviceLockLost);
@@ -682,14 +718,25 @@ impl Node {
                     channel_id, reason, ..
                 } = &event
                 {
-                    crate::channel::record_closed_event(
-                        &self.data_dir,
-                        channel_id,
-                        reason.as_ref(),
-                    );
+                    if recorded_close != Some(*channel_id) {
+                        crate::channel::record_closed_event(
+                            &self.data_dir,
+                            channel_id,
+                            reason.as_ref(),
+                        );
+                        recorded_close = Some(*channel_id);
+                    }
                 }
-                // On failure ldk-node re-delivers the event; don't surface it twice.
+                // On failure ldk-node re-delivers the event; don't surface it
+                // twice. Retry only within `timeout` and not in a hot loop
+                // (VSS down keeps `event_handled` failing): the caller polls
+                // again, and everything else it does must not wait on this.
                 if node.event_handled().is_err() {
+                    let now = Instant::now();
+                    if now >= deadline {
+                        return None;
+                    }
+                    std::thread::sleep((deadline - now).min(Duration::from_millis(100)));
                     continue;
                 }
                 if let Some(e) = translate(event) {
@@ -1218,9 +1265,18 @@ impl StartJob {
         let mut b = Builder::new();
         b.set_network(self.network);
         match &self.chain_source {
-            ChainSource::Esplora { url } => {
-                b.set_chain_source_esplora(url.clone(), None);
-            }
+            ChainSource::Esplora { url, auth_header } => match auth_header {
+                Some(h) if !h.is_empty() => {
+                    let headers = std::collections::HashMap::from([(
+                        "Authorization".to_string(),
+                        h.clone(),
+                    )]);
+                    b.set_chain_source_esplora_with_headers(url.clone(), headers, None);
+                }
+                _ => {
+                    b.set_chain_source_esplora(url.clone(), None);
+                }
+            },
             ChainSource::BitcoindRpc {
                 host,
                 port,
@@ -1363,6 +1419,28 @@ fn map_node_error(e: NodeError) -> LnError {
 mod tests {
     use super::*;
 
+    #[test]
+    fn chain_source_debug_never_shows_a_token_or_password() {
+        let e = ChainSource::Esplora {
+            url: "https://edge/btc".into(),
+            auth_header: Some("Bearer secret-token".into()),
+        };
+        let b = ChainSource::BitcoindRpc {
+            host: "h".into(),
+            port: 1,
+            user: "u".into(),
+            password: "secret-pw".into(),
+        };
+        let shown = format!("{e:?} {b:?}");
+        assert!(!shown.contains("secret"), "{shown}");
+        assert!(shown.contains("https://edge/btc"));
+    }
+
+    #[test]
+    fn anchor_reserve_matches_ldk_nodes_default() {
+        assert_eq!(Node::anchor_reserve_sat(), 25_000);
+    }
+
     fn cfg(seed: Vec<u8>) -> NodeConfig {
         NodeConfig {
             bip39_seed: seed,
@@ -1370,6 +1448,7 @@ mod tests {
             data_dir: PathBuf::from("unused"),
             chain_source: ChainSource::Esplora {
                 url: "http://192.0.2.1".into(),
+                auth_header: None,
             },
             lsp: LspInfo {
                 node_id: "0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798"

@@ -1260,6 +1260,7 @@ private fun SendTab(vm: WalletViewModel) {
                 lnurlResolver = {
                     resolvedLnurl ?: throw IllegalStateException(lnurlError ?: "Resolving LNURL…")
                 },
+                sendableMsat = vm.lightning.sendableMsat,
             )
         }
     }
@@ -1307,6 +1308,7 @@ private fun SendTab(vm: WalletViewModel) {
                     limits = limits,
                     userAmountMsat = null,
                     lnurlResolver = { resolvedLnurl ?: throw IllegalStateException() },
+                    sendableMsat = vm.lightning.sendableMsat,
                 ) as? SendPlan.NeedsAmount
             }
 
@@ -1502,8 +1504,9 @@ private fun HistoryTab(vm: WalletViewModel, unit: String) {
     val network = c?.network ?: "mainnet"
     val lnState by vm.lightning.state.collectAsState()
     val lnEnabled = showLightningToggle(c) && (vm.isLightningEnabled(c?.id ?: "") || lnState !is LnState.Off)
-    val lnPayments = remember(lnState, lnEnabled, vm.sentCount) {
-        if (lnEnabled) vm.lightning.payments() else emptyList()
+    // Reads node files: loaded off the main thread, the rows fill in when it returns.
+    val lnPayments by produceState(emptyList<uniffi.wallet_ffi.LnPayment>(), lnState, lnEnabled, vm.sentCount) {
+        value = if (lnEnabled) vm.lightning.payments() else emptyList()
     }
     val rows = remember(vm.history, lnPayments) {
         mergeHistory(vm.history, lnPayments)

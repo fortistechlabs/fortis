@@ -200,6 +200,7 @@ fn offline_node(tag: &str) -> (Node, TempDir) {
         data_dir: dir.path("client"),
         chain_source: ChainSource::Esplora {
             url: "http://192.0.2.1".into(),
+            auth_header: None,
         },
         lsp: LspInfo {
             node_id: "0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798".into(),
@@ -925,7 +926,12 @@ fn balances_reconcile_through_open_close_and_force_close() {
     });
     ledger = held - fee;
     env.assert_sum("to_remote swept", ledger);
-    assert_eq!(env.client.channel_state(), ChannelState::None);
+    // `Closing` lasts until ldk-node's sweeper has seen the sweep confirm
+    // (`closing_unresolved`: the reserve is kept while it might be needed),
+    // which can be a sync after the wallet counted the funds.
+    poll("sweeper saw the sweep confirm", 60, || {
+        (env.client.channel_state() == ChannelState::None).then_some(())
+    });
 
     // Channel 3: our own force close; our output waits out the CSV delay.
     ledger -= env.open_and_ready("funding 3", ledger);

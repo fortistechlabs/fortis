@@ -230,12 +230,14 @@ fn record_and_enum_conversions_roundtrip() {
         amount_sat: Some(1_000),
         lightning: LnUnifiedLightning::Bolt11 {
             invoice: B11_25M.into(),
-            amount_msat: Some(100_000_000),
+            amount_msat: Some(2_500_000_000),
             description: "coffee".into(),
             expiry_secs: 3600,
         },
     };
-    assert_eq!(ln_estimate_fee_msat(t, 0), 1_050_000);
+    // 1 % of the invoice's own amount (2 500 000 000 msat) + 50 sat; the rule
+    // is fortis-lightning's, and it reads the amount from the invoice itself.
+    assert_eq!(ln_estimate_fee_msat(t, 0), 25_050_000);
 
     let seed = ln_bip39_seed(
         "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about".into(),

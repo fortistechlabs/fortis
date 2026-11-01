@@ -1898,8 +1898,12 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
 
     fun cancelPendingLn() { if (!sending) pendingLn = null }
 
-    /** A "Move to Lightning" deposit of [amountSat] to [transitAddress] that is under review. */
+    /** A "Move to Lightning" deposit to [transitAddress] that is under review; [amountSat] is the channel size. */
     private class MoveIntent(val transitAddress: String, val amountSat: Long)
+
+    /** Sats a move deposits on top of the channel size, as far as the node says (its anchor reserve). */
+    fun anchorReserveSat(): Long =
+        lightning.currentNode?.let { runCatching { it.anchorReserveSat().toLong() }.getOrNull() } ?: 25_000L
 
     private var moveIntent: MoveIntent? = null
 
@@ -1915,9 +1919,12 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
         // Only a deposit that is actually broadcast (see signAndSend) becomes a move: backing out
         // of the review, or a failed build, leaves no intent behind.
         moveIntent = MoveIntent(transitAddr, amountSat)
+        // The channel amount plus what the open needs left in the transit wallet (the anchor
+        // reserve and headroom for the funding fee): depositing just the amount could never open.
+        val deposit = amountSat + com.fortis.wallet.ui.screens.moveExtraSat(anchorReserveSat(), feerates[6] ?: 2L)
         buildPayment(
             to = transitAddr,
-            amountSat = amountSat,
+            amountSat = deposit,
             sweep = false,
             feerateOverride = null,
             confTarget = 6,

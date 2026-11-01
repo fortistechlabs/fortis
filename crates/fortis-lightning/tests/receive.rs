@@ -328,6 +328,7 @@ fn receive_before_start_errors() {
         data_dir: dirs.path("client"),
         chain_source: ChainSource::Esplora {
             url: "http://192.0.2.1".into(),
+            auth_header: None,
         },
         lsp: LspInfo {
             node_id: "0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798".into(),

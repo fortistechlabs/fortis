@@ -109,7 +109,11 @@ class MoveToLightningTest {
         assertTrue(openedAmounts.isEmpty())
 
         // Once the on-chain send to transit_address() confirms, refreshBalances() opens the second channel.
+        // The deposit also carries the anchor reserve the open needs left over (25 000 sat).
         transitSat = 150_000uL
+        session.refreshBalances()
+        assertTrue("150 000 alone cannot open a 150 000 channel", openedAmounts.isEmpty())
+        transitSat = 175_000uL
         session.refreshBalances()
         assertEquals(listOf(150_000uL), openedAmounts)
     }

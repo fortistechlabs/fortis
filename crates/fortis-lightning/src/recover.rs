@@ -505,6 +505,8 @@ pub trait HttpClient: Send + Sync {
 /// redirects, body capped at the LNURL client's limit (64 KiB).
 pub struct UreqHttp {
     agent: ureq::Agent,
+    /// Sent as `Authorization` on every request (the hosted edge requires it).
+    auth: Option<String>,
 }
 
 impl UreqHttp {
@@ -513,7 +515,20 @@ impl UreqHttp {
             .timeout(Duration::from_secs(10))
             .redirects(0)
             .build();
-        Self { agent }
+        Self { agent, auth: None }
+    }
+
+    /// Sends `auth_header` as `Authorization` on every request.
+    pub fn with_auth(mut self, auth_header: Option<String>) -> Self {
+        self.auth = auth_header.filter(|h| !h.is_empty());
+        self
+    }
+
+    fn authorize(&self, req: ureq::Request) -> ureq::Request {
+        match &self.auth {
+            Some(h) => req.set("Authorization", h),
+            None => req,
+        }
     }
 }
 
@@ -539,12 +554,11 @@ fn ureq_response(
 
 impl HttpClient for UreqHttp {
     fn get(&self, url: &str) -> Result<HttpResponse, String> {
-        ureq_response(self.agent.get(url).call(), 4 * 1024 * 1024)
+        ureq_response(self.authorize(self.agent.get(url)).call(), 4 * 1024 * 1024)
     }
     fn post(&self, url: &str, content_type: &str, body: &str) -> Result<HttpResponse, String> {
         ureq_response(
-            self.agent
-                .post(url)
+            self.authorize(self.agent.post(url))
                 .set("Content-Type", content_type)
                 .send_string(body),
             MAX_BODY,
@@ -582,6 +596,11 @@ impl EsploraScan {
     /// `base_url`: the API root, e.g. `https://mempool.space/api`.
     pub fn new(base_url: &str) -> Self {
         Self::with_client(base_url, Arc::new(UreqHttp::new()))
+    }
+
+    /// As [`new`](Self::new), sending `auth_header` as `Authorization`.
+    pub fn with_auth(base_url: &str, auth_header: Option<String>) -> Self {
+        Self::with_client(base_url, Arc::new(UreqHttp::new().with_auth(auth_header)))
     }
 
     pub fn with_client(base_url: &str, http: Arc<dyn HttpClient>) -> Self {
@@ -755,6 +774,11 @@ pub struct EsploraBroadcast {
 impl EsploraBroadcast {
     pub fn new(base_url: &str) -> Self {
         Self::with_client(base_url, Arc::new(UreqHttp::new()))
+    }
+
+    /// As [`new`](Self::new), sending `auth_header` as `Authorization`.
+    pub fn with_auth(base_url: &str, auth_header: Option<String>) -> Self {
+        Self::with_client(base_url, Arc::new(UreqHttp::new().with_auth(auth_header)))
     }
     pub fn with_client(base_url: &str, http: Arc<dyn HttpClient>) -> Self {
         Self {
@@ -1060,6 +1084,28 @@ impl Broadcaster for BitcoindBroadcast {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn ureq_http_sends_the_authorization_header_when_given_one() {
+        use std::io::{Read, Write};
+        fn request_seen(auth: Option<&str>) -> String {
+            let l = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+            let url = format!("http://{}/blocks/tip/height", l.local_addr().unwrap());
+            let t = std::thread::spawn(move || {
+                let (mut c, _) = l.accept().unwrap();
+                let mut buf = [0u8; 2048];
+                let n = c.read(&mut buf).unwrap();
+                c.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 1\r\n\r\n7").unwrap();
+                String::from_utf8_lossy(&buf[..n]).to_ascii_lowercase()
+            });
+            let http = UreqHttp::new().with_auth(auth.map(String::from));
+            assert_eq!(http.get(&url).unwrap().status, 200);
+            t.join().unwrap()
+        }
+        assert!(request_seen(Some("Bearer tok-1")).contains("authorization: bearer tok-1"));
+        assert!(!request_seen(None).contains("authorization"));
+        assert!(!request_seen(Some("")).contains("authorization"), "an empty header is not sent");
+    }
+
     use super::*;
     use std::cell::RefCell;
     use std::collections::VecDeque;

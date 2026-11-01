@@ -120,9 +120,15 @@ interface LnNodeApi {
         throw UnsupportedOperationException("pay not implemented in fake")
 
     fun estimateFeeMsat(target: LnTarget, amountMsat: ULong): ULong =
-        (amountMsat / 100uL) + 50_000uL
+        uniffi.wallet_ffi.lnEstimateFeeMsat(target, amountMsat)
 
     fun payments(): List<LnPayment> = emptyList()
+
+    /** Sats a move to Lightning must deposit on top of the channel size (the anchor reserve left in transit). */
+    fun anchorReserveSat(): ULong = 25_000uL
+
+    /** Msat that can be sent now (the channels' outbound HTLC limit). */
+    fun sendableMsat(): ULong = balances().lightningSat * 1_000uL
     fun nextEvent(timeoutMs: ULong): LnEventRecord? = null
     fun transitAddress(): String = ""
     fun openChannel(amountSat: ULong) {}
@@ -156,6 +162,8 @@ class FfiLnNode(private val inner: LnNode) : LnNodeApi {
         inner.estimateFeeMsat(target, amountMsat)
 
     override fun payments(): List<LnPayment> = inner.payments()
+    override fun anchorReserveSat(): ULong = inner.anchorReserveSat()
+    override fun sendableMsat(): ULong = inner.sendableMsat()
     override fun nextEvent(timeoutMs: ULong): LnEventRecord? = inner.nextEvent(timeoutMs)
     override fun transitAddress(): String = inner.transitAddress()
     override fun openChannel(amountSat: ULong) = inner.openChannel(amountSat)
@@ -202,6 +210,11 @@ class LightningSession(
 
     @Volatile
     var pendingMoveSat: ULong? = null
+        private set
+
+    /** Msat that can be sent now, as of the last balance refresh (the channels' outbound HTLC limit, which is below the balance). */
+    @Volatile
+    var sendableMsat: ULong = 0uL
         private set
 
     private var unlockedWalletId: String? = null
@@ -327,6 +340,41 @@ class LightningSession(
         return persisted.amountSat.toULong()
     }
 
+    /** Whether the transit balance covers opening a channel of [moveAmt]: the amount plus the anchor reserve ldk-node keeps back. */
+    private fun coversMove(node: LnNodeApi, bal: LnBalances, moveAmt: ULong): Boolean =
+        bal.onchainTransitSat >= moveAmt + runCatching { node.anchorReserveSat() }.getOrDefault(25_000uL)
+
+    /** Publishes [bal] and [ch] as the node's state, with the amount that can be sent now. */
+    private fun publish(node: LnNodeApi, bal: LnBalances, ch: LnChannelState) {
+        lastKnownBalances = bal
+        sendableMsat = runCatching { node.sendableMsat() }.getOrDefault(bal.lightningSat * 1_000uL)
+        _state.value = LnState.Ready(bal, ch)
+    }
+
+    /**
+     * Sends the transit balance back to the BTC wallet when it is an orphan: a closed channel's
+     * funds, or a deposit nobody is waiting for. Never while a move to Lightning is pending: that
+     * deposit is about to become a channel. Returns the new balances and channel state.
+     */
+    private suspend fun sweepOrphanTransit(
+        node: LnNodeApi,
+        walletId: String,
+        bal: LnBalances,
+        ch: LnChannelState,
+    ): Pair<LnBalances, LnChannelState> {
+        val provider = sweepAddressProvider
+        if (provider == null || bal.onchainTransitSat == 0uL || ch != LnChannelState.NONE || activeMove(walletId) != null) {
+            return bal to ch
+        }
+        val addr = runCatching { provider(walletId) }.getOrNull()
+        if (addr.isNullOrBlank()) return bal to ch
+        val swept = withContext(Dispatchers.IO) { runCatching { node.sweepTransit(addr) }.getOrNull() }
+        if (swept != null) runCatching { onSweepBroadcast?.invoke(walletId) }
+        return withContext(Dispatchers.IO) {
+            runCatching { node.balances() }.getOrDefault(bal) to runCatching { node.channelState() }.getOrDefault(ch)
+        }
+    }
+
     private suspend fun consumeMove(walletId: String) {
         pendingMoveSat = null
         runCatching { store.setPendingMove(walletId, null) }
@@ -335,8 +383,10 @@ class LightningSession(
     /** True when [walletId]'s seed is held here, i.e. [onUnlocked] already ran for it. */
     fun isUnlockedFor(walletId: String): Boolean = unlockedWalletId == walletId && unlockedSeed != null
 
-    fun payments(): List<LnPayment> =
+    /** The payment history. Reads node files, so it runs on the IO dispatcher. */
+    suspend fun payments(): List<LnPayment> = withContext(Dispatchers.IO) {
         currentNode?.let { runCatching { it.payments() }.getOrNull() }.orEmpty()
+    }
 
     /** Re-reads balances and channel state, and opens the channel for a move whose deposit has
      *  arrived. Blocking node calls run on the IO dispatcher. A start, stop or close in progress
@@ -357,7 +407,7 @@ class LightningSession(
         var ch = runCatching { node.channelState() }.getOrNull() ?: return
         val walletId = unlockedWalletId
         val moveAmt = walletId?.let { activeMove(it) }
-        if (walletId != null && moveAmt != null && bal.onchainTransitSat >= moveAmt && lastInfo?.enabled != false) {
+        if (walletId != null && moveAmt != null && coversMove(node, bal, moveAmt) && lastInfo?.enabled != false) {
             // The intent is spent only once LDK accepted the open; after a failure (LSP briefly
             // unreachable, ...) it stays, so the next refresh retries instead of the deposit
             // being swept back. It expires on its own (PENDING_MOVE_MAX_AGE_MS).
@@ -365,10 +415,7 @@ class LightningSession(
             bal = runCatching { node.balances() }.getOrDefault(bal)
             ch = runCatching { node.channelState() }.getOrDefault(ch)
         }
-        if (currentNode === node) {
-            lastKnownBalances = bal
-            _state.value = LnState.Ready(bal, ch)
-        }
+        if (currentNode === node) publish(node, bal, ch)
     }
 
     /** Pay [target] and wait until `PaymentSent` or `PaymentFailed` (or terminal payment status). */
@@ -447,10 +494,7 @@ class LightningSession(
             } else {
                 null
             }
-            val bal = node.balances()
-            val ch = node.channelState()
-            lastKnownBalances = bal
-            _state.value = LnState.Ready(bal, ch)
+            publish(node, node.balances(), node.channelState())
             txid
         }
     }
@@ -489,11 +533,14 @@ class LightningSession(
         val authHeader = ensureAuthHeader?.invoke(walletId)
             ?.takeIf { it.isNotBlank() }
             ?: store.vssAuthHeader(walletId)
+        val esploraUrl = store.esploraUrl(walletId)
         val cfg = LnNodeConfig(
             bip39Seed = seed.copyOf(),
             network = w?.network ?: lnInfo.network,
             dataDir = store.dataDir(walletId),
-            esploraUrl = store.esploraUrl(walletId),
+            esploraUrl = esploraUrl,
+            // The hosted edge requires the install token on chain reads; a server of the user's own must not get it.
+            esploraAuthHeader = if (esploraUrl.startsWith(HOSTED_EDGE)) authHeader else "",
             lsp = lnInfo.toLspInfo(),
             vss = LnVssConfig(
                 url = store.vssUrl(walletId),
@@ -525,27 +572,20 @@ class LightningSession(
             var ch = node.channelState()
 
             val moveAmt = activeMove(walletId)
-            if (moveAmt != null && bal.onchainTransitSat >= moveAmt) {
+            if (moveAmt != null && coversMove(node, bal, moveAmt)) {
                 val opened = withContext(Dispatchers.IO) {
                     runCatching { node.openChannel(moveAmt) }.isSuccess
                 }
                 if (opened) consumeMove(walletId)
                 bal = node.balances()
                 ch = node.channelState()
-            } else if (moveAmt == null && bal.onchainTransitSat > 0uL && ch == LnChannelState.NONE && sweepAddressProvider != null) {
-                val addr = runCatching { sweepAddressProvider?.invoke(walletId) }.getOrNull()
-                if (!addr.isNullOrBlank()) {
-                    val swept = withContext(Dispatchers.IO) {
-                        runCatching { node.sweepTransit(addr) }.getOrNull()
-                    }
-                    if (swept != null) runCatching { onSweepBroadcast?.invoke(walletId) }
-                    bal = node.balances()
-                    ch = node.channelState()
-                }
+            } else {
+                val (b2, c2) = sweepOrphanTransit(node, walletId, bal, ch)
+                bal = b2
+                ch = c2
             }
 
-            lastKnownBalances = bal
-            _state.value = LnState.Ready(bal, ch)
+            publish(node, bal, ch)
             drainImmediateEvents(node, walletId)
             if (node.blocksOnNextEvent && currentNode === node) {
                 startEventPoller(node, walletId)
@@ -615,17 +655,12 @@ class LightningSession(
         if (currentNode === node) {
             var bal = runCatching { node.balances() }.getOrNull() ?: return
             var ch = runCatching { node.channelState() }.getOrNull() ?: return
-            if (ev is LnEventRecord.ChannelClosed && bal.onchainTransitSat > 0uL && ch == LnChannelState.NONE && sweepAddressProvider != null) {
-                val addr = runCatching { sweepAddressProvider?.invoke(walletId) }.getOrNull()
-                if (!addr.isNullOrBlank()) {
-                    val swept = runCatching { node.sweepTransit(addr) }.getOrNull()
-                    if (swept != null) runCatching { onSweepBroadcast?.invoke(walletId) }
-                    bal = runCatching { node.balances() }.getOrDefault(bal)
-                    ch = runCatching { node.channelState() }.getOrDefault(ch)
-                }
+            if (ev is LnEventRecord.ChannelClosed) {
+                val (b2, c2) = sweepOrphanTransit(node, walletId, bal, ch)
+                bal = b2
+                ch = c2
             }
-            lastKnownBalances = bal
-            _state.value = LnState.Ready(bal, ch)
+            publish(node, bal, ch)
         }
     }
 }
