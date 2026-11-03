@@ -133,7 +133,6 @@ class LnErrorCopyTest {
             salt = "cafebabe",
         )
         val store = InMemoryLightningStore(wallets = mapOf(w.id to w))
-        store.setLightningEnabled(w.id, true)
         val session = LightningSession(
             scope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined),
             store = store,

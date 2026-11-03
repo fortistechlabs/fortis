@@ -214,50 +214,6 @@ class Store(private val ctx: Context) : com.fortis.wallet.lightning.LightningSto
         p[ownOnKey(chain)] = on
     }
 
-    private fun lnEnabledKey(walletId: String) = booleanPreferencesKey("ln_enabled_$walletId")
-
-    override suspend fun lightningEnabled(walletId: String): Boolean {
-        val p = ctx.dataStore.data.first()
-        val w = decode(p[K.wallets]).firstOrNull { it.id == walletId }
-        if (w != null && !w.isLightning) return false
-        return p[lnEnabledKey(walletId)] ?: false
-    }
-
-    override suspend fun setLightningEnabled(walletId: String, on: Boolean) {
-        ctx.dataStore.edit { p ->
-            val w = decode(p[K.wallets]).firstOrNull { it.id == walletId }
-            if (w != null && !w.isLightning) {
-                p.remove(lnEnabledKey(walletId))
-            } else if (on) {
-                p[lnEnabledKey(walletId)] = true
-            } else {
-                p.remove(lnEnabledKey(walletId))
-            }
-        }
-    }
-
-    private fun lnMoveSatKey(walletId: String) = longPreferencesKey("ln_move_sat_$walletId")
-    private fun lnMoveAtKey(walletId: String) = longPreferencesKey("ln_move_at_$walletId")
-
-    override suspend fun pendingMove(walletId: String): com.fortis.wallet.lightning.PendingMove? {
-        val p = ctx.dataStore.data.first()
-        val sat = p[lnMoveSatKey(walletId)] ?: return null
-        val at = p[lnMoveAtKey(walletId)] ?: return null
-        return com.fortis.wallet.lightning.PendingMove(sat, at)
-    }
-
-    override suspend fun setPendingMove(walletId: String, move: com.fortis.wallet.lightning.PendingMove?) {
-        ctx.dataStore.edit { p ->
-            if (move == null) {
-                p.remove(lnMoveSatKey(walletId))
-                p.remove(lnMoveAtKey(walletId))
-            } else {
-                p[lnMoveSatKey(walletId)] = move.amountSat
-                p[lnMoveAtKey(walletId)] = move.atMs
-            }
-        }
-    }
-
     override suspend fun walletConfig(walletId: String): WalletConfig? {
         val p = ctx.dataStore.data.first()
         return decode(p[K.wallets]).firstOrNull { it.id == walletId }
@@ -282,7 +238,6 @@ class Store(private val ctx: Context) : com.fortis.wallet.lightning.LightningSto
     suspend fun remove(id: String): WalletState {
         lateinit var out: WalletState
         ctx.dataStore.edit { p ->
-            p.remove(lnEnabledKey(id))
             val list = decode(p[K.wallets]).filter { it.id != id }
             val sel = p[K.selected]?.takeIf { s -> list.any { it.id == s } } ?: list.firstOrNull()?.id
             val lock = if (list.isEmpty()) null else p[K.lockMode]

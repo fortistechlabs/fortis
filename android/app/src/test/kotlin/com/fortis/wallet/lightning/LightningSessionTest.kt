@@ -119,33 +119,8 @@ class LightningSessionTest {
     }
 
     @Test
-    fun off_by_default_and_never_starts() = runBlocking {
-        val store = InMemoryLightningStore(mapOf(btcMainnetWallet.id to btcMainnetWallet))
-        assertFalse(store.lightningEnabled(btcMainnetWallet.id))
-        var factoryCalls = 0
-        var infoCalls = 0
-        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
-        try {
-            val session = LightningSession(
-                scope = scope,
-                store = store,
-                nodeFactory = { factoryCalls++; FakeNode() },
-                info = LnInfoApi { infoCalls++; sampleInfo() },
-            )
-            assertEquals(LnState.Off, session.state.value)
-            session.onUnlocked(btcMainnetWallet.id, sampleSeed).join()
-            assertEquals(LnState.Off, session.state.value)
-            assertEquals(0, factoryCalls)
-            assertEquals(0, infoCalls)
-        } finally {
-            scope.cancel()
-        }
-    }
-
-    @Test
     fun unlock_with_enabled_starts_and_reaches_ready() = runBlocking {
         val store = InMemoryLightningStore(mapOf(btcMainnetWallet.id to btcMainnetWallet))
-        store.setLightningEnabled(btcMainnetWallet.id, true)
         var capturedCfg: LnNodeConfig? = null
         // The session wipes its copy of the seed once the node exists, so what
         // the factory was given is read inside the factory.
@@ -179,7 +154,6 @@ class LightningSessionTest {
     @Test
     fun relock_stops_node_and_waits_for_inflight() = runBlocking {
         val store = InMemoryLightningStore(mapOf(btcMainnetWallet.id to btcMainnetWallet))
-        store.setLightningEnabled(btcMainnetWallet.id, true)
         val stopEntered = CompletableDeferred<Unit>()
         val inflightSettled = CompletableDeferred<Unit>()
         var stopFinishedBeforeOff = false
@@ -222,7 +196,6 @@ class LightningSessionTest {
     @Test
     fun start_failure_with_no_network_is_error_not_blocking() = runBlocking {
         val store = InMemoryLightningStore(mapOf(btcMainnetWallet.id to btcMainnetWallet))
-        store.setLightningEnabled(btcMainnetWallet.id, true)
         val allowFinish = CompletableDeferred<Unit>()
         val startEntered = CompletableDeferred<Unit>()
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
@@ -258,7 +231,6 @@ class LightningSessionTest {
     @Test
     fun retries_on_connectivity() = runBlocking {
         val store = InMemoryLightningStore(mapOf(btcMainnetWallet.id to btcMainnetWallet))
-        store.setLightningEnabled(btcMainnetWallet.id, true)
         val attempts = AtomicInteger(0)
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
         try {
@@ -290,7 +262,6 @@ class LightningSessionTest {
     @Test
     fun stale_ln_info_is_refetched_on_each_start() = runBlocking {
         val store = InMemoryLightningStore(mapOf(btcMainnetWallet.id to btcMainnetWallet))
-        store.setLightningEnabled(btcMainnetWallet.id, true)
         var fetchCount = 0
         val seenNodeIds = mutableListOf<String>()
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
@@ -321,7 +292,6 @@ class LightningSessionTest {
     @Test
     fun channel_closed_by_lsp_while_stopped_shows_transit_balance() = runBlocking {
         val store = InMemoryLightningStore(mapOf(btcMainnetWallet.id to btcMainnetWallet))
-        store.setLightningEnabled(btcMainnetWallet.id, true)
         lateinit var node: FakeNode
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
         try {
@@ -358,7 +328,7 @@ class LightningSessionTest {
     }
 
     @Test
-    fun only_enabled_for_the_lightning_wallet() = runBlocking {
+    fun only_the_lightning_wallet_starts_a_node() = runBlocking {
         val xbt = btcMainnetWallet.copy(id = "w-xbt", chain = "xbt")
 
         val btc = btcMainnetWallet.copy(id = "w-btc2", chain = "btc")
@@ -375,8 +345,6 @@ class LightningSessionTest {
             )
             for (w in ineligible) {
                 assertFalse("toggle must be hidden for ${w.id}", isLightningWallet(w))
-                session.enable(w.id).join()
-                assertFalse("must not enable in store for ${w.id}", store.lightningEnabled(w.id))
                 session.onUnlocked(w.id, sampleSeed).join()
                 assertEquals(LnState.Off, session.state.value)
             }
@@ -388,9 +356,8 @@ class LightningSessionTest {
     }
 
     @Test
-    fun remote_kill_switch_starts_in_exit_mode_blocks_move_and_allows_force_close_and_sweep() = runBlocking {
+    fun remote_kill_switch_starts_in_exit_mode_and_allows_force_close_and_sweep() = runBlocking {
         val store = InMemoryLightningStore(mapOf(btcMainnetWallet.id to btcMainnetWallet))
-        store.setLightningEnabled(btcMainnetWallet.id, true)
         lateinit var node: FakeNode
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
         try {
@@ -420,8 +387,6 @@ class LightningSessionTest {
             assertFalse(session.lastInfo!!.enabled)
             assertEquals("Lightning maintenance in progress.", session.lastInfo!!.message)
 
-            // Move-to-channel auto-open is suppressed while remote kill switch is active.
-            session.requestMoveToChannel(100_000uL)
             session.refreshBalances()
             assertNull(node.openedChannelSat)
 
@@ -441,6 +406,67 @@ class LightningSessionTest {
             assertTrue(node.forceClosed)
             assertEquals("txid-swept", txid)
             assertEquals(addr, node.sweptTo)
+        } finally {
+            scope.cancel()
+        }
+    }
+
+    @Test
+    fun forgetStopsTheNodeAndWipesLocalState() = runBlocking {
+        val store = InMemoryLightningStore(mapOf(btcMainnetWallet.id to btcMainnetWallet))
+        val dir = java.io.File(store.dataDir(btcMainnetWallet.id))
+        dir.mkdirs()
+        java.io.File(dir, "ldk.db").writeText("x")
+        lateinit var node: FakeNode
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        try {
+            val session = LightningSession(
+                scope = scope,
+                store = store,
+                nodeFactory = { FakeNode(channelValue = LnChannelState.READY).also { node = it } },
+                info = LnInfoApi { sampleInfo() },
+            )
+            session.onUnlocked(btcMainnetWallet.id, sampleSeed).join()
+            assertTrue(session.state.value is LnState.Ready)
+            session.forget(btcMainnetWallet.id).join()
+            assertTrue(node.stopped)
+            assertFalse(dir.exists())
+            assertEquals(LnState.Off, session.state.value)
+        } finally {
+            scope.cancel()
+        }
+    }
+
+    @Test
+    fun noSweepWalletMeansNoSweepAddress() = runBlocking {
+        val store = InMemoryLightningStore(mapOf(btcMainnetWallet.id to btcMainnetWallet))
+        val events = java.util.concurrent.LinkedBlockingQueue<uniffi.wallet_ffi.LnEventRecord>()
+        val node = object : LnNodeApi {
+            var sweeps = 0
+            override val blocksOnNextEvent = true
+            override fun start() {}
+            override fun stop() {}
+            override fun balances() = LnBalances(0uL, 90_000uL, 0uL, 0uL, 0uL, 0uL)
+            override fun channelState() = LnChannelState.NONE
+            override fun nextEvent(timeoutMs: ULong): uniffi.wallet_ffi.LnEventRecord? =
+                events.poll(timeoutMs.toLong().coerceAtMost(50), java.util.concurrent.TimeUnit.MILLISECONDS)
+            override fun sweepTransit(toAddress: String): String? { sweeps++; return "txid" }
+        }
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        try {
+            val session = LightningSession(
+                scope = scope,
+                store = store,
+                nodeFactory = { node },
+                info = LnInfoApi { sampleInfo() },
+                sweepAddressProvider = { null },
+            )
+            session.onUnlocked(btcMainnetWallet.id, sampleSeed).join()
+            events.add(uniffi.wallet_ffi.LnEventRecord.ChannelClosed("done"))
+            val deadline = System.currentTimeMillis() + 3_000
+            while (events.isNotEmpty() && System.currentTimeMillis() < deadline) Thread.sleep(20)
+            Thread.sleep(300)
+            assertEquals(0, node.sweeps)
         } finally {
             scope.cancel()
         }

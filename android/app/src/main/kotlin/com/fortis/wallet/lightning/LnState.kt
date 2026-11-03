@@ -53,3 +53,11 @@ fun lightningSweepWallet(wallets: List<WalletConfig>): WalletConfig? = wallets.f
         !it.hardware &&
         it.sealed != null
 }
+
+fun deleteWalletLightningWarningSat(lightningSat: Long): Long? =
+    lightningSat.takeIf { it > 0L }
+
+fun deleteWalletLightningWarningSat(
+    ln: LnState,
+    lastKnownLightningSat: Long = 0L,
+): Long? = com.fortis.wallet.homeBalance(0L, ln, lastKnownLightningSat).lightningSat.takeIf { it > 0L }

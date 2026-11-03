@@ -69,11 +69,7 @@ class LightningHardeningTest {
         override fun sweepTransit(toAddress: String): String? = swept
     }
 
-    private fun store(): InMemoryLightningStore {
-        val s = InMemoryLightningStore(mapOf(wallet.id to wallet))
-        runBlocking { s.setLightningEnabled(wallet.id, true) }
-        return s
-    }
+    private fun store() = InMemoryLightningStore(mapOf(wallet.id to wallet))
 
     @Test
     fun the_seed_copy_handed_to_the_node_factory_is_wiped_afterwards() = runBlocking {

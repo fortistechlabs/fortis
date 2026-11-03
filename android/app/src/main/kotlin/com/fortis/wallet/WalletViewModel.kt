@@ -12,6 +12,7 @@ import com.fortis.wallet.lightning.EdgeLnInfoApi
 import com.fortis.wallet.lightning.LightningSession
 import com.fortis.wallet.lightning.LnState
 import com.fortis.wallet.lightning.lightningWalletOf
+import com.fortis.wallet.lightning.lightningSweepWallet
 import com.fortis.wallet.swap.SwapService
 import com.fortis.wallet.swap.indexUsed
 import com.fortis.wallet.swap.withFreshIndex
@@ -350,14 +351,15 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
             val id = selectedId ?: wallets.firstOrNull { it.isLightning }?.id
             if (id != null) ensureWalletToken(id) else fortis.swapStore.edgeToken(http, HOSTED_EDGE)
         },
-        sweepAddressProvider = { walletId ->
-            val w = wallets.firstOrNull { it.id == walletId }
-            val s = ensureSession(walletId, quiet = true)
+        // The sweep goes to the first BTC wallet, never to the Lightning wallet (it has no addresses).
+        sweepAddressProvider = { _ ->
+            val w = lightningSweepWallet(wallets)
+            val s = w?.let { ensureSession(it.id, quiet = true) }
             if (w != null && s != null) s.receiveAddress(w.nextReceive).address else null
         },
-        onSweepBroadcast = { walletId ->
+        onSweepBroadcast = { _ ->
             // The sweep paid the address at `nextReceive`: never hand it out again.
-            updateConfig(walletId) { it.copy(nextReceive = it.nextReceive + 1) }
+            lightningSweepWallet(wallets)?.let { w -> updateConfig(w.id) { it.copy(nextReceive = it.nextReceive + 1) } }
         },
         ensureAuthHeader = { walletId ->
             val tok = runCatching { ensureWalletToken(walletId) }.getOrNull().orEmpty()
@@ -365,35 +367,7 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
         },
     )
 
-    var lightningEnabledById by mutableStateOf<Map<String, Boolean>>(emptyMap()); private set
     var closingLightningChannel by mutableStateOf(false); private set
-
-    fun isLightningEnabled(walletId: String): Boolean = lightningEnabledById[walletId] == true
-
-    fun setLightningEnabled(walletId: String, on: Boolean) {
-        val w = wallets.firstOrNull { it.id == walletId } ?: return
-        if (!w.isLightning) return
-        lightningEnabledById = lightningEnabledById + (walletId to on)
-        if (on) {
-            viewModelScope.launch(Dispatchers.Default) {
-                lightning.enable(walletId).join()
-                // `enable` has already started the node if this wallet's seed is held by
-                // the session; only hand the seed over (a second start) when it is not.
-                if (selectedId == walletId && appSecret != null && !lightning.isUnlockedFor(walletId)) {
-                    val seed = ensureLightningKeys(walletId)?.copySeed()
-                    if (seed != null) {
-                        try {
-                            lightning.onUnlocked(walletId, seed)
-                        } finally {
-                            seed.fill(0)
-                        }
-                    }
-                }
-            }
-        } else {
-            lightning.disable(walletId)
-        }
-    }
 
     /** Set when the cooperative close failed because the LSP could not be reached: the
      *  settings screen then offers a force close, which the user has to choose. */
@@ -406,15 +380,19 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
     fun closeLightningAndMoveToOnchain(force: Boolean = false) = viewModelScope.launch {
         if (closingLightningChannel) return@launch
         offerForceClose = false
-        val c = config ?: return@launch
-        val s = withContext(Dispatchers.Default) { ensureSession(c.id) } ?: return@launch
+        val sweep = lightningSweepWallet(wallets)
+        if (sweep == null) {
+            error = str(R.string.error_no_onchain_wallet_for_lightning)
+            return@launch
+        }
+        val s = withContext(Dispatchers.Default) { ensureSession(sweep.id) } ?: return@launch
         closingLightningChannel = true
         error = null
         try {
-            val addr = s.receiveAddress(c.nextReceive).address
+            val addr = s.receiveAddress(sweep.nextReceive).address
             val txid = lightning.closeAndSweep(addr, force)
             if (txid != null) {
-                updateConfig(c.id) { it.copy(nextReceive = it.nextReceive + 1) }
+                updateConfig(sweep.id) { it.copy(nextReceive = it.nextReceive + 1) }
             }
             refreshSoon()
         } catch (e: CancellationException) {
@@ -455,7 +433,6 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
             selectedId = s.selectedId
             lockMode = s.lockMode
             appWrapped = s.appWrapped
-            lightningEnabledById = s.wallets.associate { w -> w.id to store.lightningEnabled(w.id) }
             resolvePhase()
         }
     }
@@ -1194,7 +1171,7 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
     private fun resetView() {
         backend = null; fallback = null; usingFallback = false
         status = null; history = emptyList(); feerates = emptyMap()
-        pending = null; moveIntent = null; pendingLn = null; lastSentTxid = null
+        pending = null; pendingLn = null; lastSentTxid = null
         serverHistory = emptyList(); refreshAgain = false
         // Seed with the last successful refresh's balance rather than a blank
         // 0, so opening a wallet shows *something* immediately instead of
@@ -1576,6 +1553,10 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
      *  in view was the one removed. */
     fun removeWallet(id: String) = viewModelScope.launch {
         val wasCurrent = id == selectedId
+        if (wallets.firstOrNull { it.id == id }?.isLightning == true) {
+            lightning.forget(id).join()
+            synchronized(lnKeys) { lnKeys.remove(id)?.close() }
+        }
         sessions.remove(id)?.close()
         overviewBackends.remove(id)
         synchronized(balanceLock) { overview = overview.without(id) }
@@ -1936,44 +1917,9 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
         pending = PlanPreview(plan, feerate.toULong(), to, sweep, replayProtected = opReturn != null)
     }
 
-    fun cancelPending() { pending = null; moveIntent = null }
+    fun cancelPending() { pending = null }
 
     fun cancelPendingLn() { if (!sending) pendingLn = null }
-
-    /** A "Move to Lightning" deposit to [transitAddress] that is under review; [amountSat] is the channel size. */
-    private class MoveIntent(val transitAddress: String, val amountSat: Long)
-
-    /** Sats a move deposits on top of the channel size, as far as the node says (its anchor reserve). */
-    fun anchorReserveSat(): Long =
-        lightning.currentNode?.let { runCatching { it.anchorReserveSat().toLong() }.getOrNull() } ?: 25_000L
-
-    private var moveIntent: MoveIntent? = null
-
-    fun moveToLightning(amountSat: Long) {
-        val node = lightning.currentNode ?: run {
-            error = "Lightning not ready"
-            return
-        }
-        val transitAddr = runCatching { node.transitAddress() }.getOrElse {
-            error = errorText(it)
-            return
-        }
-        // Only a deposit that is actually broadcast (see signAndSend) becomes a move: backing out
-        // of the review, or a failed build, leaves no intent behind.
-        moveIntent = MoveIntent(transitAddr, amountSat)
-        // The channel amount plus what the open needs left in the transit wallet (the anchor
-        // reserve and headroom for the funding fee): depositing just the amount could never open.
-        val deposit = amountSat + com.fortis.wallet.ui.screens.moveExtraSat(anchorReserveSat(), feerates[6] ?: 2L)
-        buildPayment(
-            to = transitAddr,
-            amountSat = deposit,
-            sweep = false,
-            feerateOverride = null,
-            confTarget = 6,
-            replayProtect = false,
-            feeFromAmount = false,
-        )
-    }
 
     fun openSendWithUri(text: String) {
         pendingSendText = text
@@ -2080,13 +2026,6 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
             updateConfig(c.id) { it.copy(nextChange = maxOf(it.nextChange, idx.nextChange.toInt())) }
         }.onFailure { if (it is CancellationException) throw it }
         runCatching { noteLocalSend(localSend(c, s, p.plan, sent, p.to)) }
-        moveIntent?.let { m ->
-            moveIntent = null
-            if (m.transitAddress == p.to) {
-                runCatching { lightning.commitMove(m.amountSat.toULong()) }
-                    .onFailure { if (it is CancellationException) throw it }
-            }
-        }
         if (selectedId == c.id) showWithLocalSends(c.id)
         refreshSoon()
         followSend(c.id)

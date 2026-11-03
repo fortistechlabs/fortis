@@ -542,4 +542,5 @@
     <string name="ln_takeover_action">Use Lightning here instead</string>
     <string name="ln_takeover_title">Use Lightning on this device?</string>
     <string name="ln_takeover_body">The other device will stop using Lightning for this wallet. Only continue if you no longer use it there; running both can put your channel funds at risk.</string>
+    <string name="error_no_onchain_wallet_for_lightning">Add a BTC wallet to move Lightning funds on-chain.</string>
 </resources>

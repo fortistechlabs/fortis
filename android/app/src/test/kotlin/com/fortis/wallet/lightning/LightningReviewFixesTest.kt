@@ -77,9 +77,7 @@ class LightningReviewFixesTest {
         sweepAddressProvider = sweepTo?.let { a -> { _: String -> a } },
     )
 
-    private fun newStore() = InMemoryLightningStore(mapOf(wallet.id to wallet)).also {
-        runBlocking { it.setLightningEnabled(wallet.id, true) }
-    }
+    private fun newStore() = InMemoryLightningStore(mapOf(wallet.id to wallet))
 
     @Test
     fun coop_close_failure_is_thrown_and_never_forces() = runBlocking {
@@ -184,7 +182,6 @@ class LightningReviewFixesTest {
             }
             val s = session(scope, newStore(), node)
             s.onUnlocked(wallet.id, seed).join()
-            s.requestMoveToChannel(100_000uL)
             val closing = async(Dispatchers.Default) { s.closeAndSweep(addr) }
             assertTrue(entered.await(5, TimeUnit.SECONDS))
             // The close holds the node: a refresh now must return at once and touch nothing.
@@ -193,92 +190,6 @@ class LightningReviewFixesTest {
             release.countDown()
             closing.await()
             Unit
-        } finally {
-            scope.cancel()
-        }
-    }
-
-    @Test
-    fun a_broadcast_move_survives_a_restart_and_is_not_swept_back() = runBlocking {
-        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
-        try {
-            val store = newStore()
-            val first = session(scope, store, Node())
-            first.onUnlocked(wallet.id, seed).join()
-            first.commitMove(100_000uL)
-
-            // The process dies; the deposit arrives while the app is closed.
-            val node = Node(transit = 125_000uL, channel = LnChannelState.NONE) // + 25 000 sat anchor reserve
-            val second = session(scope, store, node, sweepTo = addr)
-            second.onUnlocked(wallet.id, seed).join()
-            assertEquals(100_000uL, node.opened)
-            assertNull("the deposit must not be swept back", node.swept)
-            assertNull("the intent is spent", store.pendingMove(wallet.id))
-        } finally {
-            scope.cancel()
-        }
-    }
-
-    @Test
-    fun a_move_that_was_only_requested_is_not_remembered() = runBlocking {
-        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
-        try {
-            val store = newStore()
-            val first = session(scope, store, Node())
-            first.onUnlocked(wallet.id, seed).join()
-            first.requestMoveToChannel(100_000uL) // review sheet opened, never sent
-            assertNull(store.pendingMove(wallet.id))
-
-            val node = Node(transit = 100_000uL, channel = LnChannelState.NONE)
-            val second = session(scope, store, node, sweepTo = addr)
-            second.onUnlocked(wallet.id, seed).join()
-            assertNull("no channel the user did not confirm", node.opened)
-        } finally {
-            scope.cancel()
-        }
-    }
-
-    @Test
-    fun a_failed_channel_open_keeps_the_move_for_a_retry() = runBlocking {
-        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
-        try {
-            val store = newStore()
-            var fail = true
-            val node = object : Node(transit = 0uL, channel = LnChannelState.READY) {
-                override fun openChannel(amountSat: ULong) {
-                    if (fail) throw LnFfiException.LspUnreachable()
-                    super.openChannel(amountSat)
-                }
-            }
-            val s = session(scope, store, node, sweepTo = addr)
-            s.onUnlocked(wallet.id, seed).join()
-            s.commitMove(100_000uL)
-            node.transit = 125_000uL
-            s.refreshBalances()
-            assertNull(node.opened)
-            assertEquals(100_000L, store.pendingMove(wallet.id)?.amountSat)
-            fail = false
-            s.refreshBalances()
-            assertEquals(100_000uL, node.opened)
-            assertNull(store.pendingMove(wallet.id))
-        } finally {
-            scope.cancel()
-        }
-    }
-
-    @Test
-    fun a_stale_move_intent_is_dropped() = runBlocking {
-        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
-        try {
-            val store = newStore()
-            val old = System.currentTimeMillis() - PENDING_MOVE_MAX_AGE_MS - 1
-            store.setPendingMove(wallet.id, PendingMove(100_000L, old))
-            val node = Node(transit = 100_000uL, channel = LnChannelState.NONE)
-            val s = session(scope, store, node, sweepTo = addr)
-            s.onUnlocked(wallet.id, seed).join()
-            assertNull(node.opened)
-            assertEquals(addr, node.swept)
-            assertNull(store.pendingMove(wallet.id))
         } finally {
             scope.cancel()
         }
@@ -301,33 +212,22 @@ class LightningReviewFixesTest {
     }
 
     @Test
-    fun a_channel_closed_event_does_not_sweep_a_pending_move_deposit() = runBlocking {
+    fun a_channel_closed_event_sweeps_the_orphan_transit_balance() = runBlocking {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
         try {
-            val store = newStore()
             val events = java.util.concurrent.LinkedBlockingQueue<uniffi.wallet_ffi.LnEventRecord>()
             val node = object : Node(transit = 0uL, channel = LnChannelState.NONE) {
                 override val blocksOnNextEvent = true
                 override fun nextEvent(timeoutMs: ULong): uniffi.wallet_ffi.LnEventRecord? =
                     events.poll(timeoutMs.toLong().coerceAtMost(50), TimeUnit.MILLISECONDS)
             }
-            val s = session(scope, store, node, sweepTo = addr)
+            val s = session(scope, newStore(), node, sweepTo = addr)
             s.onUnlocked(wallet.id, seed).join()
-            s.commitMove(100_000uL)
-            node.transit = 50_000uL // part of the deposit has landed; not enough to open yet
+            node.transit = 50_000uL
             events.add(uniffi.wallet_ffi.LnEventRecord.ChannelClosed("done"))
             val deadline = System.currentTimeMillis() + 3_000
-            while (events.isNotEmpty() && System.currentTimeMillis() < deadline) Thread.sleep(20)
-            Thread.sleep(300)
-            assertNull("the pending deposit must not be swept back", node.swept)
-
-            // Without a pending move, the same event does sweep the orphan balance.
-            store.setPendingMove(wallet.id, null)
-            s.onRelocked().join()
-            val other = Node(transit = 50_000uL, channel = LnChannelState.NONE)
-            val s2 = session(scope, store, other, sweepTo = addr)
-            s2.onUnlocked(wallet.id, seed).join()
-            assertEquals(addr, other.swept)
+            while (node.swept == null && System.currentTimeMillis() < deadline) Thread.sleep(20)
+            assertEquals(addr, node.swept)
         } finally {
             scope.cancel()
         }
@@ -340,7 +240,6 @@ class LightningReviewFixesTest {
             val seen = mutableListOf<Pair<String, String>>()
             fun run(esplora: String) {
                 val store = InMemoryLightningStore(mapOf(wallet.id to wallet), esplora = esplora)
-                runBlocking { store.setLightningEnabled(wallet.id, true) }
                 val s = LightningSession(
                     scope = scope,
                     store = store,

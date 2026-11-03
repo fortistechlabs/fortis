@@ -1,7 +1,7 @@
 package com.fortis.wallet.lightning
 
 import com.fortis.wallet.data.HistoryEntry
-import com.fortis.wallet.ui.screens.deleteWalletLightningWarningSat
+import com.fortis.wallet.lightning.deleteWalletLightningWarningSat
 import com.fortis.wallet.ui.screens.mergeHistory
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse

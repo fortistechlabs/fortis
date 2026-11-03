@@ -78,6 +78,7 @@ import com.fortis.wallet.data.defaultFiat
 import com.fortis.wallet.data.fiatLabel
 import com.fortis.wallet.data.fiatSymbol
 import com.fortis.wallet.lightning.LnState
+import com.fortis.wallet.lightning.deleteWalletLightningWarningSat
 import com.fortis.wallet.lightning.isLightningWallet
 import com.fortis.wallet.ui.*
 import com.fortis.wallet.ui.theme.Fx
@@ -816,7 +817,7 @@ private fun SettingsTab(vm: WalletViewModel) {
     removing?.let { id ->
         val w = vm.wallets.firstOrNull { it.id == id }
         val lnState by vm.lightning.state.collectAsState()
-        val lnWarnSat = if (w != null && isLightningWallet(w) && vm.isLightningEnabled(id) && id == vm.selectedId) {
+        val lnWarnSat = if (w != null && isLightningWallet(w) && (vm.wallets.firstOrNull { it.id == id }?.isLightning == true) && id == vm.selectedId) {
             deleteWalletLightningWarningSat(lnState)
         } else {
             null
@@ -857,7 +858,7 @@ private fun WalletTab(vm: WalletViewModel) {
     val unit = if (c.chain == "btc") "BTC" else "XBT"
     val b = vm.balances
     val lnState by vm.lightning.state.collectAsState()
-    val lnEnabled = isLightningWallet(c) && (vm.isLightningEnabled(c.id) || lnState !is LnState.Off)
+    val lnEnabled = isLightningWallet(c) && (c.isLightning || lnState !is LnState.Off)
     val hb = b?.let { homeBalance(it.confirmedSat, if (lnEnabled) lnState else LnState.Off) }
 
     LaunchedEffect(vm.selectedId) {
@@ -1044,7 +1045,7 @@ private fun ReceiveTab(vm: WalletViewModel) {
     val unit = if (c?.chain == "btc") "BTC" else "XBT"
     val addr = remember(i, vm.session) { runCatching { vm.session?.receiveAddress(i)?.address }.getOrNull() ?: "…" }
     val lnState by vm.lightning.state.collectAsState()
-    val lnEnabled = isLightningWallet(c) && (vm.isLightningEnabled(c?.id ?: "") || lnState !is LnState.Off)
+    val lnEnabled = isLightningWallet(c) && ((vm.config?.isLightning == true) || lnState !is LnState.Off)
     val minLnSat = vm.lightning.lastInfo?.minPaymentSat ?: 10_000L
     val remoteEnabled = vm.lightning.lastInfo?.enabled != false
     val remoteMessage = vm.lightning.lastInfo?.message?.takeIf { it.isNotBlank() }
@@ -1196,7 +1197,7 @@ private fun SendTab(vm: WalletViewModel) {
     val coinUnit = if (isBtc) "BTC" else "XBT"
     val amountSat = amountToSat(amount, amountInSat)
     val lnState by vm.lightning.state.collectAsState()
-    val lnEnabled = isLightningWallet(c) && (vm.isLightningEnabled(c?.id ?: "") || lnState !is LnState.Off)
+    val lnEnabled = isLightningWallet(c) && ((vm.config?.isLightning == true) || lnState !is LnState.Off)
     val effectiveLnState = if (lnEnabled) lnState else LnState.Off
     val onchainSat = vm.balances?.confirmedSat ?: 0L
     val limits = remember(vm.lightning.lastInfo) {
@@ -1210,7 +1211,6 @@ private fun SendTab(vm: WalletViewModel) {
     var resolvedLnurl by remember { mutableStateOf<uniffi.wallet_ffi.LnurlParams?>(null) }
     var lnurlError by remember { mutableStateOf<String?>(null) }
     var resolvingLnurl by remember { mutableStateOf(false) }
-    var showMoveDialog by remember { mutableStateOf<Long?>(null) }
 
     val parsedTarget = remember(to, isBtc, network) {
         if (!isBtc || to.isBlank()) null
@@ -1347,20 +1347,11 @@ private fun SendTab(vm: WalletViewModel) {
                 }
                 is SendPlan.NeedsAmount -> {}
                 is SendPlan.NeedsMove -> {
-                    val remoteEnabled = vm.lightning.lastInfo?.enabled != false
-                    val remoteMessage = vm.lightning.lastInfo?.message?.takeIf { it.isNotBlank() }
                     Text(
-                        stringResource(R.string.send_ln_needs_move, fmt(plan.shortfallSat), coinUnit),
+                        stringResource(R.string.ln_err_insufficient_lightning),
                         style = FxType.meta,
                         color = Fx.warn,
                     )
-                    if (remoteEnabled) {
-                        GhostButton(stringResource(R.string.move_to_ln_action), dense = true) {
-                            showMoveDialog = plan.shortfallSat
-                        }
-                    } else if (remoteMessage != null) {
-                        Text(remoteMessage, style = FxType.meta, color = Fx.warn)
-                    }
                 }
                 is SendPlan.Invalid -> {
                     ErrorText(plan.reason)
@@ -1453,9 +1444,6 @@ private fun SendTab(vm: WalletViewModel) {
             }
         }
     }
-    showMoveDialog?.let { shortfall ->
-        MoveToLightningDialog(vm, initialShortfallSat = shortfall) { showMoveDialog = null }
-    }
 }
 
 /** The "sat / BTC" (or "sat / XBT") unit picker that sits beside the Amount
@@ -1503,7 +1491,7 @@ private fun HistoryTab(vm: WalletViewModel, unit: String) {
     val chain = c?.chain ?: "xbt"
     val network = c?.network ?: "mainnet"
     val lnState by vm.lightning.state.collectAsState()
-    val lnEnabled = isLightningWallet(c) && (vm.isLightningEnabled(c?.id ?: "") || lnState !is LnState.Off)
+    val lnEnabled = isLightningWallet(c) && ((vm.config?.isLightning == true) || lnState !is LnState.Off)
     // Reads node files: loaded off the main thread, the rows fill in when it returns.
     val lnPayments by produceState(emptyList<uniffi.wallet_ffi.LnPayment>(), lnState, lnEnabled, vm.sentCount) {
         value = if (lnEnabled) vm.lightning.payments() else emptyList()
@@ -1766,7 +1754,7 @@ private fun ownServerErrorText(c: com.fortis.wallet.data.OwnServerCheck): String
 private fun LightningSettingsCard(vm: WalletViewModel) {
     val c = vm.config ?: return
     if (!isLightningWallet(c)) return
-    val enabled = vm.isLightningEnabled(c.id)
+    val enabled = c.isLightning
     val lnState by vm.lightning.state.collectAsState()
     var confirmClose by remember { mutableStateOf(false) }
 
@@ -1780,10 +1768,6 @@ private fun LightningSettingsCard(vm: WalletViewModel) {
                 Text(stringResource(R.string.settings_lightning_title), color = Fx.text, fontWeight = FontWeight.SemiBold)
                 Text(c.display, style = FxType.meta, color = Fx.textDim)
             }
-            Switch(
-                checked = enabled,
-                onCheckedChange = { vm.setLightningEnabled(c.id, it) },
-            )
         }
         Text(stringResource(R.string.settings_lightning_body), style = FxType.meta, color = Fx.textFaint)
         val statusText = when (val st = lnState) {
@@ -1809,13 +1793,6 @@ private fun LightningSettingsCard(vm: WalletViewModel) {
         if (enabled && !remoteEnabled && remoteMessage != null) {
             Text(remoteMessage, style = FxType.meta, color = Fx.warn)
         }
-        var showMove by remember { mutableStateOf(false) }
-        if (enabled && ready != null && remoteEnabled) {
-            GhostButton(
-                stringResource(R.string.move_to_ln_action),
-                dense = true,
-            ) { showMove = true }
-        }
         val canCloseOrSweep = ready != null && (
             ready.channel != uniffi.wallet_ffi.LnChannelState.NONE ||
                 ready.balances.onchainTransitSat > 0uL
@@ -1826,9 +1803,6 @@ private fun LightningSettingsCard(vm: WalletViewModel) {
                 enabled = !vm.closingLightningChannel,
                 dense = true,
             ) { confirmClose = true }
-        }
-        if (showMove) {
-            MoveToLightningDialog(vm, initialShortfallSat = null) { showMove = false }
         }
     }
 
