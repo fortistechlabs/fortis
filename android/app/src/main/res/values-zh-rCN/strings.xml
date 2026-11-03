@@ -459,12 +459,6 @@
     <string name="ln_takeover_action">改在此设备上使用闪电网络</string>
     <string name="ln_takeover_body">另一台设备将停止为此钱包使用闪电网络。仅当你不再在那台设备上使用时才继续；同时运行两者可能会使你的通道资金面临风险。</string>
     <string name="ln_takeover_title">在此设备上使用闪电网络？</string>
-    <string name="move_to_ln_action">转入闪电网络</string>
-    <string name="move_to_ln_below_min">最小通道容量为 %1$s sat。</string>
-    <string name="move_to_ln_body">从你的链上钱包发送 BTC 以开通闪电网络通道（最低 %1$s sat）。通道将在 1 次确认后自动开通。</string>
-    <string name="move_to_ln_reserve_note">额外的 %1$s sat 会一并发送，并作为闪电网络通道所需的储备金留在你的链上钱包中。</string>
-    <string name="move_to_ln_insufficient">已确认的链上资金不足以支付此金额加网络手续费。</string>
-    <string name="move_to_ln_title">转入闪电网络</string>
     <string name="own_server_dialog_title">%1$s 服务器</string>
     <string name="own_server_err_https">此服务器必须使用 HTTPS。</string>
     <string name="own_server_err_not_esplora">这不是 Esplora 服务器。</string>
@@ -484,7 +478,6 @@
     <string name="receive_ln_needs_amount">闪电网络需要填写金额</string>
     <string name="receive_ln_quoting">正在获取闪电网络发票…</string>
     <string name="send_ln_amount_range">金额（%1$s–%2$s sat）</string>
-    <string name="send_ln_needs_move">闪电网络余额不足——请先转入闪电网络（还差 %1$s %2$s）</string>
     <string name="send_ln_resolving">正在解析闪电网络付款…</string>
     <string name="send_ln_sending">正在发送…</string>
     <string name="settings_lightning_body">通过闪电网络收发即时比特币支付。</string>

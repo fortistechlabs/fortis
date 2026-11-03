@@ -462,12 +462,6 @@
     <string name="ln_takeover_action">Lightning stattdessen hier verwenden</string>
     <string name="ln_takeover_body">Das andere Gerät hört auf, Lightning für diese Wallet zu nutzen. Fahre nur fort, wenn du es dort nicht mehr verwendest; beide gleichzeitig zu betreiben kann dein Kanalguthaben gefährden.</string>
     <string name="ln_takeover_title">Lightning auf diesem Gerät verwenden?</string>
-    <string name="move_to_ln_action">Zu Lightning verschieben</string>
-    <string name="move_to_ln_below_min">Die Mindestkanalgröße beträgt %1$s sat.</string>
-    <string name="move_to_ln_body">Sendet BTC aus deiner On-Chain-Wallet, um einen Lightning-Kanal zu öffnen (mindestens %1$s sat). Der Kanal öffnet sich automatisch nach 1 Bestätigung.</string>
-    <string name="move_to_ln_reserve_note">%1$s sat mehr werden mitgesendet und bleiben als Reserve, die ein Lightning-Kanal braucht, On-Chain in deiner Wallet.</string>
-    <string name="move_to_ln_insufficient">Nicht genug bestätigte On-Chain-Mittel für diesen Betrag plus Netzwerkgebühr.</string>
-    <string name="move_to_ln_title">Zu Lightning verschieben</string>
     <string name="own_server_dialog_title">%1$s-Server</string>
     <string name="own_server_err_https">Dieser Server muss HTTPS verwenden.</string>
     <string name="own_server_err_not_esplora">Kein Esplora-Server.</string>
@@ -487,7 +481,6 @@
     <string name="receive_ln_needs_amount">Lightning braucht einen Betrag</string>
     <string name="receive_ln_quoting">Lightning-Rechnung wird geholt …</string>
     <string name="send_ln_amount_range">Betrag (%1$s–%2$s sat)</string>
-    <string name="send_ln_needs_move">Nicht genug auf Lightning – verschiebe zuerst Guthaben zu Lightning (es fehlen %1$s %2$s)</string>
     <string name="send_ln_resolving">Lightning-Zahlung wird aufgelöst …</string>
     <string name="send_ln_sending">Wird gesendet …</string>
     <string name="settings_lightning_body">Sende und empfange sofortige Bitcoin-Zahlungen über das Lightning-Netzwerk.</string>

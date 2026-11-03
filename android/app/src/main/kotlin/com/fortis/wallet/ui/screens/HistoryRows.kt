@@ -31,37 +31,6 @@ import uniffi.wallet_ffi.LnPaymentStatus
 
 typealias TxRow = HistoryEntry
 
-sealed interface MovePlan {
-    data object Ok : MovePlan
-    data class BelowMin(val min: Long) : MovePlan
-    data object Insufficient : MovePlan
-}
-
-/**
- * What a move to Lightning deposits on top of the channel size, [reserveSat] being the anchor
- * reserve `open_channel` needs left in the transit wallet. The rest is headroom for the funding
- * transaction's fee (about 200 vB, doubled for a rise before the deposit confirms); it stays in
- * the transit wallet as change.
- */
-fun moveExtraSat(reserveSat: Long, feerateSatPerVb: Long): Long =
-    reserveSat + (feerateSatPerVb * 400L).coerceAtLeast(1_000L)
-
-/**
- * [extraSat] (see [moveExtraSat]) is deposited with the channel amount and must be affordable too;
- * [feeSat] is the fee of the deposit transaction itself.
- */
-fun planMove(
-    amountSat: Long,
-    onchainSat: Long,
-    channelMinSat: Long,
-    feeSat: Long,
-    extraSat: Long = 0L,
-): MovePlan {
-    if (amountSat < channelMinSat) return MovePlan.BelowMin(channelMinSat)
-    if (amountSat + extraSat + feeSat > onchainSat) return MovePlan.Insufficient
-    return MovePlan.Ok
-}
-
 data class HistoryRow(
     val id: String,
     val lightning: Boolean,

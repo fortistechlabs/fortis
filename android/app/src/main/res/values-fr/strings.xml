@@ -462,12 +462,6 @@
     <string name="ln_takeover_action">Utiliser Lightning ici à la place</string>
     <string name="ln_takeover_body">L’autre appareil cessera d’utiliser Lightning pour ce portefeuille. Ne continuez que si vous ne l’utilisez plus là-bas ; utiliser les deux en même temps peut mettre en danger les fonds de votre canal.</string>
     <string name="ln_takeover_title">Utiliser Lightning sur cet appareil ?</string>
-    <string name="move_to_ln_action">Passer à Lightning</string>
-    <string name="move_to_ln_below_min">La taille minimale du canal est de %1$s sat.</string>
-    <string name="move_to_ln_body">Cela envoie des BTC depuis votre portefeuille on-chain pour ouvrir un canal Lightning (minimum %1$s sat). Le canal s’ouvre automatiquement après 1 confirmation.</string>
-    <string name="move_to_ln_reserve_note">%1$s sat de plus sont envoyés et restent dans votre portefeuille on-chain comme réserve nécessaire à un canal Lightning.</string>
-    <string name="move_to_ln_insufficient">Fonds on-chain confirmés insuffisants pour couvrir ce montant et les frais de réseau.</string>
-    <string name="move_to_ln_title">Passer à Lightning</string>
     <string name="own_server_dialog_title">Serveur %1$s</string>
     <string name="own_server_err_https">Ce serveur doit utiliser HTTPS.</string>
     <string name="own_server_err_not_esplora">Ce n’est pas un serveur Esplora.</string>
@@ -487,7 +481,6 @@
     <string name="receive_ln_needs_amount">Lightning nécessite un montant</string>
     <string name="receive_ln_quoting">Obtention de la facture Lightning…</string>
     <string name="send_ln_amount_range">Montant (%1$s–%2$s sat)</string>
-    <string name="send_ln_needs_move">Pas assez sur Lightning — passez d’abord des fonds vers Lightning (il manque %1$s %2$s)</string>
     <string name="send_ln_resolving">Résolution du paiement Lightning…</string>
     <string name="send_ln_sending">Envoi…</string>
     <string name="settings_lightning_body">Envoyez et recevez des paiements Bitcoin instantanés via le réseau Lightning.</string>

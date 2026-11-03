@@ -462,12 +462,6 @@
     <string name="ln_takeover_action">Usar Lightning aquí en su lugar</string>
     <string name="ln_takeover_body">El otro dispositivo dejará de usar Lightning con este monedero. Continúa solo si ya no lo usas allí; usar ambos a la vez puede poner en riesgo los fondos de tu canal.</string>
     <string name="ln_takeover_title">¿Usar Lightning en este dispositivo?</string>
-    <string name="move_to_ln_action">Pasar a Lightning</string>
-    <string name="move_to_ln_below_min">El tamaño mínimo del canal es de %1$s sat.</string>
-    <string name="move_to_ln_body">Envía BTC desde tu monedero on-chain para abrir un canal de Lightning (mínimo %1$s sat). El canal se abre automáticamente con 1 confirmación.</string>
-    <string name="move_to_ln_reserve_note">Se envían %1$s sat más, que permanecen en tu monedero on-chain como la reserva que necesita un canal de Lightning.</string>
-    <string name="move_to_ln_insufficient">No hay suficientes fondos on-chain confirmados para cubrir este importe más la comisión de red.</string>
-    <string name="move_to_ln_title">Pasar a Lightning</string>
     <string name="own_server_dialog_title">Servidor de %1$s</string>
     <string name="own_server_err_https">Este servidor debe usar HTTPS.</string>
     <string name="own_server_err_not_esplora">No es un servidor Esplora.</string>
@@ -487,7 +481,6 @@
     <string name="receive_ln_needs_amount">Lightning necesita un importe</string>
     <string name="receive_ln_quoting">Obteniendo factura de Lightning…</string>
     <string name="send_ln_amount_range">Importe (%1$s–%2$s sat)</string>
-    <string name="send_ln_needs_move">No hay suficiente en Lightning: primero pasa fondos a Lightning (faltan %1$s %2$s)</string>
     <string name="send_ln_resolving">Resolviendo pago de Lightning…</string>
     <string name="send_ln_sending">Enviando…</string>
     <string name="settings_lightning_body">Envía y recibe pagos de Bitcoin instantáneos a través de Lightning Network.</string>

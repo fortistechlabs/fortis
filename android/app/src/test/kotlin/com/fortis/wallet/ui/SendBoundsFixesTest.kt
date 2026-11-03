@@ -1,9 +1,6 @@
 package com.fortis.wallet.ui
 
 import com.fortis.wallet.lightning.LnState
-import com.fortis.wallet.ui.screens.MovePlan
-import com.fortis.wallet.ui.screens.moveExtraSat
-import com.fortis.wallet.ui.screens.planMove
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -82,21 +79,5 @@ class SendBoundsFixesTest {
             sendableMsat = 2_400_000_000uL,
         )
         assertEquals(SendPlan.NeedsMove(100_000L), p)
-    }
-
-    @Test
-    fun the_move_deposit_carries_the_anchor_reserve_and_fee_headroom() {
-        // 25 000 sat reserve + 2 sat/vB * 400 vB, but never less than 1 000 sat of headroom.
-        assertEquals(25_000L + 1_000L, moveExtraSat(25_000L, 1L))
-        assertEquals(25_000L + 4_000L, moveExtraSat(25_000L, 10L))
-    }
-
-    @Test
-    fun a_move_that_cannot_also_pay_the_reserve_is_insufficient() {
-        val extra = moveExtraSat(25_000L, 2L)
-        // 100 000 + extra + deposit fee fits exactly...
-        assertEquals(MovePlan.Ok, planMove(100_000L, 100_000L + extra + 300L, 100_000L, 300L, extra))
-        // ...and one sat less does not.
-        assertEquals(MovePlan.Insufficient, planMove(100_000L, 100_000L + extra + 299L, 100_000L, 300L, extra))
     }
 }
