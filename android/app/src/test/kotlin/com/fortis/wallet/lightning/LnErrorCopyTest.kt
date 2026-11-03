@@ -127,7 +127,7 @@ class LnErrorCopyTest {
         val w = WalletConfig(
             id = "w-btc",
             name = "Main",
-            chain = "btc",
+            chain = "ln",
             network = "mainnet",
             sealed = "deadbeef",
             salt = "cafebabe",

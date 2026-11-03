@@ -26,7 +26,7 @@ class LightningReviewFixesTest {
     private val seed = ByteArray(64) { (it + 1).toByte() }
     private val addr = "bc1qar0srrr7xfkvy5l643lydnw9re59gtzzwf5mdq"
     private val wallet = WalletConfig(
-        id = "w-btc", name = "Main", chain = "btc", network = "mainnet",
+        id = "w-btc", name = "Main", chain = "ln", network = "mainnet",
         sealed = "deadbeef", salt = "cafebabe", backendToken = "tok",
     )
 

@@ -18,7 +18,7 @@ class MoveToLightningTest {
     private val btcMainnetWallet = WalletConfig(
         id = "w-btc",
         name = "Main BTC",
-        chain = "btc",
+        chain = "ln",
         network = "mainnet",
         watchOnly = false,
         hardware = false,

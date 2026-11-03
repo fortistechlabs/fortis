@@ -69,13 +69,13 @@ class InMemoryLightningStore(
 
     override suspend fun lightningEnabled(walletId: String): Boolean {
         val w = wallets[walletId]
-        if (w != null && !showLightningToggle(w)) return false
+        if (w != null && !isLightningWallet(w)) return false
         return enabledMap[walletId] ?: false
     }
 
     override suspend fun setLightningEnabled(walletId: String, on: Boolean) {
         val w = wallets[walletId]
-        if (w != null && !showLightningToggle(w)) {
+        if (w != null && !isLightningWallet(w)) {
             enabledMap.remove(walletId)
             return
         }
@@ -225,7 +225,7 @@ class LightningSession(
     fun enable(walletId: String): Job = scope.launch {
         mutex.withLock {
             val w = store.walletConfig(walletId)
-            if (w != null && !showLightningToggle(w)) {
+            if (w != null && !isLightningWallet(w)) {
                 _state.value = LnState.Off
                 return@withLock
             }
@@ -253,7 +253,7 @@ class LightningSession(
         return scope.launch {
             mutex.withLock {
                 val w = store.walletConfig(walletId)
-                if (w != null && !showLightningToggle(w)) {
+                if (w != null && !isLightningWallet(w)) {
                     seedCopy.fill(0)
                     stopCurrentNodeLocked()
                     unlockedSeed?.fill(0)

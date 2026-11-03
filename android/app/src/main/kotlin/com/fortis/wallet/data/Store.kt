@@ -17,6 +17,9 @@ private val Context.dataStore by preferencesDataStore("fortis")
 const val LOCK_BIOMETRIC = "biometric"
 const val LOCK_PASSWORD = "password"
 
+/** The chain id of the (one-per-app) Lightning wallet. */
+const val LN_CHAIN = "ln"
+
 /** The XBT chain was persisted as "btcb2" before the ticker rename — upgrade any
  *  value read back from storage. */
 private fun normalizeChain(chain: String) = if (chain == "btcb2") "xbt" else chain
@@ -53,18 +56,13 @@ data class WalletConfig(
     val masterFingerprint: String? = null,
 ) {
     /** e.g. `XBT · Savings` — the label the picker shows. */
-    val display: String get() = "${chain.uppercase()} · $name" + when {
+    val display: String get() = (if (isLightning) "Lightning" else chain.uppercase()) + " · $name" + when {
         hardware -> " · hardware"
         watchOnly -> " · watch-only"
         else -> ""
     }
     val otherChain: String get() = if (chain == "btc") "xbt" else "btc"
-    val supportsLightning: Boolean
-        get() = chain == "btc" &&
-            (network == "mainnet" || network == "bitcoin") &&
-            !watchOnly &&
-            !hardware &&
-            sealed != null
+    val isLightning: Boolean get() = chain == LN_CHAIN
 
     fun toJson(): JSONObject = JSONObject().apply {
         put("id", id); put("name", name); put("chain", chain); put("network", network)
@@ -221,14 +219,14 @@ class Store(private val ctx: Context) : com.fortis.wallet.lightning.LightningSto
     override suspend fun lightningEnabled(walletId: String): Boolean {
         val p = ctx.dataStore.data.first()
         val w = decode(p[K.wallets]).firstOrNull { it.id == walletId }
-        if (w != null && !w.supportsLightning) return false
+        if (w != null && !w.isLightning) return false
         return p[lnEnabledKey(walletId)] ?: false
     }
 
     override suspend fun setLightningEnabled(walletId: String, on: Boolean) {
         ctx.dataStore.edit { p ->
             val w = decode(p[K.wallets]).firstOrNull { it.id == walletId }
-            if (w != null && !w.supportsLightning) {
+            if (w != null && !w.isLightning) {
                 p.remove(lnEnabledKey(walletId))
             } else if (on) {
                 p[lnEnabledKey(walletId)] = true

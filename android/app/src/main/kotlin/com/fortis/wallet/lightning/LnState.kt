@@ -38,11 +38,18 @@ sealed interface LnState {
     ) : LnState
 }
 
-/** True only for software mainnet BTC wallets (never watch-only, hardware/BitBox, XBT, or non-mainnet). */
-fun showLightningToggle(w: WalletConfig?): Boolean =
-    w != null &&
-        w.chain == "btc" &&
-        (w.network == "mainnet" || w.network == "bitcoin") &&
-        !w.watchOnly &&
-        !w.hardware &&
-        w.sealed != null
+fun isLightningWallet(w: WalletConfig?): Boolean = w != null && w.isLightning
+
+/** One Lightning wallet per app. */
+fun canAddLightningWallet(wallets: List<WalletConfig>): Boolean = wallets.none { it.isLightning }
+
+fun lightningWalletOf(wallets: List<WalletConfig>): WalletConfig? = wallets.firstOrNull { it.isLightning }
+
+/** The wallet a Lightning exit sweeps to: the first software mainnet BTC wallet. */
+fun lightningSweepWallet(wallets: List<WalletConfig>): WalletConfig? = wallets.firstOrNull {
+    it.chain == "btc" &&
+        (it.network == "mainnet" || it.network == "bitcoin") &&
+        !it.watchOnly &&
+        !it.hardware &&
+        it.sealed != null
+}

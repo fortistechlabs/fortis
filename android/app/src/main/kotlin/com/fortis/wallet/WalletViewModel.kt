@@ -342,7 +342,7 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
         scope = viewModelScope,
         store = store,
         info = EdgeLnInfoApi(http, HOSTED_EDGE) {
-            val id = selectedId ?: wallets.firstOrNull { it.supportsLightning }?.id
+            val id = selectedId ?: wallets.firstOrNull { it.isLightning }?.id
             if (id != null) ensureWalletToken(id) else fortis.swapStore.edgeToken(http, HOSTED_EDGE)
         },
         sweepAddressProvider = { walletId ->
@@ -367,7 +367,7 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
 
     fun setLightningEnabled(walletId: String, on: Boolean) {
         val w = wallets.firstOrNull { it.id == walletId } ?: return
-        if (!w.supportsLightning) return
+        if (!w.isLightning) return
         lightningEnabledById = lightningEnabledById + (walletId to on)
         if (on) {
             viewModelScope.launch(Dispatchers.Default) {
@@ -426,7 +426,7 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
 
     private fun syncLightningForSelected() {
         val c = config
-        if (appSecret == null || c == null || !c.supportsLightning) {
+        if (appSecret == null || c == null || !c.isLightning) {
             lightning.onRelocked()
             return
         }

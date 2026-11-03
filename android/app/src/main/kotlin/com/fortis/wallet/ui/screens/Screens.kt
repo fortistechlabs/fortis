@@ -78,7 +78,7 @@ import com.fortis.wallet.data.defaultFiat
 import com.fortis.wallet.data.fiatLabel
 import com.fortis.wallet.data.fiatSymbol
 import com.fortis.wallet.lightning.LnState
-import com.fortis.wallet.lightning.showLightningToggle
+import com.fortis.wallet.lightning.isLightningWallet
 import com.fortis.wallet.ui.*
 import com.fortis.wallet.ui.theme.Fx
 import com.fortis.wallet.ui.theme.FxType
@@ -751,7 +751,7 @@ private fun SettingsTab(vm: WalletViewModel) {
             vm.recoverNote?.let { Text(it, style = FxType.meta, color = Fx.text) }
         }
 
-        if (showLightningToggle(vm.config)) {
+        if (isLightningWallet(vm.config)) {
             LightningSettingsCard(vm)
         }
 
@@ -816,7 +816,7 @@ private fun SettingsTab(vm: WalletViewModel) {
     removing?.let { id ->
         val w = vm.wallets.firstOrNull { it.id == id }
         val lnState by vm.lightning.state.collectAsState()
-        val lnWarnSat = if (w != null && showLightningToggle(w) && vm.isLightningEnabled(id) && id == vm.selectedId) {
+        val lnWarnSat = if (w != null && isLightningWallet(w) && vm.isLightningEnabled(id) && id == vm.selectedId) {
             deleteWalletLightningWarningSat(lnState)
         } else {
             null
@@ -857,7 +857,7 @@ private fun WalletTab(vm: WalletViewModel) {
     val unit = if (c.chain == "btc") "BTC" else "XBT"
     val b = vm.balances
     val lnState by vm.lightning.state.collectAsState()
-    val lnEnabled = showLightningToggle(c) && (vm.isLightningEnabled(c.id) || lnState !is LnState.Off)
+    val lnEnabled = isLightningWallet(c) && (vm.isLightningEnabled(c.id) || lnState !is LnState.Off)
     val hb = b?.let { homeBalance(it.confirmedSat, if (lnEnabled) lnState else LnState.Off) }
 
     LaunchedEffect(vm.selectedId) {
@@ -1044,7 +1044,7 @@ private fun ReceiveTab(vm: WalletViewModel) {
     val unit = if (c?.chain == "btc") "BTC" else "XBT"
     val addr = remember(i, vm.session) { runCatching { vm.session?.receiveAddress(i)?.address }.getOrNull() ?: "…" }
     val lnState by vm.lightning.state.collectAsState()
-    val lnEnabled = showLightningToggle(c) && (vm.isLightningEnabled(c?.id ?: "") || lnState !is LnState.Off)
+    val lnEnabled = isLightningWallet(c) && (vm.isLightningEnabled(c?.id ?: "") || lnState !is LnState.Off)
     val minLnSat = vm.lightning.lastInfo?.minPaymentSat ?: 10_000L
     val remoteEnabled = vm.lightning.lastInfo?.enabled != false
     val remoteMessage = vm.lightning.lastInfo?.message?.takeIf { it.isNotBlank() }
@@ -1196,7 +1196,7 @@ private fun SendTab(vm: WalletViewModel) {
     val coinUnit = if (isBtc) "BTC" else "XBT"
     val amountSat = amountToSat(amount, amountInSat)
     val lnState by vm.lightning.state.collectAsState()
-    val lnEnabled = showLightningToggle(c) && (vm.isLightningEnabled(c?.id ?: "") || lnState !is LnState.Off)
+    val lnEnabled = isLightningWallet(c) && (vm.isLightningEnabled(c?.id ?: "") || lnState !is LnState.Off)
     val effectiveLnState = if (lnEnabled) lnState else LnState.Off
     val onchainSat = vm.balances?.confirmedSat ?: 0L
     val limits = remember(vm.lightning.lastInfo) {
@@ -1503,7 +1503,7 @@ private fun HistoryTab(vm: WalletViewModel, unit: String) {
     val chain = c?.chain ?: "xbt"
     val network = c?.network ?: "mainnet"
     val lnState by vm.lightning.state.collectAsState()
-    val lnEnabled = showLightningToggle(c) && (vm.isLightningEnabled(c?.id ?: "") || lnState !is LnState.Off)
+    val lnEnabled = isLightningWallet(c) && (vm.isLightningEnabled(c?.id ?: "") || lnState !is LnState.Off)
     // Reads node files: loaded off the main thread, the rows fill in when it returns.
     val lnPayments by produceState(emptyList<uniffi.wallet_ffi.LnPayment>(), lnState, lnEnabled, vm.sentCount) {
         value = if (lnEnabled) vm.lightning.payments() else emptyList()
@@ -1765,7 +1765,7 @@ private fun ownServerErrorText(c: com.fortis.wallet.data.OwnServerCheck): String
 @Composable
 private fun LightningSettingsCard(vm: WalletViewModel) {
     val c = vm.config ?: return
-    if (!showLightningToggle(c)) return
+    if (!isLightningWallet(c)) return
     val enabled = vm.isLightningEnabled(c.id)
     val lnState by vm.lightning.state.collectAsState()
     var confirmClose by remember { mutableStateOf(false) }

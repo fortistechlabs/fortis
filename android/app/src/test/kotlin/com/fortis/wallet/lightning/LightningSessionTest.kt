@@ -26,7 +26,7 @@ class LightningSessionTest {
     private val btcMainnetWallet = WalletConfig(
         id = "w-btc",
         name = "Main",
-        chain = "btc",
+        chain = "ln",
         network = "mainnet",
         sealed = "deadbeef",
         salt = "cafebabe",
@@ -358,13 +358,11 @@ class LightningSessionTest {
     }
 
     @Test
-    fun only_enabled_for_software_mainnet_btc_wallet() = runBlocking {
-        val watchOnly = btcMainnetWallet.copy(id = "w-watch", watchOnly = true, sealed = null, xpub = "xpub...")
-        val bitbox = btcMainnetWallet.copy(id = "w-hw", watchOnly = true, hardware = true, sealed = null, xpub = "xpub...")
+    fun only_enabled_for_the_lightning_wallet() = runBlocking {
         val xbt = btcMainnetWallet.copy(id = "w-xbt", chain = "xbt")
-        val testnet = btcMainnetWallet.copy(id = "w-test", network = "testnet")
 
-        val ineligible = listOf(watchOnly, bitbox, xbt, testnet)
+        val btc = btcMainnetWallet.copy(id = "w-btc2", chain = "btc")
+        val ineligible = listOf(btc, xbt)
         val store = InMemoryLightningStore((ineligible + btcMainnetWallet).associateBy { it.id })
         var factoryCalls = 0
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
@@ -376,14 +374,14 @@ class LightningSessionTest {
                 info = LnInfoApi { sampleInfo() },
             )
             for (w in ineligible) {
-                assertFalse("toggle must be hidden for ${w.id}", showLightningToggle(w))
+                assertFalse("toggle must be hidden for ${w.id}", isLightningWallet(w))
                 session.enable(w.id).join()
                 assertFalse("must not enable in store for ${w.id}", store.lightningEnabled(w.id))
                 session.onUnlocked(w.id, sampleSeed).join()
                 assertEquals(LnState.Off, session.state.value)
             }
             assertEquals(0, factoryCalls)
-            assertTrue(showLightningToggle(btcMainnetWallet))
+            assertTrue(isLightningWallet(btcMainnetWallet))
         } finally {
             scope.cancel()
         }

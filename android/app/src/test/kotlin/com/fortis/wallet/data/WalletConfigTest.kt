@@ -52,4 +52,14 @@ class WalletConfigTest {
         assertTrue(xbt.hardware)
         assertEquals("XBT · Ledger · hardware", xbt.display)
     }
+
+    @Test
+    fun lightningWalletRoundTripsThroughJson() {
+        val ln = WalletConfig("l1", "Spend", "ln", "bitcoin", "sealed", "salt")
+        val back = WalletConfig.fromJson(JSONObject(ln.toJson().toString()))
+        assertEquals("ln", back.chain)
+        assertTrue(back.isLightning)
+        assertEquals("Lightning · Spend", back.display)
+        assertFalse(WalletConfig("b1", "Main", "btc", "mainnet").isLightning)
+    }
 }
