@@ -445,6 +445,7 @@
     <string name="confirm_ln_fee_estimate">Comisión de enrutamiento estimada</string>
     <string name="confirm_ln_fee_estimate_value">hasta %1$s %2$s</string>
     <string name="dialog_remove_lightning_warning">Tienes %1$s sat en Lightning; sácalos o asegúrate de tener tu frase.\n\n%2$s</string>
+    <string name="dialog_remove_lightning_unknown">No se pudo comprobar tu saldo de Lightning; guarda la frase de este monedero para recuperar los fondos que haya.\n\n%1$s</string>
     <string name="history_failed">fallido</string>
     <string name="history_ln_receive">⚡ recibido</string>
     <string name="history_ln_send">⚡ enviado</string>
@@ -484,6 +485,7 @@
     <string name="settings_lightning_body">Envía y recibe pagos de Bitcoin instantáneos a través de Lightning Network.</string>
     <string name="settings_lightning_close_action">Cerrar canal y pasar a on-chain</string>
     <string name="settings_lightning_close_body">Esto cierra tu canal de Lightning y devuelve tus fondos a tu monedero BTC on-chain.</string>
+    <string name="settings_lightning_close_body_to">Esto cierra tu canal de Lightning y devuelve tus fondos a tu monedero BTC on-chain «%1$s».</string>
     <string name="settings_lightning_close_title">¿Cerrar el canal de Lightning?</string>
     <string name="settings_lightning_force_title">¿Forzar el cierre del canal?</string>
     <string name="settings_lightning_force_body">No se pudo contactar con el proveedor de Lightning, así que el canal no puede cerrarse de común acuerdo. Un cierre forzoso funciona sin él, pero tus fondos quedan bloqueados un tiempo antes de volver a tu monedero on-chain, y la comisión de red es mayor. Inténtalo más tarde si puedes esperar.</string>

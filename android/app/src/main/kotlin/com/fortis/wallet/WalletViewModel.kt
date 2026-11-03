@@ -377,19 +377,26 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
 
     fun dismissForceCloseOffer() { offerForceClose = false }
 
+    /** Why the last close of the Lightning channel failed, shown in the Lightning settings card. */
+    var lightningCloseError by mutableStateOf<String?>(null); private set
+
     /** [force] broadcasts the latest commitment instead of asking the LSP: the funds are locked
      *  for the LSP's CSV delay and the fees are higher. Only ever from the user's explicit choice. */
     fun closeLightningAndMoveToOnchain(force: Boolean = false) = viewModelScope.launch {
         if (closingLightningChannel) return@launch
         offerForceClose = false
+        lightningCloseError = null
         val sweep = lightningSweepWallet(wallets)
         if (sweep == null) {
-            error = str(R.string.error_no_onchain_wallet_for_lightning)
+            lightningCloseError = str(R.string.error_no_onchain_wallet_for_lightning)
             return@launch
         }
-        val s = withContext(Dispatchers.Default) { ensureSession(sweep.id) } ?: return@launch
+        val s = withContext(Dispatchers.Default) { ensureSession(sweep.id, quiet = true) }
+        if (s == null) {
+            lightningCloseError = str(R.string.error_open_wallet)
+            return@launch
+        }
         closingLightningChannel = true
-        error = null
         try {
             val addr = s.receiveAddress(sweep.nextReceive).address
             val txid = lightning.closeAndSweep(addr, force)
@@ -400,7 +407,7 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            error = errorText(e)
+            lightningCloseError = errorText(e)
             // A cooperative close needs the LSP online. If it is not, say so and let the user decide.
             if (!force && e is uniffi.wallet_ffi.LnFfiException.LspUnreachable) offerForceClose = true
         } finally {
@@ -1394,6 +1401,7 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
         synchronized(balanceLock) { overview = OverviewBalances(); coinPrices = emptyMap() }
         overviewBackends.clear()
         revealingId = null
+        lightningCloseError = null
         declineTaken()
         swapRoute = null
         resetView()

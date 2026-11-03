@@ -106,6 +106,18 @@ class HistoryMergeTest {
     }
 
     @Test
+    fun delete_warns_of_an_unknown_balance_when_the_node_is_not_ready() {
+        assertTrue(deleteWalletLightningBalanceUnknown(LnState.Off))
+        assertTrue(deleteWalletLightningBalanceUnknown(LnState.Starting))
+        assertTrue(deleteWalletLightningBalanceUnknown(LnState.Error(uniffi.wallet_ffi.LnFfiException.LspUnreachable())))
+        // An error that still knows the last balance warns with the amount instead.
+        val known = LnBalances(40_000uL, 0uL, 0uL, 0uL, 0uL, 0uL)
+        assertFalse(deleteWalletLightningBalanceUnknown(LnState.Error(uniffi.wallet_ffi.LnFfiException.LspUnreachable(), known)))
+        assertFalse(deleteWalletLightningBalanceUnknown(LnState.Ready(ZERO_LN_BALANCES, LnChannelState.NONE)))
+        assertFalse(deleteWalletLightningBalanceUnknown(LnState.Ready(known, LnChannelState.READY)))
+    }
+
+    @Test
     fun delete_warning_only_when_lightning_funds() {
         assertNull(deleteWalletLightningWarningSat(LnState.Off))
         assertNull(

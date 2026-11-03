@@ -442,6 +442,7 @@
     <string name="confirm_ln_fee_estimate">预估路由费用</string>
     <string name="confirm_ln_fee_estimate_value">最多 %1$s %2$s</string>
     <string name="dialog_remove_lightning_warning">你在闪电网络上有 %1$s sat；请先转出，或确保你已保存好助记词。\n\n%2$s</string>
+    <string name="dialog_remove_lightning_unknown">无法查询你的闪电网络余额；请保存好此钱包的助记词，以便找回任何资金。\n\n%1$s</string>
     <string name="history_failed">失败</string>
     <string name="history_ln_receive">⚡ 收款</string>
     <string name="history_ln_send">⚡ 付款</string>
@@ -481,6 +482,7 @@
     <string name="settings_lightning_body">通过闪电网络收发即时比特币支付。</string>
     <string name="settings_lightning_close_action">关闭通道并转回链上</string>
     <string name="settings_lightning_close_body">这将关闭你的闪电网络通道，并把资金转回你的链上 BTC 钱包。</string>
+    <string name="settings_lightning_close_body_to">这将关闭你的闪电网络通道，并把资金转回你的链上 BTC 钱包“%1$s”。</string>
     <string name="settings_lightning_close_title">关闭闪电网络通道？</string>
     <string name="settings_lightning_force_title">强制关闭通道？</string>
     <string name="settings_lightning_force_body">无法连接闪电网络服务提供方，因此无法协商关闭通道。强制关闭无需对方配合，但资金会被锁定一段时间后才回到你的链上钱包，且网络手续费更高。如果可以等待，请稍后再试。</string>

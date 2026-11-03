@@ -575,6 +575,7 @@ internal fun LightningWalletSettingsCard(vm: WalletViewModel) {
                 dense = true,
             ) { confirmClose = true }
         }
+        ErrorText(vm.lightningCloseError)
     }
 
     if (vm.offerForceClose) {
@@ -600,11 +601,18 @@ internal fun LightningWalletSettingsCard(vm: WalletViewModel) {
     }
 
     if (confirmClose) {
+        // Name the BTC wallet the funds go to (the first software mainnet BTC wallet).
+        val sweepTo = com.fortis.wallet.lightning.lightningSweepWallet(vm.wallets)
+        val closeBody = if (sweepTo != null) {
+            stringResource(R.string.settings_lightning_close_body_to, sweepTo.display)
+        } else {
+            stringResource(R.string.settings_lightning_close_body)
+        }
         AlertDialog(
             onDismissRequest = { confirmClose = false },
             containerColor = Fx.panel,
             title = { Text(stringResource(R.string.settings_lightning_close_title), color = Fx.text) },
-            text = { Text(stringResource(R.string.settings_lightning_close_body), color = Fx.textDim) },
+            text = { Text(closeBody, color = Fx.textDim) },
             confirmButton = {
                 TextButton({
                     confirmClose = false

@@ -442,6 +442,7 @@
     <string name="confirm_ln_fee_estimate">預估路由費用</string>
     <string name="confirm_ln_fee_estimate_value">最多 %1$s %2$s</string>
     <string name="dialog_remove_lightning_warning">你在閃電網路上有 %1$s sat；請先轉出，或確認你已備妥助記詞。\n\n%2$s</string>
+    <string name="dialog_remove_lightning_unknown">無法查核你的閃電網路餘額；請保留此錢包的助記詞，以便取回任何資金。\n\n%1$s</string>
     <string name="history_failed">失敗</string>
     <string name="history_ln_receive">⚡ 收款</string>
     <string name="history_ln_send">⚡ 付款</string>
@@ -481,6 +482,7 @@
     <string name="settings_lightning_body">透過閃電網路收發即時比特幣付款。</string>
     <string name="settings_lightning_close_action">關閉通道並轉回鏈上</string>
     <string name="settings_lightning_close_body">這會關閉你的閃電網路通道，並將資金轉回你的鏈上 BTC 錢包。</string>
+    <string name="settings_lightning_close_body_to">這會關閉你的閃電網路通道，並將資金轉回你的鏈上 BTC 錢包「%1$s」。</string>
     <string name="settings_lightning_close_title">要關閉閃電網路通道嗎？</string>
     <string name="settings_lightning_force_title">強制關閉通道？</string>
     <string name="settings_lightning_force_body">無法連線到閃電網路服務供應商，因此無法協商關閉通道。強制關閉不需對方配合，但資金會被鎖定一段時間後才回到你的鏈上錢包，且網路手續費較高。如果可以等待，請稍後再試。</string>

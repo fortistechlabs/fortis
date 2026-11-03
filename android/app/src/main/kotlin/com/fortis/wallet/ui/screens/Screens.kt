@@ -840,17 +840,19 @@ private fun SettingsTab(vm: WalletViewModel) {
         val lnState by vm.lightning.state.collectAsState()
         // Only the Lightning wallet holds Lightning funds; its node runs whichever wallet is open.
         val lnWarnSat = if (isLightningWallet(w)) deleteWalletLightningWarningSat(lnState) else null
+        // With the node not running the balance is unknown: warn that funds may be there.
+        val lnUnknown = isLightningWallet(w) && com.fortis.wallet.lightning.deleteWalletLightningBalanceUnknown(lnState)
         val baseRemoveBody = stringResource(R.string.dialog_remove_body)
-        val removeBody = if (lnWarnSat != null) {
-            stringResource(R.string.dialog_remove_lightning_warning, fmt(lnWarnSat), baseRemoveBody)
-        } else {
-            baseRemoveBody
+        val removeBody = when {
+            lnWarnSat != null -> stringResource(R.string.dialog_remove_lightning_warning, fmt(lnWarnSat), baseRemoveBody)
+            lnUnknown -> stringResource(R.string.dialog_remove_lightning_unknown, baseRemoveBody)
+            else -> baseRemoveBody
         }
         AlertDialog(
             onDismissRequest = { removing = null },
             containerColor = Fx.panel,
             title = { Text(stringResource(R.string.dialog_remove_title, w?.display ?: stringResource(R.string.nav_wallet)), color = Fx.text) },
-            text = { Text(removeBody, color = if (lnWarnSat != null) Fx.warn else Fx.textDim) },
+            text = { Text(removeBody, color = if (lnWarnSat != null || lnUnknown) Fx.warn else Fx.textDim) },
             confirmButton = { TextButton({ vm.removeWallet(id); removing = null }) { Text(stringResource(R.string.action_remove), color = Fx.bad) } },
             dismissButton = { TextButton({ removing = null }) { Text(stringResource(R.string.action_cancel), color = Fx.text) } },
         )

@@ -445,6 +445,7 @@
     <string name="confirm_ln_fee_estimate">Taxa de roteamento estimada</string>
     <string name="confirm_ln_fee_estimate_value">até %1$s %2$s</string>
     <string name="dialog_remove_lightning_warning">Você tem %1$s sat no Lightning; mova-os para fora ou confirme que está com sua frase.\n\n%2$s</string>
+    <string name="dialog_remove_lightning_unknown">Não foi possível verificar seu saldo no Lightning; guarde a frase desta carteira para recuperar eventuais fundos.\n\n%1$s</string>
     <string name="history_failed">falhou</string>
     <string name="history_ln_receive">⚡ recebimento</string>
     <string name="history_ln_send">⚡ envio</string>
@@ -484,6 +485,7 @@
     <string name="settings_lightning_body">Envie e receba pagamentos instantâneos de Bitcoin pela Lightning Network.</string>
     <string name="settings_lightning_close_action">Fechar canal e mover para on-chain</string>
     <string name="settings_lightning_close_body">Isso fecha seu canal Lightning e devolve seus fundos para sua carteira BTC on-chain.</string>
+    <string name="settings_lightning_close_body_to">Isso fecha seu canal Lightning e devolve seus fundos para sua carteira BTC on-chain “%1$s”.</string>
     <string name="settings_lightning_close_title">Fechar canal Lightning?</string>
     <string name="settings_lightning_force_title">Forçar o fechamento do canal?</string>
     <string name="settings_lightning_force_body">Não foi possível contatar o provedor Lightning, então o canal não pode ser fechado de comum acordo. Um fechamento forçado funciona sem ele, mas seus fundos ficam bloqueados por um tempo antes de voltar para sua carteira on-chain, e a taxa de rede é maior. Tente novamente mais tarde se puder esperar.</string>

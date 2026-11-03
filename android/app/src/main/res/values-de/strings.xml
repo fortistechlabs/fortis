@@ -445,6 +445,7 @@
     <string name="confirm_ln_fee_estimate">Geschätzte Routing-Gebühr</string>
     <string name="confirm_ln_fee_estimate_value">bis zu %1$s %2$s</string>
     <string name="dialog_remove_lightning_warning">Du hast %1$s sat auf Lightning; verschiebe sie zuerst oder stelle sicher, dass du deine Phrase hast.\n\n%2$s</string>
+    <string name="dialog_remove_lightning_unknown">Dein Lightning-Guthaben konnte nicht geprüft werden; bewahre die Phrase dieser Wallet auf, um etwaiges Guthaben wiederherzustellen.\n\n%1$s</string>
     <string name="history_failed">fehlgeschlagen</string>
     <string name="history_ln_receive">⚡ Empfang</string>
     <string name="history_ln_send">⚡ Senden</string>
@@ -484,6 +485,7 @@
     <string name="settings_lightning_body">Sende und empfange sofortige Bitcoin-Zahlungen über das Lightning-Netzwerk.</string>
     <string name="settings_lightning_close_action">Kanal schließen und On-Chain verschieben</string>
     <string name="settings_lightning_close_body">Dadurch wird dein Lightning-Kanal geschlossen und dein Guthaben zurück in deine On-Chain-BTC-Wallet verschoben.</string>
+    <string name="settings_lightning_close_body_to">Dadurch wird dein Lightning-Kanal geschlossen und dein Guthaben zurück in deine On-Chain-BTC-Wallet „%1$s“ verschoben.</string>
     <string name="settings_lightning_close_title">Lightning-Kanal schließen?</string>
     <string name="settings_lightning_force_title">Kanal zwangsweise schließen?</string>
     <string name="settings_lightning_force_body">Der Lightning-Anbieter war nicht erreichbar, daher kann der Kanal nicht einvernehmlich geschlossen werden. Eine erzwungene Schließung funktioniert auch ohne ihn, aber dein Guthaben ist danach eine Weile gesperrt, bevor es in deine On-Chain-Wallet zurückkehrt, und die Netzwerkgebühr ist höher. Versuche es später erneut, wenn du warten kannst.</string>

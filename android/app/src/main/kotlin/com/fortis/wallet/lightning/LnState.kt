@@ -61,3 +61,8 @@ fun deleteWalletLightningWarningSat(
     ln: LnState,
     lastKnownLightningSat: Long = 0L,
 ): Long? = com.fortis.wallet.homeBalance(0L, ln, lastKnownLightningSat).lightningSat.takeIf { it > 0L }
+
+/** Deleting the Lightning wallet while its node is not Ready: the balance could not be checked
+ *  (and no last balance is known), so the dialog warns that funds may be there. */
+fun deleteWalletLightningBalanceUnknown(ln: LnState): Boolean =
+    ln !is LnState.Ready && deleteWalletLightningWarningSat(ln) == null

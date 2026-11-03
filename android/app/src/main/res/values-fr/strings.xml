@@ -445,6 +445,7 @@
     <string name="confirm_ln_fee_estimate">Frais de routage estimés</string>
     <string name="confirm_ln_fee_estimate_value">jusqu’à %1$s %2$s</string>
     <string name="dialog_remove_lightning_warning">Vous avez %1$s sat sur Lightning ; retirez-les ou assurez-vous d’avoir votre phrase.\n\n%2$s</string>
+    <string name="dialog_remove_lightning_unknown">Votre solde Lightning n’a pas pu être vérifié ; conservez la phrase de ce portefeuille pour récupérer d’éventuels fonds.\n\n%1$s</string>
     <string name="history_failed">échoué</string>
     <string name="history_ln_receive">⚡ réception</string>
     <string name="history_ln_send">⚡ envoi</string>
@@ -484,6 +485,7 @@
     <string name="settings_lightning_body">Envoyez et recevez des paiements Bitcoin instantanés via le réseau Lightning.</string>
     <string name="settings_lightning_close_action">Fermer le canal et passer en on-chain</string>
     <string name="settings_lightning_close_body">Cela ferme votre canal Lightning et ramène vos fonds vers votre portefeuille BTC on-chain.</string>
+    <string name="settings_lightning_close_body_to">Cela ferme votre canal Lightning et ramène vos fonds vers votre portefeuille BTC on-chain « %1$s ».</string>
     <string name="settings_lightning_close_title">Fermer le canal Lightning ?</string>
     <string name="settings_lightning_force_title">Forcer la fermeture du canal ?</string>
     <string name="settings_lightning_force_body">Le fournisseur Lightning est injoignable, le canal ne peut donc pas être fermé d’un commun accord. Une fermeture forcée fonctionne sans lui, mais vos fonds sont bloqués un certain temps avant de revenir dans votre portefeuille on-chain, et les frais de réseau sont plus élevés. Réessayez plus tard si vous pouvez attendre.</string>
