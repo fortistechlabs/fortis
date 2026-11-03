@@ -4,11 +4,12 @@ Fortis Wallet (Android). Versions are `versionName (versionCode)`.
 
 ## 0.6.0 (23) — 2026-11-01
 
-- Lightning (beta) for BTC wallets. Settings → Lightning turns it on; it is off
-  by default. Your Lightning keys stay on your phone, derived from your seed,
-  and the wallet is backed up so it can be restored from the seed alone. Only
-  one device can run a wallet's Lightning at a time; another device can take
-  over from Settings.
+- Lightning is its own wallet: Add wallet → Lightning. It has its own recovery
+  phrase, separate from your BTC wallets, and BTC wallets show no Lightning.
+  Only one device can run a Lightning wallet at a time; another device can take
+  over from the wallet's settings.
+- Your Lightning keys stay on your phone, derived from the wallet's phrase, and
+  the wallet is backed up so it can be restored from that phrase alone.
 - Receive: show a Lightning invoice. The first one opens a channel with the
   fortis Lightning provider and takes a fee, shown before you share it; later
   ones inside the channel's capacity are free.
@@ -16,17 +17,18 @@ Fortis Wallet (Android). Versions are `versionName (versionCode)`.
   `bitcoin:` link that carries an invoice. You see the fee cap before you
   confirm, and a payment is never sent twice. Amounts are checked against what
   the channel can actually send now, which is a little less than its balance.
-- Move to Lightning: put on-chain funds into a channel. The deposit is sent with
-  the 25,000 sat reserve a channel needs; that reserve stays in your wallet
-  on-chain and still counts in your total.
-- Close channel and move to on-chain: Settings → Lightning. It asks the provider
-  to close cooperatively. If the provider can't be reached you are offered a
-  force close, which works without it but locks your funds for a while and
-  costs a higher network fee; it is never done for you.
-- The home total adds on-chain and Lightning, with the split underneath.
+  Scanning a Lightning invoice in a BTC wallet offers Pay with your Lightning
+  wallet.
+- Putting on-chain funds into a Lightning wallet isn't available yet; a new
+  Lightning wallet gets its channel from its first invoice receive.
+- Close channel and move to on-chain, from the Lightning wallet. It asks the
+  provider to close cooperatively. If the provider can't be reached you are
+  offered a force close, which works without it but locks your funds for a
+  while and costs a higher network fee; it is never done for you. The funds go
+  to your first software mainnet BTC wallet.
 - `lightning:` and `bitcoin:` links open the wallet's Send screen, and no longer
   start a second copy of the app.
-- Payment history shows Lightning payments with your on-chain ones.
+- Payment history shows a Lightning wallet's payments in that wallet.
 
 ## 0.5.4 (22) — 2026-10-22
 

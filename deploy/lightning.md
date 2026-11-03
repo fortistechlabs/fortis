@@ -255,19 +255,19 @@ If home reachability on TCP 9735 is unreliable or capacity grows:
 
 ## 10. Mainnet canary checklist
 
-Before enabling Lightning (beta) for general users, run the mainnet canary with `channel_max_sat = 500000` using `.dev` and `.dev2` debug builds on the Pixel (never overwrite the store app):
+Before offering the Lightning wallet to general users, run the mainnet canary with `channel_max_sat = 500000` using `.dev` and `.dev2` debug builds on the Pixel (never overwrite the store app):
 
 - [ ] **Backend prerequisites:** `keys_seed` backed up off-host; LSP funded with ~0.005 BTC (§4) and `low_liquidity_sat = 300000`; one outbound channel open (§4); `lsp.fortistechlabs.com:9735` reachable from mobile data (direct, or through the relay in `deploy/relay/`); `GET /ln/info` on `api.fortistechlabs.com` returns 401 without an install token (not 404).
 - [ ] **LSP live on mainnet (`channel_max_sat = 500000`):** `curl -s http://127.0.0.1:9736/info` reports `channel_max_sat: 500000`, `min_payment_size_msat: 51000000`, `max_payment_size_msat: 250000000`; `GET /ln/info` on `api.fortistechlabs.com` matches.
-- [ ] **Enable Lightning on `.dev`:** *Settings → Lightning (beta)* toggle on a software mainnet BTC wallet transitions `Off → Starting → Ready` (*"LSP connected · backup OK"*).
-- [ ] **First receive via JIT channel (50,000+ sat from Phoenix):** Enter `55,000 sat` on Receive; verify the fee quote line (*"Receiving 55,000 sat · fee 1,000 · you get 54,000"*) and unified BIP21 QR (`bitcoin:...?amount=...&lightning=lnbc...`); pay from Phoenix; verify JIT channel opens at 0-conf, toast *"Received ⚡ 54,000 sat"* appears, and Home hero shows combined total + *On-chain · Lightning* split.
+- [ ] **Create a Lightning wallet on `.dev`:** *Add wallet → Lightning* (new recovery phrase) reaches *"LSP connected · backup OK"*.
+- [ ] **First receive via JIT channel (50,000+ sat from Phoenix):** Enter `55,000 sat` on Receive; verify the fee quote line (*"Receiving 55,000 sat · fee 1,000 · you get 54,000"*) and unified BIP21 QR (`bitcoin:...?amount=...&lightning=lnbc...`); pay from Phoenix; verify JIT channel opens at 0-conf, toast *"Received ⚡ 54,000 sat"* appears, and the Lightning wallet's balance shows `54,000 sat`.
 - [ ] **Pay a real outside invoice by QR scan:** Scan a BOLT 11 invoice on Phoenix from `.dev`; verify confirm sheet shows amount, description, expiry, and routing fee cap (`max(1%, 50 sat)`), biometric prompt gates send, payment succeeds, and History lists `⚡ send` with fee and description.
-- [ ] **Pay `.dev` → `.dev2`:** Enable Lightning on `.dev2`, generate a receive QR, pay from `.dev` through `fortis-lsp`.
-- [ ] **Restore `.dev2` from recovery phrase:** Wipe `.dev2` app data, restore the same 12/24-word recovery phrase, enable Lightning; verify channel state and balance restore from VSS without error.
+- [ ] **Pay `.dev` → `.dev2`:** Create a Lightning wallet on `.dev2`, generate a receive QR, pay from `.dev` through `fortis-lsp`.
+- [ ] **Restore `.dev2` from recovery phrase:** Wipe `.dev2` app data, restore the Lightning wallet from its own 12/24-word recovery phrase (not a BTC wallet's); verify channel state and balance restore from VSS without error.
 - [ ] **Two-device takeover:** Unlock `.dev` after `.dev2` has taken the VSS lock; verify `.dev` stops with *"Lightning is active on another device."* and tapping *"Use Lightning here instead"* (after confirmation dialog) transfers the lock back to `.dev`, stopping `.dev2` on its next VSS check.
 - [ ] **`lightning:` deep link from browser:** Tap a `lightning:lnbc...` link in Chrome/Firefox on the Pixel; verify it opens `.dev` directly on the Send tab with the invoice prefilled.
 - [ ] **LSP restart under the same node ID:** `sudo systemctl restart fortis-lsp`; verify `.dev` reconnects automatically and can send/receive.
 - [ ] **Review Focus 5 (LSP closes channel while app is closed):** Force-close or coop-close the channel from the LSP while `.dev` is force-stopped; once confirmed on-chain, open `.dev` and verify the balance is never shown as 0 — settled close funds appear in `onchainTransitSat` and are automatically swept to the main BTC wallet.
 
 ### Canary run log
-- Status: Backend deployed (edge `/ln/info` and `/ln/vss`, VSS, LSP); relay `lsp.fortistechlabs.com` → e2-micro → home LSP verified for TCP. Pending: LSP funding (0.005 BTC canary) and Pixel `.dev`/`.dev2` execution. Note: test sending before receiving from an outside wallet (§4, inbound liquidity). Move to Lightning, force close and sweeps need the edge with the Lightning fee exemption (`crates/fortis-edge/src/ln_fee.rs`); before it, the edge refused the phone's own broadcasts (402).
+- Status: Backend deployed (edge `/ln/info` and `/ln/vss`, VSS, LSP); relay `lsp.fortistechlabs.com` → e2-micro → home LSP verified for TCP. Pending: LSP funding (0.005 BTC canary) and Pixel `.dev`/`.dev2` execution. Note: test sending before receiving from an outside wallet (§4, inbound liquidity). Force close and sweeps need the edge with the Lightning fee exemption (`crates/fortis-edge/src/ln_fee.rs`); before it, the edge refused the phone's own broadcasts (402).
