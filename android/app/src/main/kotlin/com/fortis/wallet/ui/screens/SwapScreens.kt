@@ -996,7 +996,7 @@ internal fun NewSwapContent(
 ) = SwapColumn {
     var fromId by remember { mutableStateOf(wallets.firstOrNull()?.id) }
     val from = wallets.firstOrNull { it.id == fromId } ?: wallets.firstOrNull()
-    val targets = wallets.filter { from != null && it.chain != from.chain }
+    val targets = wallets.filter { from != null && it.chain == other(from.chain) }
     var toId by remember { mutableStateOf<String?>(null) }
     val to = targets.firstOrNull { it.id == toId } ?: targets.firstOrNull()
     var amount by remember { mutableStateOf(initialAmount) }
@@ -1183,7 +1183,7 @@ internal fun TakeCodeContent(
     }
     val send = preview.sendChain
     val froms = wallets.filter { it.chain == send }
-    val tos = wallets.filter { it.chain != send }
+    val tos = wallets.filter { it.chain == other(send) }
     var fromId by remember { mutableStateOf<String?>(null) }
     var toId by remember { mutableStateOf<String?>(null) }
     val from = froms.firstOrNull { it.id == fromId } ?: froms.firstOrNull()

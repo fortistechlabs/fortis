@@ -475,8 +475,6 @@
     <string name="own_server_test_save">Testen &amp; speichern</string>
     <string name="own_server_yours">Dein Server (%1$s)</string>
     <string name="own_server_yours_unset">Dein Server</string>
-    <string name="receive_amount_optional">Betrag (optional)</string>
-    <string name="receive_ln_below_min">Lightning-Empfang beginnt bei %1$s %2$s – darunter nur On-Chain.</string>
     <string name="receive_ln_fee_summary">Empfang von %1$s %2$s · Gebühr %3$s · du erhältst %4$s</string>
     <string name="receive_ln_needs_amount">Lightning braucht einen Betrag</string>
     <string name="receive_ln_quoting">Lightning-Rechnung wird geholt …</string>
@@ -498,7 +496,12 @@
     <string name="settings_own_server">Dein Server</string>
     <string name="toast_ln_received">⚡ %1$s sat empfangen</string>
     <string name="wallet_own_server_unreachable">Dein Server (%1$s) ist nicht erreichbar · neuer Versuch folgt</string>
-    <string name="wallet_split_lightning">Lightning</string>
     <string name="wallet_split_moving">Wird verschoben …</string>
-    <string name="wallet_split_onchain">On-Chain</string>
+    <string name="wallet_chain_lightning">Lightning</string>
+    <string name="error_lightning_wallet_exists">Diese App hat bereits eine Lightning-Wallet.</string>
+    <string name="error_no_onchain_wallet_for_lightning">Füge eine BTC-Wallet hinzu, um Lightning-Guthaben On-Chain zu verschieben.</string>
+    <string name="send_pay_with_lightning_wallet">Mit deiner Lightning-Wallet bezahlen</string>
+    <string name="send_create_lightning_wallet">Erstelle eine Lightning-Wallet, um das zu bezahlen</string>
+    <string name="ln_wallet_first_receive_hint">Empfange eine Zahlung, um deinen ersten Kanal zu öffnen.</string>
+    <string name="ln_send_onchain_target">Das ist eine On-Chain-Adresse – sende von einer BTC-Wallet.</string>
 </resources>

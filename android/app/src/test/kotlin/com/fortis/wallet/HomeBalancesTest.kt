@@ -102,4 +102,22 @@ class HomeBalancesTest {
         assertEquals(60_000L, hb.lightningSat)
         assertFalse(hb.moving)
     }
+
+    @Test
+    fun lightningWalletBalanceIsLightningPlusMoving() {
+        val ln = LnState.Ready(
+            balances = LnBalances(
+                lightningSat = 80_000uL,
+                onchainTransitSat = 20_000uL,
+                pendingCloseSat = 0uL,
+                reservedSat = 0uL,
+                pendingTransitSat = 0uL,
+                inboundSat = 0uL,
+            ),
+            channel = LnChannelState.READY,
+        )
+        val hb = homeBalance(0L, ln)
+        assertEquals(100_000L, hb.totalSat)
+        assertTrue(hb.moving)
+    }
 }

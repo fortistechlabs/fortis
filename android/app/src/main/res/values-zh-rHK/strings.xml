@@ -472,8 +472,6 @@
     <string name="own_server_test_save">測試並儲存</string>
     <string name="own_server_yours">你的伺服器（%1$s）</string>
     <string name="own_server_yours_unset">你的伺服器</string>
-    <string name="receive_amount_optional">金額（選填）</string>
-    <string name="receive_ln_below_min">閃電網絡收款起點為 %1$s %2$s——低於此金額僅支援鏈上。</string>
     <string name="receive_ln_fee_summary">收款 %1$s %2$s · 手續費 %3$s · 實收 %4$s</string>
     <string name="receive_ln_needs_amount">閃電網絡需要填寫金額</string>
     <string name="receive_ln_quoting">正在取得閃電網絡發票…</string>
@@ -495,7 +493,12 @@
     <string name="settings_own_server">你的伺服器</string>
     <string name="toast_ln_received">已收到 ⚡ %1$s sat</string>
     <string name="wallet_own_server_unreachable">無法連線至你的伺服器（%1$s）· 將重試</string>
-    <string name="wallet_split_lightning">閃電網絡</string>
     <string name="wallet_split_moving">轉移中…</string>
-    <string name="wallet_split_onchain">鏈上</string>
+    <string name="wallet_chain_lightning">閃電網絡</string>
+    <string name="error_lightning_wallet_exists">此應用程式已有一個閃電網絡錢包。</string>
+    <string name="error_no_onchain_wallet_for_lightning">請新增一個 BTC 錢包，以便將閃電網絡資金轉回鏈上。</string>
+    <string name="send_pay_with_lightning_wallet">用你的閃電網絡錢包付款</string>
+    <string name="send_create_lightning_wallet">建立閃電網絡錢包以支付這筆款項</string>
+    <string name="ln_wallet_first_receive_hint">收到一筆付款即可開啟你的第一個通道。</string>
+    <string name="ln_send_onchain_target">這是鏈上地址——請從 BTC 錢包傳送。</string>
 </resources>

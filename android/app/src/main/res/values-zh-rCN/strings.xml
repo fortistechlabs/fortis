@@ -472,8 +472,6 @@
     <string name="own_server_test_save">测试并保存</string>
     <string name="own_server_yours">你的服务器（%1$s）</string>
     <string name="own_server_yours_unset">你的服务器</string>
-    <string name="receive_amount_optional">金额（可选）</string>
-    <string name="receive_ln_below_min">闪电网络收款起点为 %1$s %2$s——低于此金额仅支持链上。</string>
     <string name="receive_ln_fee_summary">收款 %1$s %2$s · 手续费 %3$s · 实收 %4$s</string>
     <string name="receive_ln_needs_amount">闪电网络需要填写金额</string>
     <string name="receive_ln_quoting">正在获取闪电网络发票…</string>
@@ -495,7 +493,12 @@
     <string name="settings_own_server">你的服务器</string>
     <string name="toast_ln_received">已收到 ⚡ %1$s sat</string>
     <string name="wallet_own_server_unreachable">无法连接你的服务器（%1$s）· 将重试</string>
-    <string name="wallet_split_lightning">闪电网络</string>
     <string name="wallet_split_moving">转移中…</string>
-    <string name="wallet_split_onchain">链上</string>
+    <string name="wallet_chain_lightning">闪电网络</string>
+    <string name="error_lightning_wallet_exists">此应用已有一个闪电网络钱包。</string>
+    <string name="error_no_onchain_wallet_for_lightning">请添加一个 BTC 钱包，以便把闪电网络资金转回链上。</string>
+    <string name="send_pay_with_lightning_wallet">用你的闪电网络钱包支付</string>
+    <string name="send_create_lightning_wallet">创建闪电网络钱包以支付此款项</string>
+    <string name="ln_wallet_first_receive_hint">收到一笔付款即可开启你的第一个通道。</string>
+    <string name="ln_send_onchain_target">这是链上地址——请从 BTC 钱包发送。</string>
 </resources>

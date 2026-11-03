@@ -50,9 +50,11 @@ fun recoveryWallets(
     wallets: List<WalletConfig>,
     allWallets: List<WalletConfig> = wallets,
 ): Pair<WalletConfig, WalletConfig>? {
+    // The other swap chain exactly: a Lightning wallet is never a swap's wallet.
+    val receiveChain = if (sendChain == "btc") "xbt" else "btc"
     val from = wallets.firstOrNull { it.chain == sendChain } ?: return null
-    val to = wallets.firstOrNull { it.chain != sendChain }
-        ?: allWallets.firstOrNull { it.chain != sendChain }
+    val to = wallets.firstOrNull { it.chain == receiveChain }
+        ?: allWallets.firstOrNull { it.chain == receiveChain }
         ?: return null
     return from to to
 }

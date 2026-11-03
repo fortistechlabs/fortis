@@ -13,90 +13,63 @@ class ReceiveQrTest {
     private val minLnSat = 10_000L
 
     @Test
-    fun amount_with_ln_builds_bip21_with_lightning_param() {
+    fun lightningWalletQrIsTheInvoiceOnly() {
         val quote = LnReceiveQuote(
             invoice = sampleInvoice,
             amountMsat = 50_000_000uL,
-            feeMsat = 0uL,
-            needsChannel = false,
+            feeMsat = 1_000_000uL,
+            needsChannel = true,
         )
-        val qr = buildReceiveQr(
-            address = addr,
-            amountSat = 50_000L,
-            quote = quote,
-            minLnSat = minLnSat,
-        )
+        val qr = buildLightningReceiveQr(50_000L, quote, minLnSat)
         assertTrue(qr.lightning)
-        assertEquals("bitcoin:$addr?amount=0.00050000&lightning=$sampleInvoice", qr.uri)
-        assertEquals(0L, qr.feeSat)
-        assertEquals(50_000L, qr.youGetSat)
+        assertEquals("lightning:$sampleInvoice", qr.uri)
+        assertEquals(1_000L, qr.feeSat)
+        assertEquals(49_000L, qr.youGetSat)
         assertNull(qr.hint)
+
+        val noAmount = buildLightningReceiveQr(null, null, minLnSat)
+        assertFalse(noAmount.lightning)
+        assertEquals("", noAmount.uri)
+        assertEquals(ReceiveHint.AddAmountForLightning, noAmount.hint)
     }
 
     @Test
-    fun amount_below_ln_min_is_onchain_only_with_hint() {
-        val qr = buildReceiveQr(
-            address = addr,
-            amountSat = 5_000L,
-            quote = null,
-            minLnSat = minLnSat,
-        )
+    fun lightning_wallet_below_min_has_no_qr_and_a_hint() {
+        val qr = buildLightningReceiveQr(5_000L, null, minLnSat)
         assertFalse(qr.lightning)
-        assertEquals("bitcoin:$addr?amount=0.00005000", qr.uri)
+        assertEquals("", qr.uri)
         assertNull(qr.feeSat)
         assertNull(qr.youGetSat)
         assertEquals(ReceiveHint.BelowLightningMin, qr.hint)
     }
 
     @Test
-    fun no_amount_is_onchain_with_add_amount_hint() {
-        val qr = buildReceiveQr(
-            address = addr,
-            amountSat = null,
-            quote = null,
-            minLnSat = minLnSat,
-        )
+    fun lightning_wallet_without_a_quote_yet_has_no_qr() {
+        val qr = buildLightningReceiveQr(50_000L, null, minLnSat)
         assertFalse(qr.lightning)
-        assertEquals(addr, qr.uri)
-        assertNull(qr.feeSat)
-        assertNull(qr.youGetSat)
-        assertEquals(ReceiveHint.AddAmountForLightning, qr.hint)
+        assertEquals("", qr.uri)
+        assertNull(qr.hint)
     }
 
     @Test
-    fun first_receive_shows_fee_and_you_get() {
+    fun btcWalletQrIsOnChainOnly() {
         val quote = LnReceiveQuote(
             invoice = sampleInvoice,
             amountMsat = 50_000_000uL,
-            feeMsat = 500_000uL,
-            needsChannel = true,
+            feeMsat = 0uL,
+            needsChannel = false,
         )
-        val qr = buildReceiveQr(
-            address = addr,
-            amountSat = 50_000L,
-            quote = quote,
-            minLnSat = minLnSat,
-        )
-        assertTrue(qr.lightning)
-        assertEquals(500L, qr.feeSat)
-        assertEquals(49_500L, qr.youGetSat)
-        assertNull(qr.hint)
-    }
-
-    @Test
-    fun lightning_disabled_is_plain_address() {
-        val qr = buildReceiveQr(
-            address = addr,
-            amountSat = null,
-            quote = null,
-            minLnSat = 0L,
-            lightningEnabled = false,
-        )
+        val qr = buildReceiveQr(addr, 50_000L, quote, 10_000L)
         assertFalse(qr.lightning)
-        assertEquals(addr, qr.uri)
+        // fmtCoin keeps 8 decimals, as the BTC receive QR always has (BIP21 allows either).
+        assertEquals("bitcoin:$addr?amount=0.00050000", qr.uri)
         assertNull(qr.feeSat)
         assertNull(qr.youGetSat)
         assertNull(qr.hint)
+
+        val plain = buildReceiveQr(addr, null, null, 0L)
+        assertEquals(addr, plain.uri)
+        assertNull(plain.hint)
     }
 
     @Test
@@ -113,14 +86,9 @@ class ReceiveQrTest {
             feeMsat = 500_250uL, // 500.25 sat -> rounds up to 501 sat for display
             needsChannel = true,
         )
-        val qr = buildReceiveQr(
-            address = addr,
-            amountSat = 50_000L,
-            quote = quote,
-            minLnSat = minLnSat,
-        )
+        val qr = buildLightningReceiveQr(50_000L, quote, minLnSat)
         // Invoice in URI is untouched (carries exact msat), while display fee/amount round up.
-        assertEquals("bitcoin:$addr?amount=0.00050000&lightning=$sampleInvoice", qr.uri)
+        assertEquals("lightning:$sampleInvoice", qr.uri)
         assertEquals(501L, qr.feeSat)
         assertEquals(50_001L - 501L, qr.youGetSat)
     }

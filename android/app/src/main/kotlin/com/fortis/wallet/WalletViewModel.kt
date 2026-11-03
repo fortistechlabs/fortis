@@ -11,6 +11,7 @@ import com.fortis.wallet.data.*
 import com.fortis.wallet.lightning.EdgeLnInfoApi
 import com.fortis.wallet.lightning.LightningSession
 import com.fortis.wallet.lightning.LnState
+import com.fortis.wallet.lightning.canAddLightningWallet
 import com.fortis.wallet.lightning.lightningWalletOf
 import com.fortis.wallet.lightning.lightningSweepWallet
 import com.fortis.wallet.swap.SwapService
@@ -20,6 +21,7 @@ import com.fortis.wallet.swap.recoveredRecord
 import com.fortis.wallet.swap.recoveryWallets
 import com.fortis.wallet.swap.scanTags
 import com.fortis.wallet.ui.fmtCoin
+import com.fortis.wallet.ui.lightningLinkRoute
 import com.fortis.wallet.ui.screens.amountError
 import com.fortis.wallet.ui.screens.amountLimit
 import com.fortis.wallet.ui.screens.btcLeg
@@ -260,7 +262,7 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
     /** Approximate value of `sat` on `chain` in [fiat], formatted, or null if
      *  there's no price in that currency yet. Never another currency's. */
     fun fiatText(sat: Long, chain: String): String? =
-        coinPrices[chain]?.get(fiat)?.let { fmtFiat(it * (sat / 100_000_000.0), fiat) }
+        coinPrices[if (chain == LN_CHAIN) "btc" else chain]?.get(fiat)?.let { fmtFiat(it * (sat / 100_000_000.0), fiat) }
     var history by mutableStateOf<List<HistoryEntry>>(emptyList()); private set
     var feerates by mutableStateOf<Map<Int, Long>>(emptyMap()); private set
     var pending by mutableStateOf<PlanPreview?>(null); private set
@@ -445,10 +447,9 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
             else -> Phase.Shell
         }
         if (phase == Phase.Shell) {
-            if (pendingSendText != null) {
-                val targetWallet = wallets.firstOrNull { it.id == selectedId && !it.watchOnly && it.chain == "btc" }
-                    ?: wallets.firstOrNull { !it.watchOnly && it.chain == "btc" }
-                    ?: wallets.firstOrNull { !it.watchOnly }
+            val text = pendingSendText
+            if (text != null) {
+                val targetWallet = sendTargetWallet(text)
                 if (targetWallet != null) {
                     if (selectedId != targetWallet.id) {
                         selectedId = targetWallet.id
@@ -467,6 +468,8 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
     private fun enterTab() {
         if (nav == NavTab.Wallet) {
             val id = selectedId
+            // The Lightning wallet has no on-chain session or backend: its tab runs on the node.
+            if (config?.isLightning == true) return
             if (id == null || ensureSession(id) == null) { nav = NavTab.Home; return }
             ensureBackend()
         }
@@ -656,7 +659,8 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
     var takePreview by mutableStateOf<TakePreview?>(null); private set
 
     /** Wallets that may swap: seed wallets only (no watch-only, no hardware). */
-    val seedWallets: List<WalletConfig> get() = wallets.filter { !it.watchOnly && !it.hardware && it.sealed != null }
+    /** The wallets that can sign a swap: software on-chain wallets (never the Lightning wallet). */
+    val seedWallets: List<WalletConfig> get() = wallets.filter { !it.watchOnly && !it.hardware && it.sealed != null && !it.isLightning }
 
     /** Show Home's Swap button: the edge quotes swaps (and there is a wallet to
      *  swap from), or a swap is still running and must stay reachable. */
@@ -1241,10 +1245,22 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
     val canAddWallet: Boolean get() = wallets.size < MAX_WALLETS
     fun addWallet() {
         if (!canAddWallet) { error = str(R.string.error_wallet_max, MAX_WALLETS); return }
-        error = null; draftMnemonic = null; phase = Phase.Onboard
+        error = null; draftMnemonic = null; onboardChain = null; phase = Phase.Onboard
     }
+    /** The chain the create / restore screens start on ("ln" when adding the Lightning wallet). */
+    var onboardChain by mutableStateOf<String?>(null); private set
+
+    /** Add-wallet flow with the Lightning wallet preselected (from a Lightning link or Send). */
+    fun addLightningWallet() {
+        lightningWalletPrompt = false
+        if (!canAddLightningWallet(wallets)) { error = str(R.string.error_lightning_wallet_exists); return }
+        addWallet()
+        if (phase == Phase.Onboard) onboardChain = LN_CHAIN
+    }
+
     fun cancelOnboard() {
         draftMnemonic = null
+        onboardChain = null
         phase = if (wallets.isEmpty()) Phase.Onboard else Phase.Shell
     }
 
@@ -1391,6 +1407,7 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
         if (s != null) sessions[id] = s
         if (keys != null) synchronized(lnKeys) { lnKeys.put(id, keys)?.close() }
         draftMnemonic = null
+        onboardChain = null
         nav = NavTab.Wallet
         clearBack()
         resolvePhase()
@@ -1492,7 +1509,8 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
     /** Throws (shown as the screen's error) when [name] is taken on [chain]. */
     private fun requireFreeName(name: String, chain: String, exceptId: String? = null) {
         if (walletNameTaken(wallets, name, chain, exceptId)) {
-            throw Exception(str(R.string.error_name_taken, chain.uppercase(), cleanWalletName(name)))
+            val label = if (chain == LN_CHAIN) "Lightning" else chain.uppercase()
+            throw Exception(str(R.string.error_name_taken, label, cleanWalletName(name)))
         }
     }
 
@@ -1531,15 +1549,16 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
      *  addresses). Doesn't change the selection. */
     fun cloneToOtherChain(id: String) = wrap {
         val c = wallets.firstOrNull { it.id == id } ?: return@wrap
+        val other = c.otherChain ?: return@wrap // the Lightning wallet has no on-chain twin
         if (!canAddWallet) { error = str(R.string.error_wallet_max, MAX_WALLETS); return@wrap }
-        if (walletNameTaken(wallets, c.name, c.otherChain)) {
-            error = str(R.string.error_clone_exists, c.name, c.otherChain.uppercase())
+        if (walletNameTaken(wallets, c.name, other)) {
+            error = str(R.string.error_clone_exists, c.name, other.uppercase())
             return@wrap
         }
         // Fresh chain: start address discovery at 0 rather than inheriting the
         // source wallet's counters (it's never received on this chain yet).
         val clone = c.copy(
-            id = UUID.randomUUID().toString(), chain = c.otherChain, backendToken = null,
+            id = UUID.randomUUID().toString(), chain = other, backendToken = null,
             nextReceive = 0, nextChange = 0,
         )
         store.save(clone)
@@ -1921,14 +1940,43 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
 
     fun cancelPendingLn() { if (!sending) pendingLn = null }
 
-    fun openSendWithUri(text: String) {
-        pendingSendText = text
-        val btcSigning = wallets.firstOrNull { it.id == selectedId && !it.watchOnly && it.chain == "btc" }
-            ?: wallets.firstOrNull { !it.watchOnly && it.chain == "btc" }
-            ?: wallets.firstOrNull { !it.watchOnly }
-        if (btcSigning != null && phase == Phase.Shell) {
-            selectWallet(btcSigning.id)
+    /** Set when a Lightning link arrived (or Send was asked to pay one) and there is no
+     *  Lightning wallet: the Shell offers to create one. */
+    var lightningWalletPrompt by mutableStateOf(false); private set
+
+    fun dismissLightningWalletPrompt() { lightningWalletPrompt = false }
+
+    /** The wallet that should open with [text] in its Send form: the Lightning wallet for
+     *  a Lightning target, else the selected (or first) BTC signing wallet. */
+    private fun sendTargetWallet(text: String): WalletConfig? =
+        when (val r = lightningLinkRoute(wallets, text, "bitcoin")) {
+            is com.fortis.wallet.ui.LightningLinkRoute.OpenLightningWallet -> wallets.firstOrNull { it.id == r.id }
+            com.fortis.wallet.ui.LightningLinkRoute.CreateLightningWallet -> null
+            com.fortis.wallet.ui.LightningLinkRoute.OnChain ->
+                wallets.firstOrNull { it.id == selectedId && !it.watchOnly && it.chain == "btc" }
+                    ?: wallets.firstOrNull { !it.watchOnly && it.chain == "btc" }
+                    ?: wallets.firstOrNull { !it.watchOnly && !it.isLightning }
         }
+
+    /** A `lightning:` / `bitcoin:` link opened the app: Lightning targets go to the Lightning
+     *  wallet (or ask to create one); on-chain ones to a BTC wallet's Send. */
+    fun openSendWithUri(text: String) {
+        if (lightningLinkRoute(wallets, text, "bitcoin") == com.fortis.wallet.ui.LightningLinkRoute.CreateLightningWallet) {
+            lightningWalletPrompt = true
+            return
+        }
+        pendingSendText = text
+        val target = sendTargetWallet(text)
+        if (target != null && phase == Phase.Shell) {
+            selectWallet(target.id)
+        }
+    }
+
+    /** From a BTC wallet's Send: pay [text] (a Lightning target) with the Lightning wallet. */
+    fun payWithLightningWallet(text: String) {
+        val ln = lightningWalletOf(wallets) ?: run { lightningWalletPrompt = true; return }
+        pendingSendText = text
+        selectWallet(ln.id)
     }
 
     fun consumePendingSendText(): String? {

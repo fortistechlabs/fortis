@@ -3,7 +3,9 @@ package com.fortis.wallet.ui
 import android.graphics.Bitmap
 import android.graphics.Color
 import android.net.Uri
+import com.fortis.wallet.data.WalletConfig
 import com.fortis.wallet.lightning.LnState
+import com.fortis.wallet.lightning.lightningWalletOf
 import com.google.zxing.BarcodeFormat
 import com.google.zxing.EncodeHintType
 import com.google.zxing.qrcode.QRCodeWriter
@@ -62,57 +64,37 @@ data class ReceiveQr(
 fun displaySatFromMsat(msat: ULong): Long =
     if (msat == 0uL) 0L else (((msat - 1uL) / 1_000uL) + 1uL).toLong()
 
+/** A BTC wallet's receive QR: always on-chain — the address, or a BIP21 URI with
+ *  the amount. Lightning is the Lightning wallet's ([buildLightningReceiveQr]);
+ *  [quote] and [minLnSat] are ignored. */
+@Suppress("UNUSED_PARAMETER")
 fun buildReceiveQr(
     address: String,
     amountSat: Long?,
-    quote: LnReceiveQuote?,
-    minLnSat: Long,
-    lightningEnabled: Boolean = minLnSat > 0L,
+    quote: LnReceiveQuote? = null,
+    minLnSat: Long = 0L,
 ): ReceiveQr {
-    if (!lightningEnabled || minLnSat <= 0L) {
-        val uri = if (amountSat != null && amountSat > 0L) {
-            "bitcoin:$address?amount=${fmtCoin(amountSat)}"
-        } else {
-            address
-        }
-        return ReceiveQr(uri = uri, lightning = false, feeSat = null, youGetSat = null, hint = null)
+    val uri = if (amountSat != null && amountSat > 0L) {
+        "bitcoin:$address?amount=${fmtCoin(amountSat)}"
+    } else {
+        address
     }
+    return ReceiveQr(uri = uri, lightning = false, feeSat = null, youGetSat = null, hint = null)
+}
 
-    if (amountSat == null || amountSat <= 0L) {
-        return ReceiveQr(
-            uri = address,
-            lightning = false,
-            feeSat = null,
-            youGetSat = null,
-            hint = ReceiveHint.AddAmountForLightning,
-        )
-    }
-
-    if (amountSat < minLnSat) {
-        return ReceiveQr(
-            uri = "bitcoin:$address?amount=${fmtCoin(amountSat)}",
-            lightning = false,
-            feeSat = null,
-            youGetSat = null,
-            hint = ReceiveHint.BelowLightningMin,
-        )
-    }
-
-    if (quote == null) {
-        return ReceiveQr(
-            uri = "bitcoin:$address?amount=${fmtCoin(amountSat)}",
-            lightning = false,
-            feeSat = null,
-            youGetSat = null,
-            hint = null,
-        )
-    }
-
+/** The Lightning wallet's receive QR: `lightning:<invoice>` once [quote] exists for
+ *  [amountSat]; until then no QR (empty uri), with a hint when the amount is missing
+ *  or below [minLnSat]. */
+fun buildLightningReceiveQr(amountSat: Long?, quote: LnReceiveQuote?, minLnSat: Long): ReceiveQr {
+    fun none(hint: ReceiveHint?) = ReceiveQr(uri = "", lightning = false, feeSat = null, youGetSat = null, hint = hint)
+    if (amountSat == null || amountSat <= 0L) return none(ReceiveHint.AddAmountForLightning)
+    if (amountSat < minLnSat) return none(ReceiveHint.BelowLightningMin)
+    if (quote == null) return none(null)
     val feeSat = displaySatFromMsat(quote.feeMsat)
     val displayTotalSat = maxOf(amountSat, displaySatFromMsat(quote.amountMsat))
     val youGetSat = (displayTotalSat - feeSat).coerceAtLeast(0L)
     return ReceiveQr(
-        uri = "bitcoin:$address?amount=${fmtCoin(amountSat)}&lightning=${quote.invoice}",
+        uri = "lightning:${quote.invoice}",
         lightning = true,
         feeSat = feeSat,
         youGetSat = youGetSat,
@@ -152,6 +134,44 @@ fun parseScan(
 ): LnTarget =
     if (nowSecs != null) lnParseAt(text, network, nowSecs)
     else lnParse(text, network)
+
+/** True when [text] is something only the Lightning wallet pays: an invoice, an
+ *  offer, an LNURL / Lightning address, or a BIP21 URI carrying `lightning=` / `lno=`.
+ *  False for a plain on-chain address or BIP21 URI, and for anything unparseable
+ *  (except an expired invoice, which is still Lightning's to explain). */
+fun isLightningTarget(text: String, network: String, nowSecs: ULong? = null): Boolean {
+    val trimmed = text.trim()
+    if (trimmed.isEmpty()) return false
+    return try {
+        parseScan(trimmed, network, nowSecs) !is LnTarget.OnChain
+    } catch (e: LnFfiException.InvoiceExpired) {
+        true
+    } catch (e: Exception) {
+        false
+    }
+}
+
+/** Where a payment link goes: the Lightning wallet, a prompt to create one, or on-chain. */
+sealed interface LightningLinkRoute {
+    data class OpenLightningWallet(val id: String) : LightningLinkRoute
+    data object CreateLightningWallet : LightningLinkRoute
+    data object OnChain : LightningLinkRoute
+}
+
+/** With no Lightning wallet, a BIP21 URI that also carries an on-chain address still goes
+ *  to a BTC wallet that can pay it there (its Send then offers to create the Lightning wallet). */
+fun lightningLinkRoute(
+    wallets: List<WalletConfig>,
+    text: String,
+    network: String,
+    nowSecs: ULong? = null,
+): LightningLinkRoute {
+    if (!isLightningTarget(text, network, nowSecs)) return LightningLinkRoute.OnChain
+    lightningWalletOf(wallets)?.let { return LightningLinkRoute.OpenLightningWallet(it.id) }
+    val unified = runCatching { parseScan(text.trim(), network, nowSecs) }.getOrNull() is LnTarget.Unified
+    val canPayOnChain = wallets.any { it.chain == "btc" && !it.watchOnly }
+    return if (unified && canPayOnChain) LightningLinkRoute.OnChain else LightningLinkRoute.CreateLightningWallet
+}
 
 sealed interface SendPlan {
     data class OnChain(val address: String, val amountSat: Long?) : SendPlan

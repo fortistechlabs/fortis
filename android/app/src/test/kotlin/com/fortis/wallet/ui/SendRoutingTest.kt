@@ -1,7 +1,9 @@
 package com.fortis.wallet.ui
 
+import com.fortis.wallet.data.WalletConfig
 import com.fortis.wallet.lightning.LnState
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
@@ -22,6 +24,10 @@ class SendRoutingTest {
     private val addr = "bc1qar0srrr7xfkvy5l643lydnw9re59gtzzwf5mdq"
     private val base58 = "1BvBMSEYstWetqTFn5Au4m4GFg7xJaNVN2"
     private val nowValid = 1_496_314_668uL
+    private val offer =
+        "lno1pqps7sjqpgtyzm3qv4uxzmtsd3jjqer9wd3hy6tsw35k7msjzfpy7nz5yqcnygrfdej82um5wf5k2uckyypwa3eyt44h6txtxquqh7lz5djge4afgfjn7k4rgrkuag0jsd5xvxg"
+    private val btc = WalletConfig("b", "Main", "btc", "mainnet", sealed = "aa", salt = "bb")
+    private val ln = WalletConfig("l", "Spend", "ln", "bitcoin", sealed = "cc", salt = "dd")
 
     private fun ready(lightningSat: ULong): LnState = LnState.Ready(
         balances = LnBalances(
@@ -255,5 +261,39 @@ class SendRoutingTest {
         assertEquals(SendPlan.OnChain(address = addr, amountSat = 50_000L), btcPlan)
 
         assertNull(textFromIntent(Uri.create("https://example.com")))
+    }
+
+    @Test
+    fun lightningTargetsAreRecognised() {
+        assertTrue(isLightningTarget(bolt11, "bitcoin", nowValid))
+        assertTrue(isLightningTarget(offer, "bitcoin", nowValid))
+        assertTrue(isLightningTarget("alice@example.com", "bitcoin", nowValid))
+        assertTrue(isLightningTarget("bitcoin:$addr?lightning=$bolt11", "bitcoin", nowValid))
+        assertFalse(isLightningTarget(addr, "bitcoin", nowValid))
+        assertFalse(isLightningTarget("bitcoin:$addr?amount=0.1", "bitcoin", nowValid))
+        // A BTC wallet's network name is "mainnet": the same answers.
+        assertTrue(isLightningTarget(bolt11, "mainnet", nowValid))
+        assertFalse(isLightningTarget(addr, "mainnet", nowValid))
+    }
+
+    @Test
+    fun lightningLinkWithoutLightningWalletAsksToCreateOne() {
+        assertEquals(
+            LightningLinkRoute.CreateLightningWallet,
+            lightningLinkRoute(listOf(btc), bolt11, "bitcoin", nowValid),
+        )
+        assertEquals(
+            LightningLinkRoute.OpenLightningWallet(ln.id),
+            lightningLinkRoute(listOf(btc, ln), bolt11, "bitcoin", nowValid),
+        )
+        assertEquals(
+            LightningLinkRoute.OnChain,
+            lightningLinkRoute(listOf(btc, ln), addr, "bitcoin", nowValid),
+        )
+        // A BIP21 URI with a Lightning part can still be paid on-chain from the BTC wallet.
+        val unified = "bitcoin:$addr?amount=0.025&lightning=$bolt11"
+        assertEquals(LightningLinkRoute.OnChain, lightningLinkRoute(listOf(btc), unified, "bitcoin", nowValid))
+        assertEquals(LightningLinkRoute.OpenLightningWallet(ln.id), lightningLinkRoute(listOf(btc, ln), unified, "bitcoin", nowValid))
+        assertEquals(LightningLinkRoute.CreateLightningWallet, lightningLinkRoute(emptyList(), unified, "bitcoin", nowValid))
     }
 }

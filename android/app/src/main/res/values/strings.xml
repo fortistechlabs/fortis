@@ -499,12 +499,8 @@
     <string name="settings_lightning_force_body">The Lightning provider could not be reached, so the channel cannot be closed cooperatively. A force close works without it, but your funds are locked for a while before they return to your on-chain wallet, and the network fee is higher. Try again later if you can wait.</string>
     <string name="settings_lightning_force_action">Force close</string>
     <string name="settings_lightning_closing">Closing…</string>
-    <string name="wallet_split_onchain">On-chain</string>
-    <string name="wallet_split_lightning">Lightning</string>
     <string name="wallet_split_moving">Moving…</string>
-    <string name="receive_amount_optional">Amount (optional)</string>
     <string name="receive_ln_needs_amount">Lightning needs an amount</string>
-    <string name="receive_ln_below_min">Lightning receives start at %1$s %2$s — on-chain only below that.</string>
     <string name="receive_ln_fee_summary">Receiving %1$s %2$s · fee %3$s · you get %4$s</string>
     <string name="receive_ln_quoting">Getting Lightning invoice…</string>
     <string name="send_ln_resolving">Resolving Lightning payment…</string>
@@ -536,4 +532,9 @@
     <string name="ln_takeover_title">Use Lightning on this device?</string>
     <string name="ln_takeover_body">The other device will stop using Lightning for this wallet. Only continue if you no longer use it there; running both can put your channel funds at risk.</string>
     <string name="error_no_onchain_wallet_for_lightning">Add a BTC wallet to move Lightning funds on-chain.</string>
+    <string name="wallet_chain_lightning">Lightning</string>
+    <string name="send_pay_with_lightning_wallet">Pay with your Lightning wallet</string>
+    <string name="send_create_lightning_wallet">Create a Lightning wallet to pay this</string>
+    <string name="ln_wallet_first_receive_hint">Receive a payment to open your first channel.</string>
+    <string name="ln_send_onchain_target">This is an on-chain address — send it from a BTC wallet.</string>
 </resources>

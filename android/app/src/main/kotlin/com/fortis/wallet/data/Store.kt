@@ -61,7 +61,12 @@ data class WalletConfig(
         watchOnly -> " · watch-only"
         else -> ""
     }
-    val otherChain: String get() = if (chain == "btc") "xbt" else "btc"
+    /** The other on-chain chain this seed can be added on; null for the Lightning wallet. */
+    val otherChain: String? get() = when (chain) {
+        "btc" -> "xbt"
+        "xbt" -> "btc"
+        else -> null
+    }
     val isLightning: Boolean get() = chain == LN_CHAIN
 
     fun toJson(): JSONObject = JSONObject().apply {
