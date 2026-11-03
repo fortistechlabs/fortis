@@ -267,6 +267,7 @@
     <!-- errors surfaced to the user -->
     <string name="error_wallet_max">You can keep up to %1$d wallets on one device.</string>
     <string name="error_name_taken">You already have a %1$s wallet called “%2$s”. Choose another name.</string>
+    <string name="error_lightning_wallet_exists">This app already has a Lightning wallet.</string>
     <string name="error_clone_exists">“%1$s” is already on %2$s.</string>
     <string name="error_lock_setup_failed">app-lock setup failed</string>
     <string name="error_enter_amount">enter an amount</string>

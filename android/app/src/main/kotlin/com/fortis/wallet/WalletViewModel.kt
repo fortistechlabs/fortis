@@ -11,6 +11,7 @@ import com.fortis.wallet.data.*
 import com.fortis.wallet.lightning.EdgeLnInfoApi
 import com.fortis.wallet.lightning.LightningSession
 import com.fortis.wallet.lightning.LnState
+import com.fortis.wallet.lightning.lightningWalletOf
 import com.fortis.wallet.swap.SwapService
 import com.fortis.wallet.swap.indexUsed
 import com.fortis.wallet.swap.withFreshIndex
@@ -21,7 +22,11 @@ import com.fortis.wallet.ui.fmtCoin
 import com.fortis.wallet.ui.screens.amountError
 import com.fortis.wallet.ui.screens.amountLimit
 import com.fortis.wallet.ui.screens.btcLeg
+import com.fortis.wallet.wallet.LightningWalletExists
+import com.fortis.wallet.wallet.LightningWalletKeys
 import com.fortis.wallet.wallet.WalletSession
+import com.fortis.wallet.wallet.checkCanAddLightning
+import com.fortis.wallet.wallet.newLightningConfig
 import com.fortis.wallet.wallet.newMnemonic
 import com.fortis.wallet.wallet.sealSeed
 import com.fortis.wallet.wallet.unsealSeed
@@ -375,8 +380,7 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
                 // `enable` has already started the node if this wallet's seed is held by
                 // the session; only hand the seed over (a second start) when it is not.
                 if (selectedId == walletId && appSecret != null && !lightning.isUnlockedFor(walletId)) {
-                    val s = ensureSession(walletId, quiet = true)
-                    val seed = s?.copyBip39Seed()
+                    val seed = ensureLightningKeys(walletId)?.copySeed()
                     if (seed != null) {
                         try {
                             lightning.onUnlocked(walletId, seed)
@@ -424,15 +428,16 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    private fun syncLightningForSelected() {
-        val c = config
-        if (appSecret == null || c == null || !c.isLightning) {
+    /** Start the node for the app's Lightning wallet whenever the app is unlocked, whichever
+     *  wallet is selected; stop it when there is none or the app is locked. */
+    private fun syncLightning() {
+        val c = lightningWalletOf(wallets)
+        if (appSecret == null || c == null) {
             lightning.onRelocked()
             return
         }
         viewModelScope.launch(Dispatchers.Default) {
-            val s = ensureSession(c.id, quiet = true) ?: return@launch
-            val seed = s.copyBip39Seed() ?: return@launch
+            val seed = ensureLightningKeys(c.id)?.copySeed() ?: return@launch
             try {
                 lightning.onUnlocked(c.id, seed)
             } finally {
@@ -495,6 +500,7 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
     private fun ensureSession(id: String, quiet: Boolean = false): WalletSession? {
         sessions[id]?.let { return it }
         val c = wallets.firstOrNull { it.id == id } ?: return null
+        if (c.isLightning) return null // no on-chain session: its keys are [ensureLightningKeys]
         return try {
             val session = if (c.watchOnly) {
                 WalletSession.watchOnly(c.chain, c.network, c.xpub ?: return null)
@@ -509,6 +515,21 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
             }
         } catch (e: Exception) {
             if (!quiet) error = e.message ?: str(R.string.error_open_wallet)
+            null
+        }
+    }
+
+    private val lnKeys = mutableMapOf<String, LightningWalletKeys>()
+
+    /** The Lightning wallet's node keys, unsealed with the in-memory app secret (cached until lock). */
+    private fun ensureLightningKeys(id: String): LightningWalletKeys? = synchronized(lnKeys) {
+        lnKeys[id]?.let { return it }
+        val c = wallets.firstOrNull { it.id == id && it.isLightning } ?: return null
+        val secret = appSecret ?: return null
+        return try {
+            val (mnemonic, passphrase) = unsealSeed(c.sealed!!, c.salt!!, secret)
+            LightningWalletKeys.fromMnemonic(mnemonic, passphrase).also { lnKeys[id] = it }
+        } catch (e: Exception) {
             null
         }
     }
@@ -1277,7 +1298,7 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
             selectedId = id
             viewModelScope.launch { store.setSelected(id) }
             resetView()
-            syncLightningForSelected()
+            syncLightning()
         }
         if (nav != NavTab.Wallet || swapRoute != null) pushPlace()
         if (swapRoute != null) { declineTaken(); swapRoute = null }
@@ -1292,7 +1313,7 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
         appSecret = secret
         resolvePhase()
         fortis.onAppUnlocked()
-        syncLightningForSelected()
+        syncLightning()
     }
 
     /** Password mode: open a wallet with the password off the main thread (it
@@ -1305,15 +1326,20 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
             } catch (e: com.fortis.wallet.wallet.WrongPassword) {
                 throw Exception(str(R.string.error_wrong_password))
             }
-            WalletSession.signing(c.chain, c.network, mnemonic, passphrase).also {
-                it.setIndices(c.nextReceive, c.nextChange)
-                sessions[c.id] = it
+            if (c.isLightning) {
+                val keys = LightningWalletKeys.fromMnemonic(mnemonic, passphrase)
+                synchronized(lnKeys) { lnKeys.put(c.id, keys)?.close() }
+            } else {
+                WalletSession.signing(c.chain, c.network, mnemonic, passphrase).also {
+                    it.setIndices(c.nextReceive, c.nextChange)
+                    sessions[c.id] = it
+                }
             }
         }
         appSecret = pw
         resolvePhase()
         fortis.onAppUnlocked()
-        syncLightningForSelected()
+        syncLightning()
     }
 
     /** Lock the whole app — clears every seed and the app secret from memory. */
@@ -1321,6 +1347,7 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
         lightning.onRelocked()
         sessions.values.forEach { it.close() }
         sessions.clear()
+        synchronized(lnKeys) { lnKeys.values.forEach { it.close() }; lnKeys.clear() }
         appSecret = null
         synchronized(balanceLock) { overview = OverviewBalances(); coinPrices = emptyMap() }
         overviewBackends.clear()
@@ -1346,7 +1373,7 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
     fun restoreWallet(name: String, phrase: String, passphrase: String, chain: String, network: String, lock: LockSetup? = null) = wrap {
         val words = phrase.trim().split(Regex("\\s+")).joinToString(" ")
         finishOnboard(name, chain, network, words, passphrase, lock)
-        recoverSwaps(quiet = true)
+        if (chain != LN_CHAIN) recoverSwaps(quiet = true)
     }
 
     private suspend fun finishOnboard(
@@ -1360,22 +1387,37 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
             lockMode = lock.mode
             store.setLock(lock.mode, lock.appWrapped)
         }
+        val isLn = chain == LN_CHAIN
+        if (isLn) {
+            try {
+                checkCanAddLightning(wallets)
+            } catch (e: LightningWalletExists) {
+                throw Exception(str(R.string.error_lightning_wallet_exists))
+            }
+        }
         requireFreeName(name, chain)
         val secret = appSecret ?: error("the app is locked")
-        val s = WalletSession.signing(chain, network, mnemonic, passphrase)
+        // Validate the phrase before sealing or saving anything.
+        val s = if (isLn) null else WalletSession.signing(chain, network, mnemonic, passphrase)
+        val keys = if (isLn) LightningWalletKeys.fromMnemonic(mnemonic, passphrase) else null
         val sealed = sealSeed(mnemonic, passphrase, secret)
         val id = UUID.randomUUID().toString()
-        val c = WalletConfig(id, cleanWalletName(name), chain, network, sealed.blobHex, sealed.saltHex)
+        val c = if (isLn) {
+            newLightningConfig(id, cleanWalletName(name), sealed)
+        } else {
+            WalletConfig(id, cleanWalletName(name), chain, network, sealed.blobHex, sealed.saltHex)
+        }
         store.save(c); store.setSelected(id)
         wallets = wallets + c
         selectedId = id
         resetView()
-        sessions[id] = s
+        if (s != null) sessions[id] = s
+        if (keys != null) synchronized(lnKeys) { lnKeys.put(id, keys)?.close() }
         draftMnemonic = null
         nav = NavTab.Wallet
         clearBack()
         resolvePhase()
-        syncLightningForSelected()
+        syncLightning()
     }
 
     /** Import an account-level xpub with no seed at all — nothing to sign
