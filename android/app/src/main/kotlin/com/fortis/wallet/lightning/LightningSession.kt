@@ -212,6 +212,13 @@ class LightningSession(
                     return@withLock
                 }
 
+                // Already running for this wallet (e.g. the app was unlocked again, or another
+                // wallet was opened): keep the node. An Error state retries the start below.
+                if (unlockedWalletId == walletId && currentNode != null && _state.value is LnState.Ready) {
+                    seedCopy.fill(0)
+                    return@withLock
+                }
+
                 if (unlockedWalletId != null && unlockedWalletId != walletId) {
                     stopCurrentNodeLocked()
                     lastKnownBalances = ZERO_LN_BALANCES

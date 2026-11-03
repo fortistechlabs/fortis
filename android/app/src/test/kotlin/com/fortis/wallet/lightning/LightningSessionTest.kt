@@ -260,6 +260,63 @@ class LightningSessionTest {
     }
 
     @Test
+    fun unlocking_the_running_wallet_again_does_not_restart_its_node() = runBlocking {
+        val store = InMemoryLightningStore(mapOf(btcMainnetWallet.id to btcMainnetWallet))
+        val starts = AtomicInteger(0)
+        val stops = AtomicInteger(0)
+        val built = AtomicInteger(0)
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        try {
+            val session = LightningSession(
+                scope = scope,
+                store = store,
+                nodeFactory = {
+                    built.incrementAndGet()
+                    FakeNode(onStart = { starts.incrementAndGet() }, onStop = { stops.incrementAndGet() })
+                },
+                info = LnInfoApi { sampleInfo() },
+            )
+            session.onUnlocked(btcMainnetWallet.id, sampleSeed).join()
+            assertTrue(session.state.value is LnState.Ready)
+            session.onUnlocked(btcMainnetWallet.id, sampleSeed).join()
+
+            assertTrue("expected Ready, got ${session.state.value}", session.state.value is LnState.Ready)
+            assertEquals(1, built.get())
+            assertEquals(1, starts.get())
+            assertEquals(0, stops.get())
+            assertTrue(session.isUnlockedFor(btcMainnetWallet.id))
+        } finally {
+            scope.cancel()
+        }
+    }
+
+    @Test
+    fun unlocking_again_after_a_failed_start_retries() = runBlocking {
+        val store = InMemoryLightningStore(mapOf(btcMainnetWallet.id to btcMainnetWallet))
+        val attempts = AtomicInteger(0)
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        try {
+            val session = LightningSession(
+                scope = scope,
+                store = store,
+                nodeFactory = { FakeNode() },
+                info = LnInfoApi {
+                    if (attempts.incrementAndGet() == 1) throw LnFfiException.LspUnreachable()
+                    sampleInfo()
+                },
+            )
+            session.onUnlocked(btcMainnetWallet.id, sampleSeed).join()
+            assertTrue(session.state.value is LnState.Error)
+            session.onUnlocked(btcMainnetWallet.id, sampleSeed).join()
+
+            assertTrue("expected Ready, got ${session.state.value}", session.state.value is LnState.Ready)
+            assertEquals(2, attempts.get())
+        } finally {
+            scope.cancel()
+        }
+    }
+
+    @Test
     fun stale_ln_info_is_refetched_on_each_start() = runBlocking {
         val store = InMemoryLightningStore(mapOf(btcMainnetWallet.id to btcMainnetWallet))
         var fetchCount = 0

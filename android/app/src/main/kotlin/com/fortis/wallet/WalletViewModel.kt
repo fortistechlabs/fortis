@@ -21,7 +21,7 @@ import com.fortis.wallet.swap.recoveredRecord
 import com.fortis.wallet.swap.recoveryWallets
 import com.fortis.wallet.swap.scanTags
 import com.fortis.wallet.ui.fmtCoin
-import com.fortis.wallet.ui.lightningLinkRoute
+import com.fortis.wallet.ui.pendingLinkRoute
 import com.fortis.wallet.ui.screens.amountError
 import com.fortis.wallet.ui.screens.amountLimit
 import com.fortis.wallet.ui.screens.btcLeg
@@ -409,17 +409,30 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /** Start the node for the app's Lightning wallet whenever the app is unlocked, whichever
-     *  wallet is selected; stop it when there is none or the app is locked. */
+     *  wallet is selected; stop it when there is none or the app is locked. A no-op while the
+     *  node already runs (or is starting) for that wallet: opening another wallet must not
+     *  restart it. An Error state is retried. */
     private fun syncLightning() {
         val c = lightningWalletOf(wallets)
-        if (appSecret == null || c == null) {
+        val secret = appSecret
+        if (secret == null || c == null) {
             lightning.onRelocked()
             return
         }
+        val st = lightning.state.value
+        if (lightning.isUnlockedFor(c.id) && (st is LnState.Ready || st is LnState.Starting)) return
+        val gen = lockGeneration
         viewModelScope.launch(Dispatchers.Default) {
-            val seed = ensureLightningKeys(c.id)?.copySeed() ?: return@launch
+            val seed = lightningSeedCopy(c, secret, gen) ?: return@launch
             try {
-                lightning.onUnlocked(c.id, seed)
+                // On the main thread, like lock(): if the app was locked (or the wallet removed)
+                // while the seed was unsealed, do not start a node now. onUnlocked's launch runs
+                // up to its lock at once here, so it queues before any later onRelocked.
+                withContext(Dispatchers.Main) {
+                    if (lockGeneration == gen && appSecret != null && lightningWalletOf(wallets)?.id == c.id) {
+                        lightning.onUnlocked(c.id, seed)
+                    }
+                }
             } finally {
                 seed.fill(0)
             }
@@ -447,19 +460,38 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
             else -> Phase.Shell
         }
         if (phase == Phase.Shell) {
-            val text = pendingSendText
-            if (text != null) {
-                val targetWallet = sendTargetWallet(text)
-                if (targetWallet != null) {
-                    if (selectedId != targetWallet.id) {
-                        selectedId = targetWallet.id
-                        viewModelScope.launch { store.setSelected(targetWallet.id) }
-                        resetView()
-                    }
-                    nav = NavTab.Wallet
-                }
-            }
+            routePendingSend()
             enterTab()
+        }
+    }
+
+    /** Send [pendingSendText] where it belongs, now that the wallets are loaded and the app is
+     *  open: the Lightning wallet, a BTC wallet, or (no Lightning wallet for a Lightning-only
+     *  target) the prompt to create one, which drops the text. Before that it waits. */
+    private fun routePendingSend() {
+        val target = pendingSendTarget() ?: return
+        if (selectedId != target.id) {
+            selectedId = target.id
+            viewModelScope.launch { store.setSelected(target.id) }
+            resetView()
+        }
+        nav = NavTab.Wallet
+    }
+
+    /** The wallet [pendingSendText] opens in, or null to wait (wallets not loaded, app not
+     *  open) or when it cannot go anywhere. A Lightning-only target with no Lightning wallet
+     *  raises the create prompt and drops the text. */
+    private fun pendingSendTarget(): WalletConfig? {
+        val text = pendingSendText ?: return null
+        if (phase != Phase.Shell) return null
+        return when (val route = pendingLinkRoute(wallets, text, "bitcoin") ?: return null) {
+            is com.fortis.wallet.ui.LightningLinkRoute.OpenLightningWallet -> wallets.firstOrNull { it.id == route.id }
+            com.fortis.wallet.ui.LightningLinkRoute.CreateLightningWallet -> {
+                pendingSendText = null
+                lightningWalletPrompt = true
+                null
+            }
+            com.fortis.wallet.ui.LightningLinkRoute.OnChain -> onChainSendWallet()
         }
     }
 
@@ -499,18 +531,32 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /** The Lightning wallet's node keys, cached until lock. Guarded by its own monitor. */
     private val lnKeys = mutableMapOf<String, LightningWalletKeys>()
 
-    /** The Lightning wallet's node keys, unsealed with the in-memory app secret (cached until lock). */
-    private fun ensureLightningKeys(id: String): LightningWalletKeys? = synchronized(lnKeys) {
-        lnKeys[id]?.let { return it }
-        val c = wallets.firstOrNull { it.id == id && it.isLightning } ?: return null
-        val secret = appSecret ?: return null
-        return try {
+    /** Bumped by [lock] (inside the [lnKeys] monitor): work begun before a lock sees it changed. */
+    @Volatile private var lockGeneration = 0L
+
+    /** A copy of the Lightning wallet's node seed (the caller wipes it), unsealing its keys with
+     *  [secret] when they are not cached. The unseal (Argon2) runs outside the [lnKeys] monitor,
+     *  so [lock] never waits on it; the seed is copied inside it, so [lock] cannot close the keys
+     *  in between. Null when the app was locked meanwhile ([gen] is stale) or the unseal failed. */
+    private fun lightningSeedCopy(c: WalletConfig, secret: String, gen: Long): ByteArray? {
+        synchronized(lnKeys) {
+            if (lockGeneration != gen) return null
+            lnKeys[c.id]?.let { return it.copySeed() }
+        }
+        val keys = try {
             val (mnemonic, passphrase) = unsealSeed(c.sealed!!, c.salt!!, secret)
-            LightningWalletKeys.fromMnemonic(mnemonic, passphrase).also { lnKeys[id] = it }
+            LightningWalletKeys.fromMnemonic(mnemonic, passphrase)
         } catch (e: Exception) {
-            null
+            return null
+        }
+        synchronized(lnKeys) {
+            if (lockGeneration != gen) { keys.close(); return null }
+            lnKeys[c.id]?.let { cached -> keys.close(); return cached.copySeed() }
+            lnKeys[c.id] = keys
+            return keys.copySeed()
         }
     }
 
@@ -1291,7 +1337,6 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
             selectedId = id
             viewModelScope.launch { store.setSelected(id) }
             resetView()
-            syncLightning()
         }
         if (nav != NavTab.Wallet || swapRoute != null) pushPlace()
         if (swapRoute != null) { declineTaken(); swapRoute = null }
@@ -1340,7 +1385,11 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
         lightning.onRelocked()
         sessions.values.forEach { it.close() }
         sessions.clear()
-        synchronized(lnKeys) { lnKeys.values.forEach { it.close() }; lnKeys.clear() }
+        synchronized(lnKeys) {
+            lockGeneration++
+            lnKeys.values.forEach { it.close() }
+            lnKeys.clear()
+        }
         appSecret = null
         synchronized(balanceLock) { overview = OverviewBalances(); coinPrices = emptyMap() }
         overviewBackends.clear()
@@ -1411,7 +1460,9 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
         nav = NavTab.Wallet
         clearBack()
         resolvePhase()
-        syncLightning()
+        // Only the Lightning wallet's own creation or restore starts its node; a new BTC
+        // wallet leaves a running node alone.
+        if (isLn) syncLightning()
     }
 
     /** Import an account-level xpub with no seed at all — nothing to sign
@@ -1946,30 +1997,19 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
 
     fun dismissLightningWalletPrompt() { lightningWalletPrompt = false }
 
-    /** The wallet that should open with [text] in its Send form: the Lightning wallet for
-     *  a Lightning target, else the selected (or first) BTC signing wallet. */
-    private fun sendTargetWallet(text: String): WalletConfig? =
-        when (val r = lightningLinkRoute(wallets, text, "bitcoin")) {
-            is com.fortis.wallet.ui.LightningLinkRoute.OpenLightningWallet -> wallets.firstOrNull { it.id == r.id }
-            com.fortis.wallet.ui.LightningLinkRoute.CreateLightningWallet -> null
-            com.fortis.wallet.ui.LightningLinkRoute.OnChain ->
-                wallets.firstOrNull { it.id == selectedId && !it.watchOnly && it.chain == "btc" }
-                    ?: wallets.firstOrNull { !it.watchOnly && it.chain == "btc" }
-                    ?: wallets.firstOrNull { !it.watchOnly && !it.isLightning }
-        }
+    /** The wallet an on-chain payment link opens in: the selected (or first) BTC signing wallet. */
+    private fun onChainSendWallet(): WalletConfig? =
+        wallets.firstOrNull { it.id == selectedId && !it.watchOnly && it.chain == "btc" }
+            ?: wallets.firstOrNull { !it.watchOnly && it.chain == "btc" }
+            ?: wallets.firstOrNull { !it.watchOnly && !it.isLightning }
 
     /** A `lightning:` / `bitcoin:` link opened the app: Lightning targets go to the Lightning
-     *  wallet (or ask to create one); on-chain ones to a BTC wallet's Send. */
+     *  wallet (or ask to create one); on-chain ones to a BTC wallet's Send. On a cold start the
+     *  wallets are not loaded yet, so the link waits in [pendingSendText] until they are and the
+     *  app is unlocked ([resolvePhase]). */
     fun openSendWithUri(text: String) {
-        if (lightningLinkRoute(wallets, text, "bitcoin") == com.fortis.wallet.ui.LightningLinkRoute.CreateLightningWallet) {
-            lightningWalletPrompt = true
-            return
-        }
         pendingSendText = text
-        val target = sendTargetWallet(text)
-        if (target != null && phase == Phase.Shell) {
-            selectWallet(target.id)
-        }
+        pendingSendTarget()?.let { selectWallet(it.id) }
     }
 
     /** From a BTC wallet's Send: pay [text] (a Lightning target) with the Lightning wallet. */

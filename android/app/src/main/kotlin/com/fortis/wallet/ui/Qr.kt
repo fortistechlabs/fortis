@@ -173,6 +173,17 @@ fun lightningLinkRoute(
     return if (unified && canPayOnChain) LightningLinkRoute.OnChain else LightningLinkRoute.CreateLightningWallet
 }
 
+/** Where a link that opened the app goes, or null while the wallet list is not loaded yet
+ *  (on a cold start the link arrives before the wallets do, and an empty list would wrongly
+ *  ask to create a Lightning wallet). */
+fun pendingLinkRoute(
+    wallets: List<WalletConfig>,
+    text: String,
+    network: String,
+    nowSecs: ULong? = null,
+): LightningLinkRoute? =
+    if (wallets.isEmpty()) null else lightningLinkRoute(wallets, text, network, nowSecs)
+
 sealed interface SendPlan {
     data class OnChain(val address: String, val amountSat: Long?) : SendPlan
     data class Lightning(val target: LnTarget, val amountMsat: ULong?) : SendPlan
