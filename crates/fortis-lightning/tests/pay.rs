@@ -384,7 +384,7 @@ fn pays_invoice_via_lsp_to_second_client() {
     assert_eq!(p.direction, Direction::Out);
     assert_eq!(p.amount_msat, amount);
     assert_eq!(p.fee_msat, fee, "fee in history = fee in PaymentSent");
-    assert!(fee > 0, "the LSP charges a forwarding fee");
+    assert_eq!(fee, 0, "fortis-lsp forwards for free");
     assert!(fee <= env.client.estimate_fee_msat(&bolt11(&inv), amount));
     assert_eq!(p.description, "coffee");
     assert!(p.timestamp > 1_700_000_000);
@@ -394,6 +394,44 @@ fn pays_invoice_via_lsp_to_second_client() {
 
     // Paying it again is refused, not paid twice.
     assert!(env.client.pay(&bolt11(&inv), None).is_err());
+}
+
+/// The smallest payment there is: 1 sat, by a fixed-amount invoice and by an
+/// any-amount one, through the LSP to another node. The recipient gets exactly
+/// 1 000 msat each time, and the sender pays no fee: `fortis-lsp` forwards
+/// for free (`forwarding_fee_* = 0`, its default).
+#[test]
+#[ignore = "needs fortis-lsp built, FORTIS_BTC_BITCOIND, FORTIS_VSS_SERVER, initdb/pg_ctl"]
+fn pays_one_sat() {
+    let env = Env::with_channel();
+    let one = SAT;
+    let before = env.client.balances().lightning_sat;
+    let fixed = env.payer_invoice(one, "one sat", 3_600);
+    let any = env
+        .payer()
+        .node
+        .bolt11_payment()
+        .receive_variable_amount(&direct("one sat, any amount"), 3_600)
+        .unwrap();
+    for (inv, amount) in [(&fixed, None), (&any, Some(one))] {
+        let id = env.client.pay(&bolt11(inv), amount).expect("pay 1 sat");
+        let fee = wait_sent(&env.client, &id);
+        let got = wait_event(&env.payer().node, "payer PaymentReceived", 60, |e| {
+            matches!(e, Event::PaymentReceived { .. })
+        });
+        assert!(
+            matches!(got, Event::PaymentReceived { amount_msat, .. } if amount_msat == one),
+            "the recipient gets exactly 1 sat: {got:?}"
+        );
+        let p = poll("1 sat payment succeeded", 30, || {
+            find(&env.client, &id).filter(|p| p.status == Status::Succeeded)
+        });
+        assert_eq!((p.amount_msat, p.fee_msat), (one, fee));
+        assert_eq!(fee, 0, "fortis-lsp forwards for free: 1 sat costs 1 sat");
+    }
+    poll("balance down by exactly 2 sat", 30, || {
+        (env.client.balances().lightning_sat == before - 2).then_some(())
+    });
 }
 
 #[test]

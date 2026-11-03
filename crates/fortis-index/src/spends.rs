@@ -26,7 +26,8 @@ const CACHE_MAX: usize = 10_000;
 
 /// The node calls a spend lookup needs.
 pub trait SpendNode: Send + Sync {
-    /// `getrawtransaction <txid> 1`; `None` if the node doesn't know it.
+    /// `getrawtransaction <txid> 2` (verbose, with prevouts); `None` if the
+    /// node doesn't know it.
     fn tx(&self, txid: &Txid) -> Result<Option<Value>>;
     /// `getrawtransaction <txid> 0` (hex); `None` if the node doesn't know it.
     fn raw_tx(&self, txid: &Txid) -> Result<Option<String>>;
@@ -306,7 +307,9 @@ fn not_found(e: &anyhow::Error) -> bool {
 
 impl SpendNode for RpcSpendNode {
     fn tx(&self, txid: &Txid) -> Result<Option<Value>> {
-        match self.rpc.call("getrawtransaction", json!([txid.to_string(), 1])) {
+        // Verbosity 2: verbosity 1's fields plus each input's prevout and the
+        // fee, which the full Esplora `/tx/:txid` answer carries.
+        match self.rpc.call("getrawtransaction", json!([txid.to_string(), 2])) {
             Ok(v) => Ok(Some(v)),
             Err(e) if not_found(&e) => Ok(None),
             Err(e) => Err(e),

@@ -15,13 +15,24 @@ Config: `lsp.toml.example` (every key, its default and meaning). On start it
 prints `node_id <hex>`, `listen <addr>`, `metrics <addr>`,
 `onchain_address <addr>` (send liquidity here) and `ready` on stdout;
 diagnostics and the low-liquidity warning go to stderr, ldk-node's own log
-to `<data_dir>/logs/`. SIGTERM / SIGINT stop the node cleanly (exit 0).
+to `<data_dir>/ldk_node.log`. SIGTERM / SIGINT stop the node cleanly (exit 0).
 
 **Node key.** ldk-node's seed file `<data_dir>/keys_seed` (64 random bytes,
 created by ldk-node on first start with mode 0400) — the same node id on
 every restart. Startup refuses a data dir or seed file that group/others can
 access. Losing it loses the node id and the channels' keys: back it up with
 the data dir (operations: Task 18's runbook).
+
+**Outbound channels** (`[[outbound]]` in `lsp.toml`, with `alias` and
+`announce_addresses`): announced channels to routing nodes, so clients can pay
+outside invoices and outside payers can route to the LSP. Checked every 60 s
+(`src/outbound.rs`): a target is opened only when the node has no channel at
+all with that peer, the on-chain wallet has synced, and the spendable balance
+covers the channel plus its 25 000 sat anchor reserve (otherwise it logs
+"waits for funds" once). It is opened at most once per process run, so a
+channel the peer closes is not reopened until restart; a failed open retries
+after 10 minutes. Setting an alias makes the node public; JIT channels stay
+unannounced.
 
 **Metrics** (`GET /metrics` on `metrics_listen`, loopback unless
 `allow_public_metrics = true`): `fortis_lsp_onchain_sat`, `fortis_lsp_channels`,

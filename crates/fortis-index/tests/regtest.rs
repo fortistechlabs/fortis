@@ -585,3 +585,152 @@ fn txout_reports_unspent_then_404_after_spend() {
         let _ = std::fs::remove_dir_all(&db);
     });
 }
+
+/// Esplora's script hash of an address's script: SHA-256, not reversed.
+fn script_hash(spk_hex: &str) -> String {
+    use bitcoin::hashes::{sha256, Hash};
+    format!("{:x}", sha256::Hash::hash(&hex::decode(spk_hex).unwrap()))
+}
+
+fn get_bytes(idx: &Index, path: &str) -> Vec<u8> {
+    let url = format!("http://127.0.0.1:{}{path}", idx.port);
+    let r = ureq::get(&url).call().unwrap_or_else(|e| panic!("GET {path}: {e}"));
+    let mut out = Vec::new();
+    std::io::Read::read_to_end(&mut r.into_reader(), &mut out).unwrap();
+    out
+}
+
+/// The Esplora routes ldk-node's chain source calls, against what the node
+/// itself says: script-hash history (with paging), tip hash, hashes by
+/// height, block summaries / headers / status, raw tx, tx status, merkle
+/// proofs and fee estimates.
+#[test]
+fn esplora_routes_ldk_node_uses_over_real_nodes() {
+    for_each_node(|_, node| {
+        node.mine(101);
+        node.cli(&["createwallet", "a"]);
+        let x = node.wallet("a", &["getnewaddress", "", "bech32"]);
+        let info: Value = serde_json::from_str(&node.wallet("a", &["getaddressinfo", &x])).unwrap();
+        let sh = script_hash(info["scriptPubKey"].as_str().unwrap());
+        let db = tmp_db("esplora");
+        let idx = start_index(&node, &db);
+
+        // Unknown script: empty, not an error.
+        assert_eq!(get_json(&idx, &format!("/scripthash/{}/txs", "ab".repeat(32))), json!([]));
+        assert_eq!(get_status(&idx, "/scripthash/xyz/txs").0, 400);
+
+        // Pending, then confirmed, by script hash.
+        let fund = node.wallet("miner", &["sendtoaddress", &x, "1.0"]);
+        let txs_path = format!("/scripthash/{sh}/txs");
+        poll(Duration::from_secs(5), "pending by script hash", || {
+            let v = get_json(&idx, &txs_path);
+            (v[0]["txid"] == fund.as_str() && v[0]["status"]["confirmed"] == false).then_some(())
+        });
+        // Unconfirmed: no merkle proof yet.
+        assert_eq!(get_status(&idx, &format!("/tx/{fund}/merkleblock-proof")).0, 404);
+        node.mine(1);
+        let h = node.height();
+        let tip = node.cli(&["getbestblockhash"]).trim().to_string();
+        poll(Duration::from_secs(10), "index at the tip", || (get(&idx, "/blocks/tip/hash")? .trim() == tip).then_some(()));
+        let v = poll(Duration::from_secs(10), "confirmed by script hash", || {
+            let v = get_json(&idx, &txs_path);
+            (v[0]["status"]["confirmed"] == true).then_some(v)
+        });
+        assert_eq!(v.as_array().unwrap().len(), 1);
+        assert_eq!(v[0]["status"]["block_height"], h);
+        assert_eq!(v[0]["status"]["block_hash"], tip.as_str());
+        for k in ["version", "locktime", "size", "weight", "fee"] {
+            assert!(v[0][k].is_number(), "{k} in {}", v[0]);
+        }
+        assert!(v[0]["vin"][0]["txid"].is_string() && v[0]["vin"][0]["witness"].is_array());
+
+        // Blocks.
+        assert_eq!(get(&idx, &format!("/block-height/{h}")).unwrap().trim(), tip);
+        let b5 = node.cli(&["getblockhash", "5"]).trim().to_string();
+        assert_eq!(get(&idx, "/block-height/5").unwrap().trim(), b5);
+        assert_eq!(get_status(&idx, &format!("/block-height/{}", h + 10)).0, 404);
+        let blocks = get_json(&idx, "/blocks");
+        assert_eq!(blocks.as_array().unwrap().len(), 10);
+        assert_eq!(blocks[0]["id"], tip.as_str());
+        assert_eq!(blocks[0]["height"], h);
+        assert_eq!(blocks[1]["height"], h - 1);
+        let low = get_json(&idx, "/blocks/3");
+        assert_eq!(low.as_array().unwrap().len(), 4, "heights 3..=0");
+        assert!(low[3]["previousblockhash"].is_null(), "genesis has no parent");
+        assert_eq!(
+            get(&idx, &format!("/block/{b5}/header")).unwrap().trim(),
+            node.cli(&["getblockheader", &b5, "false"]).trim()
+        );
+        let st = get_json(&idx, &format!("/block/{b5}/status"));
+        assert_eq!(st["in_best_chain"], true);
+        assert_eq!(st["height"], 5);
+        assert_eq!(st["next_best"], node.cli(&["getblockhash", "6"]).trim());
+        let tip_st = get_json(&idx, &format!("/block/{tip}/status"));
+        assert!(tip_st["next_best"].is_null());
+        assert_eq!(get_json(&idx, &format!("/block/{}/status", "11".repeat(32)))["in_best_chain"], false);
+
+        // Transactions.
+        assert_eq!(
+            hex::encode(get_bytes(&idx, &format!("/tx/{fund}/raw"))),
+            node.cli(&["getrawtransaction", &fund]).trim()
+        );
+        assert_eq!(get_status(&idx, &format!("/tx/{}/raw", "00".repeat(32))).0, 404);
+        let ts = get_json(&idx, &format!("/tx/{fund}/status"));
+        assert_eq!(ts["confirmed"], true);
+        assert_eq!(ts["block_height"], h);
+        assert_eq!(
+            get(&idx, &format!("/tx/{fund}/merkleblock-proof")).unwrap().trim(),
+            node.cli(&["gettxoutproof", &format!("[\"{fund}\"]")]).trim()
+        );
+        let full = get_json(&idx, &format!("/tx/{fund}"));
+        assert!(full["vin"][0]["prevout"]["value"].is_number(), "{full}");
+        // ldk-node's wallet rebuilds each transaction from this JSON and files
+        // it under the txid it computes: it must be the real one.
+        assert_rebuilds(&full);
+        for t in get_json(&idx, &txs_path).as_array().unwrap() {
+            assert_rebuilds(t);
+        }
+        // Coinbases too (Core names their script `coinbase`, not `scriptSig`).
+        let block = get_json(&idx, &format!("/block/{tip}/status"));
+        assert_eq!(block["in_best_chain"], true);
+        let cb: Value = serde_json::from_str(&node.cli(&["getblock", &tip, "1"])).unwrap();
+        assert_rebuilds(&get_json(&idx, &format!("/tx/{}", cb["tx"][0].as_str().unwrap())));
+
+        // Fee estimates: every target, a number.
+        let fees = get_json(&idx, "/fee-estimates");
+        for t in ["1", "2", "3", "6", "144", "1008"] {
+            assert!(fees[t].as_f64().is_some_and(|r| r >= 1.0), "{t}: {fees}");
+        }
+
+        // Paging: 30 more payments → 31 confirmed: 25, then 6.
+        let mut ids = vec![fund.clone()];
+        for _ in 0..30 {
+            ids.push(node.wallet("miner", &["sendtoaddress", &x, "0.01"]));
+        }
+        node.mine(1);
+        let page1 = poll(Duration::from_secs(15), "31 confirmed", || {
+            let v = get_json(&idx, &txs_path);
+            let all_conf = v.as_array()?.iter().all(|t| t["status"]["confirmed"] == true);
+            (all_conf && v.as_array()?.len() == 25).then_some(v)
+        });
+        let last = page1[24]["txid"].as_str().unwrap();
+        let page2 = get_json(&idx, &format!("/scripthash/{sh}/txs/chain/{last}"));
+        assert_eq!(page2.as_array().unwrap().len(), 6);
+        let mut seen: Vec<String> = page1.as_array().unwrap().iter().chain(page2.as_array().unwrap())
+            .map(|t| t["txid"].as_str().unwrap().to_string()).collect();
+        seen.sort();
+        seen.dedup();
+        assert_eq!(seen.len(), 31, "every payment once across the pages");
+        let last2 = page2[5]["txid"].as_str().unwrap();
+        assert_eq!(get_json(&idx, &format!("/scripthash/{sh}/txs/chain/{last2}")), json!([]));
+        drop(idx);
+        let _ = std::fs::remove_dir_all(&db);
+    });
+}
+
+/// esplora-client's `Tx::to_tx()` (what bdk_esplora stores) gives back the
+/// transaction's own txid.
+fn assert_rebuilds(v: &Value) {
+    let tx: esplora_client::api::Tx = serde_json::from_value(v.clone()).expect("esplora-client Tx");
+    assert_eq!(tx.to_tx().compute_txid(), tx.txid, "rebuilt txid differs: {v}");
+}

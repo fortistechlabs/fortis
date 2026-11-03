@@ -17,8 +17,8 @@ use rocksdb::{
 
 use crate::extract::ParsedBlock;
 use crate::keys::{
-    height_key, history_key, history_txnum, tip_from, tip_value, txnum_key, utxo_key,
-    utxo_outpoint, BlockRec, Program, TxNum, UtxoVal, MAX_TXNUM,
+    height_key, history_key, history_txnum, p2wpkh_scripthash, tip_from, tip_value, txnum_key,
+    utxo_key, utxo_outpoint, BlockRec, Program, TxNum, UtxoVal, MAX_TXNUM,
 };
 
 pub const SCHEMA_VERSION: u32 = 2;
@@ -31,8 +31,14 @@ const CF_HISTORY: &str = "history";
 const CF_UTXO: &str = "utxo";
 const CF_UNDO: &str = "undo";
 const CF_RENDER: &str = "render";
-const ALL_CFS: [&str; 7] = [
-    CF_META, CF_BLOCKS, CF_TXIDS, CF_HISTORY, CF_UTXO, CF_UNDO, CF_RENDER,
+/// Esplora script hash (SHA-256 of a P2WPKH script) → its 20-byte program,
+/// for `GET /scripthash/:sh/txs` (the Lightning wallet's scan). Written for
+/// every program a block touches from when this column family first existed;
+/// the program's history itself is all in `history`. Never rolled back: a
+/// stale entry only maps a hash to a program whose history says the rest.
+const CF_SCRIPTHASH: &str = "scripthash";
+const ALL_CFS: [&str; 8] = [
+    CF_META, CF_BLOCKS, CF_TXIDS, CF_HISTORY, CF_UTXO, CF_UNDO, CF_RENDER, CF_SCRIPTHASH,
 ];
 
 const META_SCHEMA: &[u8] = b"schema";
@@ -367,8 +373,12 @@ impl Db {
         d: Durability,
         keep_undo: bool,
     ) -> Result<Vec<BlockRec>> {
-        let (cf_txids, cf_hist, cf_utxo) =
-            (self.cf(CF_TXIDS), self.cf(CF_HISTORY), self.cf(CF_UTXO));
+        let (cf_txids, cf_hist, cf_utxo, cf_sh) = (
+            self.cf(CF_TXIDS),
+            self.cf(CF_HISTORY),
+            self.cf(CF_UTXO),
+            self.cf(CF_SCRIPTHASH),
+        );
         let mut wb = WriteBatch::default();
         let mut recs = Vec::with_capacity(blocks.len());
         let mut n = next_txnum;
@@ -423,6 +433,7 @@ impl Db {
                     }
                 }
                 for p in &touched {
+                    wb.put_cf(cf_sh, p2wpkh_scripthash(p), p);
                     let k = history_key(p, n);
                     wb.put_cf(cf_hist, k, []);
                     if keep_undo {
@@ -704,6 +715,15 @@ impl<'a> Reader<'a> {
             .key()
             .and_then(|k| k.get(..PROGRAM_LEN))
             .map(|p| p.try_into().unwrap()))
+    }
+
+    /// The P2WPKH program whose script hashes to `sh` (Esplora's script hash:
+    /// SHA-256 of the script, not reversed), if a block indexed since the
+    /// `scripthash` column family existed touched it.
+    pub fn program_for_scripthash(&self, sh: &[u8; 32]) -> Result<Option<Program>> {
+        Ok(self
+            .get(CF_SCRIPTHASH, sh)?
+            .and_then(|v| <Program>::try_from(v.as_slice()).ok()))
     }
 
     /// Txnums touching `p`, newest first, at most `limit`.

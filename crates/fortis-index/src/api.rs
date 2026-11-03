@@ -31,7 +31,7 @@ use crate::db::{Db, TooHeavy, Unlisted};
 use crate::keys::UtxoVal;
 use crate::keys::{Program, TxNum};
 use crate::mempool::{MempoolView, SharedMempool};
-use crate::render::{esplora_tx, Renderer};
+use crate::render::Renderer;
 use crate::spends::{OutspendError, Spends};
 use crate::sync::SyncStatus;
 
@@ -127,11 +127,24 @@ pub fn router(state: AppState) -> Router {
         .route("/tx", post(broadcast))
         .route("/scan", post(scan))
         .route("/txout/{txid}/{vout}", get(txout))
-        .route("/tx/{txid}", get(tx_json))
+        .route("/tx/{txid}", get(esplora::tx_json))
         .route("/tx/{txid}/hex", get(tx_hex))
         .route("/tx/{txid}/outspend/{vout}", get(outspend))
         .route("/address/{addr}/utxo", get(address_utxo))
         .route("/address/{addr}/txs", get(address_txs))
+        // What ldk-node's Esplora chain source calls besides the above.
+        .route("/fee-estimates", get(esplora::fee_estimates))
+        .route("/blocks/tip/hash", get(esplora::tip_hash))
+        .route("/block-height/{height}", get(esplora::block_height))
+        .route("/blocks", get(esplora::blocks_tip))
+        .route("/blocks/{height}", get(esplora::blocks_at))
+        .route("/block/{hash}/header", get(esplora::block_header))
+        .route("/block/{hash}/status", get(esplora::block_status))
+        .route("/tx/{txid}/raw", get(esplora::tx_raw))
+        .route("/tx/{txid}/status", get(esplora::tx_status))
+        .route("/tx/{txid}/merkleblock-proof", get(esplora::merkleblock_proof))
+        .route("/scripthash/{sh}/txs", get(esplora::scripthash_txs))
+        .route("/scripthash/{sh}/txs/chain/{last}", get(esplora::scripthash_txs_chain))
         .fallback(no_route)
         .method_not_allowed_fallback(no_route)
         .layer(DefaultBodyLimit::max(BODY_LIMIT))
@@ -228,17 +241,32 @@ fn recommended_fees(rpc: &Rpc) -> Value {
 
 async fn broadcast(State(st): State<AppState>, body: String) -> Response {
     let rpc = st.rpc.clone();
+    let body_copy = body.clone();
     match tokio::task::spawn_blocking(move || fortis_node::broadcast(&rpc, body.trim())).await {
         Ok(Ok(txid)) => text(StatusCode::OK, txid.to_string()),
         // The node down: generic (its text names the node). Its rejection
         // ("insufficient fee", …): passed on, the wallets act on it.
         Ok(Err(e)) if node_down(&e) => ApiError::node_unavailable(&e).into_response(),
-        Ok(Err(e)) => text(StatusCode::BAD_REQUEST, format!("{e:#}")),
+        Ok(Err(e)) => {
+            // Logged: a wallet that can't get a transaction out (a Lightning
+            // close, a sweep) only sees its own retry loop.
+            eprintln!("fortis-index: broadcast rejected: {e:#}{}", spent_outpoints(&body_copy));
+            text(StatusCode::BAD_REQUEST, format!("{e:#}"))
+        }
         Err(e) => {
             eprintln!("fortis-index: broadcast task failed: {e}");
             text(StatusCode::INTERNAL_SERVER_ERROR, "broadcast failed".into())
         }
     }
+}
+
+/// ` (txid; spends a:0, b:1)` for a rejected broadcast's log line, or nothing
+/// if the body isn't a transaction. Public data only.
+fn spent_outpoints(hex_tx: &str) -> String {
+    let Ok(bytes) = hex::decode(hex_tx.trim()) else { return String::new() };
+    let Ok(tx) = bitcoin::consensus::deserialize::<bitcoin::Transaction>(&bytes) else { return String::new() };
+    let ins: Vec<String> = tx.input.iter().map(|i| i.previous_output.to_string()).collect();
+    format!(" ({}; spends {})", tx.compute_txid(), ins.join(", "))
 }
 
 /// `GET /txout/{txid}/{vout}[?mempool=false]`: the node's `gettxout` for any
@@ -279,29 +307,6 @@ async fn on_node<T: Send + 'static>(
 
 fn unknown_tx() -> ApiError {
     ApiError::new(StatusCode::NOT_FOUND, "unknown transaction")
-}
-
-/// `GET /tx/:txid` — Esplora's transaction JSON, from the node (any
-/// transaction, not only indexed addresses'): what swaps read an HTLC from.
-async fn tx_json(State(st): State<AppState>, Path(txid): Path<String>) -> ApiResult<Json<Value>> {
-    let txid = parse_txid(&txid)?;
-    on_node(move || {
-        let node = st.spends.node();
-        let t = node.tx(&txid).map_err(ApiError::node)?.ok_or_else(unknown_tx)?;
-        let block = match t["blockhash"].as_str().map(str::parse::<bitcoin::BlockHash>) {
-            Some(Ok(h)) => node.height_of(&h).map_err(ApiError::node)?.map(|n| (h, n)),
-            _ => None,
-        };
-        let status = match block {
-            Some((h, n)) => json!({
-                "confirmed": true, "block_height": n, "block_hash": h.to_string(),
-                "block_time": t["blocktime"],
-            }),
-            None => json!({ "confirmed": false }),
-        };
-        Ok(Json(esplora_tx(&t, status)))
-    })
-    .await
 }
 
 /// `GET /tx/:txid/hex` — the raw transaction.
@@ -624,6 +629,8 @@ async fn scan(State(st): State<AppState>, body: String) -> ApiResult<Json<Value>
     })
     .await
 }
+
+mod esplora;
 
 #[cfg(test)]
 mod tests;

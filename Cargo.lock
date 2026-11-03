@@ -963,6 +963,7 @@ dependencies = [
  "getrandom 0.2.17",
  "hex",
  "hmac",
+ "lightning",
  "native-tls",
  "proptest",
  "rocksdb",
@@ -985,6 +986,7 @@ dependencies = [
  "bitcoin",
  "clap",
  "crossbeam-channel",
+ "esplora-client",
  "fortis-node",
  "hex",
  "rocksdb",
@@ -1001,6 +1003,7 @@ name = "fortis-lightning"
 version = "0.1.0"
 dependencies = [
  "bitcoin",
+ "esplora-client",
  "getrandom 0.2.17",
  "hex",
  "ldk-node",

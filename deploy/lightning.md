@@ -76,7 +76,7 @@ Cloudflare's HTTP tunnel (`cloudflared`) does **not** carry raw Lightning P2P tr
    - `listen`: `"0.0.0.0:9735"` (Lightning P2P socket).
    - `bitcoind_rpc`: `"127.0.0.1:8332"` (`host:port`).
    - `rpc_user` / `rpc_password_file`: RPC username and path to the `0600` password file.
-   - `data_dir`: `"/var/lib/fortis/lsp"` (holds `keys_seed` with mode `0400`, SQLite store, and `logs/`).
+   - `data_dir`: `"/var/lib/fortis/lsp"` (holds `keys_seed` with mode `0400`, SQLite store, and ldk-node's log `ldk_node.log`).
    - `open_fee_ppm`: `10000` (1% JIT channel-open fee).
    - `open_fee_min_sat`: `1000` (1,000 sat minimum JIT channel-open fee; keep near 2× next-block funding tx fee).
    - `min_payment_size_msat` / `max_payment_size_msat`: outer payment bounds (`10_000_000` / `500_000_000` msat). `fortis-lsp` automatically narrows these so every JIT channel lands inside `channel_min_sat..=channel_max_sat` (`51_000..=250_000` sat with defaults).
@@ -122,7 +122,22 @@ Sized for the **canary** (one or two test phones). For a live service with many 
 
    A retry budget is 0.01 BTC.
 
-2. **Open one outbound channel to a well-connected routing node** (e.g. ACINQ `03864ef025fde8fb587d989186ce6a4a186895ee44a926bfc370e2c366597a3f8f@3.33.236.230:9735` or LQWD) of 100,000–150,000 sat, so Fortis users can pay BOLT 11/12 recipients across the wider network. Leave the rest on-chain for JIT channel opens.
+2. **Open one outbound channel to a well-connected routing node** (100,000–150,000 sat), so Fortis users can pay BOLT 11/12 recipients across the wider network and outside payers can route to the LSP. `fortis-lsp` opens it itself from `/etc/fortis/lsp.toml`:
+   ```toml
+   alias = "Fortis"
+   announce_addresses = ["34.31.126.17:9735"]   # the public relay (deploy/relay), not `listen`
+
+   [[outbound]]
+   peer = "03864ef025fde8fb587d989186ce6a4a186895ee44a926bfc370e2c366597a3f8f@3.33.236.230:9735"   # ACINQ
+   sat = 150000
+   ```
+   Then `sudo systemctl restart fortis-lsp` and watch `journalctl -u fortis-lsp -f`:
+   - `opening announced channel of 150000 sat to …` then `channel … pending` and, after confirmation, `channel … ready`.
+   - `waits for funds` means spendable on-chain is below the channel size + 25,000 sat anchor reserve; it opens by itself once the balance covers it.
+   - `open to … failed: …` retries every 10 minutes. A peer that refuses *after* the open started shows up as `channel … closed: CounterpartyForceClosed { peer_msg: … }`; the peer's first reason (e.g. `invalid funding_amount=150000 sat (min=400000 sat)`) is only in ldk-node's log: `sudo grep -i "Got Err message" /var/lib/fortis/lsp/ldk_node.log | tail`. Change the entry and restart to try again (a refused open costs nothing: no funding transaction is broadcast).
+   - **ACINQ's minimum is 400,000 sat** (seen 2026-11-03). At the 0.005 BTC canary size that leaves too little for JIT channels: pick a hub with a lower minimum, or fund more.
+
+   The channel is announced (public); JIT channels to Fortis users stay private. Each target is opened at most once per run: if the peer closes the channel, the LSP does not reopen it until the next restart, so a misbehaving peer cannot make it spend fees in a loop. Leave the rest of the funds on-chain for JIT channel opens.
 
 3. **Inbound liquidity.** A channel the LSP opens starts with all funds on the LSP's side: outbound capacity, no inbound. Paying out to outside invoices works from the start. Receiving from outside wallets (Phoenix and others) needs balance on the *peer's* side of an LSP channel, which appears only after the LSP has sent payments out through it. In the canary, test sending before receiving, and see whether the first outside receive fails. If it does, send a small payment out through the channel first, or ask the peer to open a channel to the LSP.
 
@@ -255,4 +270,4 @@ Before enabling Lightning (beta) for general users, run the mainnet canary with 
 - [ ] **Review Focus 5 (LSP closes channel while app is closed):** Force-close or coop-close the channel from the LSP while `.dev` is force-stopped; once confirmed on-chain, open `.dev` and verify the balance is never shown as 0 — settled close funds appear in `onchainTransitSat` and are automatically swept to the main BTC wallet.
 
 ### Canary run log
-- Status: Backend deployed (edge `/ln/info` and `/ln/vss`, VSS, LSP); relay `lsp.fortistechlabs.com` → e2-micro → home LSP verified for TCP. Pending: LSP funding (0.005 BTC canary) and Pixel `.dev`/`.dev2` execution. Note: test sending before receiving from an outside wallet (§4, inbound liquidity).
+- Status: Backend deployed (edge `/ln/info` and `/ln/vss`, VSS, LSP); relay `lsp.fortistechlabs.com` → e2-micro → home LSP verified for TCP. Pending: LSP funding (0.005 BTC canary) and Pixel `.dev`/`.dev2` execution. Note: test sending before receiving from an outside wallet (§4, inbound liquidity). Move to Lightning, force close and sweeps need the edge with the Lightning fee exemption (`crates/fortis-edge/src/ln_fee.rs`); before it, the edge refused the phone's own broadcasts (402).

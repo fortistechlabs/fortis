@@ -3,8 +3,13 @@
 use std::net::SocketAddr;
 use std::path::PathBuf;
 
+use std::str::FromStr;
+
 use ldk_node::bitcoin::Network;
+use ldk_node::lightning::ln::msgs::SocketAddress;
 use ldk_node::liquidity::LSPS2ServiceConfig;
+
+use crate::outbound::{self, Outbound, RawOutbound};
 
 pub type Result<T> = std::result::Result<T, String>;
 
@@ -51,6 +56,20 @@ pub struct LspConfig {
     pub metrics_listen: SocketAddr,
     /// Must be `true` for a non-loopback `metrics_listen`.
     pub allow_public_metrics: bool,
+    /// Public node name (at most 32 bytes). Needed to announce channels.
+    pub alias: Option<String>,
+    /// Where other nodes reach us (`host:port` or `ip:port`), announced in
+    /// the node announcement. Not `listen`: that is a local bind address.
+    pub announce_addresses: Vec<SocketAddress>,
+    /// Announced channels to routing nodes, opened at most once per run
+    /// when missing (see `outbound.rs`).
+    pub outbound: Vec<Outbound>,
+    /// What this node charges to forward a payment, on every channel: base
+    /// (msat per payment) and proportional (millionths). Both 0 by default,
+    /// so a user's payment through the LSP costs nothing here (1 sat arrives
+    /// as 1 sat); hops beyond the LSP charge their own.
+    pub forwarding_fee_base_msat: u32,
+    pub forwarding_fee_ppm: u32,
 }
 
 /// The TOML as written: every key optional (defaults below), no unknown keys.
@@ -74,6 +93,12 @@ struct Raw {
     low_liquidity_sat: Option<u64>,
     metrics_listen: Option<SocketAddr>,
     allow_public_metrics: Option<bool>,
+    alias: Option<String>,
+    announce_addresses: Option<Vec<String>>,
+    #[serde(default)]
+    outbound: Vec<RawOutbound>,
+    forwarding_fee_base_msat: Option<u32>,
+    forwarding_fee_ppm: Option<u32>,
 }
 
 impl LspConfig {
@@ -88,6 +113,16 @@ impl LspConfig {
                 .map_err(|e| format!("network {n:?}: {e}"))?,
         };
         let channel_max_sat = raw.channel_max_sat.unwrap_or(500_000);
+        let announce_addresses = raw
+            .announce_addresses
+            .unwrap_or_default()
+            .iter()
+            .map(|a| {
+                SocketAddress::from_str(a)
+                    .map_err(|e| format!("announce_addresses: {a:?} is not host:port ({e:?})"))
+            })
+            .collect::<Result<Vec<_>>>()?;
+        let outbound = outbound::parse_all(&raw.outbound)?;
         let max_default = channel_max_sat
             .checked_mul(1_000)
             .ok_or("channel_max_sat is too large")?;
@@ -115,6 +150,11 @@ impl LspConfig {
                 .metrics_listen
                 .unwrap_or_else(|| "127.0.0.1:9736".parse().unwrap()),
             allow_public_metrics: raw.allow_public_metrics.unwrap_or(false),
+            alias: raw.alias.map(|a| a.trim().to_string()),
+            announce_addresses,
+            outbound,
+            forwarding_fee_base_msat: raw.forwarding_fee_base_msat.unwrap_or(0),
+            forwarding_fee_ppm: raw.forwarding_fee_ppm.unwrap_or(0),
         };
         c.validate()?;
         Ok(c)
@@ -170,6 +210,39 @@ impl LspConfig {
         effective_payment_bounds(self)?;
         if self.token.as_deref() == Some("") {
             return Err("token must not be empty (omit it for no token)".into());
+        }
+        if let Some(a) = &self.alias {
+            if a.is_empty() || a.len() > 32 || a.chars().any(char::is_control) {
+                return Err(format!(
+                    "alias ({a:?}) must be 1..=32 bytes of printable text"
+                ));
+            }
+        }
+        if !self.announce_addresses.is_empty() && self.alias.is_none() {
+            return Err(
+                "announce_addresses needs an alias (ldk-node announces both together)".into(),
+            );
+        }
+        if self.announce_addresses.len() > 10 {
+            return Err("announce_addresses: at most 10".into());
+        }
+        if self.forwarding_fee_ppm > 100_000 {
+            return Err(format!(
+                "forwarding_fee_ppm ({}) is above 100000 (10%)",
+                self.forwarding_fee_ppm
+            ));
+        }
+        if self.forwarding_fee_base_msat > 100_000_000 {
+            return Err(format!(
+                "forwarding_fee_base_msat ({}) is above 100000000 (100 000 sat)",
+                self.forwarding_fee_base_msat
+            ));
+        }
+        if !self.outbound.is_empty() && (self.alias.is_none() || self.announce_addresses.is_empty())
+        {
+            return Err(
+                "[[outbound]] channels are announced: set alias and announce_addresses too".into(),
+            );
         }
         Ok(())
     }
@@ -344,6 +417,11 @@ impl std::fmt::Debug for LspConfig {
             .field("low_liquidity_sat", &self.low_liquidity_sat)
             .field("metrics_listen", &self.metrics_listen)
             .field("allow_public_metrics", &self.allow_public_metrics)
+            .field("alias", &self.alias)
+            .field("announce_addresses", &self.announce_addresses)
+            .field("outbound", &self.outbound)
+            .field("forwarding_fee_base_msat", &self.forwarding_fee_base_msat)
+            .field("forwarding_fee_ppm", &self.forwarding_fee_ppm)
             .finish()
     }
 }
@@ -468,6 +546,68 @@ mod tests {
         let d = format!("{c:?}");
         assert!(!d.contains("s3cret-token"), "{d}");
         assert!(d.contains("<redacted>"), "{d}");
+    }
+
+    const ACINQ: &str = "03864ef025fde8fb587d989186ce6a4a186895ee44a926bfc370e2c366597a3f8f";
+
+    #[test]
+    fn forwarding_is_free_by_default_and_bounded() {
+        let c = with("").unwrap();
+        assert_eq!((c.forwarding_fee_base_msat, c.forwarding_fee_ppm), (0, 0));
+        let c = with("forwarding_fee_base_msat = 1000\nforwarding_fee_ppm = 100").unwrap();
+        assert_eq!(
+            (c.forwarding_fee_base_msat, c.forwarding_fee_ppm),
+            (1_000, 100)
+        );
+        assert!(with("forwarding_fee_ppm = 100001")
+            .unwrap_err()
+            .contains("forwarding_fee_ppm"));
+        assert!(with("forwarding_fee_base_msat = 100000001")
+            .unwrap_err()
+            .contains("forwarding_fee_base_msat"));
+    }
+
+    #[test]
+    fn announcement_and_outbound_are_off_by_default() {
+        let c = with("").unwrap();
+        assert_eq!(c.alias, None);
+        assert!(c.announce_addresses.is_empty());
+        assert!(c.outbound.is_empty());
+    }
+
+    #[test]
+    fn parses_alias_announce_addresses_and_outbound() {
+        let c = with(&format!(
+            "alias = \" Fortis \"\nannounce_addresses = [\"lsp.fortistechlabs.com:9735\", \"34.31.126.17:9735\"]\n\n[[outbound]]\npeer = \"{ACINQ}@3.33.236.230:9735\"\nsat = 150000\n"
+        ))
+        .unwrap();
+        assert_eq!(c.alias.as_deref(), Some("Fortis"));
+        let addrs: Vec<String> = c.announce_addresses.iter().map(|a| a.to_string()).collect();
+        assert_eq!(addrs, ["lsp.fortistechlabs.com:9735", "34.31.126.17:9735"]);
+        assert_eq!(c.outbound.len(), 1);
+        assert_eq!(c.outbound[0].node_id.to_string(), ACINQ);
+        assert_eq!(c.outbound[0].sat, 150_000);
+    }
+
+    #[test]
+    fn outbound_needs_alias_and_announce_addresses() {
+        let ob = format!("[[outbound]]\npeer = \"{ACINQ}@3.33.236.230:9735\"\nsat = 150000\n");
+        let e = with(&ob).unwrap_err();
+        assert!(e.contains("alias and announce_addresses"), "{e}");
+        let e = with(&format!("alias = \"Fortis\"\n{ob}")).unwrap_err();
+        assert!(e.contains("alias and announce_addresses"), "{e}");
+        let e = with("announce_addresses = [\"34.31.126.17:9735\"]").unwrap_err();
+        assert!(e.contains("needs an alias"), "{e}");
+    }
+
+    #[test]
+    fn rejects_bad_alias_and_addresses() {
+        assert!(with("alias = \"\"").unwrap_err().contains("alias"));
+        assert!(with("alias = \"this alias is far longer than thirty-two bytes\"").is_err());
+        let e = with("alias = \"F\"\nannounce_addresses = [\"no-port\"]").unwrap_err();
+        assert!(e.contains("announce_addresses"), "{e}");
+        let e = with(&format!("alias = \"F\"\nannounce_addresses = [\"1.2.3.4:9735\"]\n[[outbound]]\npeer = \"{ACINQ}@1.2.3.4:9735\"\nsat = 5\n")).unwrap_err();
+        assert!(e.contains("sat"), "{e}");
     }
 
     #[test]

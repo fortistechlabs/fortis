@@ -12,8 +12,14 @@ mod common;
 
 use std::path::Path;
 
-use common::{poll, procs_referencing, test_seed, Lsp, Regtest, TempDir, Vss, LSP_FUNDING_SAT};
+use std::str::FromStr;
+use std::time::Duration;
+
+use common::{
+    builder, poll, procs_referencing, test_seed, Lsp, Regtest, TempDir, Vss, LSP_FUNDING_SAT,
+};
 use fortis_lightning::{ChainSource, Node, NodeConfig, VssConfig};
+use ldk_node::bitcoin::secp256k1::PublicKey;
 use ldk_node::bitcoin::Network;
 
 const METRICS: [&str; 6] = [
@@ -145,4 +151,86 @@ fn lsp_start_failure_cleans_up() {
         .filter(|e| e.file_name().to_string_lossy().starts_with(&ours))
         .collect();
     assert!(left.is_empty(), "temp dirs left: {left:?}");
+}
+
+/// `[[outbound]]` in lsp.toml: the LSP opens one announced channel of the
+/// configured size to the listed routing node once its wallet has synced,
+/// and does not open a second one after a restart while the first exists.
+#[test]
+#[ignore = "needs fortis-lsp built, FORTIS_BTC_BITCOIND"]
+fn opens_the_configured_outbound_channel_once() {
+    const OUTBOUND_SAT: u64 = 150_000;
+    let rt = Regtest::start();
+
+    // A stock ldk-node as the routing node. Like a real one it is public
+    // (an alias: ldk-node rejects announced channels without one), and it
+    // needs a little on-chain balance to accept an anchor channel.
+    let dir = TempDir::new("router");
+    let (mut b, router_addr) = builder(&rt, test_seed(0x6B), &dir.str("router"));
+    b.set_node_alias("test-router".into()).unwrap();
+    let router = b.build_with_fs_store().unwrap();
+    router.start().unwrap();
+    let addr = router.onchain_payment().new_address().unwrap();
+    rt.fund(&addr.to_string(), 200_000);
+    rt.mine(6);
+    poll("router sees its funding", 90, || {
+        router.sync_wallets().ok();
+        (router.list_balances().spendable_onchain_balance_sats > 0).then_some(())
+    });
+
+    let outbound = format!(
+        "[{{ peer = \"{}@{}\", sat = {OUTBOUND_SAT} }}]",
+        router.node_id(),
+        router_addr
+    );
+    let mut lsp = Lsp::start(
+        &rt,
+        &[
+            ("alias", "\"fortis-test\""),
+            ("announce_addresses", "[\"127.0.0.2:9735\"]"),
+            ("outbound", &outbound),
+        ],
+    );
+    let lsp_id = PublicKey::from_str(&lsp.node_id).unwrap();
+
+    let deadline = std::time::Instant::now() + Duration::from_secs(120);
+    while !router
+        .list_channels()
+        .iter()
+        .any(|c| c.counterparty_node_id == lsp_id)
+    {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "the LSP did not open the outbound channel:\n{}",
+            lsp.stderr()
+        );
+        std::thread::sleep(Duration::from_millis(500));
+    }
+    rt.mine(6);
+    let ch = poll("the outbound channel is ready", 120, || {
+        router.sync_wallets().ok();
+        router
+            .list_channels()
+            .into_iter()
+            .find(|c| c.counterparty_node_id == lsp_id && c.is_channel_ready)
+    });
+    assert_eq!(ch.channel_value_sats, OUTBOUND_SAT);
+    assert!(ch.is_announced, "outbound channels are announced");
+    assert!(!ch.is_outbound, "the LSP opened it, not the router");
+    let opens = |l: &Lsp| l.stderr().matches("opening announced channel").count();
+    assert_eq!(opens(&lsp), 1, "{}", lsp.stderr());
+
+    // A restart sees the channel and opens nothing.
+    lsp.restart();
+    std::thread::sleep(Duration::from_secs(25));
+    assert_eq!(opens(&lsp), 1, "reopened after restart:\n{}", lsp.stderr());
+    assert_eq!(
+        router
+            .list_channels()
+            .iter()
+            .filter(|c| c.counterparty_node_id == lsp_id)
+            .count(),
+        1
+    );
+    router.stop().unwrap();
 }

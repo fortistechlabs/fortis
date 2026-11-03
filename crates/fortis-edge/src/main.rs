@@ -14,6 +14,7 @@ mod haskoin;
 mod fx;
 mod limit;
 mod ln;
+mod ln_fee;
 mod mempool_ws;
 mod metrics;
 mod price;
@@ -1494,8 +1495,14 @@ fn proxy_chain(req: &mut Request, st: &State, method: &Method, path: &str, query
             };
             if !swap_spend {
                 if let Err(msg) = p.check_tx_hex(&tx_hex) {
-                    Metrics::inc(&st.metrics.fee_rejected);
-                    return err(402, &msg);
+                    // The wallet's Lightning node can't add a fee output: its
+                    // closes, sweeps and channel opens are let through (ln_fee.rs).
+                    if chain == "btc" && ln_fee_exempt(p, upstream, &tx_hex) {
+                        Metrics::inc(&st.metrics.fee_exempt_lightning);
+                    } else {
+                        Metrics::inc(&st.metrics.fee_rejected);
+                        return err(402, &msg);
+                    }
                 }
             }
         }
@@ -1885,9 +1892,109 @@ fn respond(req: Request, reply: Reply, allow_origin: &str) -> std::io::Result<()
     req.respond(resp)
 }
 
+/// Whether a BTC transaction that pays no service fee is a Lightning one
+/// (`ln_fee::exempt`), looking its parents up on `upstream`.
+fn ln_fee_exempt(p: &pricing::Pricing, upstream: &Upstream, tx_hex: &str) -> bool {
+    let Ok(bytes) = hex::decode(tx_hex.trim()) else { return false };
+    let Ok(tx) = bitcoin::consensus::deserialize::<bitcoin::Transaction>(&bytes) else { return false };
+    let pays_fee = |t: &bitcoin::Transaction| p.pays_floor(t);
+    let mut fetch = |txid: &bitcoin::Txid| -> Option<bitcoin::Transaction> {
+        let r = upstream.forward(&Method::Get, &format!("tx/{txid}/hex"), "", &[]).ok()?;
+        if r.status != 200 {
+            return None;
+        }
+        let raw = hex::decode(String::from_utf8_lossy(&r.body).trim()).ok()?;
+        let t: bitcoin::Transaction = bitcoin::consensus::deserialize(&raw).ok()?;
+        // The upstream must hand back the transaction asked for.
+        (t.compute_txid() == *txid).then_some(t)
+    };
+    ln_fee::exempt(&tx, &pays_fee, &mut fetch)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // ---- the Lightning fee exemption, through a real (local) upstream ----
+
+    /// A one-request-at-a-time Esplora stand-in serving `GET /tx/<txid>/hex`
+    /// from `txs` (by the id it was asked for, so a lying upstream can be faked).
+    fn fake_esplora(txs: Vec<(String, String)>) -> String {
+        let server = tiny_http::Server::http("127.0.0.1:0").unwrap();
+        let base = format!("http://{}", server.server_addr().to_ip().unwrap());
+        std::thread::spawn(move || {
+            for req in server.incoming_requests() {
+                let hit = txs.iter().find(|(id, _)| req.url() == format!("/tx/{id}/hex"));
+                let _ = match hit {
+                    Some((_, hex)) => req.respond(tiny_http::Response::from_string(hex.clone())),
+                    None => req.respond(tiny_http::Response::from_string("not found").with_status_code(404)),
+                };
+            }
+        });
+        base
+    }
+
+    fn fee_tx(inputs: Vec<bitcoin::TxIn>, outputs: Vec<bitcoin::TxOut>) -> bitcoin::Transaction {
+        bitcoin::Transaction {
+            version: bitcoin::transaction::Version::TWO,
+            lock_time: bitcoin::absolute::LockTime::ZERO,
+            input: inputs,
+            output: outputs,
+        }
+    }
+
+    fn spend_of(prev: bitcoin::Txid, witness: Vec<Vec<u8>>) -> bitcoin::TxIn {
+        bitcoin::TxIn {
+            previous_output: bitcoin::OutPoint { txid: prev, vout: 0 },
+            script_sig: bitcoin::ScriptBuf::new(),
+            sequence: bitcoin::Sequence::MAX,
+            witness: bitcoin::Witness::from_slice(&witness),
+        }
+    }
+
+    #[test]
+    fn a_channel_open_from_a_paid_deposit_passes_the_fee_check_and_a_plain_send_does_not() {
+        use bitcoin::hashes::Hash;
+        const FEE_ADDR: &str = "bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4";
+        let p = pricing::Pricing::new(FEE_ADDR.into(), bitcoin::Network::Bitcoin, 100, 400, 0).unwrap();
+        let fee_spk = FEE_ADDR
+            .parse::<bitcoin::Address<bitcoin::address::NetworkUnchecked>>()
+            .unwrap()
+            .assume_checked()
+            .script_pubkey();
+        let out = |sat: u64, spk: bitcoin::ScriptBuf| bitcoin::TxOut { value: bitcoin::Amount::from_sat(sat), script_pubkey: spk };
+        let wallet_witness = vec![vec![0x30; 72], vec![0x02; 33]];
+        let genesis = bitcoin::Txid::from_byte_array([1; 32]);
+
+        // The deposit paid the fee; the open spends it with no fee output.
+        let deposit = fee_tx(vec![spend_of(genesis, wallet_witness.clone())],
+            vec![out(200_000, bitcoin::ScriptBuf::new()), out(2_000, fee_spk.clone())]);
+        let open = fee_tx(vec![spend_of(deposit.compute_txid(), wallet_witness.clone())],
+            vec![out(150_000, bitcoin::ScriptBuf::new())]);
+        // A plain parent that paid nothing.
+        let plain_parent = fee_tx(vec![spend_of(genesis, wallet_witness.clone())],
+            vec![out(200_000, bitcoin::ScriptBuf::new())]);
+        let plain_send = fee_tx(vec![spend_of(plain_parent.compute_txid(), wallet_witness.clone())],
+            vec![out(150_000, bitcoin::ScriptBuf::new())]);
+        // An upstream that answers the open's parent id with a different
+        // (fee-paying) transaction must not be believed.
+        let lying_send = fee_tx(vec![spend_of(bitcoin::Txid::from_byte_array([7; 32]), wallet_witness)],
+            vec![out(150_000, bitcoin::ScriptBuf::new())]);
+
+        let hex = |t: &bitcoin::Transaction| ::hex::encode(bitcoin::consensus::serialize(t));
+        let base = fake_esplora(vec![
+            (deposit.compute_txid().to_string(), hex(&deposit)),
+            (plain_parent.compute_txid().to_string(), hex(&plain_parent)),
+            (bitcoin::Txid::from_byte_array([7; 32]).to_string(), hex(&deposit)),
+        ]);
+        let upstream = Upstream::new(&base);
+
+        assert!(p.check_tx_hex(&hex(&open)).is_err(), "the open pays no fee itself");
+        assert!(ln_fee_exempt(&p, &upstream, &hex(&open)), "but its coins already paid");
+        assert!(!ln_fee_exempt(&p, &upstream, &hex(&plain_send)));
+        assert!(!ln_fee_exempt(&p, &upstream, &hex(&lying_send)), "a txid mismatch is not trusted");
+        assert!(!ln_fee_exempt(&p, &upstream, "not hex"));
+    }
 
     // ---- chain proxy paths: no dot segments, no encoding, POST only to tx/scan ----
 

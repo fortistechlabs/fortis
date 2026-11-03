@@ -65,6 +65,9 @@ impl MempoolSource for RpcSource {
 pub struct MempoolView {
     txs: HashMap<Txid, Arc<TxRows>>,
     by_program: HashMap<Program, Vec<Txid>>,
+    /// Esplora script hash → program, for the programs above: a script whose
+    /// first payment is still pending has no entry in the index's table yet.
+    by_scripthash: HashMap<[u8; 32], Program>,
     spent: HashSet<OutPoint>,
     outputs: HashMap<OutPoint, (Program, u64)>,
 }
@@ -89,7 +92,13 @@ impl MempoolView {
                 v.spent.insert(s.prevout);
             }
             for p in touched {
-                v.by_program.entry(p).or_default().push(*id);
+                v.by_program
+                    .entry(p)
+                    .or_insert_with(|| {
+                        v.by_scripthash.insert(crate::keys::p2wpkh_scripthash(&p), p);
+                        Vec::new()
+                    })
+                    .push(*id);
             }
         }
         for ids in v.by_program.values_mut() {
@@ -107,6 +116,11 @@ impl MempoolView {
     #[allow(dead_code)] // pairs with `len` (clippy::len_without_is_empty)
     pub fn is_empty(&self) -> bool {
         self.txs.is_empty()
+    }
+
+    /// The program a pending transaction touches whose script hashes to `sh`.
+    pub fn program_for_scripthash(&self, sh: &[u8; 32]) -> Option<Program> {
+        self.by_scripthash.get(sh).copied()
     }
 
     pub fn txids_for(&self, p: &Program) -> Vec<Txid> {

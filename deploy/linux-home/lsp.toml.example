@@ -38,3 +38,15 @@ low_liquidity_sat = 2000000
 # Prometheus GET /metrics and GET /info (loopback only).
 metrics_listen = "127.0.0.1:9736"
 allow_public_metrics = false
+
+# Public identity, needed for [[outbound]] channels (they are announced so
+# outside payers can route to this LSP). announce_addresses is where other
+# nodes reach it: the public relay, not the local `listen` address.
+# alias = "Fortis"
+# announce_addresses = ["34.31.126.17:9735"]
+
+# Channels to routing nodes, opened once each when missing (never reopened
+# without a restart). Each needs its size + 25 000 sat anchor reserve spendable.
+# [[outbound]]
+# peer = "03864ef025fde8fb587d989186ce6a4a186895ee44a926bfc370e2c366597a3f8f@3.33.236.230:9735"
+# sat = 150000

@@ -30,3 +30,6 @@ bitcoin = { workspace = true, features = ["bitcoinconsensus"] }
 # Adversarial-input property tests (Task 19, `tests/adversarial.rs` and the
 # `fuzz` modules): no panic, no hang, bounded memory on arbitrary input.
 proptest = { version = "1", default-features = false, features = ["std"] }
+# ldk-node's Esplora client types: `tests/esplora_index.rs` rebuilds what the
+# index serves exactly as ldk-node's wallet does.
+esplora-client = { version = "=0.12.3", default-features = false }

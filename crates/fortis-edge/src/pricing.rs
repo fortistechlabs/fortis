@@ -36,6 +36,11 @@ impl Pricing {
         })
     }
 
+    /// Whether `tx` pays at least `floor_sat` to the fee address.
+    pub fn pays_floor(&self, tx: &Transaction) -> bool {
+        self.paid_by(tx) >= self.floor_sat
+    }
+
     /// Total paid to the fee address, in sat. Saturating — a hand-crafted tx hex
     /// can carry absurd output values, and this must not panic.
     fn paid_by(&self, tx: &Transaction) -> u64 {

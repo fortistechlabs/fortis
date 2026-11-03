@@ -32,3 +32,5 @@ tungstenite = { version = "0.24", default-features = false, features = ["handsha
 [dev-dependencies]
 # Adversarial-input property tests (Task 19, `ln.rs` `fuzz` module).
 proptest = { version = "1", default-features = false, features = ["std"] }
+# Real BOLT 3 scripts, built by LDK, for the `ln_fee` template tests.
+lightning = "=0.2.7"

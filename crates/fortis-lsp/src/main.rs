@@ -6,12 +6,16 @@
 //! On start it prints, on stdout, one `key value` line each:
 //! `node_id <hex>`, `listen <addr>`, `metrics <addr>`, `onchain_address <addr>`
 //! (a fresh address of its on-chain wallet, for funding), then `ready`.
-//! Diagnostics go to stderr; ldk-node's own log is `<data_dir>/logs/`.
+//! Diagnostics go to stderr; ldk-node's own log is `<data_dir>/ldk_node.log`.
+//! With `[[outbound]]` entries it opens announced channels to those routing
+//! nodes when missing (at most once per run; see `outbound.rs`).
 //! SIGTERM / SIGINT stop the node cleanly (exit 0).
 
 mod config;
 mod metrics;
+mod outbound;
 
+use std::collections::HashSet;
 use std::io::Write;
 use std::os::unix::fs::{DirBuilderExt, PermissionsExt};
 use std::process::ExitCode;
@@ -20,12 +24,15 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use config::LspConfig;
+use ldk_node::config::{AnchorChannelsConfig, ChannelConfig};
 use ldk_node::lightning::ln::msgs::SocketAddress;
 use ldk_node::{Builder, Event};
 use metrics::Counters;
 
 /// How often the on-chain balance is checked against `low_liquidity_sat`.
 const LIQUIDITY_CHECK: Duration = Duration::from_secs(60);
+/// How often the `[[outbound]]` channels are checked (outbound.rs).
+const OUTBOUND_CHECK: Duration = Duration::from_secs(60);
 /// ldk-node's seed file name in `data_dir` (its builder default).
 const SEED_FILE: &str = "keys_seed";
 
@@ -108,6 +115,14 @@ fn run() -> Result<(), String> {
     let listen = SocketAddress::from(cfg.listen);
     b.set_listening_addresses(vec![listen])
         .map_err(|e| format!("listen {}: {e}", cfg.listen))?;
+    if let Some(alias) = &cfg.alias {
+        b.set_node_alias(alias.clone())
+            .map_err(|e| format!("alias {alias:?}: {e}"))?;
+    }
+    if !cfg.announce_addresses.is_empty() {
+        b.set_announcement_addresses(cfg.announce_addresses.clone())
+            .map_err(|e| format!("announce_addresses: {e}"))?;
+    }
     b.set_liquidity_provider_lsps2(cfg.lsps2_service_config());
     let node = Arc::new(b.build().map_err(|e| format!("build node: {e}"))?);
     check_seed_permissions(&cfg)?;
@@ -170,10 +185,21 @@ fn serve(
         let _ = out.flush();
     }
 
+    let fees = (cfg.forwarding_fee_base_msat, cfg.forwarding_fee_ppm);
+    enforce_forwarding_fees(node, fees);
     let mut next_check = Instant::now() + Duration::from_secs(5);
+    let mut next_outbound = Instant::now() + Duration::from_secs(10);
+    let mut outbound_state = outbound::State::default();
+    let mut outbound_waiting_logged = false;
     while !SHUTDOWN.load(Ordering::SeqCst) {
         while let Some(event) = node.next_event() {
             handle_event(&event, &counters);
+            if matches!(
+                event,
+                Event::ChannelPending { .. } | Event::ChannelReady { .. }
+            ) {
+                enforce_forwarding_fees(node, fees);
+            }
             if let Err(e) = node.event_handled() {
                 eprintln!("fortis-lsp: event_handled: {e}");
                 break;
@@ -181,6 +207,7 @@ fn serve(
         }
         if Instant::now() >= next_check {
             next_check = Instant::now() + LIQUIDITY_CHECK;
+            enforce_forwarding_fees(node, fees);
             let onchain = node.list_balances().spendable_onchain_balance_sats;
             if metrics::low_liquidity(onchain, cfg.low_liquidity_sat) {
                 eprintln!(
@@ -189,11 +216,115 @@ fn serve(
                 );
             }
         }
+        if !cfg.outbound.is_empty() && Instant::now() >= next_outbound {
+            open_missing_outbound(
+                node,
+                (cfg.forwarding_fee_base_msat, cfg.forwarding_fee_ppm),
+                &cfg.outbound,
+                &mut outbound_state,
+                &mut outbound_waiting_logged,
+            );
+            next_outbound = Instant::now() + OUTBOUND_CHECK;
+        }
         std::thread::sleep(Duration::from_millis(200));
     }
     stop.store(true, Ordering::SeqCst);
     let _ = metrics_thread.join();
     Ok(())
+}
+
+/// Opens the `[[outbound]]` channels that are missing (policy: outbound.rs).
+fn open_missing_outbound(
+    node: &ldk_node::Node,
+    cfg_fees: (u32, u32),
+    targets: &[outbound::Outbound],
+    state: &mut outbound::State,
+    waiting_logged: &mut bool,
+) {
+    let snap = outbound::Snapshot {
+        with_channel: node
+            .list_channels()
+            .iter()
+            .map(|c| c.counterparty_node_id)
+            .collect::<HashSet<_>>(),
+        wallet_synced: node.status().latest_onchain_wallet_sync_timestamp.is_some(),
+        spendable_sat: node.list_balances().spendable_onchain_balance_sats,
+        reserve_per_channel_sat: AnchorChannelsConfig::default().per_channel_reserve_sats,
+    };
+    let now = Instant::now();
+    let due = outbound::due(targets, &snap, state, now);
+    let waiting = outbound::waiting_for_funds(targets, &snap, state, &due);
+    if !waiting.is_empty() && !*waiting_logged {
+        *waiting_logged = true;
+        for t in &waiting {
+            eprintln!(
+                "fortis-lsp: outbound channel to {} waits for funds: needs {} + {} sat reserve, spendable {} sat",
+                t.node_id, t.sat, snap.reserve_per_channel_sat, snap.spendable_sat
+            );
+        }
+    }
+    for t in due {
+        eprintln!(
+            "fortis-lsp: opening announced channel of {} sat to {}@{}",
+            t.sat, t.node_id, t.address
+        );
+        let fees = fee_config(cfg_fees, ChannelConfig::default());
+        match node.open_announced_channel(t.node_id, t.address.clone(), t.sat, None, Some(fees)) {
+            Ok(id) => {
+                state.record_opened(t.node_id);
+                eprintln!(
+                    "fortis-lsp: channel open started with {} (user_channel_id {}); not reopened until restart",
+                    t.node_id, id.0
+                );
+            }
+            Err(e) => {
+                state.record_failed(t.node_id, now);
+                eprintln!(
+                    "fortis-lsp: open to {} failed: {e}; retrying in {} min",
+                    t.node_id,
+                    outbound::RETRY_AFTER.as_secs() / 60
+                );
+            }
+        }
+    }
+}
+
+/// `c` with the configured forwarding fees.
+fn fee_config((base_msat, ppm): (u32, u32), mut c: ChannelConfig) -> ChannelConfig {
+    c.forwarding_fee_base_msat = base_msat;
+    c.forwarding_fee_proportional_millionths = ppm;
+    c
+}
+
+/// Puts the configured forwarding fees on every channel that has others:
+/// JIT channels, `[[outbound]]` ones, and any a peer opened to us (LDK's
+/// default would charge 1 sat a payment). Returns how many were changed.
+fn enforce_forwarding_fees(node: &ldk_node::Node, fees: (u32, u32)) -> usize {
+    let mut changed = 0;
+    for c in node.list_channels() {
+        let cur = (
+            c.config.forwarding_fee_base_msat,
+            c.config.forwarding_fee_proportional_millionths,
+        );
+        if cur == fees {
+            continue;
+        }
+        let want = fee_config(fees, c.config);
+        match node.update_channel_config(&c.user_channel_id, c.counterparty_node_id, want) {
+            Ok(()) => {
+                changed += 1;
+                eprintln!(
+                    "fortis-lsp: channel {} with {}: forwarding fee {} msat + {} ppm (was {} + {})",
+                    c.channel_id, c.counterparty_node_id, fees.0, fees.1, cur.0, cur.1
+                );
+            }
+            Err(e) => eprintln!(
+                "fortis-lsp: channel {} with {}: could not set the forwarding fee: {e}",
+                c.channel_id, c.counterparty_node_id
+            ),
+        }
+    }
+    changed
 }
 
 fn handle_event(event: &Event, counters: &Counters) {

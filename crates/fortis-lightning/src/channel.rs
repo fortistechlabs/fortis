@@ -913,6 +913,7 @@ impl Node {
     /// **Blocking.** The VSS check (≤ 3 s) and, when the LSP is not
     /// connected, a connection attempt: call it off the UI thread.
     pub fn open_channel(&self, amount_sat: u64) -> Result<(), LnError> {
+        // (Syncs the wallets first: see `sync_before_spend`.)
         let limits = self.limits();
         if amount_sat < limits.channel_min_sat || amount_sat > limits.channel_max_sat {
             return Err(LnError::AmountOutOfRange {
@@ -927,6 +928,7 @@ impl Node {
         }
         let _ops = self.channel_ops();
         let node = &running.node;
+        sync_before_spend(node)?;
         let closes = load_closes(self.data_dir());
         if node
             .list_channels()
@@ -1110,6 +1112,7 @@ impl Node {
         let running = self.running().ok_or_else(not_started)?;
         let _ops = self.channel_ops();
         let node = &running.node;
+        sync_before_spend(node)?;
         let snap = Snapshot::take(node, self.data_dir(), self.chain_kind());
         if snap
             .channels
@@ -1772,4 +1775,20 @@ mod fuzz {
             }
         }
     }
+}
+
+/// Syncs both wallets with the chain before an on-chain spend (a channel
+/// open, a sweep). With an Esplora chain source ldk-node re-syncs its
+/// on-chain wallet only every 80 s and does not record what it broadcasts
+/// itself, so right after a channel open or close its coins are stale: a
+/// sweep then spends a deposit the open already spent (`missing-inputs`,
+/// found by `tests/esplora_index.rs`). A failed sync refuses the spend:
+/// better no transaction than one built on a wrong view.
+fn sync_before_spend(node: &ldk_node::Node) -> Result<(), LnError> {
+    node.sync_wallets().map_err(|e| match e {
+        NodeError::NotRunning => not_started(),
+        // The sync could not save its result: the backup (VSS) is down.
+        NodeError::PersistenceFailed => LnError::BackupUnavailable,
+        other => LnError::Other(format!("chain_sync_failed: {other}")),
+    })
 }

@@ -85,6 +85,16 @@ impl UtxoVal {
     }
 }
 
+/// Esplora's script hash of the P2WPKH script for `p`: SHA-256 of
+/// `OP_0 <20 bytes>`, in byte order (Esplora does not reverse it).
+pub fn p2wpkh_scripthash(p: &Program) -> [u8; 32] {
+    let mut spk = [0u8; 22];
+    spk[0] = 0x00;
+    spk[1] = 0x14;
+    spk[2..].copy_from_slice(p);
+    bitcoin::hashes::sha256::Hash::hash(&spk).to_byte_array()
+}
+
 /// `blocks` value: hash 32 · time u32 · first_txnum 5 · n_txs u32 (all BE).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct BlockRec {

@@ -79,6 +79,21 @@ transaction can be broadcast elsewhere anyway, so only the floor is enforced
 here). `--network` (default `bitcoin`) validates the address. Unset → no fee,
 `/pricing` 404s.
 
+**Lightning transactions are exempt** (`src/ln_fee.rs`). The wallet's
+embedded Lightning node broadcasts through `POST /btc/tx` but builds its own
+transactions and can't add a fee output. A BTC transaction that pays no fee is
+let through when every input either spends a BOLT 3 Lightning script (funding
+2-of-2, `to_local`/HTLC-output, anchors `to_remote`, keyed anchor, offered or
+received HTLC: closes, force closes, anchor bumps, HTLC claims, sweeps), or
+spends a coin whose creating transaction has such an input, paid the fee
+itself (a "Move to Lightning" deposit, which paid 1 %), or — up to two hops —
+qualifies the same way (change of a channel open). Parents are looked up on
+the BTC upstream (`GET /tx/<txid>/hex`, txid checked; at most 60 lookups, 25
+inputs). Counted as `fortis_edge_fee_exempt_lightning_total`. The trade-off:
+a coin within two hops of a fee-paying transaction (its change, say) can be
+spent without paying again. Our clients add the fee to ordinary sends
+regardless, so as with the percentage above only a modified client gains.
+
 Failures behind the edge (an upstream, the node, the chain reader) are answered
 `502 {"error": "<what> is unavailable"}`; the detail, which names internal
 addresses, goes to the journal only.
