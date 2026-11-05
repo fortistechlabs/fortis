@@ -111,10 +111,24 @@ pub(super) async fn tip_hash(State(st): State<AppState>) -> ApiResult<Response> 
 }
 
 /// `GET /block-height/:height` — the index's main-chain block at `height`.
+/// Heights below where the index starts (e.g. the genesis block, which BDK's
+/// wallet sync always checks) come from the node: the index keeps only the
+/// blocks it scanned.
 pub(super) async fn block_height(State(st): State<AppState>, Path(height): Path<u32>) -> ApiResult<Response> {
-    let chain = st.chain.load();
-    let rec = chain.get(height).ok_or_else(|| missing("block"))?;
-    Ok(text(StatusCode::OK, rec.hash.to_string()))
+    if let Some(rec) = st.chain.load().get(height) {
+        return Ok(text(StatusCode::OK, rec.hash.to_string()));
+    }
+    let tip = st.chain.load().tip().map(|(h, _)| h);
+    if tip.is_some_and(|t| height > t) {
+        return Err(missing("block"));
+    }
+    let rpc = st.rpc.clone();
+    on_node(move || {
+        let v = call_opt(&rpc, "getblockhash", json!([height]))?.ok_or_else(|| missing("block"))?;
+        let hash = v.as_str().ok_or_else(|| ApiError::new(StatusCode::BAD_GATEWAY, "block hash is not a string"))?;
+        Ok(text(StatusCode::OK, hash.to_string()))
+    })
+    .await
 }
 
 /// `GET /block/:hash/header` — the 80-byte header, hex.

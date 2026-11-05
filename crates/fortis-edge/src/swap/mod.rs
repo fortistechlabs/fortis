@@ -4273,6 +4273,8 @@ mod tests {
             register_limiter: crate::RateLimiter::new(10, 10),
             crash_limiter: crate::RateLimiter::new(2, 8),
             crash_log: None,
+            support_limiter: crate::RateLimiter::new(1, 5),
+            support_dir: std::env::temp_dir(),
             pricing: None,
             cache: crate::Cache::new(16, &dir.join("cache")),
             btc_history: None,

@@ -313,6 +313,10 @@ struct Args {
     /// line). Unset → `/crash` returns 404.
     #[arg(long)]
     crash_log: Option<PathBuf>,
+    /// Where `POST /support` tickets are kept, one file each. Default: a
+    /// `support` directory beside `--secret-file`.
+    #[arg(long)]
+    support_dir: Option<PathBuf>,
     /// Network the fee address is on: `bitcoin` (default), `testnet`, `signet`,
     /// `regtest`. Only used to validate `--service-fee-address`.
     #[arg(long, default_value = "bitcoin")]
@@ -428,6 +432,8 @@ struct State {
     register_limiter: RateLimiter,
     crash_limiter: RateLimiter,
     crash_log: Option<PathBuf>,
+    support_limiter: RateLimiter,
+    support_dir: PathBuf,
     pricing: Option<pricing::Pricing>,
     cache: Cache,
     /// Permanent, never-evicted confirmed-tx store for BTC — see
@@ -711,6 +717,11 @@ fn run() -> Result<()> {
         // crashes are rare per device; this just caps a crash-looping client or abuse
         crash_limiter: RateLimiter::new(2, 8),
         crash_log: args.crash_log.clone(),
+        // A ticket is something a person writes: a few per install, never a stream.
+        support_limiter: RateLimiter::new(1, 5),
+        support_dir: args.support_dir.clone().unwrap_or_else(|| {
+            secret_file.parent().map(|d| d.join("support")).unwrap_or_else(|| default_home().join("support"))
+        }),
         pricing: fee,
         cache: Cache::new(args.cache_entries, &cache_dir),
         btc_history: BtcHistory::new(&btc_history_dir),
@@ -792,6 +803,7 @@ fn run() -> Result<()> {
     eprintln!("  token auth     {}", if args.require_token { "required" } else { "optional" });
     eprintln!("  rate limit     {}/min, burst {}", args.rate_per_min, args.rate_burst);
     eprintln!("  crash log      {}", args.crash_log.as_deref().map(|p| p.display().to_string()).unwrap_or_else(|| "(disabled)".into()));
+    eprintln!("  support        {}", state.support_dir.display());
     eprintln!(
         "  service fee    {}",
         match &args.service_fee_address {
@@ -1065,6 +1077,8 @@ fn handle(req: &mut Request, st: &State) -> Reply {
         _ if raw_path == "/ln/info" => ln_info_route(req, st, &method),
         _ if raw_path.starts_with("/ln/vss/") => ln_vss_route(req, st, &method, &raw_path["/ln/vss/".len()..]),
         _ if raw_path == "/ln/account" => ln_account_route(req, st, &method),
+        _ if raw_path == "/ln/log" => client_log_route(req, st, &method),
+        (Method::Post, "/support") => support_route(req, st),
         (_, p) if p.starts_with("/xbt/") || p.starts_with("/btc/") => {
             proxy_chain(req, st, &method, p, query)
         }
@@ -1090,6 +1104,127 @@ fn swap_route(req: &mut Request, st: &State, method: &Method, path: &str) -> Rep
 }
 
 /// `GET /ln/info`: 404 unless `--ln-info-file`; needs a valid install token.
+/// Largest support ticket accepted (bytes): the user's message plus logs.
+const SUPPORT_MAX_BODY: usize = 512 * 1024;
+
+/// `POST /support` — a support ticket from the app: the user's message, an
+/// optional reply address, and the diagnostics they agreed to send. Kept as
+/// one file per ticket (mode 0600) under `support_dir`, and announced in the
+/// journal with its id; the reply is `{"ticket": "FT-…"}` for the user to
+/// quote. A valid install token (the ticket records a short hash of it, to
+/// link one install's tickets) and a slow rate limit.
+fn support_route(req: &mut Request, st: &State) -> Reply {
+    let Some(tok) = bearer(req).filter(|t| token::verify(&st.secret, t)) else {
+        Metrics::inc(&st.metrics.unauthorized);
+        return err(401, "missing or invalid token — POST /register first");
+    };
+    if !st.support_limiter.check(&tok) {
+        Metrics::inc(&st.metrics.rate_limited);
+        return err(429, "slow down");
+    }
+    if req.body_length().is_some_and(|n| n > SUPPORT_MAX_BODY) {
+        return err(413, "request body too large");
+    }
+    let mut body = Vec::new();
+    if req.as_reader().take(SUPPORT_MAX_BODY as u64 + 1).read_to_end(&mut body).is_err()
+        || body.len() > SUPPORT_MAX_BODY
+    {
+        return err(413, "request body too large");
+    }
+    let Ok(ticket) = serde_json::from_slice::<serde_json::Value>(&body) else {
+        return err(400, "not JSON");
+    };
+    if ticket["message"].as_str().is_none_or(|m| m.trim().is_empty()) {
+        return err(400, "message required");
+    }
+    let ip = client_ip(req, st.trust_forwarded_for);
+    match save_ticket(&st.support_dir, &tok, &ip, ticket) {
+        Ok((id, summary)) => {
+            eprintln!("fortis-edge: support ticket {id} {summary}");
+            Reply::Json(200, json!({ "ticket": id }))
+        }
+        Err(e) => {
+            eprintln!("fortis-edge: support ticket not saved: {e}");
+            err(500, "could not record")
+        }
+    }
+}
+
+/// Writes one ticket file; its id and a one-line summary for the journal.
+fn save_ticket(dir: &std::path::Path, token: &str, ip: &str, ticket: serde_json::Value) -> std::io::Result<(String, String)> {
+    use sha2::Digest;
+    use std::io::Write;
+    use std::os::unix::fs::OpenOptionsExt;
+    let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default();
+    let install = hex::encode(&sha2::Sha256::digest(token.as_bytes())[..4]);
+    let seed = format!("{token}{}{}", now.as_nanos(), std::process::id());
+    let id = format!("FT-{}", hex::encode_upper(&sha2::Sha256::digest(seed.as_bytes())[..4]));
+    let clip = |k: &str, n: usize| -> String {
+        ticket[k].as_str().unwrap_or("").chars().map(|c| if c.is_control() { ' ' } else { c }).take(n).collect()
+    };
+    let summary = format!("install={install} app={} message={}", clip("app", 40), clip("message", 160));
+    std::fs::create_dir_all(dir)?;
+    let mut f = std::fs::OpenOptions::new().write(true).create_new(true).mode(0o600).open(dir.join(format!("{id}.json")))?;
+    let doc = json!({ "id": id, "received_at": now.as_secs(), "install": install, "ip": ip, "ticket": ticket });
+    f.write_all(serde_json::to_string_pretty(&doc).unwrap_or_default().as_bytes())?;
+    Ok((id, summary))
+}
+
+/// Largest client error report accepted (bytes).
+const CLIENT_LOG_MAX_BODY: usize = 4 * 1024;
+
+/// `POST /ln/log` — the app reports an error it showed (or hit): one line to
+/// stderr (the journal) so the operator sees the real cause of a "Lightning
+/// error". A valid install token and its rate-limit bucket; the body capped
+/// at [`CLIENT_LOG_MAX_BODY`]; only known fields, trimmed and stripped of
+/// control characters. The token is never logged, only a short hash of it
+/// (to tell one install's reports from another's).
+fn client_log_route(req: &mut Request, st: &State, method: &Method) -> Reply {
+    let Some(tok) = bearer(req).filter(|t| token::verify(&st.secret, t)) else {
+        Metrics::inc(&st.metrics.unauthorized);
+        return err(401, "missing or invalid token — POST /register first");
+    };
+    if method != &Method::Post {
+        return err(405, "method not allowed");
+    }
+    if !st.limiter.check(&tok) {
+        Metrics::inc(&st.metrics.rate_limited);
+        return err(429, "rate limit exceeded");
+    }
+    if req.body_length().is_some_and(|n| n > CLIENT_LOG_MAX_BODY) {
+        return err(413, "request body too large");
+    }
+    let mut body = Vec::new();
+    if req.as_reader().take(CLIENT_LOG_MAX_BODY as u64 + 1).read_to_end(&mut body).is_err()
+        || body.len() > CLIENT_LOG_MAX_BODY
+    {
+        return err(413, "request body too large");
+    }
+    let Ok(v) = serde_json::from_slice::<serde_json::Value>(&body) else {
+        return err(400, "not JSON");
+    };
+    eprintln!("{}", client_log_line(&tok, &v));
+    Reply::Json(200, json!({ "ok": true }))
+}
+
+/// The journal line for one client report (see [`client_log_route`]).
+fn client_log_line(token: &str, v: &serde_json::Value) -> String {
+    use sha2::Digest;
+    let field = |k: &str, max: usize| -> String {
+        let s = v[k].as_str().unwrap_or("");
+        let clean: String = s.chars().map(|c| if c.is_control() { ' ' } else { c }).collect();
+        clean.chars().take(max).collect()
+    };
+    let who = hex::encode(&sha2::Sha256::digest(token.as_bytes())[..4]);
+    format!(
+        "fortis-edge: client-error install={who} app={} where={} error={} detail={}",
+        field("app", 40),
+        field("where", 60),
+        field("error", 300),
+        field("detail", 1500),
+    )
+}
+
 fn ln_info_route(req: &Request, st: &State, method: &Method) -> Reply {
     let Some(info) = &st.ln_info else {
         return err(404, "no such route");
@@ -2009,6 +2144,37 @@ fn ln_fee_exempt(p: &pricing::Pricing, upstream: &Upstream, tx_hex: &str) -> boo
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn a_ticket_is_saved_to_its_own_private_file() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = std::env::temp_dir().join(format!("fortis-support-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let t = serde_json::json!({ "message": "move failed\nhelp", "app": "0.6.0", "logs": "x" });
+        let (id, summary) = super::save_ticket(&dir, "tok", "1.2.3.4", t).unwrap();
+        assert!(id.starts_with("FT-") && id.len() == 11, "{id}");
+        assert!(summary.contains("message=move failed help") && !summary.contains("tok"), "{summary}");
+        let path = dir.join(format!("{id}.json"));
+        assert_eq!(std::fs::metadata(&path).unwrap().permissions().mode() & 0o777, 0o600);
+        let saved: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        assert_eq!(saved["ticket"]["logs"], "x");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_client_report_is_one_trimmed_line_without_the_token() {
+        let v = serde_json::json!({
+            "app": "0.6.0", "where": "move_to_onchain",
+            "error": "Other(chain_sync_failed: x)\nsecond line", "detail": "d".repeat(5000), "extra": "ignored",
+        });
+        let line = super::client_log_line("secret-token", &v);
+        assert!(line.starts_with("fortis-edge: client-error install="));
+        assert!(!line.contains("secret-token"));
+        assert!(!line.contains('\n'));
+        assert!(line.contains("where=move_to_onchain error=Other(chain_sync_failed: x) second line"));
+        assert!(!line.contains("ignored"));
+        assert!(line.len() < 2_200);
+    }
+
     use super::*;
 
     // ---- the Lightning fee exemption, through a real (local) upstream ----
