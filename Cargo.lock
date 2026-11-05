@@ -1021,12 +1021,18 @@ dependencies = [
 name = "fortis-lsp"
 version = "0.1.0"
 dependencies = [
+ "base64 0.22.1",
+ "hex",
  "ldk-node",
  "libc",
+ "ring",
+ "rusqlite",
  "serde",
  "serde_json",
+ "thiserror 2.0.20",
  "tiny_http",
  "toml",
+ "ureq",
 ]
 
 [[package]]
@@ -1631,8 +1637,6 @@ checksum = "20870f649af7073d53e38067b2a84312175d56ea15217e1b15bc83506ec50afb"
 [[package]]
 name = "ldk-node"
 version = "0.7.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9a890a268dd7430d16ae5a867d73070414beab83fc744b07147aab3a33e38360"
 dependencies = [
  "base64 0.22.1",
  "bdk_chain",

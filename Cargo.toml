@@ -40,8 +40,13 @@ vss-client = { package = "vss-client-ng", version = "=0.4.1" }
 # the process. vendor/tiny_http is 0.12.0 with that one drain loop bounded
 # (see the FORTIS PATCH comment in src/util/equal_reader.rs). Drop this patch
 # once upstream fixes it.
+# ldk-node 0.7.1 opens announced channels with LDK's 10 % max HTLC value in
+# flight, capping each payment into the LSP at a tenth of its channel.
+# vendor/ldk-node is 0.7.1 with every channel we open at 100 % (see the FORTIS
+# PATCH comment in src/lib.rs). Drop this patch once upstream does it.
 [patch.crates-io]
 tiny_http = { path = "vendor/tiny_http" }
+ldk-node = { path = "vendor/ldk-node" }
 
 [profile.release]
 lto = "thin"
