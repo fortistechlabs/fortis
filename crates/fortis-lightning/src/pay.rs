@@ -128,6 +128,10 @@ impl Prepared {
     }
 }
 
+/// What a Fortis account request signature covers before the body (must
+/// match `fortis-lsp`'s `account_auth::SIG_PREFIX`).
+pub const ACCOUNT_SIG_PREFIX: &str = "fortis-account-v1:";
+
 impl Node {
     /// Pays `target`; `amount_msat` is required for a target without an
     /// amount (no-amount invoice or offer, LNURL) and must equal the amount
@@ -182,6 +186,29 @@ impl Node {
     /// back). Zero when the node is not running.
     pub fn sendable_msat(&self) -> u64 {
         self.running().map_or(0, |r| sendable_msat(&r.node))
+    }
+
+    /// The most one incoming payment can be over a single usable channel
+    /// now (its inbound capacity). Zero when the node is not running or has
+    /// no usable channel: the Fortis account (spec §7) takes such payments.
+    pub fn receivable_msat(&self) -> u64 {
+        self.running().map_or(0, |r| {
+            r.node
+                .list_channels()
+                .iter()
+                .filter(|c| c.is_usable)
+                .map(|c| c.inbound_capacity_msat)
+                .max()
+                .unwrap_or(0)
+        })
+    }
+
+    /// Signs a Fortis account request (spec §7): the node key's Lightning
+    /// message signature (zbase32) over [`ACCOUNT_SIG_PREFIX`] + `body`,
+    /// which `fortis-lsp` checks against the node id named in the body.
+    pub fn sign_account_request(&self, body: &str) -> Result<String, LnError> {
+        let r = self.running().ok_or_else(|| LnError::Other("not_started".into()))?;
+        Ok(r.node.sign_message(format!("{ACCOUNT_SIG_PREFIX}{body}").as_bytes()))
     }
 
     /// [`pay`](Self::pay) with the LNURL HTTP client injected.

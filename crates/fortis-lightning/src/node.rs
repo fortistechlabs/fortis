@@ -87,6 +87,8 @@ use crate::LnError;
 
 /// [`Node::start`] never takes longer than this (the brief's bound is 15 s).
 const START_DEADLINE: Duration = Duration::from_secs(14);
+/// Rapid Gossip Sync snapshots for mainnet (LDK's public server; the LSP uses it too).
+const MAINNET_RGS_URL: &str = "https://rapidsync.lightningdevkit.org/snapshot";
 /// Per-probe cap for the LSP and VSS reachability checks.
 const PROBE_TIMEOUT: Duration = Duration::from_secs(5);
 /// Exit mode's best-effort LSP probe: a host that is gone (packets dropped)
@@ -523,12 +525,11 @@ impl Node {
         self.limits
     }
 
-    /// What ldk-node holds back in the transit wallet for each anchor channel
-    /// (see [`Balances::reserved_sat`]). `open_channel` needs the spendable
-    /// transit balance to cover its amount plus this, so a move to Lightning
-    /// has to deposit that much more than the channel size.
+    /// What ldk-node holds back in the transit wallet per anchor channel: 0,
+    /// as the LSP is a trusted peer (`trusted_peers_no_reserve`; see the
+    /// channel module docs).
     pub fn anchor_reserve_sat() -> u64 {
-        ldk_node::config::AnchorChannelsConfig::default().per_channel_reserve_sats
+        0
     }
 
     /// [`start_with`](Self::start_with)`(StartMode::Normal)`.
@@ -740,6 +741,14 @@ impl Node {
                     continue;
                 }
                 if let Some(e) = translate(event) {
+                    // LDK hands out `PaymentClaimed` again at every start until
+                    // the channel has fully settled the claim, so a payment
+                    // received yesterday would be announced again today.
+                    if let LnEvent::PaymentReceived { id, .. } = &e {
+                        if !first_report_of_received(&self.data_dir, id) {
+                            continue;
+                        }
+                    }
                     return Some(e);
                 }
                 continue;
@@ -1021,6 +1030,26 @@ fn hex32(b: &[u8; 32]) -> String {
     hex::encode(b)
 }
 
+/// The file listing received payments already reported (one id per line).
+const RECEIVED_REPORTED_FILE: &str = "received_reported";
+
+/// True the first time `id` is seen here, and records it; false for a payment
+/// already reported. Files that cannot be read or written count as unseen
+/// (a repeated notice is better than a lost one).
+fn first_report_of_received(data_dir: &std::path::Path, id: &str) -> bool {
+    use std::io::Write;
+    let path = data_dir.join(RECEIVED_REPORTED_FILE);
+    if let Ok(text) = std::fs::read_to_string(&path) {
+        if text.lines().any(|l| l == id) {
+            return false;
+        }
+    }
+    if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(&path) {
+        let _ = writeln!(f, "{id}");
+    }
+    true
+}
+
 fn translate(event: Event) -> Option<LnEvent> {
     Some(match event {
         Event::PaymentReceived {
@@ -1167,6 +1196,22 @@ fn cancelled() -> LnError {
 impl StartJob {
     fn set(&self, s: Stage) {
         self.stage.store(s as u8, Ordering::SeqCst);
+        self.log_timing(&format!("stage {}", s as u8));
+    }
+
+    /// Appends "<ms since this start began> <what>" to `start_timing.log` in
+    /// the data dir (best effort), to see where a slow start spends its time.
+    fn log_timing(&self, what: &str) {
+        use std::io::Write;
+        let began = self.deadline - START_DEADLINE;
+        let ms = Instant::now().saturating_duration_since(began).as_millis();
+        let path = std::path::Path::new(&self.data_dir).join("start_timing.log");
+        if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(path) {
+            let secs = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map_or(0, |d| d.as_secs());
+            let _ = writeln!(f, "{secs} +{ms}ms {what}");
+        }
     }
 
     fn probe_timeout(&self) -> Duration {
@@ -1262,7 +1307,12 @@ impl StartJob {
             return halt;
         }
         self.set(Stage::Build);
-        let mut b = Builder::new();
+        // The LSP gets closes confirmed for us: no 25,000 sat anchor reserve.
+        let mut config = ldk_node::config::Config::default();
+        if let Some(a) = config.anchor_channels_config.as_mut() {
+            a.trusted_peers_no_reserve.push(self.lsp_id);
+        }
+        let mut b = Builder::from_config(config);
         b.set_network(self.network);
         match &self.chain_source {
             ChainSource::Esplora { url, auth_header } => match auth_header {
@@ -1290,6 +1340,14 @@ impl StartJob {
                     password.clone(),
                 );
             }
+        }
+        // The network graph from Rapid Gossip Sync (one compact HTTPS snapshot,
+        // in the background), not P2P gossip: that streamed the LSP's whole
+        // graph down the same connection on every connect, holding up the
+        // payments queued behind it by seconds. Mainnet only (no RGS server for
+        // test networks; a node there routes over its own channels).
+        if self.network == Network::Bitcoin {
+            b.set_gossip_source_rgs(MAINNET_RGS_URL.to_string());
         }
         b.set_entropy_seed_bytes(*self.ldk_seed);
         b.set_storage_dir_path(self.data_dir.clone());
@@ -1346,6 +1404,7 @@ impl StartJob {
             lock.armed = false;
             drop(inner);
             spawn_lock_checker(&self.shared, self.generation);
+            self.log_timing("running");
             if self.mode == StartMode::Exit {
                 self.exit_connect(&weak);
             }
@@ -1417,6 +1476,18 @@ fn map_node_error(e: NodeError) -> LnError {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn a_received_payment_is_reported_once() {
+        let dir = std::env::temp_dir().join(format!("fortis-rx-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        assert!(super::first_report_of_received(&dir, "aa"));
+        assert!(!super::first_report_of_received(&dir, "aa"));
+        assert!(super::first_report_of_received(&dir, "bb"));
+        assert!(!super::first_report_of_received(&dir, "bb"));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     use super::*;
 
     #[test]
@@ -1438,7 +1509,7 @@ mod tests {
 
     #[test]
     fn anchor_reserve_matches_ldk_nodes_default() {
-        assert_eq!(Node::anchor_reserve_sat(), 25_000);
+        assert_eq!(Node::anchor_reserve_sat(), 0);
     }
 
     fn cfg(seed: Vec<u8>) -> NodeConfig {

@@ -219,6 +219,15 @@ fn opens_the_configured_outbound_channel_once() {
     assert!(!ch.is_outbound, "the LSP opened it, not the router");
     let opens = |l: &Lsp| l.stderr().matches("opening announced channel").count();
     assert_eq!(opens(&lsp), 1, "{}", lsp.stderr());
+    // vendor/ldk-node: the LSP accepts payments in up to (nearly) the whole
+    // channel, not LDK's default 10 % for announced channels.
+    let htlc_max: u64 = lsp
+        .metrics()
+        .lines()
+        .find_map(|l| l.strip_prefix("fortis_lsp_inbound_htlc_max_sat "))
+        .and_then(|v| v.trim().parse().ok())
+        .unwrap();
+    assert!(htlc_max > OUTBOUND_SAT / 2, "inbound HTLC max {htlc_max} of a {OUTBOUND_SAT} sat channel");
 
     // A restart sees the channel and opens nothing.
     lsp.restart();

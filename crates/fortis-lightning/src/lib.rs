@@ -18,7 +18,7 @@ mod pay;
 mod receive;
 pub mod recover;
 
-pub use channel::ChannelState;
+pub use channel::{ChannelState, USER_CHANNEL_MIN_SAT};
 pub use error::{LnError, ParseError};
 #[doc(hidden)]
 pub use node::test_hooks;
@@ -27,5 +27,5 @@ pub use node::{
     StartMode, VssConfig,
 };
 pub use parse::{parse, parse_at, PaymentTarget};
-pub use pay::{estimate_routing_fee_msat, Direction, Payment, Status};
+pub use pay::{estimate_routing_fee_msat, Direction, Payment, Status, ACCOUNT_SIG_PREFIX};
 pub use receive::ReceiveQuote;

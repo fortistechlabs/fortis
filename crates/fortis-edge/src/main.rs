@@ -396,6 +396,11 @@ struct Args {
     /// of `--workers`). Keeps slow uploads from taking every worker.
     #[arg(long, default_value_t = 0)]
     vss_max_concurrent: usize,
+    /// Lightning: fortis-lsp's loopback admin listener (its `metrics_listen`,
+    /// e.g. http://127.0.0.1:9736) that `POST /ln/account` (Fortis accounts)
+    /// forwards to. Unset → `/ln/account` 404s.
+    #[arg(long)]
+    lsp_admin_url: Option<String>,
     /// Test only: the VSS upstream read timeout, seconds (default 30).
     #[arg(long, default_value_t = ln::VSS_READ_TIMEOUT_SECS, hide = true)]
     vss_read_timeout_secs: u64,
@@ -442,6 +447,8 @@ struct State {
     ln_info: Option<Arc<ln::LnInfoSource>>,
     /// `/ln/vss/*`; `None` unless `--vss-upstream`.
     vss: Option<ln::VssProxy>,
+    /// `POST /ln/account` → `<url>/account`; `None` unless `--lsp-admin-url`.
+    lsp_admin: Option<LspAdmin>,
     /// `limiter`'s settings, but VSS's own buckets: a node's write bursts
     /// must not starve the same install's swaps or chain reads, nor they VSS.
     vss_limiter: RateLimiter,
@@ -713,6 +720,7 @@ fn run() -> Result<()> {
         swap,
         ln_info,
         vss,
+        lsp_admin: args.lsp_admin_url.as_deref().map(LspAdmin::new),
         vss_limiter: RateLimiter::new(args.rate_per_min, args.rate_burst),
     });
 
@@ -1056,6 +1064,7 @@ fn handle(req: &mut Request, st: &State) -> Reply {
         (_, p) if p == "/swap" || p.starts_with("/swap/") => swap_route(req, st, &method, p),
         _ if raw_path == "/ln/info" => ln_info_route(req, st, &method),
         _ if raw_path.starts_with("/ln/vss/") => ln_vss_route(req, st, &method, &raw_path["/ln/vss/".len()..]),
+        _ if raw_path == "/ln/account" => ln_account_route(req, st, &method),
         (_, p) if p.starts_with("/xbt/") || p.starts_with("/btc/") => {
             proxy_chain(req, st, &method, p, query)
         }
@@ -1174,6 +1183,93 @@ fn ln_vss_route(req: &mut Request, st: &State, method: &Method, rest: &str) -> R
         Err(ln::VssFail::Unavailable(e)) => {
             vss.refund_write(op, &tok, body.len());
             fail(502, "vss upstream is unavailable", &e)
+        }
+    }
+}
+
+/// Largest `POST /ln/account` body (the LSP refuses more anyway).
+const ACCOUNT_MAX_BODY: usize = 16 * 1024;
+
+/// fortis-lsp's loopback admin API, for Fortis accounts.
+struct LspAdmin {
+    url: String,
+    agent: ureq::Agent,
+}
+
+impl LspAdmin {
+    fn new(base: &str) -> LspAdmin {
+        LspAdmin {
+            url: format!("{}/account", base.trim_end_matches('/')),
+            agent: ureq::AgentBuilder::new()
+                .timeout_connect(std::time::Duration::from_secs(3))
+                .timeout(std::time::Duration::from_secs(20))
+                .build(),
+        }
+    }
+
+    /// Posts `body` with `sig`; the LSP's status and JSON body, whatever the status.
+    fn forward(&self, body: &[u8], sig: &str) -> std::result::Result<(u16, Vec<u8>), String> {
+        let r = self
+            .agent
+            .post(&self.url)
+            .set("Content-Type", "application/json")
+            .set("X-Fortis-Sig", sig)
+            .send_bytes(body);
+        let resp = match r {
+            Ok(r) => r,
+            Err(ureq::Error::Status(_, r)) => r,
+            Err(e) => return Err(e.to_string()),
+        };
+        let status = resp.status();
+        let mut out = Vec::new();
+        resp.into_reader().take(256 * 1024).read_to_end(&mut out).map_err(|e| e.to_string())?;
+        Ok((status, out))
+    }
+}
+
+/// `POST /ln/account` → fortis-lsp's `/account` (Fortis accounts, spec §7):
+/// 404 unless `--lsp-admin-url`; a valid install token; the install's rate
+/// limit; body ≤ 16 KiB. The request is signed by the user's node key and
+/// checked by the LSP; only the body and `X-Fortis-Sig` go upstream, and the
+/// LSP's answer (401/402/409 included) is relayed unchanged.
+fn ln_account_route(req: &mut Request, st: &State, method: &Method) -> Reply {
+    let Some(admin) = &st.lsp_admin else {
+        return err(404, "no such route");
+    };
+    let Some(tok) = bearer(req).filter(|t| token::verify(&st.secret, t)) else {
+        Metrics::inc(&st.metrics.unauthorized);
+        return err(401, "missing or invalid token — POST /register first");
+    };
+    if method != &Method::Post {
+        return err(405, "method not allowed");
+    }
+    if !st.limiter.check(&tok) {
+        Metrics::inc(&st.metrics.rate_limited);
+        return err(429, "rate limit exceeded");
+    }
+    if req.body_length().is_some_and(|n| n > ACCOUNT_MAX_BODY) {
+        return err(413, "request body too large");
+    }
+    let mut body = Vec::new();
+    if req.as_reader().take(ACCOUNT_MAX_BODY as u64 + 1).read_to_end(&mut body).is_err() {
+        return err(400, "could not read the request body");
+    }
+    if body.len() > ACCOUNT_MAX_BODY {
+        return err(413, "request body too large");
+    }
+    let Some(sig) = req.headers().iter().find(|h| h.field.equiv("X-Fortis-Sig")).map(|h| h.value.as_str().to_string())
+    else {
+        return err(401, "missing X-Fortis-Sig");
+    };
+    if sig.len() > 256 || sig.chars().any(|c| !c.is_ascii_alphanumeric()) {
+        return err(400, "bad X-Fortis-Sig");
+    }
+    match admin.forward(&body, &sig) {
+        Ok((status, out)) => Reply::NoStore(status, "application/json".into(), out),
+        Err(e) => {
+            Metrics::inc(&st.metrics.upstream_errors);
+            eprintln!("fortis-edge: lsp admin: {e}");
+            err(502, "the Lightning service is unavailable")
         }
     }
 }
@@ -1950,6 +2046,38 @@ mod tests {
             sequence: bitcoin::Sequence::MAX,
             witness: bitcoin::Witness::from_slice(&witness),
         }
+    }
+
+    /// A fake fortis-lsp admin listener: answers `status` with the request
+    /// body and `X-Fortis-Sig` echoed back.
+    fn fake_lsp_admin(status: u16) -> String {
+        let server = tiny_http::Server::http("127.0.0.1:0").unwrap();
+        let base = format!("http://{}", server.server_addr().to_ip().unwrap());
+        std::thread::spawn(move || {
+            for mut req in server.incoming_requests() {
+                let sig = req.headers().iter().find(|h| h.field.equiv("X-Fortis-Sig")).map(|h| h.value.to_string());
+                let mut body = String::new();
+                let _ = req.as_reader().read_to_string(&mut body);
+                let echo = json!({ "path": req.url(), "body": body, "sig": sig });
+                let _ = req.respond(tiny_http::Response::from_string(echo.to_string()).with_status_code(status));
+            }
+        });
+        base
+    }
+
+    #[test]
+    fn the_account_route_forwards_body_and_signature_and_relays_the_status() {
+        for status in [200u16, 401, 402, 409] {
+            let admin = LspAdmin::new(&fake_lsp_admin(status));
+            let (got, out) = admin.forward(br#"{"op":"balance"}"#, "rbsig123").unwrap();
+            assert_eq!(got, status);
+            let v: serde_json::Value = serde_json::from_slice(&out).unwrap();
+            assert_eq!(v["path"], "/account");
+            assert_eq!(v["body"], r#"{"op":"balance"}"#);
+            assert_eq!(v["sig"], "rbsig123");
+        }
+        // Nothing listening: an error, not a panic.
+        assert!(LspAdmin::new("http://127.0.0.1:9").forward(b"{}", "x").is_err());
     }
 
     #[test]

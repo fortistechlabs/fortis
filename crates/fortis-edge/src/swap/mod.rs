@@ -4282,6 +4282,7 @@ mod tests {
             swap,
             ln_info: None,
             vss: None,
+            lsp_admin: None,
             vss_limiter: crate::RateLimiter::new(600, 300),
         };
         (st, dir)

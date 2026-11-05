@@ -39,8 +39,8 @@ use ldk_node::Builder;
 const SAT: u64 = 1_000;
 const CHANNEL_SAT: u64 = 150_000;
 const TRANSIT_SAT: u64 = 300_000;
-/// ldk-node's default `AnchorChannelsConfig::per_channel_reserve_sats`.
-const ANCHOR_RESERVE_SAT: u64 = 25_000;
+/// No anchor reserve: the LSP is a trusted peer (`trusted_peers_no_reserve`).
+const ANCHOR_RESERVE_SAT: u64 = 0;
 /// What the funder of an anchor channel gives up on its side at 253 sat/kWU:
 /// the commitment fee (1124 WU) and two 330-sat anchors.
 const FUNDER_COMMITMENT_COST_SAT: u64 = 253 * 1124 / 1000 + 2 * 330;
@@ -283,16 +283,17 @@ fn open_below_channel_min_errors() {
     }
     let env = Env::start();
     let limits = env.client.limits();
+    // The LSP's JIT minimum does not apply to channels the user funds.
     assert_eq!(
         (limits.channel_min_sat, limits.channel_max_sat),
         (100_000, 500_000)
     );
     let range = LnError::AmountOutOfRange {
-        min_msat: limits.channel_min_sat * SAT,
+        min_msat: fortis_lightning::USER_CHANNEL_MIN_SAT * SAT,
         max_msat: limits.channel_max_sat * SAT,
     };
     assert_eq!(
-        env.client.open_channel(limits.channel_min_sat - 1),
+        env.client.open_channel(fortis_lightning::USER_CHANNEL_MIN_SAT - 1),
         Err(range.clone())
     );
     assert_eq!(
@@ -306,14 +307,26 @@ fn open_below_channel_min_errors() {
         env.client.open_channel(CHANNEL_SAT),
         Err(LnError::Other("insufficient_transit".into()))
     );
-    // Enough for the channel but not for the channel plus the anchor reserve.
-    env.fund_transit(CHANNEL_SAT + ANCHOR_RESERVE_SAT / 2);
-    assert_eq!(
-        env.client.open_channel(CHANNEL_SAT),
-        Err(LnError::Other("insufficient_transit".into()))
-    );
     assert_eq!(env.client.channel_state(), ChannelState::None);
     assert!(env.mempool().is_empty(), "nothing was broadcast");
+}
+
+#[test]
+#[ignore = "needs FORTIS_BTC_BITCOIND, FORTIS_VSS_SERVER and fortis-lsp built"]
+fn a_small_channel_opens_without_an_anchor_reserve() {
+    if !have_binaries() {
+        return;
+    }
+    let env = Env::start();
+    const SMALL_SAT: u64 = 20_000;
+    env.fund_transit(SMALL_SAT + 2_000);
+    env.client.open_channel(SMALL_SAT).expect("open a 20,000 sat channel");
+    env.wait_mempool("funding transaction broadcast");
+    env.rt.mine(6);
+    env.wait_event("ChannelReady", 90, |e| matches!(e, LnEvent::ChannelReady));
+    let b = env.client.balances();
+    assert_eq!(b.lightning_sat, SMALL_SAT - FUNDER_COMMITMENT_COST_SAT, "{b:?}");
+    assert_eq!(b.reserved_sat, 0, "{b:?}");
 }
 
 #[test]
@@ -1084,9 +1097,9 @@ fn channel_calls_before_start() {
         Err(LnError::Other("not_started".into()))
     );
     assert_eq!(
-        node.open_channel(99_999),
+        node.open_channel(fortis_lightning::USER_CHANNEL_MIN_SAT - 1),
         Err(LnError::AmountOutOfRange {
-            min_msat: 100_000 * SAT,
+            min_msat: fortis_lightning::USER_CHANNEL_MIN_SAT * SAT,
             max_msat: 500_000 * SAT
         })
     );
@@ -1099,4 +1112,62 @@ fn channel_calls_before_start() {
         Err(LnError::Other("not_started".into()))
     );
     assert_eq!(node.balances().pending_close_sat, 0);
+}
+
+#[test]
+#[ignore = "needs FORTIS_BTC_BITCOIND, FORTIS_VSS_SERVER and fortis-lsp built"]
+fn splice_in_grows_the_channel_and_splice_out_pays_an_address() {
+    if !have_binaries() {
+        return;
+    }
+    let env = Env::start();
+    env.open_ready_channel();
+    let before = env.client.balances().lightning_sat;
+
+    // A second transfer into Lightning: splice into the open channel.
+    const ADD_SAT: u64 = 80_000;
+    env.fund_transit(ADD_SAT + 2_000);
+    env.client.splice_in(ADD_SAT).expect("splice_in");
+    env.wait_mempool("splice-in transaction broadcast");
+    env.rt.mine(6);
+    let grown = poll("channel grown by the splice-in", 120, || {
+        let b = env.client.balances();
+        (b.lightning_sat >= before + ADD_SAT - MAX_TX_FEE_SAT).then_some(b)
+    });
+    eprintln!("after splice-in: {grown:?}");
+    assert!(grown.lightning_sat <= before + ADD_SAT, "{grown:?}");
+    assert_eq!(env.client.channel_state(), ChannelState::Ready);
+
+    // Part of it back on-chain: splice out to an outside address.
+    const OUT_SAT: u64 = 50_000;
+    let to = env.external_address();
+    // The splice-in must be locked on both sides first (splice_locked).
+    let mut tries = 0;
+    poll("splice_out accepted", 120, || {
+        tries += 1;
+        match env.client.splice_out(OUT_SAT, &to) {
+            Ok(()) => Some(()),
+            Err(e) => {
+                eprintln!("splice_out try {tries}: {e:?}");
+                env.rt.mine(1);
+                None
+            }
+        }
+    });
+    env.wait_mempool("splice-out transaction broadcast");
+    env.rt.mine(6);
+    poll("splice-out paid", 120, || (env.received_sat(&to, 1) == OUT_SAT).then_some(()));
+    let after = poll("channel shrunk", 120, || {
+        let b = env.client.balances();
+        (b.lightning_sat < grown.lightning_sat - OUT_SAT + MAX_TX_FEE_SAT).then_some(b)
+    });
+    eprintln!("after splice-out: {after:?}");
+    assert!(after.lightning_sat >= grown.lightning_sat - OUT_SAT - MAX_TX_FEE_SAT, "{after:?}");
+    assert_eq!(env.client.channel_state(), ChannelState::Ready);
+
+    // Too much out is refused before anything is sent.
+    assert!(matches!(
+        env.client.splice_out(10_000_000, &to),
+        Err(fortis_lightning::LnError::Other(r)) if r == "insufficient_channel"
+    ));
 }

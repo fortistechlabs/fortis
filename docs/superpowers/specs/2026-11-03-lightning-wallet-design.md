@@ -1,6 +1,6 @@
 # Lightning wallet: a separate wallet type
 
-Date: 2026-11-03 · Status: design approved in conversation, awaiting spec review
+Date: 2026-11-03 · Status: approved; §7 (Fortis account) added 2026-11-04 · Plan 1 (§1, §4) merged
 
 ## Goal
 
@@ -8,7 +8,9 @@ Replace today's per-BTC-wallet "Lightning (beta)" toggle with **one separate
 Lightning wallet per app**, created by the user, with its own recovery phrase
 and its own functionality: send, receive by invoice, a **reusable BOLT12
 offer that is paid even when the app is not running**, and transfers of any
-amount to and from on-chain wallets.
+amount to and from on-chain wallets. It can **receive any amount, however
+small**: what its own channel cannot take is held in a small custodial
+**Fortis account** (§7) until it is worth a channel.
 
 Success: a user sees at a glance what is on Lightning and what is on-chain;
 moves money between them with one screen; receives to a permanent offer with
@@ -26,7 +28,12 @@ the app closed; Lightning features grow without touching the on-chain screens.
 | Withdrawal fee (Lightning → on-chain) | Same rule |
 | JIT receive fee | Unchanged LSPS2 fee `max(1%, 1,000 sat)`; the operator absorbs the network fee |
 | Forwarding | `fortis-lsp` forwards for free (done 2026-11-03); Fortis-to-Fortis payments cost 0 |
-| v1 scope | Create/restore, transfers both ways (any amount, slider), send, invoice receive, **reusable offer**, **async payments with push wake**, history |
+| Small receives | Any amount: what the user's channel cannot take goes to a **Fortis account** on the LSP (custodial), capped at **50,000 sat** per user (§7) |
+| Account → channel | Over the cap, the LSP opens (or splices into) the user's own channel with the whole amount; fee `max(1%, 1,000 sat)` of the amount moved, paid by the user |
+| Account after a channel | Overflow: receives go to the channel while it has room, then to the account; sends use the channel first, then the account |
+| Total custody | `custody_max_sat` (default 5,000,000 sat), always below the LSP's spendable balance; new account receives refused when reached |
+| v1 scope | Create/restore, transfers both ways (any amount, slider), send, invoice receive, **Fortis account for small amounts**, **reusable offer**, **async payments with push wake**, history |
+| Plans | Plan 1: the wallet type (§1, §4) — merged. Plan 2: Fortis account (§7) + transfers (§2, §5 quote/fee). Plan 3: offer, async payments, push wake, Keystore seed (§3, §5 rest) |
 | Later | Human-readable name (BIP353 / Lightning Address on fortistechlabs.com), ldk-node 0.8 upgrade, push without Google Play |
 | Library | Build on **ldk-node 0.7.1** (latest release). Do not use unreleased `main` (0.8.0+git) or LDK 0.3 RCs with funds. Wrap splice/transfer calls so the 0.8 upgrade (`splice_out_max`, fixed funding fee rates) is contained |
 
@@ -96,9 +103,10 @@ JIT quote with the LSPS2 fee when a channel must open; this is how a new
 wallet can get its first channel without a transfer.
 
 **Offer:** one permanent amountless BOLT12 offer (`lno1…`) per wallet; QR,
-copy, share. Needs a channel (offers cannot open one); before that the tab
-says "Fund your Lightning wallet or receive one invoice payment first".
-Shows "Can receive up to N sat with this offer" (inbound capacity).
+copy, share. Offers cannot open a channel: what the user's channel cannot take
+(including every payment before the first channel) goes to the Fortis account
+(§7), so the offer works from day one. Shows "Can receive up to N sat with this
+offer" (channel inbound room plus the account's room under its cap).
 
 **Async setup** (background, once a channel exists): the phone calls
 `GET /ln/async-paths` (edge → LSP admin) for paths keyed by its node id,
@@ -194,8 +202,63 @@ beta cap per transfer, published in `/ln/info` as `max_transfer_sat`
 (default 500,000 sat; the app's slider Max is the smaller of the balance and
 this cap); ldk-node 0.8 upgrade as a separate step.
 
+## 7. The Fortis account (custodial up to 50,000 sat)
+
+Lets the Lightning wallet receive **any amount, however small**, at any time,
+without a channel big enough for it — at the cost of the operator holding a
+small, capped balance for the user.
+
+**Identity:** the account is keyed by the Lightning wallet's **node id**. Every
+account request is signed by the phone's node key (so restoring the Lightning
+wallet's phrase restores the account; no separate login) and sent through the
+edge (install token) to the LSP's loopback admin API.
+
+**Receiving**
+- The phone issues its own invoice when its channel can take the amount.
+  Otherwise (no channel, or not enough inbound room) it asks the LSP for an
+  **account invoice**: the LSP's node is the payee and the payment is credited
+  to the user's account.
+- **Over the cap:** when a credit would take the account above **50,000 sat**,
+  the LSP opens a channel to the user's node with the whole amount (held +
+  new), or splices into an existing channel, the next time the phone is
+  online (push wake, Plan 3, makes that prompt). Fee `max(1%, 1,000 sat)` of
+  the amount moved; the account goes to 0. Until then the account may hold
+  more than the cap.
+- **Fortis to Fortis:** an invoice that belongs to another Fortis account is
+  settled in the LSP's ledger — instant, free.
+- Offer payments (Plan 3) the user's channel cannot take land in the account.
+
+**Sending:** from the user's channel first, then from the account. An account
+send is a node-key-signed request after the usual PIN/biometric on the phone;
+the LSP pays the invoice from its node. Fee: the actual routing fee, within the
+existing cap (1 % + 50 sat); Fortis-to-Fortis: 0.
+
+**Limits and safety**
+- Per account: 50,000 sat. Overall: `custody_max_sat` in `lsp.toml` (default
+  5,000,000 sat), and never more than the LSP's spendable balance; at either
+  limit new account receives are refused ("Fortis can't hold more small
+  balances right now — receive at least N sat to open your own channel"),
+  channel receives continue.
+- The ledger is in the LSP's database, written before each change takes effect
+  (credit, debit, conversion), included in the nightly LSP backup (runbook §6),
+  and exposed as `fortis_lsp_custody_sat` in `/metrics`.
+- Account requests: signature over (node id, request, nonce, expiry), nonces
+  single-use, rate-limited per node id.
+
+**In the app:** the Lightning wallet's balance shows **"In your channel: X"**
+and **"Held by Fortis: Y"**, with a short explanation and a link to terms.
+History marks account payments; a conversion shows as an event with its fee.
+
+**Replaces** the earlier "fee credit" idea (same purpose, but spendable).
+
+**Pre-launch requirement (operator):** holding customer funds is likely a
+regulated activity (EU MiCA crypto-asset service provider authorisation;
+KYC/AML; Travel Rule). The operator confirms the legal position before the
+account is enabled for users; until then it ships disabled behind
+`custody_max_sat = 0`.
+
 ## Out of scope (v1)
 
 BIP353 / Lightning Address names; push without Google Play; multiple Lightning
-wallets; custodial receiving; LDK Server in place of `fortis-lsp` (revisit at
+wallets; fully custodial wallets (only the capped §7 account is custodial); LDK Server in place of `fortis-lsp` (revisit at
 its v0.1).

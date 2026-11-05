@@ -649,6 +649,16 @@ pub fn ln_resolve_lnurl(target: LnTarget) -> Result<LnurlParams, LnFfiError> {
     Ok(params.into())
 }
 
+/// An LNURL-pay / Lightning Address target's BOLT11 invoice for `amount_msat`
+/// (resolve, then the callback), for paying it from the Fortis account.
+#[uniffi::export]
+pub fn ln_lnurl_invoice(target: LnTarget, amount_msat: u64) -> Result<String, LnFfiError> {
+    let core_target = PaymentTarget::from(target);
+    let http = UreqGet::new();
+    let params = lnurl::resolve(&core_target, &http)?;
+    Ok(lnurl::request_invoice(&params, amount_msat, &http)?)
+}
+
 /// Derives the 64-byte BIP-39 seed from `mnemonic` and `passphrase`, so the
 /// Android shell can pass it to `LightningSession.onUnlocked` / `LnNodeConfig`.
 #[uniffi::export]
@@ -835,6 +845,16 @@ impl LnNode {
         self.inner.sendable_msat()
     }
 
+    /// The most one incoming payment can be over a channel now (msat).
+    pub fn receivable_msat(&self) -> u64 {
+        self.inner.receivable_msat()
+    }
+
+    /// Signs a Fortis account request body with the node key.
+    pub fn sign_account_request(&self, body: String) -> Result<String, LnFfiError> {
+        Ok(self.inner.sign_account_request(&body)?)
+    }
+
     pub fn payments(&self) -> Vec<LnPayment> {
         self.inner.payments().into_iter().map(Into::into).collect()
     }
@@ -855,6 +875,21 @@ impl LnNode {
 
     pub fn close_channel(&self) -> Result<(), LnFfiError> {
         Ok(self.inner.close_channel()?)
+    }
+
+    /// Adds `amount_sat` from the transit wallet to the open channel.
+    pub fn splice_in(&self, amount_sat: u64) -> Result<(), LnFfiError> {
+        Ok(self.inner.splice_in(amount_sat)?)
+    }
+
+    /// Moves `amount_sat` out of the open channel to `to_address`.
+    pub fn splice_out(&self, amount_sat: u64, to_address: String) -> Result<(), LnFfiError> {
+        Ok(self.inner.splice_out(amount_sat, &to_address)?)
+    }
+
+    /// The smallest channel the user can fund.
+    pub fn user_channel_min_sat(&self) -> u64 {
+        fortis_lightning::USER_CHANNEL_MIN_SAT
     }
 
     pub fn force_close_channel(&self) -> Result<(), LnFfiError> {

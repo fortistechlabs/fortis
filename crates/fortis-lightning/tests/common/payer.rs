@@ -65,6 +65,31 @@ impl Payer {
         payer
     }
 
+    /// Opens a second channel to `lsp` with `push_sat` on the LSP's side, so
+    /// the LSP can pay this node (a payer-funded channel otherwise leaves
+    /// the LSP nothing above its channel reserve).
+    #[allow(dead_code)]
+    pub fn give_lsp_liquidity(&self, rt: &Regtest, lsp: &Lsp, channel_sat: u64, push_sat: u64) {
+        let lsp_id = PublicKey::from_str(&lsp.node_id).unwrap();
+        let lsp_addr: SocketAddress = format!("{}:{}", lsp.host, lsp.port).parse().unwrap();
+        let before = self.node.list_channels().len();
+        self.node
+            .open_channel(lsp_id, lsp_addr, channel_sat, Some(push_sat * 1_000), None)
+            .expect("payer opens a pushed channel to the LSP");
+        wait_event(&self.node, "pushed channel pending", 60, |e| matches!(e, Event::ChannelPending { .. }));
+        rt.mine(6);
+        poll("pushed channel usable", 90, || {
+            self.node.sync_wallets().ok();
+            let usable = self
+                .node
+                .list_channels()
+                .iter()
+                .filter(|c| c.counterparty_node_id == lsp_id && c.is_usable)
+                .count();
+            (usable > before).then_some(())
+        });
+    }
+
     /// Pays `invoice` and waits until the payment succeeded.
     pub fn pay(&self, invoice: &str) {
         let inv = Bolt11Invoice::from_str(invoice).expect("a bolt11 invoice");

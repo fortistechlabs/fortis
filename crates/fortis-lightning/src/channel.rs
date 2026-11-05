@@ -9,12 +9,17 @@
 //! is funded from it, and a close pays back into it, from where
 //! [`Node::sweep_transit`] sends everything to the BTC wallet.
 //!
-//! **Anchor reserve.** Channels to the LSP are anchor channels, so while one
-//! exists ldk-node keeps `AnchorChannelsConfig::per_channel_reserve_sats`
-//! (default 25 000 sat per channel) back in the transit wallet to fee-bump a
-//! force close. `open_channel` therefore needs `amount + 25 000` spendable
-//! (the funding fee is paid out of what is above `amount`), and
-//! `sweep_transit` leaves the reserve in place while a channel exists.
+//! **Anchor reserve.** Channels to the LSP are anchor channels. ldk-node would
+//! keep 25 000 sat per channel back in the transit wallet to fee-bump a force
+//! close; the node lists the LSP in `trusted_peers_no_reserve` instead (it
+//! is trusted to get closes confirmed, as it is for zero-conf), so no reserve
+//! is held and `open_channel` needs only `amount` plus the funding fee.
+//!
+//! **Channel size.** A user-funded channel needs at least
+//! [`USER_CHANNEL_MIN_SAT`]: what the funder's commitment fee, anchors and
+//! channel reserve leave usable. No other minimum: the LSP risks nothing on
+//! a channel the user funds. (The LSP's `channel_min_sat` is for the JIT
+//! channels it funds itself.)
 //!
 //! **Serialised.** `open_channel`, `close_channel`, `force_close_channel`
 //! and `sweep_transit` run one at a time per [`Node`] (none of them waits
@@ -46,6 +51,9 @@
 //! [`StartMode::Exit`]: crate::StartMode::Exit
 
 use std::collections::BTreeMap;
+
+/// The smallest channel the user can fund (module docs).
+pub const USER_CHANNEL_MIN_SAT: u64 = 5_000;
 use std::path::Path;
 use std::str::FromStr;
 use std::sync::Mutex;
@@ -901,7 +909,7 @@ impl Node {
     /// `LnEvent::ChannelClosed`.
     ///
     /// Errors, in order: `AmountOutOfRange` (msat) unless
-    /// `channel_min_sat <= amount_sat <= channel_max_sat`;
+    /// `USER_CHANNEL_MIN_SAT <= amount_sat <= channel_max_sat`;
     /// `Other("not_started")`; `Other("channel_opening")` while an earlier
     /// open's funding is not yet confirmed (its inputs may still look
     /// unspent to the wallet); `Other("insufficient_transit")` unless the
@@ -915,9 +923,9 @@ impl Node {
     pub fn open_channel(&self, amount_sat: u64) -> Result<(), LnError> {
         // (Syncs the wallets first: see `sync_before_spend`.)
         let limits = self.limits();
-        if amount_sat < limits.channel_min_sat || amount_sat > limits.channel_max_sat {
+        if amount_sat < USER_CHANNEL_MIN_SAT || amount_sat > limits.channel_max_sat {
             return Err(LnError::AmountOutOfRange {
-                min_msat: limits.channel_min_sat.saturating_mul(1_000),
+                min_msat: USER_CHANNEL_MIN_SAT.saturating_mul(1_000),
                 max_msat: limits.channel_max_sat.saturating_mul(1_000),
             });
         }
@@ -937,10 +945,8 @@ impl Node {
         {
             return Err(LnError::Other("channel_opening".into()));
         }
-        let reserve = node
-            .config()
-            .anchor_channels_config
-            .map_or(0, |c| c.per_channel_reserve_sats);
+        // The LSP is trusted to get closes confirmed: no anchor reserve.
+        let reserve = Node::anchor_reserve_sat();
         let spendable = node.list_balances().spendable_onchain_balance_sats;
         if spendable < amount_sat.saturating_add(reserve) {
             return Err(LnError::Other("insufficient_transit".into()));
@@ -956,6 +962,85 @@ impl Node {
                 NodeError::PersistenceFailed => LnError::BackupUnavailable,
                 other => LnError::Other(format!("open_channel: {other}")),
             })
+    }
+
+    /// Adds `amount_sat` from the transit wallet to the ready channel with the
+    /// LSP (a splice-in; experimental in ldk-node 0.7.1). The channel stays
+    /// usable meanwhile; the new size counts once the splice confirms.
+    ///
+    /// Errors: `Other("not_started")`; `Other("no_channel")` without a ready
+    /// channel; `Other("channel_opening")` while a funding is unconfirmed;
+    /// `Other("insufficient_transit")` unless the spendable transit balance
+    /// covers `amount_sat` and the splice fee; `BackupUnavailable`;
+    /// `LspUnreachable`; `Other("splice_failed")` when LDK refuses.
+    pub fn splice_in(&self, amount_sat: u64) -> Result<(), LnError> {
+        let running = self.running().ok_or_else(not_started)?;
+        self.exit_gate(&running)?;
+        if running.mode == crate::StartMode::Exit {
+            return Err(LnError::Other("lightning_disabled".into()));
+        }
+        let _ops = self.channel_ops();
+        let node = &running.node;
+        sync_before_spend(node)?;
+        let (channel, lsp_id) = self.splice_target(node)?;
+        if node.list_balances().spendable_onchain_balance_sats < amount_sat {
+            return Err(LnError::Other("insufficient_transit".into()));
+        }
+        self.pre_send_checks()?;
+        node.splice_in(&channel, lsp_id, amount_sat).map_err(splice_error)
+    }
+
+    /// Moves `amount_sat` out of the ready channel with the LSP to
+    /// `to_address` (a splice-out; experimental in ldk-node 0.7.1). The
+    /// on-chain fee comes out of the channel balance as well. The channel
+    /// stays usable with the rest.
+    ///
+    /// Errors: `Other("bad_address")`, `WrongNetwork`; then as
+    /// [`splice_in`](Self::splice_in), with `Other("insufficient_channel")`
+    /// when the channel cannot spare `amount_sat`.
+    pub fn splice_out(&self, amount_sat: u64, to_address: &str) -> Result<(), LnError> {
+        let address = Address::<NetworkUnchecked>::from_str(to_address)
+            .map_err(|_| LnError::Other("bad_address".into()))?
+            .require_network(self.network())
+            .map_err(|_| LnError::WrongNetwork)?;
+        let running = self.running().ok_or_else(not_started)?;
+        self.exit_gate(&running)?;
+        let _ops = self.channel_ops();
+        let node = &running.node;
+        sync_before_spend(node)?;
+        let (channel, lsp_id) = self.splice_target(node)?;
+        let spare_sat = node
+            .list_channels()
+            .iter()
+            .find(|c| c.user_channel_id == channel)
+            .map_or(0, |c| c.outbound_capacity_msat / 1_000);
+        if spare_sat < amount_sat {
+            return Err(LnError::Other("insufficient_channel".into()));
+        }
+        self.pre_send_checks()?;
+        node.splice_out(&channel, lsp_id, &address, amount_sat).map_err(splice_error)
+    }
+
+    /// The ready channel with the LSP a splice goes into, connecting first.
+    fn splice_target(
+        &self,
+        node: &ldk_node::Node,
+    ) -> Result<(ldk_node::UserChannelId, ldk_node::bitcoin::secp256k1::PublicKey), LnError> {
+        let closes = load_closes(self.data_dir());
+        let channels = node.list_channels();
+        if channels.iter().any(|c| funding_in_flight(c, &closes)) {
+            return Err(LnError::Other("channel_opening".into()));
+        }
+        let (lsp_id, lsp_addr) = self.lsp_peer();
+        let c = channels
+            .iter()
+            .filter(|c| c.counterparty_node_id == lsp_id && c.is_channel_ready && c.is_usable)
+            .max_by_key(|c| c.channel_value_sats)
+            .ok_or_else(|| LnError::Other("no_channel".into()))?;
+        if !peer_connected(node, &lsp_id) && node.connect(lsp_id, lsp_addr, true).is_err() {
+            return Err(LnError::LspUnreachable);
+        }
+        Ok((c.user_channel_id, lsp_id))
     }
 
     /// Asks LDK to cooperatively close every listed channel with the LSP;
@@ -1784,6 +1869,16 @@ mod fuzz {
 /// sweep then spends a deposit the open already spent (`missing-inputs`,
 /// found by `tests/esplora_index.rs`). A failed sync refuses the spend:
 /// better no transaction than one built on a wrong view.
+fn splice_error(e: NodeError) -> LnError {
+    match e {
+        NodeError::NotRunning => not_started(),
+        NodeError::ConnectionFailed => LnError::LspUnreachable,
+        NodeError::InsufficientFunds => LnError::Other("insufficient_transit".into()),
+        NodeError::PersistenceFailed => LnError::BackupUnavailable,
+        _ => LnError::Other("splice_failed".into()),
+    }
+}
+
 fn sync_before_spend(node: &ldk_node::Node) -> Result<(), LnError> {
     node.sync_wallets().map_err(|e| match e {
         NodeError::NotRunning => not_started(),
