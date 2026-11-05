@@ -53,7 +53,7 @@
       </div>
       <div>
         <dt>A reusable address (BOLT12)</dt>
-        <dd>One address you can share once and be paid to again and again, even while your phone is off. Payments to it go to your Fortis balance and move into your channel when you next open Fortis. Paying it needs a wallet that supports BOLT12.</dd>
+        <dd>One address you can share once and be paid to again and again, even while your phone is off. Payments to it go to your Fortis balance. Paying it needs a wallet that supports BOLT12.</dd>
       </div>
       <div>
         <dt>Send</dt>
@@ -86,8 +86,8 @@
     <p>A channel only makes sense above a minimum size. Below it, the network fee to open the channel would eat the payment. So small payments that arrive before you have a channel are held by Fortis on your <strong>Fortis balance</strong>. So are payments to your BOLT12 address, and payments you didn't collect within a few hours. Fortis holds this money, not your phone, so you're trusting us with it.</p>
     <ul>
       <li>The Lightning wallet shows the Fortis balance separately from your own channel.</li>
-      <li>It moves into your channel once you have one.</li>
-      <li>Each Fortis balance holds at most 50,000&nbsp;sat, and Fortis holds at most 300,000&nbsp;sat for all users together. Above that, you're asked to receive enough to open your own channel.</li>
+      <li>Once it adds up to more than 50,000&nbsp;sat, Fortis moves it into a channel of your own, minus a fee of 1% (at least 1,000&nbsp;sat).</li>
+      <li>Fortis holds at most 300,000&nbsp;sat for all users together. Above that, you're asked to receive enough to open your own channel.</li>
       <li>You can pay from it. Every movement in and out appears in your history.</li>
     </ul>
     <p>Money in your own channel is different: only your phone can sign for it.</p>
