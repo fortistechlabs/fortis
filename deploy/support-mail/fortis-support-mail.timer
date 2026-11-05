@@ -1,0 +1,9 @@
+[Unit]
+Description=Retry emailing Fortis support tickets that could not be sent
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=10min
+
+[Install]
+WantedBy=timers.target

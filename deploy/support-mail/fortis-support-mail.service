@@ -1,0 +1,8 @@
+[Unit]
+Description=Email new Fortis support tickets
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 -I /usr/local/bin/fortis-support-mail.py

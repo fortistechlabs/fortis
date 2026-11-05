@@ -1,0 +1,13 @@
+# /etc/fortis/msmtprc — root only (0600). The password is a Gmail app password.
+defaults
+auth on
+tls on
+tls_trust_file /etc/ssl/certs/ca-certificates.crt
+logfile /var/log/fortis/support-mail.log
+
+account fortis
+host smtp.gmail.com
+port 587
+from donaldevine@gmail.com
+user donaldevine@gmail.com
+password PASTE_APP_PASSWORD_HERE

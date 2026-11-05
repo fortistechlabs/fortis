@@ -1,0 +1,10 @@
+[Unit]
+Description=Watch for new Fortis support tickets
+
+[Path]
+PathChanged=/var/lib/fortis/edge/support
+MakeDirectory=yes
+DirectoryMode=0700
+
+[Install]
+WantedBy=multi-user.target
