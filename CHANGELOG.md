@@ -2,6 +2,17 @@
 
 Fortis Wallet (Android). Versions are `versionName (versionCode)`.
 
+## 0.6.1 (24) — 2026-11-05
+
+- Every QR code copies its image when you tap it, including the reusable
+  Lightning address (BOLT12).
+- The app no longer contacts Google's Firebase at start-up. A push token is
+  only fetched when you have a Lightning wallet, for payment notifications.
+- Lower Lightning limits (set by the fortis Lightning provider, no update
+  needed): a payment from 11,000 sat can open your channel (was 51,000),
+  the opening fee is 0.5% (minimum 1,000 sat), and channels you fund yourself
+  can be up to 1,000,000 sat.
+
 ## 0.6.0 (23) — 2026-11-05
 
 - Lightning is its own wallet: Add wallet → Lightning. It has its own recovery

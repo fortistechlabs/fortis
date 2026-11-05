@@ -1,9 +1,9 @@
 {
-  "versionCode": 23,
-  "versionName": "0.6.0",
+  "versionCode": 24,
+  "versionName": "0.6.1",
   "url": "https://github.com/fortistechlabs/fortis/releases/latest/download/fortis-wallet.apk",
-  "releaseNotesUrl": "https://github.com/fortistechlabs/fortis/releases/tag/v0.6.0",
-  "sha256": "c6b2b03c00b4a63295866a3f88bc3293e614c5d368a583be3a8453867002fbbc",
+  "releaseNotesUrl": "https://github.com/fortistechlabs/fortis/releases/tag/v0.6.1",
+  "sha256": "612e7cffa9778ff1eaa0c5e87ce223a9b010fd53d2a9433164e3d98921a8549d",
   "certSha256": "161ab93fd57121996ae08efdb48275dfd4ae559bcb106412fbc450791b94cd48",
   "minSdk": 26,
   "applicationId": "com.fortistechlabs.wallet"
