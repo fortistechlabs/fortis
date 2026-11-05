@@ -58,7 +58,10 @@ pub(crate) const LDK_PAYMENT_RETRY_TIMEOUT: Duration = Duration::from_secs(10);
 pub(crate) const RESOLVED_CHANNEL_MONITOR_ARCHIVAL_INTERVAL: u32 = 6;
 
 // The time in-between peer reconnection attempts.
-pub(crate) const PEER_RECONNECTION_INTERVAL: Duration = Duration::from_secs(60);
+// FORTIS PATCH: 1 s, not 60 s. Only disconnected peers are retried, so this costs
+// nothing while connected; a phone whose network blipped was otherwise without its
+// LSP, and its payments stalled, for up to a minute.
+pub(crate) const PEER_RECONNECTION_INTERVAL: Duration = Duration::from_secs(1);
 
 // The time in-between RGS sync attempts.
 pub(crate) const RGS_SYNC_INTERVAL: Duration = Duration::from_secs(60 * 60);
