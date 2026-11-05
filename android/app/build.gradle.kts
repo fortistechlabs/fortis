@@ -28,6 +28,8 @@ android {
     // move). A new applicationId is a new app — installs do not cross-update.
     namespace = "com.fortis.wallet"
     compileSdk = 37
+    // Named so the build strips the native libraries' debug symbols (~11 MB per ABI).
+    ndkVersion = "30.0.16248370"
 
     defaultConfig {
         applicationId = "com.fortistechlabs.wallet"
@@ -84,6 +86,15 @@ android {
     packaging {
         jniLibs { useLegacyPackaging = false }
         resources.excludes += setOf("/META-INF/AL2.0", "/META-INF/LGPL2.1")
+    }
+}
+
+// The release APK is a download: phones only (x86_64 is for emulators, kept in debug builds),
+// and the native library compressed (35 MB → ~9 MB to download; Android unpacks it on install).
+androidComponents {
+    onVariants(selector().withBuildType("release")) { variant ->
+        variant.packaging.jniLibs.excludes.add("lib/x86_64/**")
+        variant.packaging.jniLibs.useLegacyPackaging.set(true)
     }
 }
 

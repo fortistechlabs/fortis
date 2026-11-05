@@ -129,6 +129,47 @@ internal fun amountToSat(text: String, sat: Boolean): Long? = runCatching {
     }
 }.getOrNull()
 
+/** Each fee a ledger row paid, what it was for and who received it; null when it paid none.
+ *  "Fees: network fee 183 sat (to miners) · transfer fee 600 sat (to Fortis)". */
+@Composable
+internal fun historyFeeLine(h: HistoryRow): String? {
+    if (h.netSat == null) return null
+    val move = h.noteRes == R.string.history_moved_onchain || h.noteRes == R.string.history_moved_onchain_closed
+    val parts = buildList {
+        when {
+            move -> {
+                val network = h.feeSat - h.transferFeeSat
+                if (network > 0L) add(stringResource(R.string.fee_network_miners, network))
+                if (h.transferFeeSat > 0L) add(stringResource(R.string.fee_transfer_fortis, h.transferFeeSat))
+                if (h.noteRes == R.string.history_moved_onchain_closed) add(stringResource(R.string.fee_close_paid_by_fortis))
+            }
+            h.noteRes == R.string.history_move_fee -> add(stringResource(R.string.fee_channel_fortis, -h.amountSat))
+            h.noteRes == R.string.ln_account_withdrawn && h.feeSat > 0L -> add(stringResource(R.string.fee_withdraw_fortis, h.feeSat))
+            h.send && h.feeSat > 0L -> add(stringResource(R.string.fee_routing, h.feeSat))
+        }
+    }
+    return if (parts.isEmpty()) null else stringResource(R.string.fee_line, parts.joinToString(" · "))
+}
+
+/** When a history entry happened, in the phone's time zone, language and 12/24-hour setting:
+ *  "Today, 10:36", "Yesterday, 18:31", or "4 Nov 2026, 17:27". */
+@Composable
+internal fun historyTimeText(epochSecs: Long): String {
+    val ctx = LocalContext.current
+    val today = stringResource(R.string.history_today)
+    val yesterday = stringResource(R.string.history_yesterday)
+    val ms = epochSecs * 1_000
+    val time = android.text.format.DateFormat.getTimeFormat(ctx).format(java.util.Date(ms))
+    val zone = java.time.ZoneId.systemDefault()
+    val day = java.time.Instant.ofEpochMilli(ms).atZone(zone).toLocalDate()
+    val now = java.time.LocalDate.now(zone)
+    return when (day) {
+        now -> "$today, $time"
+        now.minusDays(1) -> "$yesterday, $time"
+        else -> android.text.format.DateFormat.getMediumDateFormat(ctx).format(java.util.Date(ms)) + ", " + time
+    }
+}
+
 internal fun copyToClipboard(ctx: Context, label: String, text: String) {
     val cm = ctx.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
     // Marked sensitive (ClipDescription.EXTRA_IS_SENSITIVE, by its key so older
@@ -550,10 +591,17 @@ fun Shell(vm: WalletViewModel) {
     val rxToastFmt = stringResource(R.string.toast_ln_received)
     LaunchedEffect(vm.lightning) {
         vm.lightning.events.collect { ev ->
-            if (ev is uniffi.wallet_ffi.LnEventRecord.PaymentReceived) {
+            // The Fortis balance moving into the channel is not a new payment: it was
+            // announced when it reached the balance.
+            if (ev is uniffi.wallet_ffi.LnEventRecord.PaymentReceived && !vm.isAccountMove(ev.amountMsat)) {
                 val sat = displaySatFromMsat(ev.amountMsat)
                 Toast.makeText(ctx, rxToastFmt.format(fmt(sat)), Toast.LENGTH_SHORT).show()
             }
+        }
+    }
+    LaunchedEffect(vm) {
+        vm.accountReceived.collect { sat ->
+            Toast.makeText(ctx, rxToastFmt.format(fmt(sat)), Toast.LENGTH_SHORT).show()
         }
     }
     LaunchedEffect(vm.nav, vm.wallets.map { it.id }) {
@@ -789,6 +837,8 @@ private fun SettingsTab(vm: WalletViewModel) {
         LanguageCard()
         CurrencyCard(vm)
 
+        val openSupport = com.fortis.wallet.ui.LocalSendToSupport.current
+        if (openSupport != null) com.fortis.wallet.ui.SupportCard { openSupport("") }
         GlassCard {
             Text(stringResource(R.string.settings_connection), color = Fx.text, fontWeight = FontWeight.SemiBold)
             kv(
@@ -1281,14 +1331,23 @@ internal fun AmountUnitPicker(isSat: Boolean, coinUnit: String, onChange: (Boole
 @Composable
 private fun HistoryTab(vm: WalletViewModel, unit: String) {
     val c = vm.config
-    val rows = remember(vm.history) { mergeHistory(vm.history, emptyList()) }
+    // Match moves from the Lightning wallet to the transactions that delivered them here.
+    LaunchedEffect(vm.history) { vm.loadLnMoves().join(); vm.settleLnMoves(vm.history) }
+    val fromLn = vm.lnMoves.mapNotNull { it.txid }.toSet()
+    val rows = remember(vm.history, fromLn) {
+        mergeHistory(vm.history, emptyList()).map { if (it.id in fromLn) it.copy(fromLightning = true) else it }
+    }
     HistoryList(vm, rows, unit, chain = c?.chain ?: "xbt", network = c?.network ?: "mainnet")
 }
 
 /** A wallet's history rows (on-chain or Lightning): tap opens the explorer (or copies the id). */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-internal fun HistoryList(vm: WalletViewModel, rows: List<HistoryRow>, unit: String, chain: String, network: String) {
+internal fun HistoryList(
+    vm: WalletViewModel, rows: List<HistoryRow>, unit: String, chain: String, network: String,
+    /** A ledger's balance after each row, by row id (the Lightning wallet). */
+    balanceAfter: Map<String, Long> = emptyMap(),
+) {
     val ctx = LocalContext.current
     if (rows.isEmpty()) {
         GlassCard { Text(stringResource(R.string.history_empty), color = Fx.textFaint) }
@@ -1306,8 +1365,8 @@ internal fun HistoryList(vm: WalletViewModel, rows: List<HistoryRow>, unit: Stri
                 Modifier
                     .fillMaxWidth()
                     .combinedClickable(
-                        onClick = { if (url != null) openInBrowser(ctx, url) else copyToClipboard(ctx, "txid", h.id) },
-                        onLongClick = { copyToClipboard(ctx, "txid", h.id) },
+                        onClick = { if (url != null) openInBrowser(ctx, url) else if (h.hasRealId) copyToClipboard(ctx, "txid", h.id) },
+                        onLongClick = { if (h.hasRealId) copyToClipboard(ctx, "txid", h.id) },
                     )
                     .padding(vertical = 10.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -1340,13 +1399,27 @@ internal fun HistoryList(vm: WalletViewModel, rows: List<HistoryRow>, unit: Stri
                         h.send -> sendLabel
                         else -> receiveLabel
                     }
-                    val baseSubtitle = if (h.feeSat > 0L && (h.send || h.lightning)) {
-                        stringResource(R.string.history_row_subtitle_fee, label, h.id.take(10), h.feeSat)
-                    } else {
-                        stringResource(R.string.history_row_subtitle, label, h.id.take(10))
+                    val baseSubtitle = when {
+                        !h.hasRealId && h.feeSat > 0L -> label + " · " + stringResource(R.string.history_fee_incl_only, h.feeSat)
+                        !h.hasRealId -> label
+                        h.feeSat > 0L && (h.send || h.lightning) ->
+                            stringResource(if (h.netSat != null) R.string.history_row_subtitle_fee_incl else R.string.history_row_subtitle_fee, label, h.id.take(10), h.feeSat)
+                        else -> stringResource(R.string.history_row_subtitle, label, h.id.take(10))
                     }
-                    val subtitle = if (h.description.isNotBlank()) "$baseSubtitle · ${h.description}" else baseSubtitle
+                    val notes = listOfNotNull(
+                        if (h.noteRes != 0) stringResource(h.noteRes) else null,
+                        h.description.takeIf { it.isNotBlank() },
+                        h.arrivedSat?.let { stringResource(R.string.history_arrived, fmt(it), unit) },
+                        if (h.viaFortis) stringResource(R.string.history_via_fortis) else null,
+                        if (h.fromLightning) stringResource(R.string.history_from_lightning) else null,
+                    )
+                    val subtitle = (listOf(baseSubtitle) + notes).joinToString(" · ")
                     Text(subtitle, style = FxType.meta)
+                    historyFeeLine(h)?.let { Text(it, style = FxType.meta, color = Fx.textDim) }
+                    if (h.time > 0L) Text(historyTimeText(h.time), style = FxType.meta, color = Fx.textFaint)
+                    balanceAfter[h.id]?.let { bal ->
+                        Text(stringResource(R.string.history_balance_after, fmt(bal), unit), style = FxType.meta, color = Fx.textFaint)
+                    }
                 }
                 val statusText = when {
                     h.failed -> stringResource(R.string.history_failed)

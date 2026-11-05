@@ -39,6 +39,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import okhttp3.Dispatcher
 import okhttp3.OkHttpClient
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.RequestBody.Companion.toRequestBody
 import uniffi.wallet_ffi.FundingPlan
 import uniffi.wallet_ffi.ImportedAccount
 import java.net.Proxy
@@ -70,6 +72,15 @@ fun walletNameTaken(wallets: List<WalletConfig>, name: String, chain: String, ex
 
 /** The one backend the mobile app talks to. Not user-configurable, not shown. */
 const val HOSTED_EDGE = "https://api.fortistechlabs.com"
+
+/** The same error from the same place is reported to the server at most this often. */
+private const val REPORT_REPEAT_MS = 5 * 60_000L
+
+/** Errors kept for a support ticket. */
+private const val RECENT_ERRORS = 50
+
+/** How much of the Lightning node's log a support ticket carries (bytes). */
+private const val SUPPORT_LOG_TAIL = 250_000
 
 /** Public Esplora fallbacks, used when [HOSTED_EDGE] is unreachable.
  *  BTC was mempool.emzy.de while mempool.space timed out from this project's
@@ -359,13 +370,13 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
         },
         // The sweep goes to the first BTC wallet, never to the Lightning wallet (it has no addresses).
         sweepAddressProvider = { _ ->
-            val w = lightningSweepWallet(wallets)
+            val w = moveTargetWallet()
             val s = w?.let { ensureSession(it.id, quiet = true) }
             if (w != null && s != null) s.receiveAddress(w.nextReceive).address else null
         },
         onSweepBroadcast = { _ ->
             // The sweep paid the address at `nextReceive`: never hand it out again.
-            lightningSweepWallet(wallets)?.let { w -> updateConfig(w.id) { it.copy(nextReceive = it.nextReceive + 1) } }
+            moveTargetWallet()?.let { w -> updateConfig(w.id) { it.copy(nextReceive = it.nextReceive + 1) } }
         },
         ensureAuthHeader = { walletId ->
             val tok = runCatching { ensureWalletToken(walletId) }.getOrNull().orEmpty()
@@ -424,9 +435,54 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
                 val expired = System.currentTimeMillis() > accountSendUntilMs
                 if (accountSending && (expired || (b.heldMsat == 0uL && b.balanceMsat != accountSendBase))) accountSending = false
             }
-            runCatching { fortisAccount.history(s) }.onSuccess { accountHistory = it }
+            runCatching { fortisAccount.history(s) }.onSuccess {
+                accountHistory = it
+                announceNewReceipts(s.nodeId(), it)
+            }
             registerPush(s)
         }
+    }
+
+    private val movePrefs get() = getApplication<Application>().getSharedPreferences("lightning_move", android.content.Context.MODE_PRIVATE)
+
+    /** The BTC wallet chosen for Lightning funds moved on-chain (Move, channel close); null = the first. */
+    var moveToWalletId by mutableStateOf<String?>(null); private set
+
+    fun setMoveToWallet(id: String) {
+        moveToWalletId = id
+        movePrefs.edit().putString("to", id).apply()
+    }
+
+    /** Where Lightning funds moved on-chain go: the chosen wallet while it is still eligible, else the first. */
+    fun moveTargetWallet(): WalletConfig? {
+        val choices = com.fortis.wallet.lightning.lightningSweepWallets(wallets)
+        val chosen = moveToWalletId ?: movePrefs.getString("to", null)
+        return choices.firstOrNull { it.id == chosen } ?: choices.firstOrNull()
+    }
+
+    private val _accountReceived = kotlinx.coroutines.flow.MutableSharedFlow<Long>(extraBufferCapacity = 16)
+    /** A payment reached the Fortis account (sat): announced like a channel receipt. */
+    val accountReceived: kotlinx.coroutines.flow.SharedFlow<Long> = _accountReceived
+
+    /** Emits each account receipt newer than the last one announced for [nodeId] — also those
+     *  that arrived while the app was closed. The very first look only records where it is. */
+    private fun announceNewReceipts(nodeId: String, entries: List<com.fortis.wallet.lightning.AccountEntry>) {
+        val received = entries.filter { it.kind == "received" }
+        val newest = received.maxOfOrNull { it.atSecs } ?: return
+        val prefs = getApplication<Application>().getSharedPreferences("lightning_receipts", android.content.Context.MODE_PRIVATE)
+        val key = "seen_$nodeId"
+        val seen = prefs.getLong(key, -1L)
+        if (seen >= 0L) {
+            received.filter { it.atSecs > seen }.sortedBy { it.atSecs }.forEach { _accountReceived.tryEmit(it.amountMsat / 1_000) }
+        }
+        if (newest > seen) prefs.edit().putLong(key, newest).apply()
+    }
+
+    /** True when a channel receipt of [amountMsat] is the Fortis balance being moved into the
+     *  channel (the LSP moves all of it at once), not a new payment. */
+    fun isAccountMove(amountMsat: ULong): Boolean {
+        val b = accountBalance ?: return false
+        return b.balanceMsat == amountMsat
     }
 
     /** Gives the LSP this phone's push token once per token and node (a no-op after that). */
@@ -506,11 +562,11 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
 
     /** [force] broadcasts the latest commitment instead of asking the LSP: the funds are locked
      *  for the LSP's CSV delay and the fees are higher. Only ever from the user's explicit choice. */
-    fun closeLightningAndMoveToOnchain(force: Boolean = false) = viewModelScope.launch {
+    fun closeLightningAndMoveToOnchain(force: Boolean = false, feePaymentId: String? = null, feeSat: Long = 0L) = viewModelScope.launch {
         if (closingLightningChannel) return@launch
         offerForceClose = false
         lightningCloseError = null
-        val sweep = lightningSweepWallet(wallets)
+        val sweep = moveTargetWallet()
         if (sweep == null) {
             lightningCloseError = str(R.string.error_no_onchain_wallet_for_lightning)
             return@launch
@@ -523,15 +579,18 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
         closingLightningChannel = true
         try {
             val addr = s.receiveAddress(sweep.nextReceive).address
+            val before = (lightning.state.value as? com.fortis.wallet.lightning.LnState.Ready)?.balances?.lightningSat?.toLong() ?: 0L
             val txid = lightning.closeAndSweep(addr, force)
             if (txid != null) {
                 updateConfig(sweep.id) { it.copy(nextReceive = it.nextReceive + 1) }
             }
+            // The closing fee is not known here: the record shows what left the channel.
+            if (before > 0L) recordLnMove(before + feeSat, before, feeSat, sweep.display, feePaymentId, "close")
             refreshSoon()
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            lightningCloseError = errorText(e)
+            lightningCloseError = errorText(e, "close_channel")
             // A cooperative close needs the LSP online. If it is not, say so and let the user decide.
             if (!force && e is uniffi.wallet_ffi.LnFfiException.LspUnreachable) offerForceClose = true
         } finally {
@@ -572,6 +631,7 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     init {
+        lightning.errorReporter = { where, t -> reportError(where, t) }
         fortis.unlockedFunder = funder
         viewModelScope.launch {
             val s = store.load()
@@ -2190,8 +2250,11 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
         if (movingToOnchain) return@launch
         error = null
         if (!reauth.consume()) { error = str(R.string.reauth_needed); return@launch }
-        val q = quoteMoveToOnchain(amountSat) ?: run { error = str(R.string.transfer_too_small); return@launch }
-        val dest = lightningSweepWallet(wallets) ?: run {
+        // Everything (a close) needs no quote: the close takes what is there, no transfer fee on crumbs.
+        val q = quoteMoveToOnchain(amountSat)
+            ?: if (all) com.fortis.wallet.lightning.ToOnchainQuote(amountSat, 0L, 0L)
+            else run { error = str(R.string.transfer_too_small); return@launch }
+        val dest = moveTargetWallet() ?: run {
             error = str(R.string.error_no_onchain_wallet_for_lightning); return@launch
         }
         val s = withContext(Dispatchers.Default) { ensureSession(dest.id, quiet = true) }
@@ -2209,14 +2272,21 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
                 refreshAccount()
             } else {
             // The share first when closing: after the close there is no channel to pay it from.
-            if (all) payTransferShare(q.shareSat)
             if (all) {
-                closeLightningAndMoveToOnchain().join()
+                val feeId = payTransferShare(q.shareSat)
+                closeLightningAndMoveToOnchain(feePaymentId = feeId, feeSat = if (feeId != null) q.shareSat else 0L).join()
             } else {
                 val addr = s.receiveAddress(dest.nextReceive).address
+                val before = channelSatNow()
                 lightning.spliceOut(q.payoutSat, addr)
                 updateConfig(dest.id) { it.copy(nextReceive = it.nextReceive + 1) }
-                payTransferShare(q.shareSat)
+                val feeId = payTransferShare(q.shareSat)
+                // What actually left the channel (payout, its network fee, the transfer fee);
+                // the estimate only when the channel has not shown the change yet.
+                val drop = before - channelSatNow()
+                val estimate = q.payoutSat + q.networkFeeSat + (if (feeId != null) q.shareSat else 0L)
+                val left = if (drop > q.payoutSat) drop else estimate
+                recordLnMove(left, q.payoutSat, left - q.payoutSat, dest.display, feeId, "splice")
             }
             }
             sentCount++
@@ -2225,10 +2295,10 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
             throw e
         } catch (e: Exception) {
             error = when {
-                e is uniffi.wallet_ffi.LnFfiException.Other && e.reason == "splice_failed" -> str(R.string.transfer_splice_busy)
+                e is uniffi.wallet_ffi.LnFfiException.Other && e.reason == "splice_failed" -> { reportError("move_to_onchain", e); str(R.string.transfer_splice_busy) }
                 e is com.fortis.wallet.lightning.AccountError.Insufficient -> str(R.string.transfer_more_than_balance)
-                e is com.fortis.wallet.lightning.AccountError -> e.message ?: errorText(e)
-                else -> errorText(e)
+                e is com.fortis.wallet.lightning.AccountError -> { reportError("move_to_onchain", e); e.message ?: errorText(e, "move_to_onchain") }
+                else -> errorText(e, "move_to_onchain")
             }
         } finally {
             movingToOnchain = false
@@ -2236,16 +2306,61 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /** Pays the operator's share of a transfer over Lightning; a failure is logged, not shown. */
-    private suspend fun payTransferShare(shareSat: Long) {
-        if (shareSat <= 0L) return
-        val signer = accountSigner() ?: return
-        runCatching {
+    /** Pays the operator's share of a transfer over Lightning; its payment id, or null when nothing was paid. */
+    private suspend fun payTransferShare(shareSat: Long): String? {
+        if (shareSat <= 0L) return null
+        val signer = accountSigner() ?: return null
+        return runCatching {
             val inv = withContext(Dispatchers.IO) { fortisAccount.feeInvoice(signer, shareSat.toULong() * 1_000uL) }
             lightning.pay(uniffi.wallet_ffi.lnParse(inv, "bitcoin"), null)
         }.onFailure {
             if (it is CancellationException) throw it
-            android.util.Log.w("Fortis", "transfer fee payment failed: ${it.message}")
-        }
+            reportError("transfer_fee", it)
+        }.getOrNull()
+    }
+
+    private suspend fun channelSatNow(): Long {
+        lightning.refreshBalances()
+        return (lightning.state.value as? com.fortis.wallet.lightning.LnState.Ready)?.balances?.lightningSat?.toLong() ?: 0L
+    }
+
+    /** The Lightning wallet's moves on-chain (shown in its history). */
+    var lnMoves by mutableStateOf<List<com.fortis.wallet.lightning.LnMove>>(emptyList()); private set
+
+    /** Fills in each move's delivering transaction from [history] (a BTC wallet's), see [com.fortis.wallet.lightning.settleMoves]. */
+    fun settleLnMoves(history: List<HistoryEntry>) = viewModelScope.launch {
+        val id = wallets.firstOrNull { it.isLightning }?.id ?: return@launch
+        val current = store.lnMoves(id)
+        val settled = com.fortis.wallet.lightning.settleMoves(current, history) ?: return@launch
+        runCatching { store.setLnMoves(id, settled) }
+        lnMoves = settled
+    }
+
+    fun loadLnMoves() = viewModelScope.launch {
+        val id = wallets.firstOrNull { it.isLightning }?.id ?: return@launch
+        importFirstMove(id)
+        lnMoves = store.lnMoves(id)
+    }
+
+    private suspend fun recordLnMove(amountSat: Long, payoutSat: Long, feeSat: Long, to: String, feeId: String?, kind: String) {
+        val id = wallets.firstOrNull { it.isLightning }?.id ?: return
+        val m = com.fortis.wallet.lightning.LnMove(System.currentTimeMillis() / 1_000, amountSat, payoutSat, feeSat, to, feeId, kind)
+        runCatching { store.addLnMove(id, m) }
+        lnMoves = lnMoves + m
+    }
+
+    /**
+     * The first move on-chain (2026-11-05, a debug build) ran before moves were recorded.
+     * Its figures come from its splice transaction 748496929a…: 56,324 sat out, 183 sat
+     * network fee, 600 sat transfer fee (payment 27c2e836…). Added once, debug builds only.
+     */
+    private suspend fun importFirstMove(walletId: String) {
+        if (!BuildConfig.DEBUG) return
+        val feeId = "27c2e8360daefc3df9e135a7c5b805bed8ddfbd9f6c4ead83999dfa6552d50c7"
+        if (store.lnMoves(walletId).any { it.feePaymentId == feeId }) return
+        if (lightning.payments().none { it.id == feeId }) return
+        val to = moveTargetWallet()?.display ?: ""
+        store.addLnMove(walletId, com.fortis.wallet.lightning.LnMove(1793878595, 57_107, 56_324, 783, to, feeId, "splice"))
     }
 
     fun cancelPendingLn() { if (!sending) pendingLn = null }
@@ -2377,6 +2492,8 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
         // A deposit to the Lightning wallet: once it confirms it becomes channel funds.
         if (p.transfer != null) runCatching { lightning.commitTransfer(p.feerate.toLong()) }
             .onFailure { if (it is CancellationException) throw it }
+        // In the Lightning wallet's ledger: what reaches it (about, once the deposit confirms), and the fees.
+        p.transfer?.let { t -> runCatching { recordLnMove(t.arrivesSat, t.arrivesSat, t.feeSat, c.display, null, "in") } }
         runCatching {
             val idx = s.view.nextIndices()
             updateConfig(c.id) { it.copy(nextChange = maxOf(it.nextChange, idx.nextChange.toInt())) }
@@ -2404,16 +2521,136 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /** User-facing text for a failure; Lightning errors get their localized copy. */
-    private fun errorText(t: Throwable): String = when (t) {
-        is uniffi.wallet_ffi.LnFfiException.AmountOutOfRange ->
-            str(R.string.ln_err_amount_out_of_range_range, (t.minMsat / 1000uL).toString(), (t.maxMsat / 1000uL).toString())
-        is com.fortis.wallet.lightning.LnFfiError -> {
-            if (BuildConfig.DEBUG && t is uniffi.wallet_ffi.LnFfiException.Other) {
-                android.util.Log.w("Lightning", "unclassified error: ${t.reason}")
-            }
-            str(com.fortis.wallet.ui.screens.lnErrorMessage(t))
+    /** The text shown for [t], which is also reported to the server (see [reportError]). */
+    private fun errorText(t: Throwable, where: String = "action"): String {
+        reportError(where, t)
+        return when (t) {
+            is uniffi.wallet_ffi.LnFfiException.AmountOutOfRange ->
+                str(R.string.ln_err_amount_out_of_range_range, (t.minMsat / 1000uL).toString(), (t.maxMsat / 1000uL).toString())
+            is com.fortis.wallet.lightning.LnFfiError ->
+                com.fortis.wallet.ui.screens.lnErrorText(t) { res, args -> str(res, *args) }
+            else -> t.message ?: t.toString()
         }
-        else -> t.message ?: t.toString()
+    }
+
+    private val reportedErrors = HashMap<String, Long>()
+
+    /** The last [RECENT_ERRORS] errors (reported or not, repeats included), for a support ticket. */
+    private val recentErrors = ArrayDeque<String>()
+
+    /**
+     * Sends a support ticket: the user's [message], an optional reply [email], and — when
+     * [includeLogs] — [supportDiagnostics]. The ticket id (e.g. "FT-3A9C01B2") for the user
+     * to quote. Throws when it could not be sent.
+     */
+    suspend fun sendSupportTicket(message: String, email: String, includeLogs: Boolean): String = withContext(Dispatchers.IO) {
+        val id = wallets.firstOrNull { it.isLightning }?.id ?: selectedId ?: wallets.firstOrNull()?.id
+            ?: throw Exception(str(R.string.support_needs_wallet))
+        val tok = ensureWalletToken(id)
+        val o = org.json.JSONObject()
+        o.put("message", message.trim())
+        o.put("email", email.trim())
+        o.put("app", BuildConfig.VERSION_NAME + " (" + BuildConfig.VERSION_CODE + ")")
+        if (includeLogs) o.put("diagnostics", supportDiagnostics())
+        val req = okhttp3.Request.Builder()
+            .url("$HOSTED_EDGE/support")
+            .header("Authorization", "Bearer $tok")
+            .post(o.toString().toRequestBody("application/json".toMediaType()))
+            .build()
+        http.newCall(req).execute().use { r ->
+            val text = r.body?.string().orEmpty()
+            if (!r.isSuccessful) throw Exception(str(R.string.support_send_failed) + " (" + r.code + ")")
+            org.json.JSONObject(text).getString("ticket")
+        }
+    }
+
+    /**
+     * What a support ticket carries when the user agrees: the app and phone, the Lightning
+     * wallet's state, the recent errors, and the tail of the Lightning node's own log. Never
+     * a recovery phrase, key, xpub or the backup (those are not read here at all).
+     */
+    private fun supportDiagnostics(): org.json.JSONObject {
+        val d = org.json.JSONObject()
+        d.put("device", android.os.Build.MANUFACTURER + " " + android.os.Build.MODEL)
+        d.put("android", android.os.Build.VERSION.RELEASE + " (SDK " + android.os.Build.VERSION.SDK_INT + ")")
+        d.put("locale", java.util.Locale.getDefault().toLanguageTag())
+        d.put("time_zone", java.util.TimeZone.getDefault().id)
+        d.put("wallets", org.json.JSONArray(wallets.map { w ->
+            listOf(w.chain, w.network, if (w.isLightning) "lightning" else if (w.watchOnly) "watch-only" else if (w.hardware) "hardware" else "software").joinToString("/")
+        }))
+        d.put("lightning_state", when (val st = lightning.state.value) {
+            is com.fortis.wallet.lightning.LnState.Ready -> "ready: channel=${st.channel} balances=${st.balances}"
+            is com.fortis.wallet.lightning.LnState.Error -> "error: ${describeError(st.error as Throwable)}"
+            else -> st.toString()
+        })
+        d.put("lsp_info", lightning.lastInfo?.toString() ?: "")
+        d.put("account", accountBalance?.toString() ?: "")
+        d.put("recent_errors", org.json.JSONArray(synchronized(recentErrors) { recentErrors.toList() }))
+        wallets.firstOrNull { it.isLightning }?.let { w ->
+            val dir = java.io.File(getApplication<Application>().filesDir, "ln/${w.id}")
+            d.put("ln_start_timing", tailOf(java.io.File(dir, "start_timing.log"), 4_000))
+            d.put("ln_node_log", tailOf(java.io.File(dir, "ldk_node.log"), SUPPORT_LOG_TAIL))
+        }
+        return d
+    }
+
+    /** The last [maxBytes] of [f], from a line start; "" when missing. */
+    private fun tailOf(f: java.io.File, maxBytes: Int): String = runCatching {
+        java.io.RandomAccessFile(f, "r").use { r ->
+            val start = maxOf(0L, r.length() - maxBytes)
+            r.seek(start)
+            val buf = ByteArray((r.length() - start).toInt())
+            r.readFully(buf)
+            val text = String(buf, Charsets.UTF_8)
+            if (start > 0) text.substringAfter('\n') else text
+        }
+    }.getOrDefault("")
+
+    /** "LnFfi.Other(chain_sync_failed: …)", "LspUnreachable", "IOException: timeout": the kind and its reason. */
+    private fun describeError(t: Throwable): String = when (t) {
+        is uniffi.wallet_ffi.LnFfiException.Other -> "LnFfi.Other(${t.reason})"
+        is com.fortis.wallet.lightning.LnFfiError -> "LnFfi." + (t::class.simpleName ?: "Error")
+        else -> (t::class.simpleName ?: "Error") + ": " + (t.message ?: "")
+    }
+
+    /**
+     * Sends an error the app hit to the server (`POST /ln/log` on the edge), so the operator
+     * sees its real cause: where, the error itself and the top of its stack. The same error
+     * from the same place at most once per [REPORT_REPEAT_MS] (a start retried every 2 s
+     * must not flood it). Best effort: never fails or delays the caller.
+     */
+    fun reportError(where: String, t: Throwable) {
+        val err = describeError(t)
+        val key = "$where|$err"
+        val now = System.currentTimeMillis()
+        synchronized(reportedErrors) {
+            val last = reportedErrors[key]
+            if (last != null && now - last < REPORT_REPEAT_MS) return
+            reportedErrors[key] = now
+        }
+        runCatching { android.util.Log.w("FortisError", "$where: $err", t) }
+        synchronized(recentErrors) {
+            recentErrors.addLast("${java.time.Instant.ofEpochMilli(now)} $where: $err")
+            while (recentErrors.size > RECENT_ERRORS) recentErrors.removeFirst()
+        }
+        viewModelScope.launch(Dispatchers.IO) {
+            runCatching {
+                val id = wallets.firstOrNull { it.isLightning }?.id ?: selectedId ?: return@runCatching
+                val tok = ensureWalletToken(id)
+                if (tok.isBlank()) return@runCatching
+                val o = org.json.JSONObject()
+                o.put("app", BuildConfig.VERSION_NAME)
+                o.put("where", where)
+                o.put("error", err)
+                o.put("detail", t.stackTraceToString().take(1_500))
+                val req = okhttp3.Request.Builder()
+                    .url("$HOSTED_EDGE/ln/log")
+                    .header("Authorization", "Bearer $tok")
+                    .post(o.toString().toRequestBody("application/json".toMediaType()))
+                    .build()
+                http.newCall(req).execute().close()
+            }
+        }
     }
 }
 

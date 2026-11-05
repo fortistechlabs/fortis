@@ -61,7 +61,16 @@ fun FortisApp(vm: WalletViewModel = viewModel()) {
                 Phase.Restore -> RestoreScreen(vm)
                 Phase.Watch -> WatchScreen(vm)
                 Phase.HwConnect -> HwConnectScreen(vm)
-                Phase.Shell -> Shell(vm)
+                Phase.Shell -> {
+                    // Any error shown in the app can be sent to support, with the logs.
+                    var supportPrefill by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf<String?>(null) }
+                    androidx.compose.runtime.CompositionLocalProvider(
+                        com.fortis.wallet.ui.LocalSendToSupport provides { msg -> supportPrefill = msg },
+                    ) {
+                        Shell(vm)
+                    }
+                    supportPrefill?.let { p -> com.fortis.wallet.ui.SupportDialog(vm, p) { supportPrefill = null } }
+                }
                 Phase.RevealSeed -> RevealSeedScreen(vm)
             }
         }

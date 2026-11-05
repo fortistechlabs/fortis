@@ -107,3 +107,51 @@ fun transitAction(spendableSat: Long, channel: uniffi.wallet_ffi.LnChannelState,
         else -> TransitAction.Wait
     }
 }
+
+/**
+ * A move of Lightning funds on-chain, kept on the phone so the history can show it (it is
+ * not a Lightning payment). [amountSat] left Lightning in all: [payoutSat] reached
+ * [toWallet] and [feeSat] went in fees (network + transfer). [feePaymentId] is the
+ * transfer-fee payment, folded into this entry instead of listed on its own.
+ */
+data class LnMove(
+    val atSecs: Long,
+    val amountSat: Long,
+    val payoutSat: Long,
+    val feeSat: Long,
+    val toWallet: String,
+    val feePaymentId: String?,
+    /** "splice" (the channel stays open), "close" (it was closed) or "in" (moved into Lightning). */
+    val kind: String,
+    /** The on-chain transaction that delivered it to [toWallet], once matched in that wallet's
+     *  history; then [payoutSat] is what actually arrived and [feeSat] = [amountSat] − [payoutSat]. */
+    val txid: String? = null,
+)
+
+/**
+ * Matches each move on-chain that has no transaction yet to the transaction in [history] (the
+ * destination wallet's) that delivered it: a receive between 10 minutes before and 6 hours
+ * after the move, no larger than what left Lightning and short of it by at most
+ * [MOVE_MAX_FEE_SAT] (the fees), not already matched. Returns the moves with those filled in
+ * (exact payout and fee), or null when nothing new matched.
+ */
+fun settleMoves(moves: List<LnMove>, history: List<com.fortis.wallet.data.HistoryEntry>): List<LnMove>? {
+    val used = moves.mapNotNull { it.txid }.toMutableSet()
+    var changed = false
+    val out = moves.map { m ->
+        if (m.kind == "in" || m.txid != null) return@map m
+        val tx = history
+            .filter { !it.send && it.txid !in used }
+            .filter { it.amountSat in (m.amountSat - MOVE_MAX_FEE_SAT)..m.amountSat }
+            .filter { it.time == 0L || it.time in (m.atSecs - 600)..(m.atSecs + 6 * 3600) }
+            .minByOrNull { m.amountSat - it.amountSat }
+            ?: return@map m
+        used += tx.txid
+        changed = true
+        m.copy(payoutSat = tx.amountSat, feeSat = m.amountSat - tx.amountSat, txid = tx.txid)
+    }
+    return if (changed) out else null
+}
+
+/** The most a move's fees (network + transfer) can come to, for matching it to its transaction. */
+const val MOVE_MAX_FEE_SAT = 20_000L

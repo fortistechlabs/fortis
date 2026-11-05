@@ -47,6 +47,15 @@ import uniffi.wallet_ffi.LnUnifiedLightning
  */
 
 private fun fmt(sat: Long) = fmtCoin(sat)
+private const val BURST_SETTLE_MS = 2_500L
+
+/** Funds on their way out of the Lightning wallet: a closed or closing channel's money still
+ *  confirming, or waiting in the transit wallet for its sweep to the BTC wallet. */
+internal fun leavingLightningSat(r: LnState.Ready): Long {
+    val b = r.balances
+    val open = r.channel == LnChannelState.READY || r.channel == LnChannelState.OPENING
+    return if (open) b.pendingCloseSat.toLong() else (b.pendingCloseSat + b.onchainTransitSat).toLong()
+}
 
 /** Lightning amounts are bitcoin. */
 private const val LN_UNIT = "BTC"
@@ -75,9 +84,11 @@ internal fun lightningWalletTotalSat(vm: WalletViewModel): Long? {
 @Composable
 private fun lightningWalletLiveTotalSat(vm: WalletViewModel): Long? {
     val lnState by vm.lightning.state.collectAsState()
-    if (lnState !is LnState.Ready) return null
+    val ready = lnState as? LnState.Ready ?: return null
     val acct = vm.accountBalance ?: return null
-    return lightningWalletBalance(vm)?.let { it.totalSat + (acct.balanceMsat / 1_000uL).toLong() }
+    // What the user can use: money already on its way out (a close confirming, its sweep)
+    // is shown apart ("on its way to …"), not in the balance.
+    return lightningWalletBalance(vm)?.let { it.totalSat - leavingLightningSat(ready) + (acct.balanceMsat / 1_000uL).toLong() }
 }
 
 /** The Lightning wallet's balance (Lightning plus funds moving on-chain), or null while
@@ -96,7 +107,7 @@ private fun lightningStatusText(st: LnState): String = when (st) {
     LnState.Off -> stringResource(R.string.settings_lightning_status_off)
     LnState.Starting -> stringResource(R.string.settings_lightning_status_starting)
     is LnState.Ready -> stringResource(R.string.settings_lightning_status_ready)
-    is LnState.Error -> stringResource(lnErrorMessage(st.error))
+    is LnState.Error -> { val ctx = LocalContext.current; lnErrorText(st.error) { res, args -> ctx.getString(res, *args) } }
 }
 
 /** Wallet tab for the Lightning wallet: its balance, then Receive / Send / History. */
@@ -112,13 +123,18 @@ fun LightningWalletTab(vm: WalletViewModel) {
     // up for a payment in, down for one out. Only once both parts are known, so loading
     // the account is not mistaken for a payment.
     var burst by remember { mutableStateOf<com.fortis.wallet.ui.LightningBurstEvent?>(null) }
-    val lnTotal = if (lnReadyNow && hb != null && vm.accountBalance != null) hb.totalSat + accountSat else null
+    val lnTotal = if (lnReadyNow && hb != null && vm.accountBalance != null) {
+        hb.totalSat - leavingLightningSat(lnState as LnState.Ready) + accountSat
+    } else null
     // The cached total until the node and the account answer, then the live one.
     val cachedOrLive = lightningWalletTotalSat(vm)
     val shownSat = lnTotal ?: cachedOrLive
     var lastLnTotal by remember(c.id) { mutableStateOf<Long?>(null) }
     LaunchedEffect(lnTotal) {
         val t = lnTotal ?: return@LaunchedEffect
+        // Let both parts catch up first: a move from the Fortis balance into the channel
+        // shows in the channel a poll before it leaves the balance (no +/− flicker).
+        kotlinx.coroutines.delay(BURST_SETTLE_MS)
         val prev = lastLnTotal
         lastLnTotal = t
         if (prev != null && t != prev) burst = com.fortis.wallet.ui.LightningBurstEvent(System.nanoTime(), t - prev)
@@ -183,7 +199,12 @@ fun LightningWalletTab(vm: WalletViewModel) {
                         style = FxType.fiatSmall, color = Fx.warn,
                     )
                     // Part of it is still on-chain: a channel opening or closing.
-                    if (hb?.moving == true) Text(
+                    // Leaving: a close (or its sweep) on its way to the BTC wallet. Say how much and where.
+                    val leavingSat = (lnState as? LnState.Ready)?.let { leavingLightningSat(it) } ?: 0L
+                    if (leavingSat > 0L) Text(
+                        stringResource(R.string.ln_moving_to_wallet, fmt(leavingSat), vm.moveTargetWallet()?.display ?: ""),
+                        style = FxType.fiatSmall, color = Fx.warn,
+                    ) else if (hb?.moving == true) Text(
                         stringResource(R.string.wallet_split_moving),
                         style = FxType.fiatSmall, color = Fx.warn,
                     )
@@ -196,6 +217,7 @@ fun LightningWalletTab(vm: WalletViewModel) {
                         Spacer(Modifier.width(6.dp))
                         Text(lightningStatusText(lnState), style = FxType.meta)
                     }
+                    if (lnState is LnState.Error) com.fortis.wallet.ui.SendToSupportLink(lightningStatusText(lnState))
                 }
             }
         }
@@ -494,7 +516,7 @@ internal fun LightningSendTab(vm: WalletViewModel) {
                     uniffi.wallet_ffi.lnResolveLnurl(t)
                 }
             } catch (e: com.fortis.wallet.lightning.LnFfiError) {
-                lnurlError = ctx.getString(lnErrorMessage(e))
+                lnurlError = lnErrorText(e) { res, args -> ctx.getString(res, *args) }
             } catch (e: Exception) {
                 lnurlError = e.message ?: e.toString()
             } finally {
@@ -636,25 +658,25 @@ internal fun LightningHistory(vm: WalletViewModel) {
     val lnPayments by produceState(emptyList<uniffi.wallet_ffi.LnPayment>(), lnState, vm.sentCount) {
         value = vm.lightning.payments()
     }
-    val rows = remember(lnPayments) { mergeHistory(emptyList(), lnPayments) }
-    HistoryList(vm, rows, LN_UNIT, chain = LN_CHAIN, network = c?.network ?: "bitcoin")
-    // The Fortis account's own entries (spec §7).
-    if (vm.accountHistory.isNotEmpty()) {
-        GlassCard {
-            Text(stringResource(R.string.ln_account_history_title), color = Fx.text, fontWeight = FontWeight.SemiBold)
-            vm.accountHistory.forEach { e ->
-                val label = when (e.kind) {
-                    "received" -> stringResource(R.string.ln_account_received)
-                    "sent" -> stringResource(R.string.ln_account_sent)
-                    "converted" -> stringResource(R.string.ln_history_converted)
-                    "withdrawn" -> stringResource(R.string.ln_account_withdrawn)
-                    else -> stringResource(R.string.ln_account_internal)
-                }
-                val sat = e.amountMsat / 1_000
-                val fee = if (e.feeMsat > 0) " · " + stringResource(R.string.ln_account_fee, fmt(e.feeMsat / 1_000)) else ""
-                kv(label + fee, (if (sat > 0) "+" else "") + fmt(sat) + " " + LN_UNIT)
-            }
+    LaunchedEffect(lnState is LnState.Ready, vm.sentCount) { vm.loadLnMoves() }
+    val rows = remember(lnPayments, vm.accountHistory, vm.lnMoves) { mergeLightningHistory(lnPayments, vm.accountHistory, vm.lnMoves) }
+    // A ledger: each row's balance after it, worked back from the balance now.
+    // Money already on its way out (a close confirming, then its sweep) was moved by the
+    // ledger's move row: it is not in the balance the rows add up to, and that row is pending.
+    val leaving = (lnState as? LnState.Ready)?.let { leavingLightningSat(it) } ?: 0L
+    val total = lightningWalletTotalSat(vm)
+    val shown = remember(rows, leaving) {
+        if (leaving <= 0L) rows else {
+            val newestClose = rows.firstOrNull { it.noteRes == R.string.history_moved_onchain_closed }
+            rows.map { if (it === newestClose) it.copy(pending = true) else it }
         }
+    }
+    val (after, unaccounted) = remember(shown, total) {
+        if (total == null) emptyMap<String, Long>() to 0L else ledgerBalances(shown, total)
+    }
+    HistoryList(vm, shown, LN_UNIT, chain = LN_CHAIN, network = c?.network ?: "bitcoin", balanceAfter = after)
+    if (total != null && rows.isNotEmpty() && unaccounted != 0L) GlassCard {
+        Text(stringResource(R.string.history_unaccounted, fmt(unaccounted), LN_UNIT), style = FxType.meta, color = Fx.warn)
     }
 }
 
@@ -754,8 +776,8 @@ internal fun LightningWalletSettingsCard(vm: WalletViewModel) {
     }
 
     if (confirmClose) {
-        // Name the BTC wallet the funds go to (the first software mainnet BTC wallet).
-        val sweepTo = com.fortis.wallet.lightning.lightningSweepWallet(vm.wallets)
+        // Name the BTC wallet the funds go to (the one chosen on the Move tab, else the first).
+        val sweepTo = vm.moveTargetWallet()
         val closeBody = if (sweepTo != null) {
             stringResource(R.string.settings_lightning_close_body_to, sweepTo.display)
         } else {
@@ -878,6 +900,29 @@ fun lnErrorMessage(e: com.fortis.wallet.lightning.LnFfiError): Int = when (e) {
     is uniffi.wallet_ffi.LnFfiException.PaymentStateUnknown -> R.string.ln_err_payment_state_unknown
     is uniffi.wallet_ffi.LnFfiException.AmountOutOfRange -> R.string.ln_err_amount_out_of_range
     is uniffi.wallet_ffi.LnFfiException.Other -> R.string.ln_err_other
+}
+
+/**
+ * The message for [e]: a specific one for the common causes, and for anything else the
+ * generic one with its short code ("Lightning error (splice_failed)…"), so a user can
+ * say which it was.
+ */
+fun lnErrorText(e: com.fortis.wallet.lightning.LnFfiError, get: (Int, Array<out Any>) -> String): String {
+    if (e is uniffi.wallet_ffi.LnFfiException.Other) {
+        val r = e.reason
+        val res = when {
+            r == "not_started" || r == "lightning not ready" || r == "start_in_progress" || r == "cancelled" -> R.string.ln_err_not_ready
+            r.startsWith("chain_sync_failed") || r == "chain_source_timeout" -> R.string.ln_err_chain_sync
+            r == "insufficient_channel" -> R.string.ln_err_insufficient_channel
+            r == "no_channel" -> R.string.ln_err_no_channel
+            r == "channel_opening" -> R.string.ln_err_channel_opening
+            r == "Payment failed" -> R.string.ln_err_payment_failed
+            r == "splice_failed" -> R.string.transfer_splice_busy
+            else -> null
+        }
+        return if (res != null) get(res, arrayOf()) else get(R.string.ln_err_other_code, arrayOf(r.take(40)))
+    }
+    return get(lnErrorMessage(e), arrayOf())
 }
 
 /** True when the Lightning node is stopped because another device holds the VSS lock. */

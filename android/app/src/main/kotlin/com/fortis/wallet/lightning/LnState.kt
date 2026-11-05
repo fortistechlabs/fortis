@@ -46,7 +46,11 @@ fun canAddLightningWallet(wallets: List<WalletConfig>): Boolean = wallets.none {
 fun lightningWalletOf(wallets: List<WalletConfig>): WalletConfig? = wallets.firstOrNull { it.isLightning }
 
 /** The wallet a Lightning exit sweeps to: the first software mainnet BTC wallet. */
-fun lightningSweepWallet(wallets: List<WalletConfig>): WalletConfig? = wallets.firstOrNull {
+fun lightningSweepWallet(wallets: List<WalletConfig>): WalletConfig? = lightningSweepWallets(wallets).firstOrNull()
+
+/** The wallets Lightning funds can be moved to: software mainnet BTC wallets (they can
+ *  derive a fresh address without a device). */
+fun lightningSweepWallets(wallets: List<WalletConfig>): List<WalletConfig> = wallets.filter {
     it.chain == "btc" &&
         (it.network == "mainnet" || it.network == "bitcoin") &&
         !it.watchOnly &&

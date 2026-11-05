@@ -211,6 +211,10 @@ class LightningSession(
     private var unlockedSeed: ByteArray? = null
     private var lastKnownBalances: LnBalances = ZERO_LN_BALANCES
     private var eventJob: Job? = null
+    /** Where errors are reported (the app sends them to the server); set by the view model. */
+    @Volatile
+    var errorReporter: ((where: String, error: Throwable) -> Unit)? = null
+
     /** Restarts a failed start every [START_RETRY_MS] until it works (or the app locks). */
     private var retryJob: Job? = null
 
@@ -407,8 +411,11 @@ class LightningSession(
         var ch = runCatching { node.channelState() }.getOrNull() ?: return
         unlockedWalletId?.let { id ->
             val (b2, c2) = fundFromTransit(node, id, bal, ch)
-            bal = b2
-            ch = c2
+            // A closed channel's money that has confirmed since: on to the BTC wallet now,
+            // not only at the next start.
+            val (b3, c3) = sweepOrphanTransit(node, id, b2, c2)
+            bal = b3
+            ch = c3
         }
         if (currentNode === node) publish(node, bal, ch)
     }
@@ -616,11 +623,13 @@ class LightningSession(
             throw e
         } catch (e: LnFfiException) {
             logWarn("start failed", e)
+            errorReporter?.invoke("lightning_start", e)
             createdNode?.let { withContext(Dispatchers.IO) { runCatching { it.close() } } }
             currentNode = null
             _state.value = LnState.Error(e, lastKnownBalances)
         } catch (e: Exception) {
             logWarn("start failed", e)
+            errorReporter?.invoke("lightning_start", e)
             createdNode?.let { withContext(Dispatchers.IO) { runCatching { it.close() } } }
             currentNode = null
             _state.value = LnState.Error(

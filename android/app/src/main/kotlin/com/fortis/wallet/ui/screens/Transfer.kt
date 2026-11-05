@@ -81,15 +81,18 @@ internal fun TransferToOnchainTab(vm: WalletViewModel) {
         Column(verticalArrangement = Arrangement.spacedBy(Fx.s3)) {
             Text(stringResource(R.string.transfer_to_onchain_title), color = Fx.text, fontWeight = FontWeight.SemiBold)
             Text(stringResource(R.string.transfer_to_onchain_help), style = FxType.meta, color = Fx.textDim)
+            MoveToWalletPicker(vm)
             if (maxSat <= 0L) Text(stringResource(R.string.transfer_nothing_to_move_ln), style = FxType.meta, color = Fx.warn)
             SwapAmount(amount, { amount = it }, "btc", maxSat, hint = R.string.transfer_help_slider, inSat = inSat, onUnit = { inSat = it })
             val fromAccount = amountSat > channelSat
-            val all = !fromAccount && amountSat > 0 && amountSat >= channelSat
+            // Leaving only crumbs behind is moving everything: a splice can't take the last few
+            // thousand sat (its fees come out of what stays), a close takes it all.
+            val all = !fromAccount && amountSat > 0 && channelSat - amountSat < MOVE_ALL_SLACK_SAT
             val q = vm.quoteMoveToOnchain(amountSat)
             if (amountSat > maxSat) ErrorText(stringResource(R.string.transfer_more_than_balance))
             else if (amountSat > 0) {
-                if (q == null) ErrorText(stringResource(R.string.transfer_too_small))
-                else Text(
+                if (q == null && !all) ErrorText(stringResource(R.string.transfer_too_small))
+                else if (q != null) Text(
                     stringResource(R.string.transfer_summary_onchain, fmt(amountSat), fmt(q.feeSat), fmt(q.payoutSat)),
                     style = FxType.meta, color = Fx.textDim,
                 )
@@ -99,10 +102,41 @@ internal fun TransferToOnchainTab(vm: WalletViewModel) {
             ErrorText(vm.error)
             PrimaryButton(
                 stringResource(R.string.transfer_move),
-                enabled = q != null && amountSat <= maxSat && ready != null && !vm.movingToOnchain,
+                enabled = (q != null || all) && amountSat <= maxSat && ready != null && !vm.movingToOnchain,
                 working = vm.movingToOnchain,
             ) {
                 gate.require(vm, gateAct, gateScope) { vm.moveToOnchain(amountSat, all, fromAccount) }
+            }
+        }
+    }
+}
+
+/** A move leaving less than this in the channel moves everything (closes it). */
+private const val MOVE_ALL_SLACK_SAT = 3_000L
+
+/** "To wallet": which BTC wallet the moved funds go to; a menu when there are several. */
+@androidx.compose.runtime.Composable
+private fun MoveToWalletPicker(vm: WalletViewModel) {
+    val choices = com.fortis.wallet.lightning.lightningSweepWallets(vm.wallets)
+    val current = vm.moveTargetWallet() ?: return
+    var open by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
+    androidx.compose.foundation.layout.Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+        Text(
+            stringResource(R.string.transfer_to_wallet),
+            style = FxType.meta, color = Fx.textDim,
+            modifier = androidx.compose.ui.Modifier.weight(1f),
+        )
+        if (choices.size < 2) {
+            Text(current.display, color = Fx.text)
+        } else androidx.compose.foundation.layout.Box {
+            androidx.compose.material3.TextButton({ open = true }) { Text(current.display + " ▾", color = Fx.signal) }
+            androidx.compose.material3.DropdownMenu(open, { open = false }, containerColor = Fx.panel) {
+                choices.forEach { w ->
+                    androidx.compose.material3.DropdownMenuItem(
+                        text = { Text(w.display, color = if (w.id == current.id) Fx.signal else Fx.text) },
+                        onClick = { vm.setMoveToWallet(w.id); open = false },
+                    )
+                }
             }
         }
     }

@@ -271,7 +271,9 @@ fun Screen(scroll: Boolean = false, content: @Composable ColumnScope.() -> Unit)
 
 @Composable
 fun ErrorText(msg: String?) {
-    if (!msg.isNullOrBlank()) Text(msg, color = Fx.bad, textAlign = TextAlign.Start)
+    if (msg.isNullOrBlank()) return
+    Text(msg, color = Fx.bad, textAlign = TextAlign.Start)
+    SendToSupportLink(msg)
 }
 
 @Composable

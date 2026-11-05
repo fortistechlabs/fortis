@@ -119,6 +119,40 @@ data class OwnServerPrefs(val url: String?, val on: Boolean)
 
 class Store(private val ctx: Context) : com.fortis.wallet.lightning.LightningStore {
     private fun lnTransferAtKey(walletId: String) = longPreferencesKey("ln_transfer_at_$walletId")
+    private fun lnMovesKey(walletId: String) = stringPreferencesKey("ln_moves_$walletId")
+
+    /** The Lightning wallet's moves on-chain, oldest first. */
+    suspend fun lnMoves(walletId: String): List<com.fortis.wallet.lightning.LnMove> {
+        val raw = ctx.dataStore.data.first()[lnMovesKey(walletId)] ?: return emptyList()
+        val a = runCatching { JSONArray(raw) }.getOrNull() ?: return emptyList()
+        return (0 until a.length()).mapNotNull { i ->
+            runCatching {
+                val o = a.getJSONObject(i)
+                com.fortis.wallet.lightning.LnMove(
+                    atSecs = o.getLong("at"), amountSat = o.getLong("amount"), payoutSat = o.getLong("payout"),
+                    feeSat = o.getLong("fee"), toWallet = o.optString("to"),
+                    feePaymentId = o.optString("fee_payment").takeIf { it.isNotEmpty() }, kind = o.optString("kind", "splice"),
+                    txid = o.optString("txid").takeIf { it.isNotEmpty() },
+                )
+            }.getOrNull()
+        }
+    }
+
+    suspend fun addLnMove(walletId: String, m: com.fortis.wallet.lightning.LnMove) {
+        ctx.dataStore.edit { p ->
+            val a = p[lnMovesKey(walletId)]?.let { runCatching { JSONArray(it) }.getOrNull() } ?: JSONArray()
+            a.put(moveJson(m))
+            p[lnMovesKey(walletId)] = a.toString()
+        }
+    }
+
+    suspend fun setLnMoves(walletId: String, moves: List<com.fortis.wallet.lightning.LnMove>) {
+        ctx.dataStore.edit { p -> p[lnMovesKey(walletId)] = JSONArray(moves.map { moveJson(it) }).toString() }
+    }
+
+    private fun moveJson(m: com.fortis.wallet.lightning.LnMove) = JSONObject().put("at", m.atSecs).put("amount", m.amountSat)
+        .put("payout", m.payoutSat).put("fee", m.feeSat).put("to", m.toWallet).put("fee_payment", m.feePaymentId ?: "")
+        .put("kind", m.kind).put("txid", m.txid ?: "")
     private fun lnCachedTotalKey(walletId: String) = longPreferencesKey("ln_cached_total_$walletId")
 
     /** The Lightning wallet's last known total (channel + Fortis account, sat), shown while its node starts. */
