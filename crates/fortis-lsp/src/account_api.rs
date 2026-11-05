@@ -62,6 +62,10 @@ pub fn fee_cap_msat(amount_msat: u64) -> u64 {
 /// What the account service needs from the node (a trait so the handlers
 /// can be tested without one).
 pub trait AccountNode: Send + Sync {
+    /// True while `node`'s phone is connected to us (then its app shows a receipt itself).
+    fn is_connected(&self, _node: &PublicKey) -> bool {
+        false
+    }
     /// A BOLT11 invoice paying this node; its payment hash.
     fn receive_invoice(
         &self,
@@ -102,6 +106,8 @@ pub struct AccountService {
     pub min_channel_receive_sat: u64,
     /// Push notifications for payments held while a phone is offline.
     pub fcm: Option<crate::push::Fcm>,
+    /// Receipt notices decided on (sent, or only logged without push), for tests and logs.
+    notices: std::sync::atomic::AtomicU64,
 }
 
 /// An HTTP status and JSON body.
@@ -130,12 +136,18 @@ impl AccountService {
             custody_max_msat: custody_max_sat.saturating_mul(1_000),
             min_channel_receive_sat,
             fcm: None,
+            notices: std::sync::atomic::AtomicU64::new(0),
         }
     }
 
     pub fn with_push(mut self, fcm: Option<crate::push::Fcm>) -> AccountService {
         self.fcm = fcm;
         self
+    }
+
+    /// How many receipt notices were decided on since start.
+    pub fn notices_sent(&self) -> u64 {
+        self.notices.load(std::sync::atomic::Ordering::Relaxed)
     }
 
     pub fn custody_sat(&self) -> u64 {
@@ -240,7 +252,11 @@ impl AccountService {
             .node
             .receive_invoice(amount, "Fortis transfer fee", INVOICE_EXPIRY_SECS)
         {
-            Ok((invoice, _)) => {
+            Ok((invoice, hash)) => {
+                // Known as the operator's revenue when it is paid.
+                if let Err(e) = self.ledger.add_fee_invoice(hash, node, amount) {
+                    eprintln!("fortis-lsp: fee invoice not recorded: {e}");
+                }
                 eprintln!("fortis-lsp: transfer fee invoice of {amount} msat for {node}");
                 (200, json!({ "invoice": invoice }))
             }
@@ -427,6 +443,15 @@ impl AccountService {
 
     // ---- LDK event hooks (call before `event_handled`) ----
 
+    /// A payment landed on `node`'s Fortis balance: tell the phone by push
+    /// unless it is connected (its app shows the receipt then).
+    fn notify_received(&self, node: &PublicKey, amount_msat: u64) {
+        self.notices.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        if !self.node.is_connected(node) {
+            crate::push::received(self.fcm.as_ref(), &self.ledger, node, amount_msat);
+        }
+    }
+
     /// A payment arrived; credits the account its invoice belongs to. True
     /// when it was an account payment.
     pub fn on_payment_received(
@@ -436,10 +461,18 @@ impl AccountService {
     ) -> Result<bool, LedgerError> {
         match self.ledger.invoice_owner(payment_hash)? {
             Some(node) => {
-                self.ledger.credit(&node, payment_hash, amount_msat)?;
+                // LDK hands old PaymentReceived events out again after a restart: the
+                // ledger credits a payment once, and only a new credit is announced.
+                if self.ledger.credit(&node, payment_hash, amount_msat)? {
+                    self.notify_received(&node, amount_msat);
+                }
                 Ok(true)
             }
-            None => Ok(false),
+            // Not an account's. A transfer fee is the operator's revenue (recorded here).
+            None => {
+                self.ledger.fee_invoice_paid(payment_hash, amount_msat)?;
+                Ok(false)
+            }
         }
     }
 
@@ -456,8 +489,10 @@ impl AccountService {
         };
         match self.ledger.offer_owner(offer_id)? {
             Some(node) => {
-                self.ledger.credit(&node, payment_hash, amount_msat)?;
-                eprintln!("fortis-lsp: offer payment of {amount_msat} msat to {node}");
+                if self.ledger.credit(&node, payment_hash, amount_msat)? {
+                    eprintln!("fortis-lsp: offer payment of {amount_msat} msat to {node}");
+                    self.notify_received(&node, amount_msat);
+                }
                 Ok(true)
             }
             None => Ok(false),
@@ -485,6 +520,9 @@ impl AccountService {
 pub struct LdkAccountNode(pub Arc<ldk_node::Node>);
 
 impl AccountNode for LdkAccountNode {
+    fn is_connected(&self, node: &PublicKey) -> bool {
+        self.0.list_peers().iter().any(|p| p.node_id == *node && p.is_connected)
+    }
     fn receive_invoice(
         &self,
         amount_msat: u64,
@@ -731,6 +769,8 @@ mod tests {
         assert_eq!((s, v["invoice"].as_str()), (200, Some("inv-1")), "{v}");
         let hash = node.invoices.lock().unwrap()[0].2;
         assert!(!svc.on_payment_received(hash, 1_500_000).unwrap(), "operator revenue");
+        let rev = svc.ledger.revenue_since(0).unwrap();
+        assert_eq!((rev.len(), rev[0].kind.as_str(), rev[0].amount_msat), (1, "transfer_fee", 1_500_000));
         let (_, b) = call(&svc, 1, "balance", "{}", &nonce(2));
         assert_eq!(b["balance_msat"], 0);
         for bad in [r#"{"amount_msat":0}"#, r#"{"amount_msat":50000001}"#, "{}"] {
@@ -787,6 +827,19 @@ mod tests {
         // Accounts off: no offer.
         let (off, _) = service("offer-off", FakeNode::with_backing(1_000_000), 0);
         assert_eq!(call(&off, 1, "offer", "{}", &nonce(4)).0, 409);
+    }
+
+    #[test]
+    fn a_replayed_receipt_is_credited_and_announced_once() {
+        let (svc, node) = service("replay", FakeNode::with_backing(1_000_000), 1_000_000);
+        call(&svc, 1, "invoice", r#"{"amount_msat":5000}"#, &nonce(1));
+        let hash = node.invoices.lock().unwrap()[0].2;
+        assert!(svc.on_payment_received(hash, 5_000).unwrap());
+        // The same event again after a restart: still recognised, not credited twice.
+        assert!(svc.on_payment_received(hash, 5_000).unwrap());
+        let (_, b) = call(&svc, 1, "balance", "{}", &nonce(2));
+        assert_eq!(b["balance_msat"].as_u64(), Some(5_000));
+        assert_eq!(svc.notices_sent(), 1, "announced once");
     }
 
     #[test]

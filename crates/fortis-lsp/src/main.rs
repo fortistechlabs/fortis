@@ -59,6 +59,33 @@ fn install_signal_handlers() {
     }
 }
 
+/// Prints the on-chain wallet's account key (public only), for watching it in a wallet app:
+/// ldk-node's wallet is BIP84 from the master key of `keys_seed`, account m/84'/coin'/0'.
+/// Reads the seed; prints nothing secret.
+fn print_xpub(cfg: &LspConfig) -> Result<(), String> {
+    use ldk_node::bitcoin::bip32::{DerivationPath, Xpriv, Xpub};
+    use ldk_node::bitcoin::secp256k1::Secp256k1;
+    use std::str::FromStr;
+    let seed_path = cfg.data_dir.join(SEED_FILE);
+    let seed = std::fs::read(&seed_path).map_err(|e| format!("{}: {e}", seed_path.display()))?;
+    let secp = Secp256k1::new();
+    let master = Xpriv::new_master(cfg.network, &seed).map_err(|e| format!("seed: {e}"))?;
+    let coin = if cfg.network == ldk_node::bitcoin::Network::Bitcoin { 0 } else { 1 };
+    let path = DerivationPath::from_str(&format!("m/84'/{coin}'/0'")).map_err(|e| e.to_string())?;
+    let account = master.derive_priv(&secp, &path).map_err(|e| e.to_string())?;
+    let xpub = Xpub::from_priv(&secp, &account);
+    let fp = master.fingerprint(&secp);
+    // The same key as zpub (mainnet) / vpub (test networks): SLIP-132 version bytes.
+    let mut raw = xpub.encode();
+    raw[..4].copy_from_slice(if coin == 0 { &[0x04, 0xb2, 0x47, 0x46] } else { &[0x04, 0x5f, 0x1c, 0xf6] });
+    let zpub = ldk_node::bitcoin::base58::encode_check(&raw);
+    println!("fingerprint {fp}");
+    println!("xpub        {xpub}");
+    println!("zpub        {zpub}");
+    println!("descriptor  wpkh([{fp}/84'/{coin}'/0']{xpub}/<0;1>/*)");
+    Ok(())
+}
+
 fn main() -> ExitCode {
     match run() {
         Ok(()) => ExitCode::SUCCESS,
@@ -69,15 +96,86 @@ fn main() -> ExitCode {
     }
 }
 
+/// `--revenue`: print the operator's revenue ledger and exit; `--since` limits it.
+static REVENUE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+static SINCE: std::sync::Mutex<Option<u64>> = std::sync::Mutex::new(None);
+
+/// "2026-11-05" → that day's first second, UTC.
+fn day_start_secs(d: &str) -> Option<u64> {
+    let mut it = d.split('-').map(|p| p.parse::<i64>().ok());
+    let (y, m, day) = (it.next()??, it.next()??, it.next()??);
+    if it.next().is_some() || !(1..=12).contains(&m) || !(1..=31).contains(&day) {
+        return None;
+    }
+    // Days since 1970-01-01 (civil calendar).
+    let (y2, m2) = if m <= 2 { (y - 1, m + 9) } else { (y, m - 3) };
+    let era = y2.div_euclid(400);
+    let yoe = y2 - era * 400;
+    let doy = (153 * m2 + 2) / 5 + day - 1;
+    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    let days = era * 146_097 + doe - 719_468;
+    u64::try_from(days * 86_400).ok()
+}
+
+/// Prints every revenue entry since `since_secs` and the totals by kind, to the msat.
+fn print_revenue(cfg: &LspConfig, since_secs: u64) -> Result<(), String> {
+    let ledger = account::Ledger::open(&cfg.data_dir.join(account::LEDGER_FILE)).map_err(|e| format!("ledger: {e}"))?;
+    let rows = ledger.revenue_since(since_secs).map_err(|e| e.to_string())?;
+    let sat = |msat: u64| format!("{}.{:03}", msat / 1_000, msat % 1_000);
+    println!("{:<20} {:<15} {:>16}  {:<14} reference", "time (UTC)", "kind", "sat", "user");
+    let mut totals: std::collections::BTreeMap<String, (u64, usize)> = Default::default();
+    for r in &rows {
+        let t = time_utc(r.at_secs);
+        let user = r.node.as_deref().map(|n| format!("{}…", &n[..12.min(n.len())])).unwrap_or_default();
+        println!("{t:<20} {:<15} {:>16}  {user:<14} {}", r.kind, sat(r.amount_msat), r.reference);
+        let e = totals.entry(r.kind.clone()).or_default();
+        e.0 += r.amount_msat;
+        e.1 += 1;
+    }
+    println!();
+    let mut all = 0;
+    for (k, (msat, n)) in &totals {
+        println!("{k:<15} {:>16} sat  ({n} entries)", sat(*msat));
+        all += msat;
+    }
+    println!("{:<15} {:>16} sat", "TOTAL", sat(all));
+    Ok(())
+}
+
+/// Unix seconds → "2026-11-05 11:36:33" (UTC).
+fn time_utc(secs: u64) -> String {
+    let days = (secs / 86_400) as i64;
+    let rem = secs % 86_400;
+    let z = days + 719_468;
+    let era = z.div_euclid(146_097);
+    let doe = z - era * 146_097;
+    let yoe = (doe - doe / 1_460 + doe / 36_524 - doe / 146_096) / 365;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 };
+    let y = yoe + era * 400 + i64::from(m <= 2);
+    format!("{y:04}-{m:02}-{d:02} {:02}:{:02}:{:02}", rem / 3600, rem % 3600 / 60, rem % 60)
+}
+
+/// `--print-xpub`: print the on-chain wallet's public key and exit.
+static PRINT_XPUB: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
 fn config_path() -> Result<String, String> {
     let mut args = std::env::args().skip(1);
     let mut path = config::DEFAULT_CONFIG_PATH.to_string();
     while let Some(a) = args.next() {
         match a.as_str() {
             "--config" => path = args.next().ok_or("--config needs a path")?,
+            "--print-xpub" => PRINT_XPUB.store(true, std::sync::atomic::Ordering::SeqCst),
+            "--revenue" => REVENUE.store(true, std::sync::atomic::Ordering::SeqCst),
+            "--since" => {
+                let d = args.next().ok_or("--since needs a date (YYYY-MM-DD)")?;
+                *SINCE.lock().unwrap() = Some(day_start_secs(&d).ok_or(format!("--since {d:?}: not a YYYY-MM-DD date"))?);
+            }
             "-h" | "--help" => {
                 println!(
-                    "usage: fortis-lsp [--config {}]",
+                    "usage: fortis-lsp [--config {}] [--print-xpub | --revenue [--since YYYY-MM-DD]]",
                     config::DEFAULT_CONFIG_PATH
                 );
                 std::process::exit(0);
@@ -93,6 +191,12 @@ fn run() -> Result<(), String> {
     let path = config_path()?;
     let text = std::fs::read_to_string(&path).map_err(|e| format!("{path}: {e}"))?;
     let cfg = LspConfig::from_toml(&text)?;
+    if PRINT_XPUB.load(std::sync::atomic::Ordering::SeqCst) {
+        return print_xpub(&cfg);
+    }
+    if REVENUE.load(std::sync::atomic::Ordering::SeqCst) {
+        return print_revenue(&cfg, SINCE.lock().unwrap().unwrap_or(0));
+    }
     let rpc_password = cfg.rpc_password()?;
     let (rpc_host, rpc_port) = cfg.rpc_host_port()?;
 
@@ -184,6 +288,7 @@ fn serve(
         account::Ledger::open(&cfg.data_dir.join(account::LEDGER_FILE))
             .map_err(|e| format!("account ledger: {e}"))?,
     );
+    import_earlier_revenue(node, &ledger);
     let accounts = Arc::new(account_api::AccountService::new(
         Arc::clone(&ledger),
         Arc::new(account_api::LdkAccountNode(Arc::clone(node))),
@@ -396,6 +501,36 @@ fn enforce_forwarding_fees(node: &ldk_node::Node, fees: (u32, u32)) -> usize {
 }
 
 /// Credits, settles and finishes Fortis account operations from an LDK event.
+/// Once: payments the LSP received before the revenue ledger existed and that nothing in the
+/// ledger explains (no account invoice, held payment, fee invoice or account entry) — fees
+/// paid before fees were recorded — go in as `earlier` revenue, so the report starts complete.
+fn import_earlier_revenue(node: &ldk_node::Node, ledger: &account::Ledger) {
+    use ldk_node::payment::{PaymentDirection, PaymentKind, PaymentStatus};
+    let earlier: Vec<([u8; 32], u64, u64)> = node
+        .list_payments_with_filter(|p| p.direction == PaymentDirection::Inbound && p.status == PaymentStatus::Succeeded)
+        .into_iter()
+        .filter_map(|p| {
+            let hash = match &p.kind {
+                PaymentKind::Bolt11 { hash, .. } | PaymentKind::Bolt11Jit { hash, .. } | PaymentKind::Spontaneous { hash, .. } => hash.0,
+                PaymentKind::Bolt12Offer { hash: Some(h), .. } | PaymentKind::Bolt12Refund { hash: Some(h), .. } => h.0,
+                _ => return None,
+            };
+            Some((hash, p.amount_msat?, p.latest_update_timestamp))
+        })
+        .filter(|(h, _, _)| !ledger.knows_payment(*h).unwrap_or(true))
+        .collect();
+    match ledger.import_earlier(&earlier) {
+        Ok(0) => {}
+        Ok(n) => eprintln!("fortis-lsp: revenue ledger: imported {n} earlier payment(s)"),
+        Err(e) => eprintln!("fortis-lsp: revenue ledger: earlier import failed: {e}"),
+    }
+    match ledger.import_entry_fees() {
+        Ok(0) => {}
+        Ok(n) => eprintln!("fortis-lsp: revenue ledger: imported {n} earlier account fee(s)"),
+        Err(e) => eprintln!("fortis-lsp: revenue ledger: account fee import failed: {e}"),
+    }
+}
+
 fn account_event(
     node: &ldk_node::Node,
     event: &Event,
@@ -414,6 +549,24 @@ fn account_event(
                     accounts.on_offer_payment_received(id.0, payment_hash.0, *amount_msat)?;
                 }
             }
+        }
+        Event::PaymentForwarded {
+            prev_channel_id,
+            next_channel_id,
+            next_node_id,
+            total_fee_earned_msat,
+            skimmed_fee_msat,
+            outbound_amount_forwarded_msat,
+            ..
+        } => {
+            // The operator's revenue: the routing fee, and (LSPS2) the channel opening fee
+            // skimmed from the payment that opened a user's channel.
+            let skim = skimmed_fee_msat.unwrap_or(0);
+            let routing = total_fee_earned_msat.unwrap_or(0).saturating_sub(skim);
+            let at = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_nanos());
+            let reference = format!("{prev_channel_id}>{next_channel_id}:{}:{at}", outbound_amount_forwarded_msat.unwrap_or(0));
+            ledger.record_revenue(account::RevenueKind::RoutingFee, routing, None, &reference)?;
+            ledger.record_revenue(account::RevenueKind::ChannelFee, skim, next_node_id.as_ref(), &reference)?;
         }
         Event::PaymentClaimable {
             payment_hash,
@@ -670,4 +823,17 @@ fn check_seed_permissions(cfg: &LspConfig) -> Result<(), String> {
         ));
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod report_tests {
+    #[test]
+    fn dates_convert_both_ways() {
+        assert_eq!(super::day_start_secs("2026-11-05"), Some(1_793_836_800));
+        assert_eq!(super::day_start_secs("2000-02-29"), Some(951_782_400));
+        assert_eq!(super::day_start_secs("2026-13-01"), None);
+        assert_eq!(super::day_start_secs("yesterday"), None);
+        assert_eq!(super::time_utc(1_793_878_595), "2026-11-05 11:36:35");
+        assert_eq!(super::time_utc(951_782_400), "2000-02-29 00:00:00");
+    }
 }

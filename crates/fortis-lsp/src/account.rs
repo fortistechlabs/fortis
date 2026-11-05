@@ -145,6 +145,21 @@ impl Ledger {
                amount_msat INTEGER NOT NULL,
                expires_at INTEGER NOT NULL
              );
+             CREATE TABLE IF NOT EXISTS revenue (
+               seq INTEGER PRIMARY KEY AUTOINCREMENT,
+               at_secs INTEGER NOT NULL,
+               kind TEXT NOT NULL,
+               amount_msat INTEGER NOT NULL,
+               node TEXT,
+               reference TEXT NOT NULL
+             );
+             CREATE UNIQUE INDEX IF NOT EXISTS revenue_once ON revenue(kind, reference);
+             CREATE TABLE IF NOT EXISTS fee_invoices (
+               payment_hash BLOB PRIMARY KEY,
+               node TEXT NOT NULL,
+               amount_msat INTEGER NOT NULL,
+               created_at INTEGER NOT NULL
+             );
              CREATE TABLE IF NOT EXISTS push_tokens (
                node TEXT PRIMARY KEY,
                token TEXT NOT NULL,
@@ -325,6 +340,9 @@ impl Ledger {
             "INSERT INTO entries (node, at_secs, kind, amount_msat, fee_msat, payment_hash) VALUES (?1, ?2, 'withdrawn', ?3, ?4, ?5)",
             params![k, now_secs() as i64, -as_i64(held), as_i64(fee_msat), txid.to_vec()],
         )?;
+        if fee_msat > 0 {
+            insert_revenue(&tx, RevenueKind::WithdrawalFee, fee_msat, Some(&k), &format!("withdrawal:{}", hex::encode(txid)))?;
+        }
         tx.commit()?;
         Ok(())
     }
@@ -371,14 +389,24 @@ impl Ledger {
     /// The conversion `id` arrived in the user's channel: debit it all,
     /// recording the fee the LSP kept.
     pub fn finish_conversion(&self, id: &str, fee_msat: u64) -> Result<()> {
+        self.finish_conversion_by(id, fee_msat, None)
+    }
+
+    /// [`finish_conversion`](Self::finish_conversion), recording the payment
+    /// that carried the balance into the channel (so the app can show the
+    /// two as one move, not a second receipt).
+    pub fn finish_conversion_by(&self, id: &str, fee_msat: u64, payment_hash: Option<[u8; 32]>) -> Result<()> {
         let mut c = self.conn();
         let tx = c.transaction()?;
         let (k, held) = take_hold(&tx, id)?;
         add_balance(&tx, &k, -as_i64(held))?;
         tx.execute(
-            "INSERT INTO entries (node, at_secs, kind, amount_msat, fee_msat) VALUES (?1, ?2, 'converted', ?3, ?4)",
-            params![k, now_secs() as i64, -as_i64(held), as_i64(fee_msat)],
+            "INSERT INTO entries (node, at_secs, kind, amount_msat, fee_msat, payment_hash) VALUES (?1, ?2, 'converted', ?3, ?4, ?5)",
+            params![k, now_secs() as i64, -as_i64(held), as_i64(fee_msat), payment_hash.map(|h| h.to_vec())],
         )?;
+        if fee_msat > 0 {
+            insert_revenue(&tx, RevenueKind::ChannelFee, fee_msat, Some(&k), &format!("conversion:{id}"))?;
+        }
         tx.commit()?;
         Ok(())
     }
@@ -503,6 +531,138 @@ impl Ledger {
     }
 
     /// Records `node`'s reusable offer (one per account).
+    // ---- operator revenue -------------------------------------------------
+
+    /// A transfer-fee invoice was issued to `node` (so its payment is known as revenue).
+    pub fn add_fee_invoice(&self, payment_hash: [u8; 32], node: &PublicKey, amount_msat: u64) -> Result<()> {
+        let c = self.conn();
+        c.execute(
+            "INSERT OR IGNORE INTO fee_invoices (payment_hash, node, amount_msat, created_at) VALUES (?1, ?2, ?3, ?4)",
+            params![payment_hash.to_vec(), key(node), as_i64(amount_msat), now_secs() as i64],
+        )?;
+        Ok(())
+    }
+
+    /// A payment to a transfer-fee invoice: recorded as revenue (once). True when `payment_hash`
+    /// was one.
+    pub fn fee_invoice_paid(&self, payment_hash: [u8; 32], amount_msat: u64) -> Result<bool> {
+        let mut c = self.conn();
+        let tx = c.transaction()?;
+        let node: Option<String> = tx
+            .query_row("SELECT node FROM fee_invoices WHERE payment_hash = ?1", params![payment_hash.to_vec()], |r| r.get(0))
+            .optional()?;
+        let Some(node) = node else { return Ok(false) };
+        insert_revenue(&tx, RevenueKind::TransferFee, amount_msat, Some(&node), &hex::encode(payment_hash))?;
+        tx.commit()?;
+        Ok(true)
+    }
+
+    /// Records `amount_msat` of revenue (once per `kind` and `reference`; a replayed event
+    /// adds nothing). True when it was new.
+    pub fn record_revenue(&self, kind: RevenueKind, amount_msat: u64, node: Option<&PublicKey>, reference: &str) -> Result<bool> {
+        if amount_msat == 0 {
+            return Ok(false);
+        }
+        let c = self.conn();
+        let n = c.execute(
+            "INSERT OR IGNORE INTO revenue (at_secs, kind, amount_msat, node, reference) VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![now_secs() as i64, kind.as_str(), as_i64(amount_msat), node.map(key), reference],
+        )?;
+        Ok(n == 1)
+    }
+
+    /// Imports, once, payments the LSP received before this ledger recorded revenue and that
+    /// nothing else explains (`(payment hash, amount, when)`), as [`RevenueKind::Earlier`].
+    /// Later calls do nothing. How many were imported.
+    pub fn import_earlier(&self, payments: &[([u8; 32], u64, u64)]) -> Result<usize> {
+        let mut c = self.conn();
+        let tx = c.transaction()?;
+        let done: bool = tx
+            .query_row("SELECT 1 FROM revenue WHERE kind = 'marker' AND reference = 'earlier-import'", [], |_| Ok(()))
+            .optional()?
+            .is_some();
+        if done {
+            return Ok(0);
+        }
+        let mut n = 0;
+        for (hash, amount_msat, at_secs) in payments {
+            n += tx.execute(
+                "INSERT OR IGNORE INTO revenue (at_secs, kind, amount_msat, node, reference) VALUES (?1, 'earlier', ?2, NULL, ?3)",
+                params![*at_secs as i64, as_i64(*amount_msat), hex::encode(hash)],
+            )?;
+        }
+        tx.execute(
+            "INSERT INTO revenue (at_secs, kind, amount_msat, node, reference) VALUES (?1, 'marker', 0, NULL, 'earlier-import')",
+            params![now_secs() as i64],
+        )?;
+        tx.commit()?;
+        Ok(n)
+    }
+
+    /// Imports, once, the fees in account entries recorded before revenue was: a conversion's
+    /// fee (`channel_fee`) and a withdrawal's (`withdrawal_fee`). Later calls do nothing.
+    pub fn import_entry_fees(&self) -> Result<usize> {
+        let mut c = self.conn();
+        let tx = c.transaction()?;
+        let done: bool = tx
+            .query_row("SELECT 1 FROM revenue WHERE kind = 'marker' AND reference = 'entry-fee-import'", [], |_| Ok(()))
+            .optional()?
+            .is_some();
+        if done {
+            return Ok(0);
+        }
+        let n = tx.execute(
+            "INSERT OR IGNORE INTO revenue (at_secs, kind, amount_msat, node, reference)
+             SELECT at_secs,
+                    CASE kind WHEN 'converted' THEN 'channel_fee' ELSE 'withdrawal_fee' END,
+                    fee_msat, node,
+                    CASE kind WHEN 'converted' THEN 'conversion-entry:' || seq ELSE 'withdrawal:' || lower(hex(payment_hash)) END
+             FROM entries WHERE kind IN ('converted', 'withdrawn') AND fee_msat > 0",
+            [],
+        )?;
+        tx.execute(
+            "INSERT INTO revenue (at_secs, kind, amount_msat, node, reference) VALUES (?1, 'marker', 0, NULL, 'entry-fee-import')",
+            params![now_secs() as i64],
+        )?;
+        tx.commit()?;
+        Ok(n)
+    }
+
+    /// Whether `payment_hash` is something the ledger explains (an account invoice, a held
+    /// payment, a fee invoice).
+    pub fn knows_payment(&self, payment_hash: [u8; 32]) -> Result<bool> {
+        let c = self.conn();
+        let h = payment_hash.to_vec();
+        for table in ["invoices", "held", "fee_invoices", "entries"] {
+            let found = c
+                .query_row(&format!("SELECT 1 FROM {table} WHERE payment_hash = ?1"), params![h], |_| Ok(()))
+                .optional()?
+                .is_some();
+            if found {
+                return Ok(true);
+            }
+        }
+        Ok(false)
+    }
+
+    /// Every revenue entry at or after `since_secs`, oldest first.
+    pub fn revenue_since(&self, since_secs: u64) -> Result<Vec<RevenueEntry>> {
+        let c = self.conn();
+        let mut st = c.prepare(
+            "SELECT at_secs, kind, amount_msat, node, reference FROM revenue WHERE at_secs >= ?1 AND kind != 'marker' ORDER BY at_secs, seq",
+        )?;
+        let rows = st.query_map(params![since_secs as i64], |r| {
+            Ok(RevenueEntry {
+                at_secs: r.get::<_, i64>(0)? as u64,
+                kind: r.get(1)?,
+                amount_msat: r.get::<_, i64>(2)? as u64,
+                node: r.get(3)?,
+                reference: r.get(4)?,
+            })
+        })?;
+        Ok(rows.collect::<std::result::Result<Vec<_>, _>>()?)
+    }
+
     /// The phone's push token (Firebase Cloud Messaging), to wake it for a held payment.
     pub fn set_push_token(&self, node: &PublicKey, token: &str, now: u64) -> Result<()> {
         let c = self.conn();
@@ -631,6 +791,52 @@ impl Ledger {
     }
 }
 
+/// What the operator earned a fee for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RevenueKind {
+    /// The share of a move between on-chain and Lightning, paid to a fee invoice.
+    TransferFee,
+    /// Opening a channel for a user: the LSPS2 fee skimmed from the payment that opened it,
+    /// or the fee for moving a Fortis balance into a new channel.
+    ChannelFee,
+    /// Moving a Fortis balance on-chain (the LSP pays the network fee out of it).
+    WithdrawalFee,
+    /// Forwarding a payment through the LSP.
+    RoutingFee,
+    /// Paid to the LSP before this ledger existed and not otherwise explained (imported once).
+    Earlier,
+}
+
+impl RevenueKind {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            RevenueKind::TransferFee => "transfer_fee",
+            RevenueKind::ChannelFee => "channel_fee",
+            RevenueKind::WithdrawalFee => "withdrawal_fee",
+            RevenueKind::RoutingFee => "routing_fee",
+            RevenueKind::Earlier => "earlier",
+        }
+    }
+}
+
+/// One revenue entry.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RevenueEntry {
+    pub at_secs: u64,
+    pub kind: String,
+    pub amount_msat: u64,
+    pub node: Option<String>,
+    pub reference: String,
+}
+
+fn insert_revenue(tx: &rusqlite::Transaction<'_>, kind: RevenueKind, amount_msat: u64, node: Option<&str>, reference: &str) -> Result<()> {
+    tx.execute(
+        "INSERT OR IGNORE INTO revenue (at_secs, kind, amount_msat, node, reference) VALUES (?1, ?2, ?3, ?4, ?5)",
+        params![now_secs() as i64, kind.as_str(), as_i64(amount_msat), node, reference],
+    )?;
+    Ok(())
+}
+
 /// A payment the LSP holds for an account's phone (`held.rs`).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Held {
@@ -712,6 +918,42 @@ fn take_hold(c: &Connection, id: &str) -> Result<(String, u64)> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn revenue_is_recorded_once_and_reported_with_totals() {
+        let dir = std::env::temp_dir().join(format!("fortis-rev-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let l = Ledger::open(&dir.join("l.sqlite")).unwrap();
+        let pk = PublicKey::from_secret_key(
+            &ldk_node::bitcoin::secp256k1::Secp256k1::new(),
+            &ldk_node::bitcoin::secp256k1::SecretKey::from_slice(&[7; 32]).unwrap(),
+        );
+        // A transfer fee: known when issued, revenue when paid, once.
+        l.add_fee_invoice([1; 32], &pk, 600_000).unwrap();
+        assert!(l.fee_invoice_paid([1; 32], 600_000).unwrap());
+        assert!(l.fee_invoice_paid([1; 32], 600_000).unwrap(), "replayed: still known");
+        assert!(!l.fee_invoice_paid([2; 32], 5_000).unwrap(), "not a fee invoice");
+        // Routing and channel fees; a replay of the same reference adds nothing.
+        assert!(l.record_revenue(RevenueKind::RoutingFee, 1_234, None, "fwd-1").unwrap());
+        assert!(!l.record_revenue(RevenueKind::RoutingFee, 1_234, None, "fwd-1").unwrap());
+        assert!(!l.record_revenue(RevenueKind::ChannelFee, 0, None, "fwd-1").unwrap(), "zero is not revenue");
+        // Earlier payments are imported once.
+        assert_eq!(l.import_earlier(&[([9; 32], 600_000, 100)]).unwrap(), 1);
+        assert_eq!(l.import_earlier(&[([8; 32], 1, 100)]).unwrap(), 0);
+        assert!(l.knows_payment([1; 32]).unwrap());
+        // Fees taken in account entries before revenue was recorded: imported once.
+        l.credit(&pk, [3; 32], 10_000_000).unwrap();
+        l.hold_withdrawal(&pk, "wd", 4_000_000).unwrap();
+        l.settle_withdrawal("wd", 1_000_000, [4; 32]).unwrap();
+        // (settle already recorded it live; the import must not add it again)
+        assert_eq!(l.import_entry_fees().unwrap(), 0);
+        assert_eq!(l.import_entry_fees().unwrap(), 0);
+        let rows = l.revenue_since(0).unwrap();
+        let kinds: Vec<_> = rows.iter().map(|r| (r.kind.as_str(), r.amount_msat)).collect();
+        assert_eq!(kinds, vec![("earlier", 600_000), ("transfer_fee", 600_000), ("routing_fee", 1_234), ("withdrawal_fee", 1_000_000)]);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     use super::*;
     use ldk_node::bitcoin::secp256k1::{Secp256k1, SecretKey};
 

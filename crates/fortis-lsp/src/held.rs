@@ -224,7 +224,7 @@ pub fn on_delivery_result(accounts: &AccountService, payment_id: PaymentId, succ
         return Ok(());
     }
     if succeeded {
-        accounts.ledger.finish_conversion(&hold, 0)?;
+        accounts.ledger.finish_conversion_by(&hold, 0, Some(payment_id.0))?;
         eprintln!("fortis-lsp: Fortis balance moved into the user's channel ({hold})");
     } else {
         accounts.ledger.abandon_conversion(&hold)?;

@@ -201,6 +201,44 @@ pub fn wake(fcm: Option<&Fcm>, ledger: &Ledger, node: &PublicKey, amount_msat: u
     }
 }
 
+/// A payment landed on `node`'s Fortis balance while its phone was away:
+/// "Lightning payment received: N sat". Only logs without push or a token.
+pub fn received(fcm: Option<&Fcm>, ledger: &Ledger, node: &PublicKey, amount_msat: u64) {
+    let body = format!(
+        "{} sat received. It's on your Fortis balance and moves into your wallet when you open Fortis.",
+        group(amount_msat / 1_000)
+    );
+    let data = json!({ "kind": "ln_received", "amount_msat": amount_msat.to_string() });
+    send_to(fcm, ledger, node, "Lightning payment received", &body, data, "received");
+}
+
+/// Sends one notification to `node`'s phone; `what` names it in the log.
+fn send_to(fcm: Option<&Fcm>, ledger: &Ledger, node: &PublicKey, title: &str, body: &str, data: Value, what: &str) {
+    let Some(fcm) = fcm else {
+        eprintln!("fortis-lsp: {what} notice for {node} not sent (push not configured)");
+        return;
+    };
+    let token = match ledger.push_token(node) {
+        Ok(Some(t)) => t,
+        Ok(None) => {
+            eprintln!("fortis-lsp: {what} notice for {node} not sent (no push token)");
+            return;
+        }
+        Err(e) => {
+            eprintln!("fortis-lsp: push token for {node}: {e}");
+            return;
+        }
+    };
+    match fcm.send(&token, title, body, data) {
+        Ok(()) => eprintln!("fortis-lsp: sent {what} notice to {node}"),
+        Err(SendError::Unregistered) => {
+            eprintln!("fortis-lsp: push token of {node} is no longer valid; dropped");
+            let _ = ledger.drop_push_token(node, &token);
+        }
+        Err(SendError::Other(e)) => eprintln!("fortis-lsp: push to {node}: {e}"),
+    }
+}
+
 /// 21000 → "21,000".
 fn group(n: u64) -> String {
     let s = n.to_string();
