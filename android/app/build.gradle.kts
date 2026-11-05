@@ -35,8 +35,8 @@ android {
         applicationId = "com.fortistechlabs.wallet"
         minSdk = 26
         targetSdk = 37
-        versionCode = 24
-        versionName = "0.6.1"
+        versionCode = 25
+        versionName = "0.6.2"
         ndk { abiFilters += listOf("arm64-v8a", "x86_64") }
     }
 

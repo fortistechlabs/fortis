@@ -231,7 +231,7 @@
     <string name="settings_key_software">Este dispositivo no tiene hardware seguro: la clave de desbloqueo solo está protegida por software.</string>
     <string name="wallet_refreshing">actualizando…</string>
     <string name="wallet_refresh_failed">no se pudo actualizar · se reintentará</string>
-    <string name="receive_qr_hint">mantén pulsado o toca dos veces el QR para copiarlo como imagen</string>
+    <string name="receive_qr_hint">toca el QR para copiarlo como imagen</string>
     <string name="send_fee_from_amount">Descontar las comisiones de este importe</string>
     <string name="send_fee_from_amount_note">El destinatario recibe el importe menos la comisión de red y la de servicio, en vez de sumarse las comisiones encima.</string>
     <string name="history_internal">transferencia interna</string>
@@ -506,12 +506,13 @@
     <string name="error_no_onchain_wallet_for_lightning">Añade un monedero BTC para pasar los fondos de Lightning a on-chain.</string>
     <string name="send_pay_with_lightning_wallet">Pagar con tu monedero Lightning</string>
     <string name="send_create_lightning_wallet">Crea un monedero Lightning para pagar esto</string>
-    <string name="ln_wallet_first_receive_hint">Recibe un pago para abrir tu primer canal.</string>
+    <string name="ln_wallet_first_receive_hint">Aún no tienes canal. Un pago de %1$s sat o más abre tu propio canal (verás la comisión antes de compartir la factura). Los pagos menores los custodia Fortis.</string>
     <string name="ln_send_onchain_target">Es una dirección on-chain; envía desde un monedero BTC.</string>
     <string name="ln_balance_in_channel">En tu canal: %1$s</string>
     <string name="ln_balance_held_by_fortis">Custodiado por Fortis: %1$s</string>
     <string name="ln_balance_updating">Actualizando…</string>
-    <string name="ln_account_explainer">Fortis custodia los importes pequeños hasta que compensen un canal propio (más de 50.000 sat).</string>
+    <string name="ln_account_explainer">Fortis custodia los importes pequeños. Cuando suman más de 50.000 sat, Fortis los pasa a un canal propio.</string>
+    <string name="ln_receive_to_account">Fortis custodiará este pago en tu saldo de Fortis.</string>
     <string name="ln_account_custody_full">Fortis no puede custodiar más saldos pequeños ahora — recibe al menos %1$s sat para abrir tu propio canal.</string>
     <string name="ln_history_converted">Movido a tu canal</string>
     <string name="ln_account_offer_unsupported">Las ofertas aún no se pueden pagar con el saldo de Fortis.</string>

@@ -275,7 +275,7 @@ internal fun LightningReceiveTab(vm: WalletViewModel) {
     // Only a receive that opens a new channel (JIT) has a minimum.
     var viaJit by remember { mutableStateOf(false) }
     var accountError by remember { mutableStateOf<String?>(null) }
-    val custodyFullText = stringResource(R.string.ln_account_custody_full, fmt(minLnSat))
+    val custodyFullText = stringResource(R.string.ln_account_custody_full, fmtSat(minLnSat))
 
     // Keyed on "is it ready", not on the whole state: a balance update must not
     // buy another quote (each one is an LSPS2 request and a stored payment).
@@ -330,7 +330,7 @@ internal fun LightningReceiveTab(vm: WalletViewModel) {
         Text(stringResource(R.string.tab_receive), color = Fx.text, fontWeight = FontWeight.SemiBold)
         val ready = lnState as? LnState.Ready
         if (ready != null && ready.channel == LnChannelState.NONE && ready.balances.lightningSat == 0uL) {
-            Text(stringResource(R.string.ln_wallet_first_receive_hint), style = FxType.meta, color = Fx.textDim)
+            Text(stringResource(R.string.ln_wallet_first_receive_hint, fmtSat(minLnSat)), style = FxType.meta, color = Fx.textDim)
         }
         Text(caps(stringResource(R.string.field_amount)), style = FxType.label)
         Row(
@@ -355,6 +355,9 @@ internal fun LightningReceiveTab(vm: WalletViewModel) {
             requestedSat = amountSat
         }
         accountError?.let { Text(it, style = FxType.meta, color = Fx.warn) }
+        if (invoice != null && viaAccount) {
+            Text(stringResource(R.string.ln_receive_to_account), style = FxType.meta, color = Fx.textDim)
+        }
         if (!lnReady) {
             Text(lightningStatusText(lnState), style = FxType.meta, color = Fx.textDim)
         } else if (rxQr.lightning && rxQr.feeSat != null && rxQr.feeSat > 0L && rxQr.youGetSat != null && amountSat != null) {

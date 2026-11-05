@@ -212,7 +212,7 @@
     <!-- receive -->
     <string name="cd_address_qr">address QR code</string>
     <string name="receive_address_n">address #%1$d · tap to copy</string>
-    <string name="receive_qr_hint">long-press or double-tap the QR to copy it as an image</string>
+    <string name="receive_qr_hint">tap the QR to copy it as an image</string>
     <string name="share_address_chooser">Share address</string>
 
     <!-- send -->
@@ -539,12 +539,13 @@
     <string name="wallet_chain_lightning">Lightning</string>
     <string name="send_pay_with_lightning_wallet">Pay with your Lightning wallet</string>
     <string name="send_create_lightning_wallet">Create a Lightning wallet to pay this</string>
-    <string name="ln_wallet_first_receive_hint">Receive a payment to open your first channel.</string>
+    <string name="ln_wallet_first_receive_hint">No channel yet. A payment of %1$s sat or more opens your own channel (the fee is shown before you share the invoice). Smaller payments are held by Fortis.</string>
     <string name="ln_send_onchain_target">This is an on-chain address — send it from a BTC wallet.</string>
     <string name="ln_balance_in_channel">In your channel: %1$s</string>
     <string name="ln_balance_held_by_fortis">Held by Fortis: %1$s</string>
     <string name="ln_balance_updating">Updating…</string>
-    <string name="ln_account_explainer">Small amounts are held by Fortis until they\'re worth a channel of your own (over 50,000 sat).</string>
+    <string name="ln_account_explainer">Small amounts are held by Fortis. Once they add up to more than 50,000 sat, Fortis moves them into a channel of your own.</string>
+    <string name="ln_receive_to_account">This payment will be held by Fortis on your Fortis balance.</string>
     <string name="ln_account_custody_full">Fortis can\'t hold more small balances right now — receive at least %1$s sat to open your own channel.</string>
     <string name="ln_history_converted">Moved into your channel</string>
     <string name="ln_account_offer_unsupported">Offers can\'t be paid from the Fortis balance yet.</string>

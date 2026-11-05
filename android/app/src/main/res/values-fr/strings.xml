@@ -231,7 +231,7 @@
     <string name="settings_key_software">Cet appareil n’a pas de matériel sécurisé — la clé de déverrouillage n’est protégée que par logiciel.</string>
     <string name="wallet_refreshing">actualisation…</string>
     <string name="wallet_refresh_failed">actualisation impossible · nouvel essai bientôt</string>
-    <string name="receive_qr_hint">appui long ou double appui sur le QR pour le copier en image</string>
+    <string name="receive_qr_hint">touchez le QR pour le copier en image</string>
     <string name="send_fee_from_amount">Déduire les frais de ce montant</string>
     <string name="send_fee_from_amount_note">Le destinataire reçoit le montant moins les frais de réseau et de service, au lieu que les frais s’y ajoutent.</string>
     <string name="history_internal">transfert interne</string>
@@ -506,12 +506,13 @@
     <string name="error_no_onchain_wallet_for_lightning">Ajoutez un portefeuille BTC pour ramener les fonds Lightning en on-chain.</string>
     <string name="send_pay_with_lightning_wallet">Payer avec votre portefeuille Lightning</string>
     <string name="send_create_lightning_wallet">Créez un portefeuille Lightning pour payer ceci</string>
-    <string name="ln_wallet_first_receive_hint">Recevez un paiement pour ouvrir votre premier canal.</string>
+    <string name="ln_wallet_first_receive_hint">Pas encore de canal. Un paiement de %1$s sat ou plus ouvre votre propre canal (les frais s’affichent avant de partager la facture). Les paiements plus petits sont détenus par Fortis.</string>
     <string name="ln_send_onchain_target">C’est une adresse on-chain — envoyez depuis un portefeuille BTC.</string>
     <string name="ln_balance_in_channel">Dans votre canal : %1$s</string>
     <string name="ln_balance_held_by_fortis">Détenu par Fortis : %1$s</string>
     <string name="ln_balance_updating">Mise à jour…</string>
-    <string name="ln_account_explainer">Les petits montants sont détenus par Fortis jusqu’à ce qu’ils justifient votre propre canal (plus de 50 000 sat).</string>
+    <string name="ln_account_explainer">Les petits montants sont détenus par Fortis. Dès qu’ils dépassent 50 000 sat au total, Fortis les transfère dans votre propre canal.</string>
+    <string name="ln_receive_to_account">Ce paiement sera détenu par Fortis sur votre solde Fortis.</string>
     <string name="ln_account_custody_full">Fortis ne peut pas détenir davantage de petits soldes pour le moment — recevez au moins %1$s sat pour ouvrir votre propre canal.</string>
     <string name="ln_history_converted">Déplacé dans votre canal</string>
     <string name="ln_account_offer_unsupported">Les offres ne peuvent pas encore être payées avec le solde Fortis.</string>

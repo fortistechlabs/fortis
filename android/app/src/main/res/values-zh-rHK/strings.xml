@@ -230,7 +230,7 @@
     <string name="settings_key_software">這台裝置沒有安全硬體——解鎖金鑰僅受軟體保護。</string>
     <string name="wallet_refreshing">重新整理中…</string>
     <string name="wallet_refresh_failed">無法重新整理 · 將重試</string>
-    <string name="receive_qr_hint">長按或點兩下 QR 碼，即可將它複製為圖片</string>
+    <string name="receive_qr_hint">點按 QR 碼，即可將它複製為圖片</string>
     <string name="send_fee_from_amount">從這筆金額中扣除費用</string>
     <string name="send_fee_from_amount_note">收款人收到的是扣除網路手續費和服務費後的金額，而不是在金額之外另付費用。</string>
     <string name="history_internal">內部轉帳</string>
@@ -503,12 +503,13 @@
     <string name="error_no_onchain_wallet_for_lightning">請新增一個 BTC 錢包，以便將閃電網絡資金轉回鏈上。</string>
     <string name="send_pay_with_lightning_wallet">用你的閃電網絡錢包付款</string>
     <string name="send_create_lightning_wallet">建立閃電網絡錢包以支付這筆款項</string>
-    <string name="ln_wallet_first_receive_hint">收到一筆付款即可開啟你的第一個通道。</string>
+    <string name="ln_wallet_first_receive_hint">仍未有通道。%1$s sat 或以上的付款會開啟你自己的通道（分享發票前會顯示費用）。較小的付款由 Fortis 代管。</string>
     <string name="ln_send_onchain_target">這是鏈上地址——請從 BTC 錢包傳送。</string>
     <string name="ln_balance_in_channel">在你的通道中：%1$s</string>
     <string name="ln_balance_held_by_fortis">由 Fortis 代管：%1$s</string>
     <string name="ln_balance_updating">正在更新…</string>
-    <string name="ln_account_explainer">小額資金由 Fortis 代管，直至足夠開啟你自己的通道（超過 50,000 sat）。</string>
+    <string name="ln_account_explainer">小額資金由 Fortis 代管。累計超過 50,000 sat 後，Fortis 會把它們轉入你自己的通道。</string>
+    <string name="ln_receive_to_account">這筆付款將由 Fortis 代管在你的 Fortis 餘額中。</string>
     <string name="ln_account_custody_full">Fortis 目前無法代管更多小額餘額 — 請至少接收 %1$s sat 以開啟你自己的通道。</string>
     <string name="ln_history_converted">已轉入你的通道</string>
     <string name="ln_account_offer_unsupported">暫時無法用 Fortis 餘額支付 Offer。</string>

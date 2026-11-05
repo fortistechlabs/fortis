@@ -2,6 +2,21 @@
 
 Fortis Wallet (Android). Versions are `versionName (versionCode)`.
 
+## 0.6.2 (25) — 2026-11-05
+
+- Receive on a Lightning wallet with no channel says how much opens one
+  (currently 11,000 sat; the provider sets it) and that smaller payments are
+  held by Fortis. When the amount you enter will be held by Fortis, the
+  screen says so under the invoice.
+- The Fortis balance explanation is corrected: it moves into a channel of your
+  own once it adds up to more than 50,000 sat (for a fee of 1%, at least
+  1,000 sat). The 0.6.0 notes said it moved as soon as you had a channel;
+  that was wrong.
+- Minimum amounts show in sat ("11,000 sat") instead of as BTC.
+- The hint under a QR code says "tap", now that a tap copies it.
+- The Lightning provider no longer tries to reconnect to phones every second
+  (no update needed).
+
 ## 0.6.1 (24) — 2026-11-05
 
 - Every QR code copies its image when you tap it, including the reusable

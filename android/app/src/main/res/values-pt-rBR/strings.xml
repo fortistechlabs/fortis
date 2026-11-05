@@ -231,7 +231,7 @@
     <string name="settings_key_software">Este dispositivo não tem hardware seguro — a chave de desbloqueio é protegida só por software.</string>
     <string name="wallet_refreshing">atualizando…</string>
     <string name="wallet_refresh_failed">não foi possível atualizar · vamos tentar de novo</string>
-    <string name="receive_qr_hint">toque e segure ou toque duas vezes no QR para copiá-lo como imagem</string>
+    <string name="receive_qr_hint">toque no QR para copiá-lo como imagem</string>
     <string name="send_fee_from_amount">Descontar as taxas deste valor</string>
     <string name="send_fee_from_amount_note">O destinatário recebe o valor menos a taxa de rede e a taxa de serviço, em vez de as taxas serem somadas.</string>
     <string name="history_internal">transferência interna</string>
@@ -506,12 +506,13 @@
     <string name="error_no_onchain_wallet_for_lightning">Adicione uma carteira BTC para mover os fundos do Lightning para on-chain.</string>
     <string name="send_pay_with_lightning_wallet">Pagar com sua carteira Lightning</string>
     <string name="send_create_lightning_wallet">Crie uma carteira Lightning para pagar isto</string>
-    <string name="ln_wallet_first_receive_hint">Receba um pagamento para abrir seu primeiro canal.</string>
+    <string name="ln_wallet_first_receive_hint">Ainda sem canal. Um pagamento de %1$s sat ou mais abre seu próprio canal (a taxa aparece antes de você compartilhar a fatura). Pagamentos menores ficam guardados pela Fortis.</string>
     <string name="ln_send_onchain_target">Este é um endereço on-chain — envie de uma carteira BTC.</string>
     <string name="ln_balance_in_channel">No seu canal: %1$s</string>
     <string name="ln_balance_held_by_fortis">Guardado pela Fortis: %1$s</string>
     <string name="ln_balance_updating">Atualizando…</string>
-    <string name="ln_account_explainer">Valores pequenos ficam guardados pela Fortis até compensarem um canal próprio (mais de 50.000 sat).</string>
+    <string name="ln_account_explainer">Valores pequenos ficam guardados pela Fortis. Quando somarem mais de 50.000 sat, a Fortis os move para um canal próprio.</string>
+    <string name="ln_receive_to_account">Este pagamento ficará guardado pela Fortis no seu saldo Fortis.</string>
     <string name="ln_account_custody_full">A Fortis não pode guardar mais saldos pequenos agora — receba pelo menos %1$s sat para abrir seu próprio canal.</string>
     <string name="ln_history_converted">Movido para o seu canal</string>
     <string name="ln_account_offer_unsupported">Ofertas ainda não podem ser pagas com o saldo da Fortis.</string>
