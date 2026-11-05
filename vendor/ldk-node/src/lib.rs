@@ -409,6 +409,9 @@ impl Node {
 		self.runtime.spawn_cancellable_background_task(async move {
 			let mut interval = tokio::time::interval(PEER_RECONNECTION_INTERVAL);
 			interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+			// FORTIS PATCH: failures in a row and the earliest next attempt, per peer.
+			let mut backoff: std::collections::HashMap<PublicKey, (u32, tokio::time::Instant)> =
+				std::collections::HashMap::new();
 			loop {
 				tokio::select! {
 						_ = stop_connect.changed() => {
@@ -425,11 +428,32 @@ impl Node {
 								.map(|peer| peer.counterparty_node_id)
 								.collect::<Vec<_>>();
 
+							let use_backoff = crate::config::PEER_RECONNECTION_BACKOFF
+								.load(std::sync::atomic::Ordering::Relaxed);
+							backoff.retain(|id, _| !pm_peers.contains(id));
+							let now = tokio::time::Instant::now();
 							for peer_info in connect_peer_store.list_peers().iter().filter(|info| !pm_peers.contains(&info.node_id)) {
-								let _ = connect_cm.do_connect_peer(
+								if use_backoff {
+									if let Some((_, next)) = backoff.get(&peer_info.node_id) {
+										if now < *next {
+											continue;
+										}
+									}
+								}
+								let res = connect_cm.do_connect_peer(
 									peer_info.node_id,
 									peer_info.address.clone(),
 									).await;
+								if use_backoff {
+									if res.is_ok() {
+										backoff.remove(&peer_info.node_id);
+									} else {
+										let e = backoff.entry(peer_info.node_id).or_insert((0, now));
+										e.0 = e.0.saturating_add(1);
+										e.1 = tokio::time::Instant::now()
+											+ crate::config::peer_reconnection_delay(e.0);
+									}
+								}
 							}
 						}
 				}

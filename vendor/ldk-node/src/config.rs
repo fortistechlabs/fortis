@@ -63,6 +63,52 @@ pub(crate) const RESOLVED_CHANNEL_MONITOR_ARCHIVAL_INTERVAL: u32 = 6;
 // LSP, and its payments stalled, for up to a minute.
 pub(crate) const PEER_RECONNECTION_INTERVAL: Duration = Duration::from_secs(1);
 
+// FORTIS PATCH: per-peer back-off for the reconnect loop, switched on by a node
+// that serves others (the LSP). Its persisted peers include phones, which can't
+// be dialled (they sit behind NAT, at a relay address); without back-off the LSP
+// would try each one every second. A phone leaves this off and keeps retrying
+// its LSP every second. With it on: 1 s for the first
+// `PEER_RECONNECTION_FAST_TRIES` attempts, then doubling up to
+// `PEER_RECONNECTION_MAX_BACKOFF`; reset once the peer is connected again.
+pub(crate) static PEER_RECONNECTION_BACKOFF: std::sync::atomic::AtomicBool =
+	std::sync::atomic::AtomicBool::new(false);
+pub(crate) const PEER_RECONNECTION_FAST_TRIES: u32 = 10;
+pub(crate) const PEER_RECONNECTION_MAX_BACKOFF: Duration = Duration::from_secs(300);
+
+/// FORTIS PATCH: back off reconnecting to persisted peers that stay unreachable
+/// (see `PEER_RECONNECTION_BACKOFF`). For a node that serves other nodes.
+pub fn set_peer_reconnection_backoff(on: bool) {
+	PEER_RECONNECTION_BACKOFF.store(on, std::sync::atomic::Ordering::Relaxed);
+}
+
+/// FORTIS PATCH: how long to wait before the next attempt after `failures`
+/// failed attempts in a row.
+pub(crate) fn peer_reconnection_delay(failures: u32) -> Duration {
+	if failures < PEER_RECONNECTION_FAST_TRIES {
+		return PEER_RECONNECTION_INTERVAL;
+	}
+	let doublings = (failures - PEER_RECONNECTION_FAST_TRIES + 1).min(16);
+	PEER_RECONNECTION_INTERVAL
+		.saturating_mul(1u32 << doublings)
+		.min(PEER_RECONNECTION_MAX_BACKOFF)
+}
+
+#[cfg(test)]
+mod fortis_reconnect_tests {
+	use super::*;
+
+	#[test]
+	fn fast_then_doubling_then_capped() {
+		assert_eq!(peer_reconnection_delay(0), Duration::from_secs(1));
+		assert_eq!(peer_reconnection_delay(9), Duration::from_secs(1));
+		assert_eq!(peer_reconnection_delay(10), Duration::from_secs(2));
+		assert_eq!(peer_reconnection_delay(11), Duration::from_secs(4));
+		assert_eq!(peer_reconnection_delay(17), Duration::from_secs(256));
+		assert_eq!(peer_reconnection_delay(18), Duration::from_secs(300));
+		assert_eq!(peer_reconnection_delay(u32::MAX), Duration::from_secs(300));
+	}
+}
+
 // The time in-between RGS sync attempts.
 pub(crate) const RGS_SYNC_INTERVAL: Duration = Duration::from_secs(60 * 60);
 

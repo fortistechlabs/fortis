@@ -216,6 +216,9 @@ fn run() -> Result<(), String> {
         cfg.min_payment_size_msat, cfg.max_payment_size_msat, cfg.channel_min_sat, cfg.channel_max_sat
     );
 
+    // Phones are persisted peers we can't dial (NAT, relay address): retry
+    // them with back-off instead of every second; they reconnect to us.
+    ldk_node::config::set_peer_reconnection_backoff(true);
     let mut b = Builder::new();
     b.set_network(cfg.network);
     b.set_chain_source_bitcoind_rpc(rpc_host, rpc_port, cfg.rpc_user.clone(), rpc_password);
