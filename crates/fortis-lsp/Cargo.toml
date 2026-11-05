@@ -18,3 +18,11 @@ serde_json = { workspace = true }
 toml = "0.5"
 tiny_http = "0.12"
 libc = "0.2"
+# Fortis account ledger (same version ldk-node already bundles).
+rusqlite = { version = "0.31", features = ["bundled"] }
+hex = { workspace = true }
+thiserror = { workspace = true }
+# Push notifications (push.rs): HTTPS to Google, RS256 JWTs. Both already in the lockfile.
+ureq = { version = "2", default-features = false, features = ["json", "tls"] }
+ring = "0.17"
+base64 = "0.22"

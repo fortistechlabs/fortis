@@ -61,6 +61,14 @@ pub struct LspConfig {
     /// Where other nodes reach us (`host:port` or `ip:port`), announced in
     /// the node announcement. Not `listen`: that is a local bind address.
     pub announce_addresses: Vec<SocketAddress>,
+    /// Rapid Gossip Sync snapshot server (e.g.
+    /// `https://rapidsync.lightningdevkit.org/snapshot`): the whole network
+    /// graph in one download, for routing our own payments. Unset: gossip
+    /// from peers, which a new node with few peers learns only slowly.
+    pub rgs_url: Option<String>,
+    /// Firebase service-account key (JSON file) for push notifications that
+    /// wake a phone with a payment held for it. Unset: no push.
+    pub fcm_service_account: Option<std::path::PathBuf>,
     /// Announced channels to routing nodes, opened at most once per run
     /// when missing (see `outbound.rs`).
     pub outbound: Vec<Outbound>,
@@ -70,6 +78,13 @@ pub struct LspConfig {
     /// as 1 sat); hops beyond the LSP charge their own.
     pub forwarding_fee_base_msat: u32,
     pub forwarding_fee_ppm: u32,
+    /// Fortis account: the most one user's account holds before it is moved
+    /// into their own channel (sat).
+    pub account_max_sat: u64,
+    /// Fortis account: the most all accounts together may hold (sat).
+    /// 0 = accounts disabled (the default, until the operator has confirmed
+    /// holding customer funds is allowed for them).
+    pub custody_max_sat: u64,
 }
 
 /// The TOML as written: every key optional (defaults below), no unknown keys.
@@ -95,10 +110,14 @@ struct Raw {
     allow_public_metrics: Option<bool>,
     alias: Option<String>,
     announce_addresses: Option<Vec<String>>,
+    rgs_url: Option<String>,
+    fcm_service_account: Option<String>,
     #[serde(default)]
     outbound: Vec<RawOutbound>,
     forwarding_fee_base_msat: Option<u32>,
     forwarding_fee_ppm: Option<u32>,
+    account_max_sat: Option<u64>,
+    custody_max_sat: Option<u64>,
 }
 
 impl LspConfig {
@@ -152,9 +171,17 @@ impl LspConfig {
             allow_public_metrics: raw.allow_public_metrics.unwrap_or(false),
             alias: raw.alias.map(|a| a.trim().to_string()),
             announce_addresses,
+            rgs_url: raw.rgs_url.map(|u| u.trim().to_string()).filter(|u| !u.is_empty()),
+            fcm_service_account: raw
+                .fcm_service_account
+                .map(|p| p.trim().to_string())
+                .filter(|p| !p.is_empty())
+                .map(std::path::PathBuf::from),
             outbound,
             forwarding_fee_base_msat: raw.forwarding_fee_base_msat.unwrap_or(0),
             forwarding_fee_ppm: raw.forwarding_fee_ppm.unwrap_or(0),
+            account_max_sat: raw.account_max_sat.unwrap_or(50_000),
+            custody_max_sat: raw.custody_max_sat.unwrap_or(0),
         };
         c.validate()?;
         Ok(c)
@@ -422,6 +449,8 @@ impl std::fmt::Debug for LspConfig {
             .field("outbound", &self.outbound)
             .field("forwarding_fee_base_msat", &self.forwarding_fee_base_msat)
             .field("forwarding_fee_ppm", &self.forwarding_fee_ppm)
+            .field("account_max_sat", &self.account_max_sat)
+            .field("custody_max_sat", &self.custody_max_sat)
             .finish()
     }
 }
@@ -549,6 +578,14 @@ mod tests {
     }
 
     const ACINQ: &str = "03864ef025fde8fb587d989186ce6a4a186895ee44a926bfc370e2c366597a3f8f";
+
+    #[test]
+    fn account_limits_default_to_disabled() {
+        let c = with("").unwrap();
+        assert_eq!((c.account_max_sat, c.custody_max_sat), (50_000, 0));
+        let c = with("custody_max_sat = 5000000").unwrap();
+        assert_eq!(c.custody_max_sat, 5_000_000);
+    }
 
     #[test]
     fn forwarding_is_free_by_default_and_bounded() {

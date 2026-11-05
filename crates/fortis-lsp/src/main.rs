@@ -11,7 +11,14 @@
 //! nodes when missing (at most once per run; see `outbound.rs`).
 //! SIGTERM / SIGINT stop the node cleanly (exit 0).
 
+mod account;
+mod account_api;
+mod account_auth;
+mod admin;
 mod config;
+mod conversion;
+mod held;
+mod push;
 mod metrics;
 mod outbound;
 
@@ -123,6 +130,9 @@ fn run() -> Result<(), String> {
         b.set_announcement_addresses(cfg.announce_addresses.clone())
             .map_err(|e| format!("announce_addresses: {e}"))?;
     }
+    if let Some(url) = &cfg.rgs_url {
+        b.set_gossip_source_rgs(url.clone());
+    }
     b.set_liquidity_provider_lsps2(cfg.lsps2_service_config());
     let node = Arc::new(b.build().map_err(|e| format!("build node: {e}"))?);
     check_seed_permissions(&cfg)?;
@@ -167,11 +177,52 @@ fn serve(
 
     let counters = Arc::new(Counters::default());
     let stop = Arc::new(AtomicBool::new(false));
+    // Fortis accounts (spec §7): the ledger is always open so balances
+    // survive custody being switched off; new account invoices need
+    // custody_max_sat > 0.
+    let ledger = Arc::new(
+        account::Ledger::open(&cfg.data_dir.join(account::LEDGER_FILE))
+            .map_err(|e| format!("account ledger: {e}"))?,
+    );
+    let accounts = Arc::new(account_api::AccountService::new(
+        Arc::clone(&ledger),
+        Arc::new(account_api::LdkAccountNode(Arc::clone(node))),
+        cfg.account_max_sat,
+        cfg.custody_max_sat,
+        cfg.payment_bounds().0.div_ceil(1_000),
+    )
+    .with_push(match &cfg.fcm_service_account {
+        None => None,
+        Some(path) => match push::Fcm::load(path) {
+            Ok(f) => {
+                eprintln!("fortis-lsp: push notifications via Firebase project {}", f.project_id());
+                Some(f)
+            }
+            // Not fatal: held payments still work, the phone is just not woken.
+            Err(e) => {
+                eprintln!("fortis-lsp: push disabled: {e}");
+                None
+            }
+        },
+    }));
     let metrics_thread = {
         let (node, counters, stop) = (Arc::clone(node), Arc::clone(&counters), Arc::clone(&stop));
+        let accounts = Some(Arc::clone(&accounts));
+        // Operator commands only on a loopback listener (never with
+        // allow_public_metrics): the token file is the second lock.
+        let admin_token = if cfg.metrics_listen.ip().is_loopback() {
+            Some(
+                admin::load_or_create_token(&cfg.data_dir)
+                    .map_err(|e| format!("admin token: {e}"))?,
+            )
+        } else {
+            None
+        };
         std::thread::Builder::new()
             .name("metrics".into())
-            .spawn(move || metrics::serve(server, node, counters, info, stop))
+            .spawn(move || {
+                metrics::serve(server, node, counters, info, stop, accounts, admin_token)
+            })
             .map_err(|e| format!("spawn metrics: {e}"))?
     };
 
@@ -191,8 +242,16 @@ fn serve(
     let mut next_outbound = Instant::now() + Duration::from_secs(10);
     let mut outbound_state = outbound::State::default();
     let mut outbound_waiting_logged = false;
+    let mut next_conversion = Instant::now() + Duration::from_secs(15);
+    let mut next_held = Instant::now() + held::CHECK;
     while !SHUTDOWN.load(Ordering::SeqCst) {
         while let Some(event) = node.next_event() {
+            // Account bookkeeping first: if it can't be written, the event is
+            // not acknowledged and comes back (credits are idempotent).
+            if let Err(e) = account_event(node, &event, &accounts) {
+                eprintln!("fortis-lsp: account ledger: {e}; event kept for retry");
+                break;
+            }
             handle_event(&event, &counters);
             if matches!(
                 event,
@@ -225,6 +284,15 @@ fn serve(
                 &mut outbound_waiting_logged,
             );
             next_outbound = Instant::now() + OUTBOUND_CHECK;
+        }
+        if Instant::now() >= next_held {
+            held::tick(node, &accounts);
+            held::deliver_balances(node, &accounts);
+            next_held = Instant::now() + held::CHECK;
+        }
+        if Instant::now() >= next_conversion {
+            run_conversions(node, &accounts, cfg, fees);
+            next_conversion = Instant::now() + conversion::CHECK;
         }
         std::thread::sleep(Duration::from_millis(200));
     }
@@ -327,6 +395,193 @@ fn enforce_forwarding_fees(node: &ldk_node::Node, fees: (u32, u32)) -> usize {
     changed
 }
 
+/// Credits, settles and finishes Fortis account operations from an LDK event.
+fn account_event(
+    node: &ldk_node::Node,
+    event: &Event,
+    accounts: &account_api::AccountService,
+) -> Result<(), account::LedgerError> {
+    let ledger = &accounts.ledger;
+    match event {
+        Event::PaymentReceived {
+            payment_id,
+            payment_hash,
+            amount_msat,
+            ..
+        } => {
+            if !accounts.on_payment_received(payment_hash.0, *amount_msat)? {
+                if let Some(id) = payment_id {
+                    accounts.on_offer_payment_received(id.0, payment_hash.0, *amount_msat)?;
+                }
+            }
+        }
+        Event::PaymentClaimable {
+            payment_hash,
+            claimable_amount_msat,
+            claim_deadline,
+            ..
+        } => {
+            held::on_claimable(node, accounts, payment_hash.0, *claimable_amount_msat, *claim_deadline)?;
+        }
+        Event::PaymentSuccessful {
+            payment_id,
+            payment_hash,
+            fee_paid_msat,
+            ..
+        } => {
+            if let Some(id) = payment_id {
+                held::on_forward_result(node, accounts, *id, true)?;
+                held::on_delivery_result(accounts, *id, true)?;
+            }
+            accounts.on_payment_resolved(payment_hash.0, Some(fee_paid_msat.unwrap_or(0)))?;
+            if let Some(id) = payment_id {
+                let hold = format!("conv:pay:{}", hex::encode(id.0));
+                if let Some((_, held)) = ledger.hold_owner(&hold)? {
+                    ledger.finish_conversion(&hold, conversion::conversion_fee_msat(held))?;
+                    eprintln!("fortis-lsp: account conversion {hold} paid");
+                }
+            }
+        }
+        Event::PaymentFailed {
+            payment_id,
+            payment_hash,
+            ..
+        } => {
+            if let Some(id) = payment_id {
+                held::on_forward_result(node, accounts, *id, false)?;
+                held::on_delivery_result(accounts, *id, false)?;
+            }
+            if let Some(h) = payment_hash {
+                accounts.on_payment_resolved(h.0, None)?;
+            }
+            if let Some(id) = payment_id {
+                let hold = format!("conv:pay:{}", hex::encode(id.0));
+                if ledger.hold_owner(&hold)?.is_some() {
+                    ledger.abandon_conversion(&hold)?;
+                    eprintln!("fortis-lsp: account conversion {hold} failed; balance kept");
+                }
+            }
+        }
+        Event::ChannelReady {
+            user_channel_id, ..
+        } => {
+            let hold = format!("conv:chan:{}", user_channel_id.0);
+            if let Some((_, held)) = ledger.hold_owner(&hold)? {
+                ledger.finish_conversion(&hold, conversion::conversion_fee_msat(held))?;
+                eprintln!("fortis-lsp: account conversion {hold} is in the user's channel");
+            }
+        }
+        Event::ChannelClosed {
+            user_channel_id, ..
+        } => {
+            let hold = format!("conv:chan:{}", user_channel_id.0);
+            if ledger.hold_owner(&hold)?.is_some() {
+                ledger.abandon_conversion(&hold)?;
+                eprintln!(
+                    "fortis-lsp: account conversion {hold} closed before ready; balance kept"
+                );
+            }
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
+/// Moves accounts over the cap into their owners' channels (conversion.rs).
+fn run_conversions(
+    node: &ldk_node::Node,
+    accounts: &account_api::AccountService,
+    cfg: &LspConfig,
+    fees: (u32, u32),
+) {
+    let ledger = &accounts.ledger;
+    let over = match ledger.over_cap(accounts.account_max_msat) {
+        Ok(o) => o,
+        Err(e) => return eprintln!("fortis-lsp: account conversions: {e}"),
+    };
+    if over.is_empty() {
+        return;
+    }
+    let busy: HashSet<_> = ledger
+        .conversions()
+        .unwrap_or_default()
+        .into_iter()
+        .map(|(_, n)| n)
+        .collect();
+    let peers = node.list_peers();
+    let channels = node.list_channels();
+    for (pk, acct) in over {
+        let peer = peers.iter().find(|p| p.node_id == pk && p.is_connected);
+        let room = channels
+            .iter()
+            .filter(|c| c.counterparty_node_id == pk && c.is_usable)
+            .map(|c| c.next_outbound_htlc_limit_msat)
+            .max()
+            .unwrap_or(0);
+        let plan = conversion::plan(
+            acct.free_msat(),
+            accounts.account_max_msat,
+            peer.is_some(),
+            room,
+            busy.contains(&pk),
+            cfg.channel_min_sat,
+        );
+        let tmp = format!("conv:pending:{pk}");
+        let started = || ledger.start_conversion(&pk, &tmp);
+        match plan {
+            conversion::Plan::None => {}
+            conversion::Plan::PayOverChannel { amount_msat } => {
+                if let Err(e) = started() {
+                    eprintln!("fortis-lsp: account conversion for {pk}: {e}");
+                    continue;
+                }
+                match node.spontaneous_payment().send(amount_msat, pk, None) {
+                    Ok(id) => {
+                        let _ =
+                            ledger.rename_hold(&tmp, &format!("conv:pay:{}", hex::encode(id.0)));
+                        eprintln!("fortis-lsp: account conversion for {pk}: paying {amount_msat} msat over its channel");
+                    }
+                    Err(e) => {
+                        let _ = ledger.abandon_conversion(&tmp);
+                        eprintln!(
+                            "fortis-lsp: account conversion for {pk}: payment failed to start: {e}"
+                        );
+                    }
+                }
+            }
+            conversion::Plan::OpenChannel {
+                channel_sat,
+                push_msat,
+            } => {
+                let Some(peer) = peer else { continue };
+                if let Err(e) = started() {
+                    eprintln!("fortis-lsp: account conversion for {pk}: {e}");
+                    continue;
+                }
+                let cfg_fees = fee_config(fees, ChannelConfig::default());
+                match node.open_channel(
+                    pk,
+                    peer.address.clone(),
+                    channel_sat,
+                    Some(push_msat),
+                    Some(cfg_fees),
+                ) {
+                    Ok(ucid) => {
+                        let _ = ledger.rename_hold(&tmp, &format!("conv:chan:{}", ucid.0));
+                        eprintln!(
+                            "fortis-lsp: account conversion for {pk}: opening a {channel_sat} sat channel with {push_msat} msat on their side"
+                        );
+                    }
+                    Err(e) => {
+                        let _ = ledger.abandon_conversion(&tmp);
+                        eprintln!("fortis-lsp: account conversion for {pk}: open failed: {e}");
+                    }
+                }
+            }
+        }
+    }
+}
+
 fn handle_event(event: &Event, counters: &Counters) {
     match event {
         Event::PaymentForwarded { .. } => {
@@ -353,6 +608,23 @@ fn handle_event(event: &Event, counters: &Counters) {
             channel_id, reason, ..
         } => {
             eprintln!("fortis-lsp: channel {channel_id} closed: {reason:?}");
+        }
+        Event::PaymentSuccessful {
+            payment_id,
+            fee_paid_msat,
+            ..
+        } => {
+            let id = payment_id.map(|p| hex::encode(p.0)).unwrap_or_default();
+            eprintln!(
+                "fortis-lsp: payment {id} succeeded (fee {} msat)",
+                fee_paid_msat.unwrap_or(0)
+            );
+        }
+        Event::PaymentFailed {
+            payment_id, reason, ..
+        } => {
+            let id = payment_id.map(|p| hex::encode(p.0)).unwrap_or_default();
+            eprintln!("fortis-lsp: payment {id} failed: {reason:?}");
         }
         _ => {}
     }
