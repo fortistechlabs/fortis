@@ -763,20 +763,41 @@ private fun BookRow(e: BookEntry, funds: Funds, refPrice: Long?, onClick: () -> 
  *  marks at 25 / 50 / 75 % that set the amount when tapped. [hint] explains
  *  what "all the way" is. */
 @Composable
-private fun SwapAmount(
+internal fun SwapAmount(
     amount: String,
     onAmount: (String) -> Unit,
     chain: String,
     maxSat: Long?,
     @StringRes hint: Int = R.string.swap_help_slider,
     minSat: Long? = null,
+    /** Non-null: the amount is typed in sat (true) or the coin (false), with a picker to switch. */
+    inSat: Boolean? = null,
+    onUnit: (Boolean) -> Unit = {},
 ) {
-    Field(amount, onAmount, stringResource(R.string.swap_amount, unit(chain)), keyboardType = KeyboardType.Decimal)
+    val sat = inSat == true
+    // The slider and Min / Max write the amount in the unit being typed.
+    val show: (Long) -> String = { v -> if (sat) v.toString() else fmtCoin(v) }
+    if (inSat == null) {
+        Field(amount, onAmount, stringResource(R.string.swap_amount, unit(chain)), keyboardType = KeyboardType.Decimal)
+    } else {
+        Row(horizontalArrangement = Arrangement.spacedBy(Fx.s2), verticalAlignment = Alignment.Top) {
+            Field(
+                amount, onAmount, null,
+                keyboardType = if (sat) KeyboardType.Number else KeyboardType.Decimal,
+                modifier = Modifier.weight(1f),
+            )
+            AmountUnitPicker(sat, unit(chain)) { toSat ->
+                // Keep the same value when switching unit.
+                amountToSat(amount, sat)?.let { v -> onAmount(if (toSat) v.toString() else fmtCoin(v)) }
+                onUnit(toSat)
+            }
+        }
+    }
     if (maxSat != null && maxSat > 0) {
         Column(Modifier.fillMaxWidth().padding(horizontal = Fx.s3)) {
             Slider(
-                value = fractionOf(amountToSat(amount, sat = false), maxSat),
-                onValueChange = { f -> onAmount(fmtCoin(amountAtFraction(f, maxSat))) },
+                value = fractionOf(amountToSat(amount, sat), maxSat),
+                onValueChange = { f -> onAmount(show(amountAtFraction(f, maxSat))) },
                 colors = SliderDefaults.colors(
                     thumbColor = Fx.signal, activeTrackColor = Fx.signal, inactiveTrackColor = Fx.control,
                 ),
@@ -788,13 +809,13 @@ private fun SwapAmount(
                     Text(
                         stringResource(R.string.swap_amount_min), style = FxType.meta, color = Fx.textFaint,
                         modifier = Modifier.align(Alignment.BottomStart)
-                            .clickable { onAmount(fmtCoin(min)) }.padding(vertical = Fx.s1),
+                            .clickable { onAmount(show(min)) }.padding(vertical = Fx.s1),
                     )
                 }
                 Text(
                     stringResource(R.string.swap_amount_max), style = FxType.meta, color = Fx.textFaint,
                     modifier = Modifier.align(Alignment.BottomEnd)
-                        .clickable { onAmount(fmtCoin(maxSat)) }.padding(vertical = Fx.s1),
+                        .clickable { onAmount(show(maxSat)) }.padding(vertical = Fx.s1),
                 )
                 val track = maxWidth - SLIDER_THUMB_INSET * 2
                 SLIDER_MARKS.forEach { f ->
@@ -803,7 +824,7 @@ private fun SwapAmount(
                         Modifier
                             .offset(x = x - 20.dp)
                             .width(40.dp)
-                            .clickable { onAmount(fmtCoin(amountAtFraction(f, maxSat))) },
+                            .clickable { onAmount(show(amountAtFraction(f, maxSat))) },
                         horizontalAlignment = Alignment.CenterHorizontally,
                     ) {
                         Box(Modifier.width(1.dp).height(6.dp).background(Fx.control))

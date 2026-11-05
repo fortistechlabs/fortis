@@ -89,8 +89,6 @@ import com.fortis.wallet.ui.theme.caps
 import com.fortis.wallet.ui.theme.Mono
 import com.fortis.wallet.wallet.EntropyCollector
 import com.fortis.wallet.wallet.entropyProgress
-import com.journeyapps.barcodescanner.ScanContract
-import com.journeyapps.barcodescanner.ScanOptions
 import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -171,6 +169,10 @@ fun OnboardScreen(vm: WalletViewModel) = Screen {
     else BrandMark(stringResource(R.string.onboard_tagline))
     Spacer(Modifier.weight(1f))
     PrimaryButton(stringResource(R.string.onboard_create)) { vm.goCreate() }
+    // One Lightning wallet per app: offered until the app has it.
+    if (canAddLightningWallet(vm.wallets)) {
+        GhostButton(stringResource(R.string.onboard_create_lightning)) { vm.goCreateLightning() }
+    }
     GhostButton(stringResource(R.string.onboard_restore)) { vm.goRestore() }
     GhostButton(stringResource(R.string.onboard_hardware)) { vm.goHwConnect() }
     GhostButton(stringResource(R.string.onboard_watch)) { vm.goWatch() }
@@ -623,10 +625,13 @@ private fun HomeTab(vm: WalletViewModel) = Column(
         vm.wallets.forEach { w ->
             val wUnit = chainUnit(w.chain)
             val lnBal = if (w.isLightning) lightningWalletBalance(vm) else null
-            val bal = if (w.isLightning) lnBal?.totalSat else vm.walletBalances[w.id]
+            val bal = if (w.isLightning) lightningWalletTotalSat(vm) else vm.walletBalances[w.id]
             PressableTile(selected = w.id == vm.selectedId, onClick = { vm.selectWallet(w.id) }) {
                 Column(Modifier.weight(1f)) {
-                    Text(w.display, color = Fx.text, fontWeight = FontWeight.Medium)
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        if (w.isLightning) com.fortis.wallet.ui.LightningBoltIcon()
+                        Text(w.display, color = Fx.text, fontWeight = FontWeight.Medium)
+                    }
                     Text(
                         bal?.let { "${fmt(it)} $wUnit" } ?: stringResource(R.string.home_tap_to_open),
                         style = if (bal != null) FxType.amount else FxType.meta,
@@ -705,7 +710,7 @@ private fun SettingsTab(vm: WalletViewModel) {
             vm.wallets.forEach { w ->
                 val current = w.id == vm.selectedId
                 val wUnit = chainUnit(w.chain)
-                val bal = if (w.isLightning) lightningWalletBalance(vm)?.totalSat else vm.walletBalances[w.id]
+                val bal = if (w.isLightning) lightningWalletTotalSat(vm) else vm.walletBalances[w.id]
                 Column(
                     Modifier.fillMaxWidth().clip(RoundedCornerShape(Fx.rSm))
                         .background(if (current) Fx.panelRaised else Color.Transparent).padding(Fx.s3),
@@ -713,7 +718,10 @@ private fun SettingsTab(vm: WalletViewModel) {
                 ) {
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {
-                            Text(w.display, color = Fx.text, fontWeight = FontWeight.Medium)
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                if (w.isLightning) com.fortis.wallet.ui.LightningBoltIcon()
+                                Text(w.display, color = Fx.text, fontWeight = FontWeight.Medium)
+                            }
                             Text(
                                 bal?.let { "${fmt(it)} $wUnit" }
                                     ?: listOfNotNull(w.network.takeIf { it != "mainnet" }, if (current) stringResource(R.string.home_open) else null)
@@ -839,7 +847,11 @@ private fun SettingsTab(vm: WalletViewModel) {
         val w = vm.wallets.firstOrNull { it.id == id }
         val lnState by vm.lightning.state.collectAsState()
         // Only the Lightning wallet holds Lightning funds; its node runs whichever wallet is open.
-        val lnWarnSat = if (isLightningWallet(w)) deleteWalletLightningWarningSat(lnState) else null
+        // Funds held by Fortis count too: the phrase restores them, but warn all the same.
+        val accountSat = ((vm.accountBalance?.balanceMsat ?: 0uL) / 1_000uL).toLong()
+        val lnWarnSat = if (isLightningWallet(w)) {
+            ((deleteWalletLightningWarningSat(lnState) ?: 0L) + accountSat).takeIf { it > 0L }
+        } else null
         // With the node not running the balance is unknown: warn that funds may be there.
         val lnUnknown = isLightningWallet(w) && com.fortis.wallet.lightning.deleteWalletLightningBalanceUnknown(lnState)
         val baseRemoveBody = stringResource(R.string.dialog_remove_body)
@@ -978,7 +990,14 @@ private fun WalletTab(vm: WalletViewModel) {
             stringResource(if (c.chain == "xbt") R.string.hw_xbt_view_only else R.string.hw_btc_view_only),
             style = FxType.meta, color = Fx.warn,
         )
-        val tabKeys = if (c.watchOnly) listOf("receive", "history") else listOf("receive", "send", "history")
+        val canMove = !c.watchOnly && !c.hardware && c.chain == "btc" &&
+            (c.network == "mainnet" || c.network == "bitcoin") &&
+            com.fortis.wallet.lightning.lightningWalletOf(vm.wallets) != null
+        val tabKeys = when {
+            c.watchOnly -> listOf("receive", "history")
+            canMove -> listOf("receive", "send", "move", "history")
+            else -> listOf("receive", "send", "history")
+        }
         LaunchedEffect(vm.pendingSendText, c.id) {
             if (vm.pendingSendText != null && "send" in tabKeys) {
                 tab = "send"
@@ -988,6 +1007,7 @@ private fun WalletTab(vm: WalletViewModel) {
         val tabLabels = mapOf(
             "receive" to stringResource(R.string.tab_receive),
             "send" to stringResource(R.string.tab_send),
+            "move" to stringResource(R.string.transfer_tab),
             "history" to stringResource(R.string.tab_history),
         )
         TextTabs(tabKeys.map { it to tabLabels.getValue(it) }, tab, { tab = it })
@@ -999,6 +1019,7 @@ private fun WalletTab(vm: WalletViewModel) {
             when (tab) {
                 "receive" -> ReceiveTab(vm)
                 "send" -> key(vm.sentCount) { SendTab(vm) } // a sent payment starts the form over
+                "move" -> key(vm.sentCount) { TransferToLightningTab(vm) }
                 else -> HistoryTab(vm, unit)
             }
         }
@@ -1129,27 +1150,17 @@ private fun SendTab(vm: WalletViewModel) {
         }
     }
 
-    val scanPrompt = stringResource(R.string.scan_prompt)
-    val scan = rememberLauncherForActivityResult(ScanContract()) { r ->
-        r.contents?.let { raw ->
-            to = if (isBtc) (textFromIntent(raw) ?: raw.trim()) else addressFromScan(raw)
-        }
-    }
+    var scanning by remember { mutableStateOf(false) }
+    if (scanning) QrScanDialog(
+        onResult = { raw -> scanning = false; to = if (isBtc) (textFromIntent(raw) ?: raw.trim()) else addressFromScan(raw) },
+        onDismiss = { scanning = false },
+    )
     GlassCard {
         Text(stringResource(R.string.tab_send), color = Fx.text, fontWeight = FontWeight.SemiBold)
         // An address or invoice never contains whitespace; stripping it on input kills the
         // cryptic "base58 error" you otherwise get from a pasted trailing newline.
         Field(to, { new -> to = new.filterNot(Char::isWhitespace) }, stringResource(R.string.field_to_address), mono = true)
-        GhostButton(stringResource(R.string.action_scan_qr)) {
-            scan.launch(
-                ScanOptions().apply {
-                    setDesiredBarcodeFormats(ScanOptions.QR_CODE)
-                    setPrompt(scanPrompt)
-                    setBeepEnabled(false)
-                    setOrientationLocked(false)
-                },
-            )
-        }
+        GhostButton(stringResource(R.string.action_scan_qr)) { scanning = true }
 
         if (lightningTarget) {
             if (lightningWalletOf(vm.wallets) != null) {
@@ -1357,7 +1368,7 @@ internal fun HistoryList(vm: WalletViewModel, rows: List<HistoryRow>, unit: Stri
             }
         }
         Text(
-            stringResource(R.string.history_hint),
+            stringResource(if (rows.all { it.lightning }) R.string.ln_history_hint else R.string.history_hint),
             style = FxType.meta, color = Fx.textFaint, modifier = Modifier.padding(top = Fx.s2),
         )
     }
@@ -1386,7 +1397,11 @@ private fun ConfirmSheet(vm: WalletViewModel, p: PlanPreview, unit: String) {
             verticalArrangement = Arrangement.spacedBy(Fx.s4),
         ) {
             Text(
-                if (p.sweep) stringResource(R.string.confirm_sweep_title) else stringResource(R.string.confirm_payment_title),
+                when {
+                    p.transfer != null -> stringResource(R.string.transfer_to_lightning_title)
+                    p.sweep -> stringResource(R.string.confirm_sweep_title)
+                    else -> stringResource(R.string.confirm_payment_title)
+                },
                 style = MaterialTheme.typography.titleLarge, color = Fx.text,
             )
             val chain = vm.config?.chain ?: "xbt"
@@ -1402,6 +1417,14 @@ private fun ConfirmSheet(vm: WalletViewModel, p: PlanPreview, unit: String) {
                 else "${fmt(sat)} $unit"
             }
 
+            val t = p.transfer
+            if (t != null) {
+                // A move to the user's own Lightning wallet: the fee in one line, what arrives.
+                kv(stringResource(R.string.confirm_you_send), amountLine(total))
+                kv(stringResource(R.string.confirm_transfer_fee), amountLine(t.feeSat))
+                kv(stringResource(R.string.confirm_transfer_arrives), amountLine(t.arrivesSat))
+                Text(stringResource(R.string.transfer_to_lightning_help), style = FxType.meta, color = Fx.textDim)
+            } else {
             // The address on its own lines, in full: it's what the user checks.
             Column(verticalArrangement = Arrangement.spacedBy(Fx.s1)) {
                 Text(stringResource(R.string.confirm_to), style = FxType.body, color = Fx.textDim)
@@ -1414,6 +1437,7 @@ private fun ConfirmSheet(vm: WalletViewModel, p: PlanPreview, unit: String) {
                 stringResource(R.string.confirm_network_fee_value, fmt(p.plan.feeSat.toLong()), unit, p.feerate.toInt()),
             )
             if (svcFee > 0) kv(stringResource(R.string.confirm_service_fee), "${fmt(svcFee)} $unit")
+            }
             p.plan.changeSat?.let { kv(stringResource(R.string.confirm_change), "${fmt(it.toLong())} $unit") }
             if (p.replayProtected) kv(stringResource(R.string.confirm_replay), stringResource(R.string.confirm_replay_value))
             ErrorText(vm.error)

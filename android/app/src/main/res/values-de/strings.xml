@@ -37,6 +37,7 @@
     <string name="onboard_add_title">Wallet hinzufügen</string>
     <string name="onboard_tagline">eine nicht-verwahrende Wallet für Bitcoin XBT und Bitcoin BTC</string>
     <string name="onboard_create">Neue Wallet erstellen</string>
+    <string name="onboard_create_lightning">Lightning-Wallet erstellen</string>
     <string name="onboard_restore">Aus einer Wiederherstellungsphrase wiederherstellen</string>
 
     <string name="gen_title">Zusätzlichen Zufall hinzufügen</string>
@@ -163,6 +164,7 @@
     <string name="history_conf_n">%1$d Best.</string>
     <string name="history_confirmed">bestätigt</string>
     <string name="history_hint">auf eine Transaktion tippen, um sie im Explorer zu öffnen · lange drücken, um die ID zu kopieren</string>
+    <string name="ln_history_hint">Tippe auf eine Zahlung, um ihre Zahlungs-ID zu kopieren</string>
 
     <string name="confirm_sweep_title">Sweep bestätigen</string>
     <string name="confirm_payment_title">Zahlung bestätigen</string>
@@ -506,4 +508,50 @@
     <string name="send_create_lightning_wallet">Erstelle eine Lightning-Wallet, um das zu bezahlen</string>
     <string name="ln_wallet_first_receive_hint">Empfange eine Zahlung, um deinen ersten Kanal zu öffnen.</string>
     <string name="ln_send_onchain_target">Das ist eine On-Chain-Adresse – sende von einer BTC-Wallet.</string>
+    <string name="ln_balance_in_channel">In deinem Kanal: %1$s</string>
+    <string name="ln_balance_held_by_fortis">Von Fortis verwahrt: %1$s</string>
+    <string name="ln_balance_updating">Wird aktualisiert…</string>
+    <string name="ln_account_explainer">Kleine Beträge verwahrt Fortis, bis sie einen eigenen Kanal lohnen (über 50.000 sat).</string>
+    <string name="ln_account_custody_full">Fortis kann gerade keine weiteren kleinen Guthaben verwahren — empfange mindestens %1$s sat, um deinen eigenen Kanal zu öffnen.</string>
+    <string name="ln_history_converted">In deinen Kanal verschoben</string>
+    <string name="ln_account_offer_unsupported">Angebote können noch nicht aus dem Fortis-Guthaben bezahlt werden.</string>
+    <string name="ln_account_history_title">Von Fortis verwahrt</string>
+    <string name="ln_account_received">Empfangen</string>
+    <string name="ln_account_sent">Gesendet</string>
+    <string name="ln_account_internal">Fortis zu Fortis</string>
+    <string name="ln_account_fee">Gebühr %1$s</string>
+    <string name="ln_confirm_from">Von</string>
+    <string name="ln_confirm_from_account">Fortis-Guthaben</string>
+    <string name="transfer_tab">Übertragen</string>
+    <string name="transfer_to_lightning_title">Zu Lightning übertragen</string>
+    <string name="transfer_to_lightning_help">Überträgt Bitcoin aus dieser Wallet in deine Lightning-Wallet. Nach 1 Bestätigung verfügbar.</string>
+    <string name="transfer_to_onchain_title">On-Chain übertragen</string>
+    <string name="transfer_to_onchain_help">Überträgt Bitcoin aus deiner Lightning-Wallet in deine On-Chain-Bitcoin-Wallet.</string>
+    <string name="transfer_help_slider">Ganz rechts: %1$s</string>
+    <string name="transfer_summary">Du überträgst %1$s · Gebühr %2$s · kommt an ≈ %3$s</string>
+    <string name="transfer_summary_onchain">Du überträgst %1$s · Gebühr %2$s · kommt an %3$s</string>
+    <string name="transfer_all_closes">Wenn du alles überträgst, wird dein Lightning-Kanal geschlossen.</string>
+    <string name="transfer_review">Prüfen</string>
+    <string name="transfer_move">Übertragen</string>
+    <string name="transfer_too_small">Zu wenig: Nach Gebühren müssen mindestens 5.000 sat ankommen.</string>
+    <string name="transfer_needs_lightning">Deine Lightning-Wallet läuft noch nicht. Öffne sie einmal und versuche es erneut.</string>
+    <string name="transfer_splice_busy">Dein Kanal schließt noch eine frühere Änderung ab. Versuche es in ein paar Minuten erneut.</string>
+    <string name="transfer_pending">Übertragung zu Lightning: wartet auf 1 Bestätigung</string>
+    <string name="confirm_transfer_fee">Übertragungsgebühr</string>
+    <string name="confirm_transfer_arrives">Kommt bei Lightning an ≈</string>
+    <string name="transfer_nothing_to_move">Noch nichts zu übertragen: Diese Wallet hat keine bestätigten Bitcoin.</string>
+    <string name="transfer_more_than_balance">Mehr, als diese Wallet enthält.</string>
+    <string name="transfer_no_channel_balance">Noch nichts zu übertragen: Nur Geld in deinem eigenen Kanal kann on-chain übertragen werden. Von Fortis verwahrtes Geld noch nicht.</string>
+    <string name="ln_account_withdrawn">On-Chain übertragen</string>
+    <string name="transfer_from_account">Aus dem von Fortis verwahrten Guthaben; Fortis sendet es on-chain.</string>
+    <string name="transfer_nothing_to_move_ln">Noch nichts zu übertragen: Deine Lightning-Wallet ist leer.</string>
+    <string name="ln_receive_waiting">Warte auf Zahlung…</string>
+    <string name="ln_receive_received">Erhalten +%1$s ✓</string>
+    <string name="ln_offer_title">Wiederverwendbare Adresse (BOLT12)</string>
+    <string name="ln_offer_help">Eine Adresse zum Teilen, an die beliebige Beträge immer wieder gezahlt werden können – auch wenn dieses Telefon aus ist. Zahlungen verwahrt Fortis, bis sie einen eigenen Kanal wert sind. Braucht eine Wallet mit BOLT12 (z. B. Phoenix).</string>
+    <string name="ln_offer_show">Meine wiederverwendbare Adresse zeigen</string>
+    <string name="ln_offer_unavailable">Die wiederverwendbare Adresse ist gerade nicht verfügbar. Versuche es später erneut.</string>
+    <string name="ln_push_channel">Lightning-Zahlungen</string>
+    <string name="ln_push_channel_desc">Eine Zahlung wartet darauf, dass du Fortis öffnest</string>
+    <string name="ln_create_invoice">Rechnung erstellen</string>
 </resources>

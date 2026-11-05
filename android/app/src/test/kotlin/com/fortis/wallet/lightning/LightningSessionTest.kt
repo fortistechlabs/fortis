@@ -229,6 +229,31 @@ class LightningSessionTest {
     }
 
     @Test
+    fun a_failed_start_retries_by_itself_after_two_seconds() = runBlocking {
+        val store = InMemoryLightningStore(mapOf(btcMainnetWallet.id to btcMainnetWallet))
+        val attempts = AtomicInteger(0)
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        try {
+            val session = LightningSession(
+                scope = scope,
+                store = store,
+                nodeFactory = {
+                    FakeNode(onStart = { if (attempts.incrementAndGet() == 1) throw LnFfiException.Other("start_in_progress") })
+                },
+                info = LnInfoApi { sampleInfo() },
+            )
+            session.onUnlocked(btcMainnetWallet.id, sampleSeed).join()
+            assertTrue(session.state.value is LnState.Error)
+            val until = System.currentTimeMillis() + 5_000
+            while (session.state.value !is LnState.Ready && System.currentTimeMillis() < until) kotlinx.coroutines.delay(50)
+            assertTrue("expected Ready after the automatic retry, got ${session.state.value}", session.state.value is LnState.Ready)
+            assertEquals(2, attempts.get())
+        } finally {
+            scope.cancel()
+        }
+    }
+
+    @Test
     fun retries_on_connectivity() = runBlocking {
         val store = InMemoryLightningStore(mapOf(btcMainnetWallet.id to btcMainnetWallet))
         val attempts = AtomicInteger(0)

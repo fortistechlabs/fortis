@@ -40,6 +40,7 @@
     <string name="onboard_add_title">Add a wallet</string>
     <string name="onboard_tagline">a non-custodial wallet for Bitcoin XBT and Bitcoin BTC</string>
     <string name="onboard_create">Create a new wallet</string>
+    <string name="onboard_create_lightning">Create a Lightning wallet</string>
     <string name="onboard_restore">Restore from a recovery phrase</string>
     <string name="onboard_watch">Watch an address (no spending key)</string>
 
@@ -242,6 +243,7 @@
     <string name="history_conf_n">%1$d conf</string>
     <string name="history_confirmed">confirmed</string>
     <string name="history_hint">tap a transaction to open it in the explorer · long-press to copy the id</string>
+    <string name="ln_history_hint">tap a payment to copy its payment id</string>
 
     <!-- confirm sheet -->
     <string name="confirm_sweep_title">Confirm sweep</string>
@@ -539,4 +541,50 @@
     <string name="send_create_lightning_wallet">Create a Lightning wallet to pay this</string>
     <string name="ln_wallet_first_receive_hint">Receive a payment to open your first channel.</string>
     <string name="ln_send_onchain_target">This is an on-chain address — send it from a BTC wallet.</string>
+    <string name="ln_balance_in_channel">In your channel: %1$s</string>
+    <string name="ln_balance_held_by_fortis">Held by Fortis: %1$s</string>
+    <string name="ln_balance_updating">Updating…</string>
+    <string name="ln_account_explainer">Small amounts are held by Fortis until they\'re worth a channel of your own (over 50,000 sat).</string>
+    <string name="ln_account_custody_full">Fortis can\'t hold more small balances right now — receive at least %1$s sat to open your own channel.</string>
+    <string name="ln_history_converted">Moved into your channel</string>
+    <string name="ln_account_offer_unsupported">Offers can\'t be paid from the Fortis balance yet.</string>
+    <string name="ln_account_history_title">Held by Fortis</string>
+    <string name="ln_account_received">Received</string>
+    <string name="ln_account_sent">Sent</string>
+    <string name="ln_account_internal">Fortis to Fortis</string>
+    <string name="ln_account_fee">fee %1$s</string>
+    <string name="ln_confirm_from">From</string>
+    <string name="ln_confirm_from_account">Fortis balance</string>
+    <string name="transfer_tab">Move</string>
+    <string name="transfer_to_lightning_title">Move to Lightning</string>
+    <string name="transfer_to_lightning_help">Moves bitcoin from this wallet into your Lightning wallet. Ready to spend after 1 confirmation.</string>
+    <string name="transfer_to_onchain_title">Move to on-chain</string>
+    <string name="transfer_to_onchain_help">Moves bitcoin from your Lightning wallet to your on-chain Bitcoin wallet.</string>
+    <string name="transfer_help_slider">All the way is %1$s</string>
+    <string name="transfer_summary">You move %1$s · fee %2$s · arrives ≈ %3$s</string>
+    <string name="transfer_summary_onchain">You move %1$s · fee %2$s · arrives %3$s</string>
+    <string name="transfer_all_closes">Moving everything closes your Lightning channel.</string>
+    <string name="transfer_review">Review</string>
+    <string name="transfer_move">Move</string>
+    <string name="transfer_too_small">Too small to move: after fees, at least 5,000 sat must arrive.</string>
+    <string name="transfer_needs_lightning">Your Lightning wallet isn\'t running yet. Open it once, then try again.</string>
+    <string name="transfer_splice_busy">Your channel is still settling an earlier change. Try again in a few minutes.</string>
+    <string name="transfer_pending">Moving to Lightning: waiting for 1 confirmation</string>
+    <string name="confirm_transfer_fee">Transfer fee</string>
+    <string name="confirm_transfer_arrives">Arrives in Lightning ≈</string>
+    <string name="transfer_nothing_to_move">Nothing to move yet: this wallet has no confirmed bitcoin.</string>
+    <string name="transfer_more_than_balance">More than this wallet holds.</string>
+    <string name="transfer_no_channel_balance">Nothing to move yet: only money in your own channel can be moved on-chain. Money held by Fortis can’t be moved on-chain yet.</string>
+    <string name="ln_account_withdrawn">Moved on-chain</string>
+    <string name="transfer_from_account">Taken from the balance held by Fortis; Fortis sends it on-chain.</string>
+    <string name="transfer_nothing_to_move_ln">Nothing to move yet: your Lightning wallet is empty.</string>
+    <string name="ln_receive_waiting">Waiting for payment…</string>
+    <string name="ln_receive_received">Received +%1$s ✓</string>
+    <string name="ln_offer_title">Reusable address (BOLT12)</string>
+    <string name="ln_offer_help">One address you can share and be paid any amount to, again and again — even while this phone is off. Payments are held by Fortis until they’re worth a channel of your own. Needs a wallet that supports BOLT12 (e.g. Phoenix).</string>
+    <string name="ln_offer_show">Show my reusable address</string>
+    <string name="ln_offer_unavailable">The reusable address isn’t available right now. Try again later.</string>
+    <string name="ln_push_channel">Lightning payments</string>
+    <string name="ln_push_channel_desc">A payment is waiting for you to open Fortis</string>
+    <string name="ln_create_invoice">Create invoice</string>
 </resources>

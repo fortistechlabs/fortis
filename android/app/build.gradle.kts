@@ -7,6 +7,8 @@ plugins {
     alias(libs.plugins.kotlin.atomicfu)
     alias(libs.plugins.gobley.cargo)
     alias(libs.plugins.gobley.uniffi)
+    // Push notifications (Firebase Cloud Messaging); reads app/google-services.json.
+    alias(libs.plugins.google.services)
 }
 
 // Release signing: put storeFile / storePassword / keyAlias / keyPassword in
@@ -137,6 +139,8 @@ dependencies {
     implementation(libs.okhttp)
     implementation(libs.zxing.android.embedded)
     implementation(libs.work.runtime.ktx)
+    implementation(platform(libs.firebase.bom))
+    implementation(libs.firebase.messaging)
     debugImplementation(libs.compose.ui.tooling)
     testImplementation(libs.junit)
     testImplementation(libs.org.json)

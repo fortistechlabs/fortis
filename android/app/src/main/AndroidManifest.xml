@@ -46,6 +46,15 @@
             </intent-filter>
         </activity>
 
+        <!-- Lightning push: "Incoming Lightning payment" from the LSP (Firebase Cloud Messaging) -->
+        <service
+            android:name=".lightning.FortisMessagingService"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.google.firebase.MESSAGING_EVENT" />
+            </intent-filter>
+        </service>
+
         <!-- steps the active swaps every 20 s while any are running -->
         <service
             android:name=".swap.SwapService"

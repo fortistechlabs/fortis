@@ -203,6 +203,8 @@ fun planSend(
     lnurlResolver: (LnTarget) -> LnurlParams = ::lnResolveLnurl,
     /** What the channels can send now (the outbound HTLC limit, below the balance by the channel reserve); the balance when unknown. */
     sendableMsat: ULong? = null,
+    /** What the Fortis account can spend now (spec §7), on top of the channel. */
+    extraSendableMsat: ULong = 0uL,
 ): SendPlan {
     val trimmed = text.trim()
     if (trimmed.isEmpty()) return SendPlan.Invalid("empty")
@@ -226,7 +228,8 @@ fun planSend(
     }
 
     // What a payment is judged against: what can be sent now, which is less than the balance.
-    val sendableSat = minOf(lightningSat, sendableMsat?.let { displaySatFromMsat(it) } ?: lightningSat)
+    val sendableSat = minOf(lightningSat, sendableMsat?.let { displaySatFromMsat(it) } ?: lightningSat) +
+        (extraSendableMsat / 1_000uL).toLong()
 
     return when (target) {
         is LnTarget.OnChain -> SendPlan.OnChain(

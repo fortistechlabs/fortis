@@ -37,6 +37,7 @@
     <string name="onboard_add_title">添加钱包</string>
     <string name="onboard_tagline">面向 Bitcoin XBT 和 Bitcoin BTC 的非托管钱包</string>
     <string name="onboard_create">创建新钱包</string>
+    <string name="onboard_create_lightning">创建闪电网络钱包</string>
     <string name="onboard_restore">从恢复助记词恢复</string>
 
     <string name="gen_title">增加一些随机性</string>
@@ -163,6 +164,7 @@
     <string name="history_conf_n">%1$d 次确认</string>
     <string name="history_confirmed">已确认</string>
     <string name="history_hint">点按交易可在浏览器中打开 · 长按可复制 id</string>
+    <string name="ln_history_hint">点按一笔付款即可复制其付款 ID</string>
 
     <string name="confirm_sweep_title">确认清扫</string>
     <string name="confirm_payment_title">确认付款</string>
@@ -503,4 +505,50 @@
     <string name="send_create_lightning_wallet">创建闪电网络钱包以支付此款项</string>
     <string name="ln_wallet_first_receive_hint">收到一笔付款即可开启你的第一个通道。</string>
     <string name="ln_send_onchain_target">这是链上地址——请从 BTC 钱包发送。</string>
+    <string name="ln_balance_in_channel">在你的通道中：%1$s</string>
+    <string name="ln_balance_held_by_fortis">由 Fortis 代管：%1$s</string>
+    <string name="ln_balance_updating">正在更新…</string>
+    <string name="ln_account_explainer">小额资金由 Fortis 代管，直到足够开通你自己的通道（超过 50,000 sat）。</string>
+    <string name="ln_account_custody_full">Fortis 目前无法代管更多小额余额 — 请至少接收 %1$s sat 以开通你自己的通道。</string>
+    <string name="ln_history_converted">已转入你的通道</string>
+    <string name="ln_account_offer_unsupported">暂时无法用 Fortis 余额支付 Offer。</string>
+    <string name="ln_account_history_title">由 Fortis 代管</string>
+    <string name="ln_account_received">已收款</string>
+    <string name="ln_account_sent">已付款</string>
+    <string name="ln_account_internal">Fortis 之间</string>
+    <string name="ln_account_fee">手续费 %1$s</string>
+    <string name="ln_confirm_from">付款来源</string>
+    <string name="ln_confirm_from_account">Fortis 余额</string>
+    <string name="transfer_tab">转移</string>
+    <string name="transfer_to_lightning_title">转到闪电网络</string>
+    <string name="transfer_to_lightning_help">将比特币从此钱包转到你的闪电钱包。1 次确认后即可使用。</string>
+    <string name="transfer_to_onchain_title">转到链上</string>
+    <string name="transfer_to_onchain_help">将比特币从你的闪电钱包转到你的链上比特币钱包。</string>
+    <string name="transfer_help_slider">最大：%1$s</string>
+    <string name="transfer_summary">转移 %1$s · 手续费 %2$s · 到账约 %3$s</string>
+    <string name="transfer_summary_onchain">转移 %1$s · 手续费 %2$s · 到账 %3$s</string>
+    <string name="transfer_all_closes">全部转移会关闭你的闪电通道。</string>
+    <string name="transfer_review">检查</string>
+    <string name="transfer_move">转移</string>
+    <string name="transfer_too_small">金额太小：扣除手续费后至少要到账 5,000 聪。</string>
+    <string name="transfer_needs_lightning">你的闪电钱包尚未运行。请先打开一次，然后重试。</string>
+    <string name="transfer_splice_busy">你的通道仍在完成之前的更改。请几分钟后重试。</string>
+    <string name="transfer_pending">正在转到闪电网络：等待 1 次确认</string>
+    <string name="confirm_transfer_fee">转移手续费</string>
+    <string name="confirm_transfer_arrives">闪电钱包到账约</string>
+    <string name="transfer_nothing_to_move">暂无可转移的资金：此钱包没有已确认的比特币。</string>
+    <string name="transfer_more_than_balance">超过此钱包的余额。</string>
+    <string name="transfer_no_channel_balance">暂无可转移的资金：只有你自己通道中的资金可以转到链上。由 Fortis 代管的资金暂不支持。</string>
+    <string name="ln_account_withdrawn">已转到链上</string>
+    <string name="transfer_from_account">从 Fortis 代管的余额中转出，由 Fortis 发送到链上。</string>
+    <string name="transfer_nothing_to_move_ln">暂无可转移的资金：你的闪电钱包是空的。</string>
+    <string name="ln_receive_waiting">等待付款…</string>
+    <string name="ln_receive_received">已收到 +%1$s ✓</string>
+    <string name="ln_offer_title">可重复使用的地址 (BOLT12)</string>
+    <string name="ln_offer_help">一个可以分享、反复接收任意金额的地址，即使手机关机也能收款。在足够开设你自己的通道之前，款项由 Fortis 代管。需要支持 BOLT12 的钱包（例如 Phoenix）。</string>
+    <string name="ln_offer_show">显示我的可重复使用地址</string>
+    <string name="ln_offer_unavailable">可重复使用的地址暂时不可用，请稍后再试。</string>
+    <string name="ln_push_channel">闪电网络付款</string>
+    <string name="ln_push_channel_desc">有一笔付款正等待你打开 Fortis</string>
+    <string name="ln_create_invoice">创建发票</string>
 </resources>

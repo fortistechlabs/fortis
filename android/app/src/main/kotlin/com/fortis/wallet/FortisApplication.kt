@@ -32,6 +32,7 @@ class FortisApplication : Application() {
         super.onCreate()
         CrashReporter.install()
         SwapNotifications.createChannels(this)
+        com.fortis.wallet.lightning.LightningPush.createChannel(this)
         SwapWorker.schedule(this)
     }
 

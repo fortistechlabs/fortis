@@ -118,6 +118,35 @@ data class WalletState(
 data class OwnServerPrefs(val url: String?, val on: Boolean)
 
 class Store(private val ctx: Context) : com.fortis.wallet.lightning.LightningStore {
+    private fun lnTransferAtKey(walletId: String) = longPreferencesKey("ln_transfer_at_$walletId")
+    private fun lnCachedTotalKey(walletId: String) = longPreferencesKey("ln_cached_total_$walletId")
+
+    /** The Lightning wallet's last known total (channel + Fortis account, sat), shown while its node starts. */
+    suspend fun lnCachedTotal(walletId: String): Long? = ctx.dataStore.data.first()[lnCachedTotalKey(walletId)]
+
+    suspend fun setLnCachedTotal(walletId: String, sat: Long?) {
+        ctx.dataStore.edit { p -> if (sat == null) p.remove(lnCachedTotalKey(walletId)) else p[lnCachedTotalKey(walletId)] = sat }
+    }
+    private fun lnTransferRateKey(walletId: String) = longPreferencesKey("ln_transfer_rate_$walletId")
+
+    override suspend fun pendingTransfer(walletId: String): com.fortis.wallet.lightning.PendingTransfer? {
+        val p = ctx.dataStore.data.first()
+        val at = p[lnTransferAtKey(walletId)] ?: return null
+        return com.fortis.wallet.lightning.PendingTransfer(at, p[lnTransferRateKey(walletId)] ?: 2L)
+    }
+
+    override suspend fun setPendingTransfer(walletId: String, t: com.fortis.wallet.lightning.PendingTransfer?) {
+        ctx.dataStore.edit { p ->
+            if (t == null) {
+                p.remove(lnTransferAtKey(walletId))
+                p.remove(lnTransferRateKey(walletId))
+            } else {
+                p[lnTransferAtKey(walletId)] = t.atMs
+                p[lnTransferRateKey(walletId)] = t.feerateSatVb
+            }
+        }
+    }
+
     private object K {
         val wallets = stringPreferencesKey("wallets")
         val selected = stringPreferencesKey("selected")

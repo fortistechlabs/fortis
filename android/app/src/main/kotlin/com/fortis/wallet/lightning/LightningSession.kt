@@ -38,6 +38,10 @@ interface LightningStore {
     suspend fun vssUrl(walletId: String): String = "$HOSTED_EDGE/ln/vss"
     suspend fun vssAuthHeader(walletId: String): String = ""
     fun dataDir(walletId: String): String = "/tmp/fortis-ln/$walletId"
+
+    /** A transfer to Lightning whose deposit was broadcast and is not channel funds yet. Survives a process death. */
+    suspend fun pendingTransfer(walletId: String): PendingTransfer? = null
+    suspend fun setPendingTransfer(walletId: String, t: PendingTransfer?) {}
 }
 
 class InMemoryLightningStore(
@@ -56,6 +60,12 @@ class InMemoryLightningStore(
         wallets[walletId]?.backendToken?.takeIf { it.isNotBlank() }?.let { "Bearer $it" } ?: ""
 
     override fun dataDir(walletId: String): String = "/tmp/fortis-ln-test/$walletId"
+
+    private val transfers = java.util.concurrent.ConcurrentHashMap<String, PendingTransfer>()
+    override suspend fun pendingTransfer(walletId: String): PendingTransfer? = transfers[walletId]
+    override suspend fun setPendingTransfer(walletId: String, t: PendingTransfer?) {
+        if (t == null) transfers.remove(walletId) else transfers[walletId] = t
+    }
 }
 
 interface LnNodeApi {
@@ -89,14 +99,23 @@ interface LnNodeApi {
     fun payments(): List<LnPayment> = emptyList()
 
     /** Sats a move to Lightning must deposit on top of the channel size (the anchor reserve left in transit). */
-    fun anchorReserveSat(): ULong = 25_000uL
+    fun anchorReserveSat(): ULong = 0uL
+    /** The smallest channel the user can fund. */
+    fun userChannelMinSat(): ULong = 5_000uL
 
     /** Msat that can be sent now (the channels' outbound HTLC limit). */
     fun sendableMsat(): ULong = balances().lightningSat * 1_000uL
+    /** The most one incoming payment can be over a channel now. */
+    fun receivableMsat(): ULong = 0uL
+    /** The node key's signature over a Fortis account request body. */
+    fun signAccountRequest(body: String): String = ""
+    fun lnurlInvoice(target: LnTarget, amountMsat: ULong): String = uniffi.wallet_ffi.lnLnurlInvoice(target, amountMsat)
     fun nextEvent(timeoutMs: ULong): LnEventRecord? = null
     fun transitAddress(): String = ""
     fun openChannel(amountSat: ULong) {}
     fun closeChannel() {}
+    fun spliceIn(amountSat: ULong) {}
+    fun spliceOut(amountSat: ULong, toAddress: String) {}
     fun forceCloseChannel() {}
     fun sweepTransit(toAddress: String): String? = null
     fun channelState(): LnChannelState
@@ -128,10 +147,15 @@ class FfiLnNode(private val inner: LnNode) : LnNodeApi {
     override fun payments(): List<LnPayment> = inner.payments()
     override fun anchorReserveSat(): ULong = inner.anchorReserveSat()
     override fun sendableMsat(): ULong = inner.sendableMsat()
+    override fun receivableMsat(): ULong = inner.receivableMsat()
+    override fun signAccountRequest(body: String): String = inner.signAccountRequest(body)
     override fun nextEvent(timeoutMs: ULong): LnEventRecord? = inner.nextEvent(timeoutMs)
     override fun transitAddress(): String = inner.transitAddress()
     override fun openChannel(amountSat: ULong) = inner.openChannel(amountSat)
     override fun closeChannel() = inner.closeChannel()
+    override fun spliceIn(amountSat: ULong) = inner.spliceIn(amountSat)
+    override fun spliceOut(amountSat: ULong, toAddress: String) = inner.spliceOut(amountSat, toAddress)
+    override fun userChannelMinSat(): ULong = inner.userChannelMinSat()
     override fun forceCloseChannel() = inner.forceCloseChannel()
     override fun sweepTransit(toAddress: String): String? = inner.sweepTransit(toAddress)
     override fun channelState(): LnChannelState = inner.channelState()
@@ -141,6 +165,12 @@ class FfiLnNode(private val inner: LnNode) : LnNodeApi {
 /** An event poll that returns sooner than this did not wait for an event. */
 private const val IDLE_POLL_MIN_NANOS = 50_000_000L
 private const val IDLE_POLL_BACKOFF_MS = 250L
+private const val START_RETRY_MS = 2_000L
+
+/** Logcat, where there is one (not in JVM unit tests). */
+private fun logWarn(msg: String, e: Throwable?) {
+    runCatching { android.util.Log.w("FortisLightning", msg, e) }
+}
 
 /** The `reason` of the error `close_channel` gives for a channel that is already being closed. */
 private const val CLOSE_IN_PROGRESS = "close_in_progress"
@@ -181,9 +211,12 @@ class LightningSession(
     private var unlockedSeed: ByteArray? = null
     private var lastKnownBalances: LnBalances = ZERO_LN_BALANCES
     private var eventJob: Job? = null
+    /** Restarts a failed start every [START_RETRY_MS] until it works (or the app locks). */
+    private var retryJob: Job? = null
 
     /** The Lightning wallet was deleted: stops its node, wipes the node's local files and goes Off. */
     fun forget(walletId: String): Job = scope.launch {
+        retryJob?.cancel()
         mutex.withLock {
             if (unlockedWalletId == walletId) {
                 unlockedSeed?.fill(0)
@@ -233,6 +266,7 @@ class LightningSession(
     }
 
     fun onRelocked(): Job = scope.launch {
+        retryJob?.cancel()
         mutex.withLock {
             unlockedSeed?.fill(0)
             unlockedSeed = null
@@ -282,12 +316,68 @@ class LightningSession(
         if (provider == null || bal.onchainTransitSat == 0uL || ch != LnChannelState.NONE) {
             return bal to ch
         }
+        // A deposit on its way to becoming a channel is not an orphan.
+        if (activeTransfer(walletId) != null) return bal to ch
         val addr = runCatching { provider(walletId) }.getOrNull()
         if (addr.isNullOrBlank()) return bal to ch
         val swept = withContext(Dispatchers.IO) { runCatching { node.sweepTransit(addr) }.getOrNull() }
         if (swept != null) runCatching { onSweepBroadcast?.invoke(walletId) }
         return withContext(Dispatchers.IO) {
             runCatching { node.balances() }.getOrDefault(bal) to runCatching { node.channelState() }.getOrDefault(ch)
+        }
+    }
+
+    /** The pending transfer to Lightning, unless it is stale (then it is dropped). */
+    private suspend fun activeTransfer(walletId: String): PendingTransfer? {
+        val t = runCatching { store.pendingTransfer(walletId) }.getOrNull() ?: return null
+        if (System.currentTimeMillis() - t.atMs > PENDING_TRANSFER_MAX_AGE_MS) {
+            runCatching { store.setPendingTransfer(walletId, null) }
+            return null
+        }
+        return t
+    }
+
+    private val _transferPending = kotlinx.coroutines.flow.MutableStateFlow(false)
+    /** A transfer to Lightning is under way (its deposit not yet in the channel). */
+    val transferPending: kotlinx.coroutines.flow.StateFlow<Boolean> = _transferPending
+
+    /** The deposit of a transfer to Lightning was broadcast: once it confirms, the transit
+     *  balance becomes channel funds (an open, or a splice-in). */
+    suspend fun commitTransfer(feerateSatVb: Long) {
+        val id = unlockedWalletId ?: return
+        runCatching { store.setPendingTransfer(id, PendingTransfer(System.currentTimeMillis(), feerateSatVb)) }
+        _transferPending.value = true
+    }
+
+    /** Opens or splices with the confirmed transit balance while a transfer is pending.
+     *  Errors leave the transfer pending, so the next refresh retries. */
+    private suspend fun fundFromTransit(
+        node: LnNodeApi, walletId: String, bal: LnBalances, ch: LnChannelState,
+    ): Pair<LnBalances, LnChannelState> {
+        val t = activeTransfer(walletId)
+        _transferPending.value = t != null
+        if (t == null) return bal to ch
+        val spendable = bal.onchainTransitSat.toLong()
+        val amount = spendable - channelFeeMarginSat(t.feerateSatVb)
+        val done = when (transitAction(spendable, ch, t.feerateSatVb)) {
+            TransitAction.Wait -> false
+            TransitAction.Open -> runCatching { node.openChannel(amount.toULong()) }.isSuccess
+            TransitAction.SpliceIn -> runCatching { node.spliceIn(amount.toULong()) }.isSuccess
+        }
+        if (!done) return bal to ch
+        runCatching { store.setPendingTransfer(walletId, null) }
+        _transferPending.value = false
+        return withContext(Dispatchers.IO) {
+            runCatching { node.balances() }.getOrDefault(bal) to runCatching { node.channelState() }.getOrDefault(ch)
+        }
+    }
+
+    /** Moves [payoutSat] out of the channel to [toAddress] (a splice-out). */
+    suspend fun spliceOut(payoutSat: Long, toAddress: String) = mutex.withLock {
+        val node = currentNode ?: throw LnFfiException.Other("lightning not ready")
+        withContext(Dispatchers.IO) {
+            node.spliceOut(payoutSat.toULong(), toAddress)
+            publish(node, node.balances(), node.channelState())
         }
     }
 
@@ -313,8 +403,13 @@ class LightningSession(
     private suspend fun refreshBalancesLocked() {
         val node = currentNode ?: return
         if (_state.value !is LnState.Ready) return
-        val bal = runCatching { node.balances() }.getOrNull() ?: return
-        val ch = runCatching { node.channelState() }.getOrNull() ?: return
+        var bal = runCatching { node.balances() }.getOrNull() ?: return
+        var ch = runCatching { node.channelState() }.getOrNull() ?: return
+        unlockedWalletId?.let { id ->
+            val (b2, c2) = fundFromTransit(node, id, bal, ch)
+            bal = b2
+            ch = c2
+        }
         if (currentNode === node) publish(node, bal, ch)
     }
 
@@ -413,8 +508,35 @@ class LightningSession(
     }
 
     private suspend fun startLocked(walletId: String, seed: ByteArray, takeover: Boolean) {
+        startOnceLocked(walletId, seed, takeover)
+        scheduleRetryIfFailed(walletId, kotlin.coroutines.coroutineContext[Job])
+    }
+
+    /** After a failed start, tries again in [START_RETRY_MS], for as long as this wallet stays
+     *  unlocked. Not when another device holds Lightning: that waits for the user's choice. */
+    private fun scheduleRetryIfFailed(walletId: String, self: Job?) {
+        val s = _state.value
+        if (s !is LnState.Error || s.error is LnFfiException.ActiveOnAnotherDevice) return
+        logWarn("start failed, retrying in ${START_RETRY_MS}ms: ${s.error}", null)
+        retryJob?.takeIf { it !== self }?.cancel()
+        retryJob = scope.launch {
+            kotlinx.coroutines.delay(START_RETRY_MS)
+            mutex.withLock {
+                if (unlockedWalletId != walletId) return@withLock
+                val seed = unlockedSeed ?: return@withLock
+                val cur = _state.value
+                if (cur is LnState.Error && cur.error !is LnFfiException.ActiveOnAnotherDevice) {
+                    startLocked(walletId, seed, takeover = false)
+                }
+            }
+        }
+    }
+
+    private suspend fun startOnceLocked(walletId: String, seed: ByteArray, takeover: Boolean) {
         stopCurrentNodeLocked()
         _state.value = LnState.Starting
+        val t0 = System.nanoTime()
+        fun lap(what: String) = logWarn("start +${(System.nanoTime() - t0) / 1_000_000}ms $what", null)
 
         val lnInfo = try {
             withContext(Dispatchers.IO) { info.fetch() }
@@ -428,6 +550,7 @@ class LightningSession(
             return
         }
         lastInfo = lnInfo
+        lap("lsp info")
 
         val w = store.walletConfig(walletId)
         val authHeader = ensureAuthHeader?.invoke(walletId)
@@ -468,14 +591,17 @@ class LightningSession(
                 n
             }
             currentNode = node
+            lap("node running")
             var bal = node.balances()
             var ch = node.channelState()
 
-            val (b2, c2) = sweepOrphanTransit(node, walletId, bal, ch)
+            val (b1, c1) = fundFromTransit(node, walletId, bal, ch)
+            val (b2, c2) = sweepOrphanTransit(node, walletId, b1, c1)
             bal = b2
             ch = c2
 
             publish(node, bal, ch)
+            lap("balance shown")
             drainImmediateEvents(node, walletId)
             if (node.blocksOnNextEvent && currentNode === node) {
                 startEventPoller(node, walletId)
@@ -489,10 +615,12 @@ class LightningSession(
             }
             throw e
         } catch (e: LnFfiException) {
+            logWarn("start failed", e)
             createdNode?.let { withContext(Dispatchers.IO) { runCatching { it.close() } } }
             currentNode = null
             _state.value = LnState.Error(e, lastKnownBalances)
         } catch (e: Exception) {
+            logWarn("start failed", e)
             createdNode?.let { withContext(Dispatchers.IO) { runCatching { it.close() } } }
             currentNode = null
             _state.value = LnState.Error(

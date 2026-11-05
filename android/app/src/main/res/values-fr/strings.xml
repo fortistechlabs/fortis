@@ -37,6 +37,7 @@
     <string name="onboard_add_title">Ajouter un portefeuille</string>
     <string name="onboard_tagline">un portefeuille non dépositaire pour Bitcoin XBT et Bitcoin BTC</string>
     <string name="onboard_create">Créer un nouveau portefeuille</string>
+    <string name="onboard_create_lightning">Créer un portefeuille Lightning</string>
     <string name="onboard_restore">Restaurer depuis une phrase de récupération</string>
 
     <string name="gen_title">Ajoutez un peu d\'aléatoire</string>
@@ -163,6 +164,7 @@
     <string name="history_conf_n">%1$d conf.</string>
     <string name="history_confirmed">confirmée</string>
     <string name="history_hint">appuyez sur une transaction pour l\'ouvrir dans l\'explorateur · appui long pour copier l\'id</string>
+    <string name="ln_history_hint">touchez un paiement pour copier son identifiant</string>
 
     <string name="confirm_sweep_title">Confirmer le balayage</string>
     <string name="confirm_payment_title">Confirmer le paiement</string>
@@ -506,4 +508,50 @@
     <string name="send_create_lightning_wallet">Créez un portefeuille Lightning pour payer ceci</string>
     <string name="ln_wallet_first_receive_hint">Recevez un paiement pour ouvrir votre premier canal.</string>
     <string name="ln_send_onchain_target">C’est une adresse on-chain — envoyez depuis un portefeuille BTC.</string>
+    <string name="ln_balance_in_channel">Dans votre canal : %1$s</string>
+    <string name="ln_balance_held_by_fortis">Détenu par Fortis : %1$s</string>
+    <string name="ln_balance_updating">Mise à jour…</string>
+    <string name="ln_account_explainer">Les petits montants sont détenus par Fortis jusqu’à ce qu’ils justifient votre propre canal (plus de 50 000 sat).</string>
+    <string name="ln_account_custody_full">Fortis ne peut pas détenir davantage de petits soldes pour le moment — recevez au moins %1$s sat pour ouvrir votre propre canal.</string>
+    <string name="ln_history_converted">Déplacé dans votre canal</string>
+    <string name="ln_account_offer_unsupported">Les offres ne peuvent pas encore être payées avec le solde Fortis.</string>
+    <string name="ln_account_history_title">Détenu par Fortis</string>
+    <string name="ln_account_received">Reçu</string>
+    <string name="ln_account_sent">Envoyé</string>
+    <string name="ln_account_internal">De Fortis à Fortis</string>
+    <string name="ln_account_fee">frais %1$s</string>
+    <string name="ln_confirm_from">Depuis</string>
+    <string name="ln_confirm_from_account">Solde Fortis</string>
+    <string name="transfer_tab">Transférer</string>
+    <string name="transfer_to_lightning_title">Transférer vers Lightning</string>
+    <string name="transfer_to_lightning_help">Transfère des bitcoins de ce portefeuille vers votre portefeuille Lightning. Disponible après 1 confirmation.</string>
+    <string name="transfer_to_onchain_title">Transférer on-chain</string>
+    <string name="transfer_to_onchain_help">Transfère des bitcoins de votre portefeuille Lightning vers votre portefeuille Bitcoin on-chain.</string>
+    <string name="transfer_help_slider">Tout à droite : %1$s</string>
+    <string name="transfer_summary">Vous transférez %1$s · frais %2$s · arrive ≈ %3$s</string>
+    <string name="transfer_summary_onchain">Vous transférez %1$s · frais %2$s · arrive %3$s</string>
+    <string name="transfer_all_closes">Tout transférer ferme votre canal Lightning.</string>
+    <string name="transfer_review">Vérifier</string>
+    <string name="transfer_move">Transférer</string>
+    <string name="transfer_too_small">Montant trop faible : après les frais, au moins 5 000 sat doivent arriver.</string>
+    <string name="transfer_needs_lightning">Votre portefeuille Lightning n\'est pas encore actif. Ouvrez-le une fois, puis réessayez.</string>
+    <string name="transfer_splice_busy">Votre canal termine encore une modification précédente. Réessayez dans quelques minutes.</string>
+    <string name="transfer_pending">Transfert vers Lightning : en attente d\'une confirmation</string>
+    <string name="confirm_transfer_fee">Frais de transfert</string>
+    <string name="confirm_transfer_arrives">Arrive sur Lightning ≈</string>
+    <string name="transfer_nothing_to_move">Rien à transférer pour l\'instant : ce portefeuille n\'a pas de bitcoins confirmés.</string>
+    <string name="transfer_more_than_balance">Plus que ce que contient ce portefeuille.</string>
+    <string name="transfer_no_channel_balance">Rien à transférer pour l’instant : seul l’argent de votre propre canal peut être transféré on-chain. L’argent détenu par Fortis ne le peut pas encore.</string>
+    <string name="ln_account_withdrawn">Transféré on-chain</string>
+    <string name="transfer_from_account">Pris sur le solde détenu par Fortis ; Fortis l’envoie on-chain.</string>
+    <string name="transfer_nothing_to_move_ln">Rien à transférer pour l’instant : votre portefeuille Lightning est vide.</string>
+    <string name="ln_receive_waiting">En attente du paiement…</string>
+    <string name="ln_receive_received">Reçu +%1$s ✓</string>
+    <string name="ln_offer_title">Adresse réutilisable (BOLT12)</string>
+    <string name="ln_offer_help">Une adresse à partager pour recevoir n’importe quel montant, encore et encore — même téléphone éteint. Fortis détient les paiements jusqu’à ce qu’ils valent un canal à vous. Nécessite un portefeuille compatible BOLT12 (ex. Phoenix).</string>
+    <string name="ln_offer_show">Afficher mon adresse réutilisable</string>
+    <string name="ln_offer_unavailable">L’adresse réutilisable n’est pas disponible pour le moment. Réessayez plus tard.</string>
+    <string name="ln_push_channel">Paiements Lightning</string>
+    <string name="ln_push_channel_desc">Un paiement attend que vous ouvriez Fortis</string>
+    <string name="ln_create_invoice">Créer une facture</string>
 </resources>

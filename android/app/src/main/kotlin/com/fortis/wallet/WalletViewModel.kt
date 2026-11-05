@@ -81,6 +81,8 @@ const val PUBLIC_XBT_ESPLORA = "https://mempool.guide/api"
 data class PlanPreview(
     val plan: FundingPlan, val feerate: ULong, val to: String,
     val sweep: Boolean, val replayProtected: Boolean = false,
+    /** Set for a move to the Lightning wallet (the deposit to its transit address). */
+    val transfer: com.fortis.wallet.lightning.ToLightningQuote? = null,
 )
 
 data class LnPlanPreview(
@@ -90,6 +92,8 @@ data class LnPlanPreview(
     val description: String,
     val expirySecs: ULong?,
     val recipientLabel: String,
+    /** Paid from the Fortis account (spec §7) instead of the channel. */
+    val viaAccount: Boolean = false,
 )
 
 /** The result of setting up the app lock, produced by the UI for the first wallet. */
@@ -369,6 +373,126 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
         },
     )
 
+    // --- the Fortis account (spec §7): small balances the LSP holds for the Lightning wallet ---
+
+    val fortisAccount = com.fortis.wallet.lightning.FortisAccount(
+        com.fortis.wallet.lightning.EdgeAccountTransport(http, HOSTED_EDGE) {
+            val id = lightningWalletOf(wallets)?.id
+            if (id != null) ensureWalletToken(id) else fortis.swapStore.edgeToken(http, HOSTED_EDGE)
+        },
+    )
+    var accountBalance by mutableStateOf<com.fortis.wallet.lightning.AccountBalance?>(null); private set
+
+    /** The Lightning wallet's last known total (sat) by wallet id, shown while its node starts. */
+    var lnCachedTotals by mutableStateOf<Map<String, Long>>(emptyMap()); private set
+
+    /** Loads [walletId]'s cached Lightning total, once. */
+    fun loadLnCachedTotal(walletId: String) {
+        if (lnCachedTotals.containsKey(walletId)) return
+        viewModelScope.launch {
+            store.lnCachedTotal(walletId)?.let { lnCachedTotals = lnCachedTotals + (walletId to it) }
+        }
+    }
+
+    /** Records [walletId]'s live Lightning total for the next start. */
+    fun rememberLnTotal(walletId: String, sat: Long) {
+        if (lnCachedTotals[walletId] == sat) return
+        lnCachedTotals = lnCachedTotals + (walletId to sat)
+        viewModelScope.launch { runCatching { store.setLnCachedTotal(walletId, sat) } }
+    }
+    var accountHistory by mutableStateOf<List<com.fortis.wallet.lightning.AccountEntry>>(emptyList()); private set
+
+    private fun accountSigner(): com.fortis.wallet.lightning.AccountSigner? {
+        val n = lightning.currentNode ?: return null
+        return object : com.fortis.wallet.lightning.AccountSigner {
+            override fun nodeId(): String = n.nodeId()
+            override fun sign(body: String): String = n.signAccountRequest(body)
+        }
+    }
+
+    /** A send from the account is settling: the balance shows "Updating…" until it has. */
+    var accountSending by mutableStateOf(false); private set
+    private var accountSendBase = 0uL
+    private var accountSendUntilMs = 0L
+
+    /** Re-reads the account's balance and history (kept as they were on failure). */
+    suspend fun refreshAccount() {
+        val s = accountSigner() ?: return
+        withContext(Dispatchers.IO) {
+            runCatching { fortisAccount.balance(s) }.onSuccess { b ->
+                accountBalance = b
+                val expired = System.currentTimeMillis() > accountSendUntilMs
+                if (accountSending && (expired || (b.heldMsat == 0uL && b.balanceMsat != accountSendBase))) accountSending = false
+            }
+            runCatching { fortisAccount.history(s) }.onSuccess { accountHistory = it }
+            registerPush(s)
+        }
+    }
+
+    /** Gives the LSP this phone's push token once per token and node (a no-op after that). */
+    private suspend fun registerPush(s: com.fortis.wallet.lightning.AccountSigner) {
+        val ctx = getApplication<Application>()
+        val token = com.fortis.wallet.lightning.LightningPush.token() ?: return
+        val node = s.nodeId()
+        if (com.fortis.wallet.lightning.LightningPush.isRegistered(ctx, node, token)) return
+        runCatching { fortisAccount.pushRegister(s, token) }
+            .onSuccess { com.fortis.wallet.lightning.LightningPush.markRegistered(ctx, node, token) }
+    }
+
+    /** The Lightning wallet's reusable BOLT12 offer, once fetched. */
+    var accountOffer by mutableStateOf<String?>(null); private set
+    var accountOfferError by mutableStateOf<String?>(null); private set
+
+    fun loadAccountOffer() = viewModelScope.launch {
+        accountOfferError = null
+        val s = accountSigner() ?: run { accountOfferError = str(R.string.transfer_needs_lightning); return@launch }
+        try {
+            accountOffer = withContext(Dispatchers.IO) { fortisAccount.offer(s) }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: com.fortis.wallet.lightning.AccountError.CustodyFull) {
+            accountOfferError = str(R.string.ln_offer_unavailable)
+        } catch (e: Exception) {
+            accountOfferError = str(R.string.ln_offer_unavailable)
+        }
+    }
+
+    /** An invoice into the wallet's own channel, issued and held by the LSP so the phone need not
+     *  be running when it is paid (delivered when it next connects). */
+    suspend fun channelInvoice(amountMsat: ULong): uniffi.wallet_ffi.LnReceiveQuote {
+        val s = accountSigner() ?: throw com.fortis.wallet.lightning.AccountError.Network("not started")
+        val inv = withContext(Dispatchers.IO) { fortisAccount.channelInvoice(s, amountMsat, "") }
+        return uniffi.wallet_ffi.LnReceiveQuote(invoice = inv, amountMsat = amountMsat, feeMsat = 0uL, needsChannel = false)
+    }
+
+    /** An invoice paying into the Fortis account, as a quote the receive screen can show. */
+    suspend fun accountInvoice(amountMsat: ULong): uniffi.wallet_ffi.LnReceiveQuote {
+        val s = accountSigner() ?: throw com.fortis.wallet.lightning.AccountError.Network("not started")
+        val inv = withContext(Dispatchers.IO) { fortisAccount.invoice(s, amountMsat, "") }
+        return uniffi.wallet_ffi.LnReceiveQuote(invoice = inv, amountMsat = amountMsat, feeMsat = 0uL, needsChannel = false)
+    }
+
+    /** Pays [p] from the Fortis account: BOLT11 as is, LNURL / Lightning Address via its invoice. */
+    private suspend fun payFromAccount(p: LnPlanPreview): String {
+        val s = accountSigner() ?: throw com.fortis.wallet.lightning.AccountError.Network("not started")
+        val node = lightning.currentNode ?: throw com.fortis.wallet.lightning.AccountError.Network("not started")
+        val (invoice, amount) = when (val t = p.target) {
+            is uniffi.wallet_ffi.LnTarget.Bolt11 -> t.invoice to (if (t.amountMsat == null) p.amountMsat else null)
+            is uniffi.wallet_ffi.LnTarget.Unified -> when (val l = t.lightning) {
+                is uniffi.wallet_ffi.LnUnifiedLightning.Bolt11 -> l.invoice to (if (l.amountMsat == null) p.amountMsat else null)
+                else -> throw Exception(str(R.string.ln_account_offer_unsupported))
+            }
+            is uniffi.wallet_ffi.LnTarget.LnurlPay, is uniffi.wallet_ffi.LnTarget.LightningAddress ->
+                withContext(Dispatchers.IO) { node.lnurlInvoice(t, p.amountMsat) } to null
+            else -> throw Exception(str(R.string.ln_account_offer_unsupported))
+        }
+        val r = withContext(Dispatchers.IO) { fortisAccount.pay(s, invoice, amount) }
+        accountSendBase = accountBalance?.balanceMsat ?: 0uL
+        accountSendUntilMs = System.currentTimeMillis() + 90_000L
+        accountSending = true
+        return r.paymentHash
+    }
+
     var closingLightningChannel by mutableStateOf(false); private set
 
     /** Set when the cooperative close failed because the LSP could not be reached: the
@@ -426,8 +550,9 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
             lightning.onRelocked()
             return
         }
-        val st = lightning.state.value
-        if (lightning.isUnlockedFor(c.id) && (st is LnState.Ready || st is LnState.Starting)) return
+        // No early return on "already running": a start can still be in progress when the app
+        // is locked and unlocked again, and its queued onRelocked would then leave the node Off.
+        // LightningSession.onUnlocked is itself a no-op for the wallet whose node is Ready.
         val gen = lockGeneration
         viewModelScope.launch(Dispatchers.Default) {
             val seed = lightningSeedCopy(c, secret, gen) ?: return@launch
@@ -590,6 +715,8 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
      *  wallet's entry absent. Off the main thread — unsealing runs Argon2id. */
     fun refreshAllBalances() {
         if (appSecret == null || scanningAll) return
+        // The Lightning wallet's balance held by Fortis (shown on Home too).
+        viewModelScope.launch { refreshAccount() }
         scanningAll = true
         viewModelScope.launch(Dispatchers.Default) {
             try {
@@ -1324,7 +1451,18 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
     /** Adding a wallet over existing ones (Back then returns to them). */
     val addingWallet: Boolean get() = wallets.isNotEmpty()
 
-    fun goCreate() { phase = if (draftMnemonic != null) Phase.Create else Phase.Gen }
+    /** "Create a new wallet": the create screen opens on its default chain. */
+    fun goCreate() {
+        onboardChain = null
+        phase = if (draftMnemonic != null) Phase.Create else Phase.Gen
+    }
+
+    /** "Create a Lightning wallet": the create screen opens with Lightning chosen. Only while the app has none. */
+    fun goCreateLightning() {
+        if (!canAddLightningWallet(wallets)) { error = str(R.string.error_lightning_wallet_exists); return }
+        onboardChain = LN_CHAIN
+        phase = if (draftMnemonic != null) Phase.Create else Phase.Gen
+    }
     fun generateSeed(extra: ByteArray, words: Int) = wrap {
         draftMnemonic = newMnemonic(extra, words)
         phase = Phase.Create
@@ -1997,6 +2135,119 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
 
     fun cancelPending() { pending = null }
 
+    /** On-chain → Lightning: plans moving [amountSat] (everything leaving this wallet, fees
+     *  included) from the selected on-chain wallet to the Lightning wallet. The review sheet
+     *  then signs and sends the deposit as any payment. */
+    fun moveToLightning(amountSat: Long) {
+        if (reviewing) return
+        reviewing = true
+        wrap {
+            try {
+                planMoveToLightning(amountSat)
+            } finally {
+                reviewing = false
+            }
+        }
+    }
+
+    private suspend fun planMoveToLightning(amountSat: Long) {
+        val node = lightning.currentNode ?: throw Exception(str(R.string.transfer_needs_lightning))
+        val b = active(); val s = session!!; val c = config!!
+        val feerate = b.feerateSatVb(6).toLong().coerceAtLeast(1)
+        val transit = withContext(Dispatchers.IO) { node.transitAddress() }
+        val spent = spentLocally(c.id)
+        val utxos = b.utxos(1u).filterNot { "${it.txid}:${it.vout}" in spent }
+        require(utxos.isNotEmpty()) { str(R.string.error_no_coins) }
+        s.setIndices(c.nextReceive, c.nextChange)
+        val pricing = status?.pricing
+        val floor = pricing?.floorSat?.toLong() ?: 0L
+        val tooSmall = { Exception(str(R.string.transfer_too_small)) }
+        fun quote(depositFee: Long) = com.fortis.wallet.lightning.quoteToLightning(amountSat, depositFee, feerate, floor)
+            ?.let { q -> if (pricing == null) q.copy(shareSat = 0L, toTransitSat = q.toTransitSat + q.shareSat) else q }
+        fun plan(q: com.fortis.wallet.lightning.ToLightningQuote): FundingPlan {
+            val outs = mutableListOf(uniffi.wallet_ffi.PayTo(transit, q.toTransitSat.toULong()))
+            if (q.shareSat > 0 && pricing != null) outs += uniffi.wallet_ffi.PayTo(pricing.address, q.shareSat.toULong())
+            return s.view.planPayment(utxos, outs, feerate.toULong(), 1u, null, null, false)
+        }
+        // The deposit's own fee depends on the plan: plan, re-quote with it, plan again.
+        var q = quote(150 * feerate) ?: throw tooSmall()
+        val first = plan(q)
+        q = quote(first.feeSat.toLong()) ?: throw tooSmall()
+        val final = plan(q)
+        pending = PlanPreview(final, feerate.toULong(), transit, sweep = false, transfer = q.copy(depositFeeSat = final.feeSat.toLong()))
+    }
+
+    /** Lightning → on-chain is running: the Lightning wallet's Move button shows it. */
+    var movingToOnchain by mutableStateOf(false); private set
+
+    fun quoteMoveToOnchain(amountSat: Long): com.fortis.wallet.lightning.ToOnchainQuote? =
+        com.fortis.wallet.lightning.quoteToOnchain(amountSat, feerates[6] ?: 2L)
+
+    /** Lightning → on-chain: splices [amountSat] (fees included) out of the channel to the
+     *  first on-chain BTC wallet, then pays the operator's share over Lightning. Moving
+     *  everything closes the channel instead. Call after the identity check. */
+    fun moveToOnchain(amountSat: Long, all: Boolean, fromAccount: Boolean = false) = viewModelScope.launch {
+        if (movingToOnchain) return@launch
+        error = null
+        if (!reauth.consume()) { error = str(R.string.reauth_needed); return@launch }
+        val q = quoteMoveToOnchain(amountSat) ?: run { error = str(R.string.transfer_too_small); return@launch }
+        val dest = lightningSweepWallet(wallets) ?: run {
+            error = str(R.string.error_no_onchain_wallet_for_lightning); return@launch
+        }
+        val s = withContext(Dispatchers.Default) { ensureSession(dest.id, quiet = true) }
+            ?: run { error = str(R.string.error_open_wallet); return@launch }
+        movingToOnchain = true
+        try {
+            if (fromAccount) {
+                // The LSP sends it from its wallet; the whole fee stays with it.
+                val signer = accountSigner() ?: throw Exception(str(R.string.transfer_needs_lightning))
+                val addr = s.receiveAddress(dest.nextReceive).address
+                withContext(Dispatchers.IO) {
+                    fortisAccount.withdraw(signer, amountSat.toULong() * 1_000uL, addr, feerates[6] ?: 2L)
+                }
+                updateConfig(dest.id) { it.copy(nextReceive = it.nextReceive + 1) }
+                refreshAccount()
+            } else {
+            // The share first when closing: after the close there is no channel to pay it from.
+            if (all) payTransferShare(q.shareSat)
+            if (all) {
+                closeLightningAndMoveToOnchain().join()
+            } else {
+                val addr = s.receiveAddress(dest.nextReceive).address
+                lightning.spliceOut(q.payoutSat, addr)
+                updateConfig(dest.id) { it.copy(nextReceive = it.nextReceive + 1) }
+                payTransferShare(q.shareSat)
+            }
+            }
+            sentCount++
+            refreshSoon()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            error = when {
+                e is uniffi.wallet_ffi.LnFfiException.Other && e.reason == "splice_failed" -> str(R.string.transfer_splice_busy)
+                e is com.fortis.wallet.lightning.AccountError.Insufficient -> str(R.string.transfer_more_than_balance)
+                e is com.fortis.wallet.lightning.AccountError -> e.message ?: errorText(e)
+                else -> errorText(e)
+            }
+        } finally {
+            movingToOnchain = false
+        }
+    }
+
+    /** Pays the operator's share of a transfer over Lightning; a failure is logged, not shown. */
+    private suspend fun payTransferShare(shareSat: Long) {
+        if (shareSat <= 0L) return
+        val signer = accountSigner() ?: return
+        runCatching {
+            val inv = withContext(Dispatchers.IO) { fortisAccount.feeInvoice(signer, shareSat.toULong() * 1_000uL) }
+            lightning.pay(uniffi.wallet_ffi.lnParse(inv, "bitcoin"), null)
+        }.onFailure {
+            if (it is CancellationException) throw it
+            android.util.Log.w("Fortis", "transfer fee payment failed: ${it.message}")
+        }
+    }
+
     fun cancelPendingLn() { if (!sending) pendingLn = null }
 
     /** Set when a Lightning link arrived (or Send was asked to pay one) and there is no
@@ -2059,6 +2310,9 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
             is uniffi.wallet_ffi.LnTarget.OnChain ->
                 Triple("", null, target.address)
         }
+        val route = com.fortis.wallet.lightning.payRoute(
+            amountMsat, feeMsat, lightning.sendableMsat, accountBalance?.freeMsat ?: 0uL,
+        )
         pendingLn = LnPlanPreview(
             target = target,
             amountMsat = amountMsat,
@@ -2066,6 +2320,7 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
             description = desc,
             expirySecs = expiry,
             recipientLabel = recipient,
+            viaAccount = route == com.fortis.wallet.lightning.PayRoute.Account,
         )
     }
 
@@ -2078,7 +2333,9 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
                 val p = pendingLn ?: return@wrap
                 if (!reauth.consume()) throw Exception(str(R.string.reauth_needed))
                 val id = try {
-                    lightning.pay(p.target, p.amountMsat)
+                    if (p.viaAccount) payFromAccount(p) else lightning.pay(p.target, p.amountMsat)
+                } catch (e: com.fortis.wallet.lightning.AccountError.Insufficient) {
+                    throw Exception(str(R.string.ln_err_insufficient_lightning))
                 } catch (e: com.fortis.wallet.lightning.LnFfiError) {
                     // Outcome unknown: close the confirm sheet so it can't invite a second tap.
                     if (e is uniffi.wallet_ffi.LnFfiException.PaymentStateUnknown) pendingLn = null
@@ -2117,6 +2374,9 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
         pending = null
         lastSentTxid = sent
         sentCount++
+        // A deposit to the Lightning wallet: once it confirms it becomes channel funds.
+        if (p.transfer != null) runCatching { lightning.commitTransfer(p.feerate.toLong()) }
+            .onFailure { if (it is CancellationException) throw it }
         runCatching {
             val idx = s.view.nextIndices()
             updateConfig(c.id) { it.copy(nextChange = maxOf(it.nextChange, idx.nextChange.toInt())) }

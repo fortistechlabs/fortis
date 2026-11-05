@@ -37,6 +37,7 @@
     <string name="onboard_add_title">Añadir un monedero</string>
     <string name="onboard_tagline">un monedero no custodial para Bitcoin XBT y Bitcoin BTC</string>
     <string name="onboard_create">Crear un monedero nuevo</string>
+    <string name="onboard_create_lightning">Crear un monedero Lightning</string>
     <string name="onboard_restore">Restaurar desde una frase de recuperación</string>
 
     <string name="gen_title">Añade algo de aleatoriedad</string>
@@ -163,6 +164,7 @@
     <string name="history_conf_n">%1$d conf.</string>
     <string name="history_confirmed">confirmada</string>
     <string name="history_hint">toca una transacción para abrirla en el explorador · mantén pulsado para copiar el id</string>
+    <string name="ln_history_hint">toca un pago para copiar su ID de pago</string>
 
     <string name="confirm_sweep_title">Confirmar barrido</string>
     <string name="confirm_payment_title">Confirmar pago</string>
@@ -506,4 +508,50 @@
     <string name="send_create_lightning_wallet">Crea un monedero Lightning para pagar esto</string>
     <string name="ln_wallet_first_receive_hint">Recibe un pago para abrir tu primer canal.</string>
     <string name="ln_send_onchain_target">Es una dirección on-chain; envía desde un monedero BTC.</string>
+    <string name="ln_balance_in_channel">En tu canal: %1$s</string>
+    <string name="ln_balance_held_by_fortis">Custodiado por Fortis: %1$s</string>
+    <string name="ln_balance_updating">Actualizando…</string>
+    <string name="ln_account_explainer">Fortis custodia los importes pequeños hasta que compensen un canal propio (más de 50.000 sat).</string>
+    <string name="ln_account_custody_full">Fortis no puede custodiar más saldos pequeños ahora — recibe al menos %1$s sat para abrir tu propio canal.</string>
+    <string name="ln_history_converted">Movido a tu canal</string>
+    <string name="ln_account_offer_unsupported">Las ofertas aún no se pueden pagar con el saldo de Fortis.</string>
+    <string name="ln_account_history_title">Custodiado por Fortis</string>
+    <string name="ln_account_received">Recibido</string>
+    <string name="ln_account_sent">Enviado</string>
+    <string name="ln_account_internal">De Fortis a Fortis</string>
+    <string name="ln_account_fee">comisión %1$s</string>
+    <string name="ln_confirm_from">Desde</string>
+    <string name="ln_confirm_from_account">Saldo de Fortis</string>
+    <string name="transfer_tab">Mover</string>
+    <string name="transfer_to_lightning_title">Mover a Lightning</string>
+    <string name="transfer_to_lightning_help">Mueve bitcoin de esta cartera a tu cartera Lightning. Disponible tras 1 confirmación.</string>
+    <string name="transfer_to_onchain_title">Mover a on-chain</string>
+    <string name="transfer_to_onchain_help">Mueve bitcoin de tu cartera Lightning a tu cartera Bitcoin on-chain.</string>
+    <string name="transfer_help_slider">Al máximo: %1$s</string>
+    <string name="transfer_summary">Mueves %1$s · comisión %2$s · llega ≈ %3$s</string>
+    <string name="transfer_summary_onchain">Mueves %1$s · comisión %2$s · llega %3$s</string>
+    <string name="transfer_all_closes">Mover todo cierra tu canal Lightning.</string>
+    <string name="transfer_review">Revisar</string>
+    <string name="transfer_move">Mover</string>
+    <string name="transfer_too_small">Demasiado poco: tras las comisiones deben llegar al menos 5.000 sat.</string>
+    <string name="transfer_needs_lightning">Tu cartera Lightning aún no está activa. Ábrela una vez y vuelve a intentarlo.</string>
+    <string name="transfer_splice_busy">Tu canal aún está completando un cambio anterior. Inténtalo de nuevo en unos minutos.</string>
+    <string name="transfer_pending">Moviendo a Lightning: esperando 1 confirmación</string>
+    <string name="confirm_transfer_fee">Comisión de transferencia</string>
+    <string name="confirm_transfer_arrives">Llega a Lightning ≈</string>
+    <string name="transfer_nothing_to_move">Aún no hay nada que mover: esta cartera no tiene bitcoin confirmados.</string>
+    <string name="transfer_more_than_balance">Más de lo que tiene esta cartera.</string>
+    <string name="transfer_no_channel_balance">Aún no hay nada que mover: solo el dinero de tu propio canal puede moverse on-chain. El dinero custodiado por Fortis todavía no.</string>
+    <string name="ln_account_withdrawn">Movido a on-chain</string>
+    <string name="transfer_from_account">Del saldo custodiado por Fortis; Fortis lo envía on-chain.</string>
+    <string name="transfer_nothing_to_move_ln">Aún no hay nada que mover: tu cartera Lightning está vacía.</string>
+    <string name="ln_receive_waiting">Esperando el pago…</string>
+    <string name="ln_receive_received">Recibido +%1$s ✓</string>
+    <string name="ln_offer_title">Dirección reutilizable (BOLT12)</string>
+    <string name="ln_offer_help">Una dirección que puedes compartir para recibir cualquier importe una y otra vez, incluso con este teléfono apagado. Fortis custodia los pagos hasta que valgan un canal propio. Requiere una cartera con BOLT12 (p. ej. Phoenix).</string>
+    <string name="ln_offer_show">Mostrar mi dirección reutilizable</string>
+    <string name="ln_offer_unavailable">La dirección reutilizable no está disponible ahora. Inténtalo más tarde.</string>
+    <string name="ln_push_channel">Pagos Lightning</string>
+    <string name="ln_push_channel_desc">Un pago espera a que abras Fortis</string>
+    <string name="ln_create_invoice">Crear factura</string>
 </resources>

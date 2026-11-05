@@ -36,8 +36,6 @@ import com.fortis.wallet.ui.*
 import com.fortis.wallet.ui.theme.Fx
 import com.fortis.wallet.ui.theme.FxType
 import com.fortis.wallet.ui.theme.caps
-import com.journeyapps.barcodescanner.ScanContract
-import com.journeyapps.barcodescanner.ScanOptions
 import uniffi.wallet_ffi.LnChannelState
 import uniffi.wallet_ffi.LnTarget
 import uniffi.wallet_ffi.LnUnifiedLightning
@@ -55,11 +53,32 @@ private const val LN_UNIT = "BTC"
 
 /** How long the receive amount must stand still before a Lightning quote is
  *  bought for it. */
-private const val QUOTE_DEBOUNCE_MS = 1_500L
 
 /** How long the Send field must stand still before an LNURL / Lightning
  *  address in it is looked up (it contacts that address's server). */
 private const val LNURL_DEBOUNCE_MS = 1_000L
+
+/** The Lightning wallet's whole balance: its channel and transit funds plus what Fortis holds
+ *  for it (the account). `null` while the node is not running. */
+@Composable
+internal fun lightningWalletTotalSat(vm: WalletViewModel): Long? {
+    val id = vm.wallets.firstOrNull { it.isLightning }?.id
+    val live = lightningWalletLiveTotalSat(vm)
+    if (id != null) {
+        androidx.compose.runtime.LaunchedEffect(id) { vm.loadLnCachedTotal(id) }
+        androidx.compose.runtime.LaunchedEffect(id, live) { if (live != null) vm.rememberLnTotal(id, live) }
+    }
+    return live ?: id?.let { vm.lnCachedTotals[it] }
+}
+
+/** The live total: only once the node is ready and the Fortis account has answered. */
+@Composable
+private fun lightningWalletLiveTotalSat(vm: WalletViewModel): Long? {
+    val lnState by vm.lightning.state.collectAsState()
+    if (lnState !is LnState.Ready) return null
+    val acct = vm.accountBalance ?: return null
+    return lightningWalletBalance(vm)?.let { it.totalSat + (acct.balanceMsat / 1_000uL).toLong() }
+}
 
 /** The Lightning wallet's balance (Lightning plus funds moving on-chain), or null while
  *  the node has not reported one yet. */
@@ -87,6 +106,40 @@ fun LightningWalletTab(vm: WalletViewModel) {
     var tab by remember { mutableStateOf("receive") }
     val lnState by vm.lightning.state.collectAsState()
     val hb = lightningWalletBalance(vm)
+    val accountSat = ((vm.accountBalance?.balanceMsat ?: 0uL) / 1_000uL).toLong()
+    val lnReadyNow = lnState is LnState.Ready
+    // A bolt strikes whenever the wallet's Lightning total (channel + Fortis account) changes:
+    // up for a payment in, down for one out. Only once both parts are known, so loading
+    // the account is not mistaken for a payment.
+    var burst by remember { mutableStateOf<com.fortis.wallet.ui.LightningBurstEvent?>(null) }
+    val lnTotal = if (lnReadyNow && hb != null && vm.accountBalance != null) hb.totalSat + accountSat else null
+    // The cached total until the node and the account answer, then the live one.
+    val cachedOrLive = lightningWalletTotalSat(vm)
+    val shownSat = lnTotal ?: cachedOrLive
+    var lastLnTotal by remember(c.id) { mutableStateOf<Long?>(null) }
+    LaunchedEffect(lnTotal) {
+        val t = lnTotal ?: return@LaunchedEffect
+        val prev = lastLnTotal
+        lastLnTotal = t
+        if (prev != null && t != prev) burst = com.fortis.wallet.ui.LightningBurstEvent(System.nanoTime(), t - prev)
+    }
+    burst?.let { ev ->
+        androidx.compose.ui.window.Popup(alignment = Alignment.Center) {
+            com.fortis.wallet.ui.LightningBurst(ev, onDone = { if (burst?.id == ev.id) burst = null })
+        }
+    }
+    // Push notifications wake the user for payments held while the phone is off: ask once.
+    val pushCtx = androidx.compose.ui.platform.LocalContext.current
+    LaunchedEffect(Unit) {
+        (pushCtx as? android.app.Activity)?.let { com.fortis.wallet.swap.SwapNotifications.requestNotificationPermission(it) }
+    }
+    // The Fortis account's balance and history (spec §7), while this tab shows.
+    LaunchedEffect(c.id, lnReadyNow, vm.sentCount) {
+        while (lnReadyNow) {
+            vm.refreshAccount()
+            kotlinx.coroutines.delay(2_000)
+        }
+    }
 
     Column(
         Modifier.fillMaxSize().padding(top = Fx.s2),
@@ -101,16 +154,34 @@ fun LightningWalletTab(vm: WalletViewModel) {
                 }
                 Column {
                     FlowRow {
-                        val (whole, fraction) = splitAmount(if (hb != null) fmt(countUpSat(hb.totalSat)) else "—")
+                        val (whole, fraction) = splitAmount(if (shownSat != null) fmt(countUpSat(shownSat)) else "—")
                         Text(whole, style = FxType.balance, modifier = Modifier.alignByBaseline())
                         if (fraction.isNotEmpty()) Text(fraction, style = FxType.balance, modifier = Modifier.alignByBaseline())
                         Text(LN_UNIT, style = FxType.label, color = Fx.signal, modifier = Modifier.alignByBaseline().padding(start = 6.dp))
                     }
-                    hb?.let { bal ->
-                        vm.fiatText(bal.totalSat, LN_CHAIN)?.let {
+                    if (vm.accountSending || lnTotal == null) Row(verticalAlignment = Alignment.CenterVertically) {
+                        CircularProgressIndicator(Modifier.size(12.dp), color = Fx.signal, strokeWidth = 2.dp)
+                        Text(
+                            stringResource(R.string.ln_balance_updating),
+                            style = FxType.fiatSmall, color = Fx.textDim,
+                            modifier = Modifier.padding(start = 6.dp),
+                        )
+                    }
+                    shownSat?.let { sat ->
+                        vm.fiatText(sat, LN_CHAIN)?.let {
                             Text(stringResource(R.string.fiat_approx, it), style = FxType.fiat)
                         }
                     }
+                    // Two places the money can be: the user's own channel, and the Fortis account.
+                    if (accountSat > 0L && hb != null) {
+                        Text(stringResource(R.string.ln_balance_in_channel, fmt(hb.totalSat)), style = FxType.fiatSmall)
+                        Text(stringResource(R.string.ln_balance_held_by_fortis, fmt(accountSat)), style = FxType.fiatSmall)
+                        Text(stringResource(R.string.ln_account_explainer), style = FxType.meta, color = Fx.textFaint)
+                    }
+                    if (vm.lightning.transferPending.collectAsState().value) Text(
+                        stringResource(R.string.transfer_pending),
+                        style = FxType.fiatSmall, color = Fx.warn,
+                    )
                     // Part of it is still on-chain: a channel opening or closing.
                     if (hb?.moving == true) Text(
                         stringResource(R.string.wallet_split_moving),
@@ -128,13 +199,15 @@ fun LightningWalletTab(vm: WalletViewModel) {
                 }
             }
         }
-        val tabKeys = listOf("receive", "send", "history")
+        val tabKeys = if (com.fortis.wallet.lightning.lightningSweepWallet(vm.wallets) != null)
+            listOf("receive", "send", "move", "history") else listOf("receive", "send", "history")
         LaunchedEffect(vm.pendingSendText, c.id) {
             if (vm.pendingSendText != null) tab = "send"
         }
         val tabLabels = mapOf(
             "receive" to stringResource(R.string.tab_receive),
             "send" to stringResource(R.string.tab_send),
+            "move" to stringResource(R.string.transfer_tab),
             "history" to stringResource(R.string.tab_history),
         )
         TextTabs(tabKeys.map { it to tabLabels.getValue(it) }, tab, { tab = it })
@@ -144,8 +217,12 @@ fun LightningWalletTab(vm: WalletViewModel) {
             verticalArrangement = Arrangement.spacedBy(Fx.s4),
         ) {
             when (tab) {
-                "receive" -> LightningReceiveTab(vm)
+                "receive" -> {
+                    LightningReceiveTab(vm)
+                    ReusableOfferCard(vm)
+                }
                 "send" -> key(vm.sentCount) { LightningSendTab(vm) } // a sent payment starts the form over
+                "move" -> key(vm.sentCount) { TransferToOnchainTab(vm) }
                 else -> LightningHistory(vm)
             }
         }
@@ -166,28 +243,64 @@ internal fun LightningReceiveTab(vm: WalletViewModel) {
     var amount by remember { mutableStateOf("") }
     var amountInSat by remember { mutableStateOf(true) }
     val amountSat = amountToSat(amount, amountInSat)
+    // The amount the user asked an invoice for (the button); a new amount clears it.
+    var requestedSat by remember { mutableStateOf<Long?>(null) }
+    if (requestedSat != null && requestedSat != amountSat) requestedSat = null
     var quote by remember { mutableStateOf<uniffi.wallet_ffi.LnReceiveQuote?>(null) }
     var quoting by remember { mutableStateOf(false) }
+    // Where this amount is received: own channel, a new (JIT) channel, or the Fortis account.
+    var viaAccount by remember { mutableStateOf(false) }
+    // Only a receive that opens a new channel (JIT) has a minimum.
+    var viaJit by remember { mutableStateOf(false) }
+    var accountError by remember { mutableStateOf<String?>(null) }
+    val custodyFullText = stringResource(R.string.ln_account_custody_full, fmt(minLnSat))
 
     // Keyed on "is it ready", not on the whole state: a balance update must not
     // buy another quote (each one is an LSPS2 request and a stored payment).
     val lnReady = lnState is LnState.Ready
-    LaunchedEffect(amountSat, lnReady, remoteEnabled) {
+    LaunchedEffect(requestedSat, lnReady, remoteEnabled) {
         quote = null
         quoting = false
-        if (amountSat != null && amountSat >= minLnSat && lnReady) {
+        accountError = null
+        val req = requestedSat
+        if (req != null && req > 0L && lnReady) {
             quoting = true
-            kotlinx.coroutines.delay(QUOTE_DEBOUNCE_MS)
-            quote = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-                runCatching { vm.lightning.currentNode?.receive(amountSat.toULong() * 1_000uL, "") }
-                    .getOrNull()
-                    ?.takeIf { remoteEnabled || !it.needsChannel }
+            val amountMsat = req.toULong() * 1_000uL
+            val node = vm.lightning.currentNode
+            val room = node?.let { n -> kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { n.receivableMsat() } } ?: 0uL
+            val route = com.fortis.wallet.lightning.receiveRoute(amountMsat, room, minLnSat.toULong() * 1_000uL)
+            viaAccount = route == com.fortis.wallet.lightning.ReceiveRoute.Account
+            viaJit = route == com.fortis.wallet.lightning.ReceiveRoute.JitChannel
+            quote = if (viaAccount) {
+                try {
+                    vm.accountInvoice(amountMsat)
+                } catch (e: com.fortis.wallet.lightning.AccountError.CustodyFull) {
+                    accountError = custodyFullText
+                    null
+                } catch (e: Exception) {
+                    accountError = e.message
+                    null
+                }
+            } else if (route == com.fortis.wallet.lightning.ReceiveRoute.OwnInvoice) {
+                // Held by the LSP until this phone takes it: it need not be open when paid.
+                runCatching { vm.channelInvoice(amountMsat) }.getOrElse { e ->
+                    accountError = e.message
+                    null
+                }
+            } else {
+                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                    runCatching { node?.receive(amountMsat, "") }
+                        .getOrNull()
+                        ?.takeIf { remoteEnabled || !it.needsChannel }
+                }
             }
             quoting = false
         }
     }
 
-    val rxQr = remember(amountSat, quote, minLnSat) { buildLightningReceiveQr(amountSat, quote, minLnSat) }
+    // An account invoice has no minimum.
+    val rxMin = if (viaJit) minLnSat else 1L
+    val rxQr = remember(amountSat, quote, rxMin) { buildLightningReceiveQr(amountSat, quote, rxMin) }
     val invoice = quote?.invoice?.takeIf { rxQr.lightning }
 
     val chooserTitle = stringResource(R.string.share_address_chooser)
@@ -209,10 +322,19 @@ internal fun LightningReceiveTab(vm: WalletViewModel) {
             )
             AmountUnitPicker(amountInSat, LN_UNIT) { amountInSat = it }
         }
+        val focus = androidx.compose.ui.platform.LocalFocusManager.current
+        if (invoice == null) PrimaryButton(
+            stringResource(R.string.ln_create_invoice),
+            modifier = Modifier.fillMaxWidth(),
+            enabled = lnReady && amountSat != null && amountSat > 0L,
+            working = quoting,
+        ) {
+            focus.clearFocus()
+            requestedSat = amountSat
+        }
+        accountError?.let { Text(it, style = FxType.meta, color = Fx.warn) }
         if (!lnReady) {
             Text(lightningStatusText(lnState), style = FxType.meta, color = Fx.textDim)
-        } else if (quoting) {
-            Text(stringResource(R.string.receive_ln_quoting), style = FxType.meta, color = Fx.textDim)
         } else if (rxQr.lightning && rxQr.feeSat != null && rxQr.feeSat > 0L && rxQr.youGetSat != null && amountSat != null) {
             Text(
                 stringResource(
@@ -242,6 +364,25 @@ internal fun LightningReceiveTab(vm: WalletViewModel) {
             }
         }
         if (invoice != null) {
+            // What the wallet holds (channel + Fortis account) when this invoice was shown:
+            // more than that means it was paid.
+            val heldNow = (ready?.balances?.lightningSat?.toLong() ?: 0L) +
+                ((vm.accountBalance?.balanceMsat ?: 0uL) / 1_000uL).toLong()
+            val heldAtInvoice = remember(invoice) { heldNow }
+            val gained = heldNow - heldAtInvoice
+
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                if (gained > 0L) {
+                    Text(stringResource(R.string.ln_receive_received, fmtSat(gained)), style = FxType.body, color = Fx.good)
+                } else {
+                    CircularProgressIndicator(Modifier.size(14.dp), color = Fx.signal, strokeWidth = 2.dp)
+                    Text(
+                        stringResource(R.string.ln_receive_waiting),
+                        style = FxType.meta, color = Fx.textDim,
+                        modifier = Modifier.padding(start = 8.dp),
+                    )
+                }
+            }
             val qr = remember(rxQr.uri) { qrBitmap(rxQr.uri) }
             val copyQr = { copyImageToClipboard(ctx, qr) }
             Image(
@@ -378,27 +519,20 @@ internal fun LightningSendTab(vm: WalletViewModel) {
                     resolvedLnurl ?: throw IllegalStateException(lnurlError ?: "Resolving LNURL…")
                 },
                 sendableMsat = vm.lightning.sendableMsat,
+                extraSendableMsat = vm.accountBalance?.freeMsat ?: 0uL,
             )
         }
     }
 
-    val scanPrompt = stringResource(R.string.scan_prompt)
-    val scan = rememberLauncherForActivityResult(ScanContract()) { r ->
-        r.contents?.let { raw -> to = textFromIntent(raw) ?: raw.trim() }
-    }
+    var scanning by remember { mutableStateOf(false) }
+    if (scanning) QrScanDialog(
+        onResult = { raw -> scanning = false; to = textFromIntent(raw) ?: raw.trim() },
+        onDismiss = { scanning = false },
+    )
     GlassCard {
         Text(stringResource(R.string.tab_send), color = Fx.text, fontWeight = FontWeight.SemiBold)
         Field(to, { new -> to = new.filterNot(Char::isWhitespace) }, stringResource(R.string.field_to_address), mono = true)
-        GhostButton(stringResource(R.string.action_scan_qr)) {
-            scan.launch(
-                ScanOptions().apply {
-                    setDesiredBarcodeFormats(ScanOptions.QR_CODE)
-                    setPrompt(scanPrompt)
-                    setBeepEnabled(false)
-                    setOrientationLocked(false)
-                },
-            )
-        }
+        GhostButton(stringResource(R.string.action_scan_qr)) { scanning = true }
 
         if (lnState is LnState.Off || lnState is LnState.Starting) {
             Text(lightningStatusText(lnState), style = FxType.meta, color = Fx.textDim)
@@ -419,6 +553,7 @@ internal fun LightningSendTab(vm: WalletViewModel) {
                     userAmountMsat = null,
                     lnurlResolver = { resolvedLnurl ?: throw IllegalStateException() },
                     sendableMsat = vm.lightning.sendableMsat,
+                extraSendableMsat = vm.accountBalance?.freeMsat ?: 0uL,
                 ) as? SendPlan.NeedsAmount
             }
 
@@ -503,6 +638,24 @@ internal fun LightningHistory(vm: WalletViewModel) {
     }
     val rows = remember(lnPayments) { mergeHistory(emptyList(), lnPayments) }
     HistoryList(vm, rows, LN_UNIT, chain = LN_CHAIN, network = c?.network ?: "bitcoin")
+    // The Fortis account's own entries (spec §7).
+    if (vm.accountHistory.isNotEmpty()) {
+        GlassCard {
+            Text(stringResource(R.string.ln_account_history_title), color = Fx.text, fontWeight = FontWeight.SemiBold)
+            vm.accountHistory.forEach { e ->
+                val label = when (e.kind) {
+                    "received" -> stringResource(R.string.ln_account_received)
+                    "sent" -> stringResource(R.string.ln_account_sent)
+                    "converted" -> stringResource(R.string.ln_history_converted)
+                    "withdrawn" -> stringResource(R.string.ln_account_withdrawn)
+                    else -> stringResource(R.string.ln_account_internal)
+                }
+                val sat = e.amountMsat / 1_000
+                val fee = if (e.feeMsat > 0) " · " + stringResource(R.string.ln_account_fee, fmt(e.feeMsat / 1_000)) else ""
+                kv(label + fee, (if (sat > 0) "+" else "") + fmt(sat) + " " + LN_UNIT)
+            }
+        }
+    }
 }
 
 /** "Create a Lightning wallet to pay this": a Lightning link arrived and there is none. */
@@ -675,6 +828,7 @@ internal fun LnConfirmSheet(vm: WalletViewModel, p: com.fortis.wallet.LnPlanPrev
                 )
             }
             kv(stringResource(R.string.confirm_amount), amountLine(amountSat))
+            if (p.viaAccount) kv(stringResource(R.string.ln_confirm_from), stringResource(R.string.ln_confirm_from_account))
             if (p.description.isNotBlank()) {
                 kv(stringResource(R.string.confirm_ln_description), p.description)
             }
@@ -769,5 +923,59 @@ private fun LightningTakeoverButton(vm: WalletViewModel) {
                 }
             },
         )
+    }
+}
+
+
+/** The wallet's reusable BOLT12 address: one QR to share, paid any number of times, even while
+ *  this phone is off (the LSP receives it into the Fortis balance). */
+@Composable
+internal fun ReusableOfferCard(vm: WalletViewModel) {
+    val ctx = LocalContext.current
+    val offer = vm.accountOffer
+    GlassCard {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            com.fortis.wallet.ui.LightningBoltIcon()
+            Text(stringResource(R.string.ln_offer_title), color = Fx.text, fontWeight = FontWeight.SemiBold)
+        }
+        Text(stringResource(R.string.ln_offer_help), style = FxType.meta, color = Fx.textDim)
+        vm.accountOfferError?.let { Text(it, style = FxType.meta, color = Fx.warn) }
+        if (offer == null) {
+            GhostButton(stringResource(R.string.ln_offer_show)) { vm.loadAccountOffer() }
+        } else {
+            val qr = remember(offer) { qrBitmap(offer.uppercase()) }
+            Image(
+                bitmap = qr.asImageBitmap(),
+                contentDescription = stringResource(R.string.cd_address_qr),
+                modifier = Modifier
+                    .align(Alignment.CenterHorizontally)
+                    .size(224.dp)
+                    .clip(RoundedCornerShape(Fx.rSm))
+                    .background(Color.White)
+                    .padding(10.dp),
+            )
+            val copy = { copyToClipboard(ctx, "offer", offer) }
+            Text(
+                "${offer.take(24)}…${offer.takeLast(16)}",
+                style = FxType.amount,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(Fx.rSm))
+                    .background(Fx.panelRaised)
+                    .clickable { copy() }
+                    .padding(Fx.s4),
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(Fx.s2)) {
+                GhostButton(stringResource(R.string.action_copy), Modifier.weight(1f)) { copy() }
+                GhostButton(stringResource(R.string.action_share), Modifier.weight(1f)) {
+                    ctx.startActivity(
+                        Intent.createChooser(
+                            Intent(Intent.ACTION_SEND).apply { type = "text/plain"; putExtra(Intent.EXTRA_TEXT, offer) },
+                            null,
+                        ),
+                    )
+                }
+            }
+        }
     }
 }

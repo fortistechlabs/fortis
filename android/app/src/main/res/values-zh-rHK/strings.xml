@@ -37,6 +37,7 @@
     <string name="onboard_add_title">新增錢包</string>
     <string name="onboard_tagline">為 Bitcoin XBT 和 Bitcoin BTC 打造的非託管錢包</string>
     <string name="onboard_create">建立新錢包</string>
+    <string name="onboard_create_lightning">建立閃電網絡錢包</string>
     <string name="onboard_restore">從復原助記詞還原</string>
 
     <string name="gen_title">增加一些隨機性</string>
@@ -163,6 +164,7 @@
     <string name="history_conf_n">%1$d 次確認</string>
     <string name="history_confirmed">已確認</string>
     <string name="history_hint">輕按交易可在瀏覽器中開啟 · 長按可複製 id</string>
+    <string name="ln_history_hint">輕按一筆付款即可複製其付款 ID</string>
 
     <string name="confirm_sweep_title">確認清掃</string>
     <string name="confirm_payment_title">確認付款</string>
@@ -503,4 +505,50 @@
     <string name="send_create_lightning_wallet">建立閃電網絡錢包以支付這筆款項</string>
     <string name="ln_wallet_first_receive_hint">收到一筆付款即可開啟你的第一個通道。</string>
     <string name="ln_send_onchain_target">這是鏈上地址——請從 BTC 錢包傳送。</string>
+    <string name="ln_balance_in_channel">在你的通道中：%1$s</string>
+    <string name="ln_balance_held_by_fortis">由 Fortis 代管：%1$s</string>
+    <string name="ln_balance_updating">正在更新…</string>
+    <string name="ln_account_explainer">小額資金由 Fortis 代管，直至足夠開啟你自己的通道（超過 50,000 sat）。</string>
+    <string name="ln_account_custody_full">Fortis 目前無法代管更多小額餘額 — 請至少接收 %1$s sat 以開啟你自己的通道。</string>
+    <string name="ln_history_converted">已轉入你的通道</string>
+    <string name="ln_account_offer_unsupported">暫時無法用 Fortis 餘額支付 Offer。</string>
+    <string name="ln_account_history_title">由 Fortis 代管</string>
+    <string name="ln_account_received">已收款</string>
+    <string name="ln_account_sent">已付款</string>
+    <string name="ln_account_internal">Fortis 之間</string>
+    <string name="ln_account_fee">手續費 %1$s</string>
+    <string name="ln_confirm_from">付款來源</string>
+    <string name="ln_confirm_from_account">Fortis 餘額</string>
+    <string name="transfer_tab">轉移</string>
+    <string name="transfer_to_lightning_title">轉到閃電網路</string>
+    <string name="transfer_to_lightning_help">將比特幣從此錢包轉到你的閃電錢包。1 次確認後即可使用。</string>
+    <string name="transfer_to_onchain_title">轉到鏈上</string>
+    <string name="transfer_to_onchain_help">將比特幣從你的閃電錢包轉到你的鏈上比特幣錢包。</string>
+    <string name="transfer_help_slider">最大：%1$s</string>
+    <string name="transfer_summary">轉移 %1$s · 手續費 %2$s · 到帳約 %3$s</string>
+    <string name="transfer_summary_onchain">轉移 %1$s · 手續費 %2$s · 到帳 %3$s</string>
+    <string name="transfer_all_closes">全部轉移會關閉你的閃電通道。</string>
+    <string name="transfer_review">檢查</string>
+    <string name="transfer_move">轉移</string>
+    <string name="transfer_too_small">金額太小：扣除手續費後至少要到帳 5,000 聰。</string>
+    <string name="transfer_needs_lightning">你的閃電錢包尚未運行。請先開啟一次，然後重試。</string>
+    <string name="transfer_splice_busy">你的通道仍在完成之前的變更。請幾分鐘後重試。</string>
+    <string name="transfer_pending">正在轉到閃電網路：等待 1 次確認</string>
+    <string name="confirm_transfer_fee">轉移手續費</string>
+    <string name="confirm_transfer_arrives">閃電錢包到帳約</string>
+    <string name="transfer_nothing_to_move">暫無可轉移的資金：此錢包沒有已確認的比特幣。</string>
+    <string name="transfer_more_than_balance">超過此錢包的餘額。</string>
+    <string name="transfer_no_channel_balance">暫無可轉移的資金：只有你自己通道中的資金可以轉到鏈上。由 Fortis 代管的資金暫不支援。</string>
+    <string name="ln_account_withdrawn">已轉到鏈上</string>
+    <string name="transfer_from_account">從 Fortis 代管的餘額中轉出，由 Fortis 發送到鏈上。</string>
+    <string name="transfer_nothing_to_move_ln">暫無可轉移的資金：你的閃電錢包是空的。</string>
+    <string name="ln_receive_waiting">等待付款…</string>
+    <string name="ln_receive_received">已收到 +%1$s ✓</string>
+    <string name="ln_offer_title">可重複使用的地址 (BOLT12)</string>
+    <string name="ln_offer_help">一個可以分享、反覆接收任意金額的地址，即使手機關機也能收款。在足夠開設你自己的通道之前，款項由 Fortis 代管。需要支援 BOLT12 的錢包（例如 Phoenix）。</string>
+    <string name="ln_offer_show">顯示我的可重複使用地址</string>
+    <string name="ln_offer_unavailable">可重複使用的地址暫時無法使用，請稍後再試。</string>
+    <string name="ln_push_channel">閃電網絡付款</string>
+    <string name="ln_push_channel_desc">有一筆付款正等待你開啟 Fortis</string>
+    <string name="ln_create_invoice">建立發票</string>
 </resources>
