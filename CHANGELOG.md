@@ -2,7 +2,7 @@
 
 Fortis Wallet (Android). Versions are `versionName (versionCode)`.
 
-## 0.6.0 (23) — 2026-11-01
+## 0.6.0 (23) — 2026-11-05
 
 - Lightning is its own wallet: Add wallet → Lightning. It has its own recovery
   phrase, separate from your BTC wallets, and BTC wallets show no Lightning.
@@ -19,8 +19,48 @@ Fortis Wallet (Android). Versions are `versionName (versionCode)`.
   the channel can actually send now, which is a little less than its balance.
   Scanning a Lightning invoice in a BTC wallet offers Pay with your Lightning
   wallet.
-- Putting on-chain funds into a Lightning wallet isn't available yet; a new
-  Lightning wallet gets its channel from its first invoice receive.
+- Move between on-chain and Lightning: a BTC wallet's Move tab puts funds into
+  your Lightning wallet (opening its channel, or adding to it), and the
+  Lightning wallet's Move tab sends funds back to an on-chain wallet. Amounts
+  can be typed in sat or BTC.
+- Receive any amount into an existing channel; only a payment that needs a new
+  channel has a minimum. Enter the amount and tap Create invoice.
+- You don't need Fortis open to be paid: the fortis Lightning provider holds an
+  incoming payment for you and sends a notification ("Incoming Lightning
+  payment"); open Fortis and it arrives. If Fortis isn't opened within a few
+  hours, the payment is kept on your Fortis balance (up to a limit) and moved
+  into your channel the next time you open it. Allow notifications when asked.
+- A reusable Lightning address (BOLT12) you can share and be paid to again and
+  again, even while your phone is off; payments to it reach your channel when
+  you next open Fortis. Paying it needs a wallet that supports BOLT12.
+- Small payments before you have a channel are kept on your Fortis balance,
+  shown separately in the Lightning wallet, and moved into your channel once
+  you have one.
+- A lightning bolt marks the Lightning wallet on Home and plays when a
+  Lightning payment arrives or leaves.
+- The Lightning wallet opens faster and shows its last balance straight away
+  while it reconnects, and retries by itself if it can't start.
+- Scanning a QR code opens a small portrait window instead of a full-screen
+  camera.
+- Move to on-chain lets you choose which BTC wallet receives the funds. Moving
+  all (or leaving only a few thousand sat) closes the channel and sends
+  everything on-chain.
+- The Lightning wallet's history is a ledger: every payment, every move in or
+  out and every fee, in time order, with the balance after each entry. Fees
+  are itemised — network fee (to miners), transfer fee, routing fee — and a
+  move shows what left Lightning and what arrived on-chain. Incoming
+  transfers in a BTC wallet are marked as coming from your Lightning wallet.
+  If the entries ever don't add up to the balance, the history says so.
+- History rows show the date and time, in your phone's time zone.
+- Money on its way out of Lightning (a channel closing) is shown separately
+  ("on its way to …") instead of in the balance.
+- Help & support in Settings: send us a message, with the app's logs if you
+  allow it, and get a ticket number. Every error message has a "Send to
+  support" button, and errors are reported to us so we can fix them.
+- Clearer error messages (for example "Couldn't reach the blockchain server")
+  instead of a general Lightning error.
+- Lightning reconnects to the provider within a second after the network
+  drops, so payments don't wait.
 - Close channel and move to on-chain, from the Lightning wallet. It asks the
   provider to close cooperatively. If the provider can't be reached you are
   offered a force close, which works without it but locks your funds for a
