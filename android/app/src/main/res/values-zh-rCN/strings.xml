@@ -528,6 +528,8 @@
     <string name="transfer_help_slider">最大：%1$s</string>
     <string name="transfer_summary">转移 %1$s · 手续费 %2$s · 到账约 %3$s</string>
     <string name="transfer_summary_onchain">转移 %1$s · 手续费 %2$s · 到账 %3$s</string>
+    <string name="transfer_moved">已将 %1$s 转到 %2$s。交易确认后，%3$s 将到账（费用 %4$s）。</string>
+    <string name="transfer_moved_closing">正在关闭你的通道：%1$s 正在转往 %2$s，关闭确认后到账。</string>
     <string name="transfer_all_closes">全部转移会关闭你的闪电通道。</string>
     <string name="transfer_review">检查</string>
     <string name="transfer_move">转移</string>

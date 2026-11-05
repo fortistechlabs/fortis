@@ -2,6 +2,15 @@
 
 Fortis Wallet (Android). Versions are `versionName (versionCode)`.
 
+## 0.6.3 (26) — 2026-11-05
+
+- After a move to on-chain, the Move tab confirms it: how much left
+  Lightning, which wallet it goes to, what arrives once the transaction
+  confirms, and the fees. Moving everything says the channel is closing.
+  Before, it showed only "Nothing to move yet", which looked like an error.
+- "Nothing to move yet" on an empty Lightning wallet is shown as a note, not a
+  warning.
+
 ## 0.6.2 (25) — 2026-11-05
 
 - Receive on a Lightning wallet with no channel says how much opens one

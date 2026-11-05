@@ -82,7 +82,16 @@ internal fun TransferToOnchainTab(vm: WalletViewModel) {
             Text(stringResource(R.string.transfer_to_onchain_title), color = Fx.text, fontWeight = FontWeight.SemiBold)
             Text(stringResource(R.string.transfer_to_onchain_help), style = FxType.meta, color = Fx.textDim)
             MoveToWalletPicker(vm)
-            if (maxSat <= 0L) Text(stringResource(R.string.transfer_nothing_to_move_ln), style = FxType.meta, color = Fx.warn)
+            vm.lastMoveToOnchain?.let { m ->
+                Text(
+                    if (m.closing) stringResource(R.string.transfer_moved_closing, fmt(m.amountSat), m.toWallet)
+                    else stringResource(R.string.transfer_moved, fmt(m.amountSat), m.toWallet, fmt(m.payoutSat), fmt(m.feeSat)),
+                    style = FxType.meta, color = Fx.good,
+                )
+            }
+            if (maxSat <= 0L && vm.lastMoveToOnchain == null) {
+                Text(stringResource(R.string.transfer_nothing_to_move_ln), style = FxType.meta, color = Fx.textDim)
+            }
             SwapAmount(amount, { amount = it }, "btc", maxSat, hint = R.string.transfer_help_slider, inSat = inSat, onUnit = { inSat = it })
             val fromAccount = amountSat > channelSat
             // Leaving only crumbs behind is moving everything: a splice can't take the last few

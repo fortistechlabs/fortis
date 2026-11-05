@@ -531,6 +531,8 @@
     <string name="transfer_help_slider">Ganz rechts: %1$s</string>
     <string name="transfer_summary">Du überträgst %1$s · Gebühr %2$s · kommt an ≈ %3$s</string>
     <string name="transfer_summary_onchain">Du überträgst %1$s · Gebühr %2$s · kommt an %3$s</string>
+    <string name="transfer_moved">%1$s an %2$s übertragen. %3$s kommen dort an, sobald die Transaktion bestätigt ist (Gebühren %4$s).</string>
+    <string name="transfer_moved_closing">Dein Kanal wird geschlossen: %1$s sind unterwegs zu %2$s und kommen an, sobald die Schließung bestätigt ist.</string>
     <string name="transfer_all_closes">Wenn du alles überträgst, wird dein Lightning-Kanal geschlossen.</string>
     <string name="transfer_review">Prüfen</string>
     <string name="transfer_move">Übertragen</string>

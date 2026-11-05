@@ -564,6 +564,8 @@
     <string name="transfer_help_slider">All the way is %1$s</string>
     <string name="transfer_summary">You move %1$s · fee %2$s · arrives ≈ %3$s</string>
     <string name="transfer_summary_onchain">You move %1$s · fee %2$s · arrives %3$s</string>
+    <string name="transfer_moved">Moved %1$s to %2$s. %3$s arrives there once the transaction confirms (fees %4$s).</string>
+    <string name="transfer_moved_closing">Closing your channel: %1$s is on its way to %2$s and arrives once the close confirms.</string>
     <string name="transfer_all_closes">Moving everything closes your Lightning channel.</string>
     <string name="transfer_review">Review</string>
     <string name="transfer_move">Move</string>

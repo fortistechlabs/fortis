@@ -528,6 +528,8 @@
     <string name="transfer_help_slider">最大：%1$s</string>
     <string name="transfer_summary">轉移 %1$s · 手續費 %2$s · 到帳約 %3$s</string>
     <string name="transfer_summary_onchain">轉移 %1$s · 手續費 %2$s · 到帳 %3$s</string>
+    <string name="transfer_moved">已將 %1$s 轉到 %2$s。交易確認後，%3$s 將會到帳（費用 %4$s）。</string>
+    <string name="transfer_moved_closing">正在關閉你的通道：%1$s 正轉往 %2$s，關閉確認後到帳。</string>
     <string name="transfer_all_closes">全部轉移會關閉你的閃電通道。</string>
     <string name="transfer_review">檢查</string>
     <string name="transfer_move">轉移</string>

@@ -2246,9 +2246,13 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
     /** Lightning → on-chain: splices [amountSat] (fees included) out of the channel to the
      *  first on-chain BTC wallet, then pays the operator's share over Lightning. Moving
      *  everything closes the channel instead. Call after the identity check. */
+    /** The last move to on-chain that went through, shown on the Move tab until the next one. */
+    var lastMoveToOnchain by mutableStateOf<MoveToOnchainResult?>(null); private set
+
     fun moveToOnchain(amountSat: Long, all: Boolean, fromAccount: Boolean = false) = viewModelScope.launch {
         if (movingToOnchain) return@launch
         error = null
+        lastMoveToOnchain = null
         if (!reauth.consume()) { error = str(R.string.reauth_needed); return@launch }
         // Everything (a close) needs no quote: the close takes what is there, no transfer fee on crumbs.
         val q = quoteMoveToOnchain(amountSat)
@@ -2270,11 +2274,13 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
                 }
                 updateConfig(dest.id) { it.copy(nextReceive = it.nextReceive + 1) }
                 refreshAccount()
+                lastMoveToOnchain = MoveToOnchainResult(amountSat, q.payoutSat, q.feeSat, dest.display, closing = false)
             } else {
             // The share first when closing: after the close there is no channel to pay it from.
             if (all) {
                 val feeId = payTransferShare(q.shareSat)
                 closeLightningAndMoveToOnchain(feePaymentId = feeId, feeSat = if (feeId != null) q.shareSat else 0L).join()
+                if (error == null) lastMoveToOnchain = MoveToOnchainResult(amountSat, 0L, 0L, dest.display, closing = true)
             } else {
                 val addr = s.receiveAddress(dest.nextReceive).address
                 val before = channelSatNow()
@@ -2287,6 +2293,7 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
                 val estimate = q.payoutSat + q.networkFeeSat + (if (feeId != null) q.shareSat else 0L)
                 val left = if (drop > q.payoutSat) drop else estimate
                 recordLnMove(left, q.payoutSat, left - q.payoutSat, dest.display, feeId, "splice")
+                lastMoveToOnchain = MoveToOnchainResult(left, q.payoutSat, left - q.payoutSat, dest.display, closing = false)
             }
             }
             sentCount++
@@ -2781,3 +2788,14 @@ fun withLocalSends(b: Balances, h: List<HistoryEntry>, unseen: List<LocalSend>):
 /** [sends] without those [listed] for [walletId] (the server has them now) and the expired. */
 fun pruneLocalSends(sends: List<LocalSend>, walletId: String, listed: Set<String>?, now: Long): List<LocalSend> =
     sends.filter { now - it.at < LOCAL_SEND_MS && (listed == null || it.walletId != walletId || it.txid !in listed) }
+
+/** A move to on-chain that went through: [amountSat] left Lightning, [payoutSat] arrives in
+ *  [toWallet] once the transaction confirms, [feeSat] went on fees. A [closing] move closes
+ *  the channel, so its payout is only known when the close confirms. */
+data class MoveToOnchainResult(
+    val amountSat: Long,
+    val payoutSat: Long,
+    val feeSat: Long,
+    val toWallet: String,
+    val closing: Boolean,
+)

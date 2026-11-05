@@ -531,6 +531,8 @@
     <string name="transfer_help_slider">No máximo: %1$s</string>
     <string name="transfer_summary">Você move %1$s · taxa %2$s · chega ≈ %3$s</string>
     <string name="transfer_summary_onchain">Você move %1$s · taxa %2$s · chega %3$s</string>
+    <string name="transfer_moved">%1$s movidos para %2$s. %3$s chegam lá quando a transação for confirmada (taxas %4$s).</string>
+    <string name="transfer_moved_closing">Fechando seu canal: %1$s estão a caminho de %2$s e chegam quando o fechamento for confirmado.</string>
     <string name="transfer_all_closes">Mover tudo fecha seu canal Lightning.</string>
     <string name="transfer_review">Revisar</string>
     <string name="transfer_move">Mover</string>
