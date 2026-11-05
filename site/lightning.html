@@ -1,12 +1,16 @@
 <!doctype html>
-<!-- DRAFT: owner review required before publishing -->
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>How Lightning works (DRAFT) — Fortis Wallet</title>
-<meta name="robots" content="noindex,nofollow">
-<meta name="description" content="Instant Bitcoin payments over the Lightning Network in Fortis Wallet: non-custodial, backed up automatically, and recoverable from your phrase.">
+<title>How Lightning works — Fortis Wallet</title>
+<meta name="description" content="Lightning in Fortis Wallet: a separate Lightning wallet with its own recovery phrase, keys on your phone, paid while the app is closed, and a history that accounts for every sat and every fee.">
+<meta property="og:title" content="Lightning in Fortis Wallet">
+<meta property="og:description" content="A Lightning wallet with its keys on your phone. Get paid while the app is closed, pay invoices, Lightning addresses, LNURL and BOLT12, and see every fee in a ledger-style history.">
+<meta property="og:type" content="article">
+<meta property="og:url" content="https://fortistechlabs.com/lightning">
+<meta property="og:image" content="https://fortistechlabs.com/og-wallet-2026-10.png">
+<meta name="twitter:card" content="summary_large_image">
 <link rel="icon" href="/icon.svg">
 <link rel="stylesheet" href="/style.css">
 </head>
@@ -27,44 +31,87 @@
 
 <header class="hero">
   <div class="wrap">
-    <div class="eyebrow">Fortis Wallet · Lightning (beta) · DRAFT</div>
-    <h1>Instant Bitcoin payments, still your keys</h1>
-    <p>Send and receive Bitcoin in seconds over the Lightning Network. Your phone runs its own Lightning node derived from your recovery phrase — we never hold your keys or your coins.</p>
+    <div class="eyebrow">Fortis Wallet · Lightning (beta) · Android</div>
+    <h1>Instant Bitcoin payments, keys on your phone</h1>
+    <p>Send and receive Bitcoin in seconds over the Lightning Network. Your phone runs its own Lightning node, with keys derived from a recovery phrase that never leaves it. Fortis opens the channel and relays payments, but can't spend what's in your channel.</p>
   </div>
 </header>
 
 <section>
   <div class="wrap">
     <h2>How it works</h2>
-    <p class="lead">Turn it on in <strong>Settings → Lightning (beta)</strong> on any software Bitcoin wallet. Your balance shows one combined BTC total, with the split between on-chain and Lightning right underneath.</p>
+    <p class="lead">Lightning is a wallet of its own. On Home, tap <strong>Add wallet → Lightning</strong>. It gets its own recovery phrase, separate from your BTC wallets, so your on-chain coins and your Lightning channel never share keys.</p>
 
     <dl class="facts">
       <div>
-        <dt>Receive on one QR</dt>
-        <dd>Enter an amount on Receive and the app shows a single unified QR code that works for both on-chain and Lightning payers. If you don't have a Lightning channel yet, our Lightning Service Provider (LSP) opens one for you on the spot and shows the exact opening fee (1%, minimum 1,000&nbsp;sat) before you share the QR.</dd>
+        <dt>Receive</dt>
+        <dd>Enter an amount and tap <strong>Create invoice</strong>. Your first payment opens a channel with the Fortis Lightning provider (LSP). The fee for that (0.5% of the payment, minimum 1,000&nbsp;sat) is shown before you share the invoice. After that, payments that fit in your channel cost nothing to receive.</dd>
       </div>
       <div>
-        <dt>Send to any Lightning target</dt>
-        <dd>Scan or paste a BOLT&nbsp;11 invoice, a BOLT&nbsp;12 offer, an LNURL-pay code, a Lightning Address (<code>name@domain</code>), or a unified <code>bitcoin:</code> QR. If you have enough on Lightning, it pays instantly; if your funds are still on-chain, the app offers <strong>Move to Lightning</strong> first.</dd>
+        <dt>Get paid while the app is closed</dt>
+        <dd>Your phone doesn't need to be online. The LSP holds an incoming payment for you and sends a notification. Open Fortis and the payment arrives in your channel. If you don't open the app within a few hours, the payment goes to your Fortis balance (see below).</dd>
       </div>
       <div>
-        <dt>Encrypted channel backup</dt>
-        <dd>Lightning channel state changes with every payment. Before your phone sends or receives on Lightning, it saves an encrypted snapshot of your channel state to our Versioned Storage Service (VSS) using keys derived on your device from your recovery phrase. If you lose your phone, restoring your recovery phrase on a new phone brings your channel back automatically.</dd>
+        <dt>A reusable address (BOLT12)</dt>
+        <dd>One address you can share once and be paid to again and again, even while your phone is off. Payments to it go to your Fortis balance and move into your channel when you next open Fortis. Paying it needs a wallet that supports BOLT12.</dd>
       </div>
       <div>
-        <dt>One active phone at a time</dt>
-        <dd>Running the same Lightning channel on two phones at once can risk channel funds. Fortis keeps a device lock in your encrypted backup store so only one phone runs Lightning for a wallet at a time, with a one-tap handover when you switch phones.</dd>
+        <dt>Send</dt>
+        <dd>Scan or paste a BOLT&nbsp;11 invoice, a BOLT&nbsp;12 offer, an LNURL-pay code, a Lightning address (<code>name@domain</code>) or a <code>bitcoin:</code> link that carries an invoice. The most you could pay in routing fees is shown before you confirm, and a payment is never sent twice. Scan a Lightning invoice in a BTC wallet and Fortis offers to pay it from your Lightning wallet.</dd>
       </div>
       <div>
-        <dt>Always an exit to on-chain</dt>
-        <dd>You can close your channel and move your balance back to your on-chain BTC wallet at any time from <strong>Settings → Lightning (beta)</strong>, even if our LSP is unreachable.</dd>
+        <dt>Move between on-chain and Lightning</dt>
+        <dd>A BTC wallet's <strong>Move</strong> tab puts funds into Lightning, either opening your channel or adding to it. The Lightning wallet's Move tab sends funds back, and you choose which BTC wallet receives them. <strong>Move all</strong> closes the channel cooperatively and sends everything on-chain. The fees are shown before you confirm.</dd>
       </div>
       <div>
-        <dt>Keep the app open to receive</dt>
-        <dd>Because your phone holds the keys and signs every Lightning update itself, Fortis must be open and unlocked while you receive a Lightning payment.</dd>
+        <dt>A history that works like a ledger</dt>
+        <dd>Every payment, every move in or out and every fee, in time order, with the balance after each entry. Fees are itemised: the network fee (paid to miners), the Fortis transfer fee and the routing fee. A move shows what left Lightning and what arrived on-chain, so you can reconcile both sides to the sat. If the entries ever don't add up to the balance, the history says so.</dd>
+      </div>
+      <div>
+        <dt>Backed up, one phone at a time</dt>
+        <dd>Your channel state changes with every payment. Before each change, your phone saves an encrypted copy to our backup service (VSS), using keys derived on the phone from the wallet's phrase. We can't read it. Lose your phone and you restore from that phrase in Fortis. Running one channel on two phones at once could lose funds, so only one device runs a Lightning wallet at a time. Another device can take over from the wallet's settings.</dd>
+      </div>
+      <div>
+        <dt>Always a way out</dt>
+        <dd>Close the channel and move everything on-chain from the Lightning wallet. Fortis asks the LSP to close cooperatively. If the LSP can't be reached, you're offered a force close. That works without us, but it locks your funds for a while and costs a higher network fee. Fortis never force-closes for you.</dd>
       </div>
     </dl>
-    <p class="warn" style="font-size:14px; margin-top:26px">DRAFT — Lightning is in beta (channels up to 500,000&nbsp;sat). Start with small amounts.</p>
+  </div>
+</section>
+
+<section id="fortis-balance">
+  <div class="wrap">
+    <h2>The Fortis balance: what we hold for you</h2>
+    <p class="lead">One part of Lightning in Fortis is custodial, and we want to be plain about it.</p>
+    <p>A channel only makes sense above a minimum size. Below it, the network fee to open the channel would eat the payment. So small payments that arrive before you have a channel are held by Fortis on your <strong>Fortis balance</strong>. So are payments to your BOLT12 address, and payments you didn't collect within a few hours. Fortis holds this money, not your phone, so you're trusting us with it.</p>
+    <ul>
+      <li>The Lightning wallet shows the Fortis balance separately from your own channel.</li>
+      <li>It moves into your channel once you have one.</li>
+      <li>Each Fortis balance holds at most 50,000&nbsp;sat, and Fortis holds at most 300,000&nbsp;sat for all users together. Above that, you're asked to receive enough to open your own channel.</li>
+      <li>You can pay from it. Every movement in and out appears in your history.</li>
+    </ul>
+    <p>Money in your own channel is different: only your phone can sign for it.</p>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <h2>What Lightning needs from us</h2>
+    <dl class="facts">
+      <div>
+        <dt>Notifications</dt>
+        <dd>Notifications about incoming payments use Google's Firebase Cloud Messaging, so they need Google Play Services. Without it, Lightning still works, but you only see a payment when you open Fortis.</dd>
+      </div>
+      <div>
+        <dt>Routing data</dt>
+        <dd>To find routes for your payments, the phone downloads a public snapshot of the Lightning network graph from Lightning Dev Kit's Rapid Gossip Sync server.</dd>
+      </div>
+      <div>
+        <dt>Privacy</dt>
+        <dd>The LSP sees your node's ID and the payments that pass through it. The <a href="/privacy">privacy policy</a> lists everything it sees and stores.</dd>
+      </div>
+    </dl>
+    <p class="warn" style="font-size:14px; margin-top:26px">Lightning is in beta: a payment that opens your channel can be up to 100,000&nbsp;sat, and a channel you fund yourself up to 1,000,000&nbsp;sat. Start with small amounts.</p>
   </div>
 </section>
 

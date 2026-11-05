@@ -4,9 +4,9 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Fortis Tech Labs — tools for Bitcoin self-custody</title>
-<meta name="description" content="Fortis Tech Labs builds non-custodial software for Bitcoin. Our first app is Fortis Wallet, for Bitcoin XBT and Bitcoin BTC.">
+<meta name="description" content="Fortis Tech Labs builds self-custody software for Bitcoin. Our first app is Fortis Wallet, for Bitcoin XBT, Bitcoin BTC and Lightning.">
 <meta property="og:title" content="Fortis Wallet — non-custodial Bitcoin XBT and BTC">
-<meta property="og:description" content="A non-custodial wallet for Bitcoin XBT and BTC, locked with your fingerprint. Swap BTC ↔ XBT person to person. Android, open source.">
+<meta property="og:description" content="A wallet for Bitcoin XBT, BTC and Lightning, with your keys on your phone, locked with your fingerprint. Swap BTC ↔ XBT person to person. Android, open source.">
 <meta property="og:type" content="website">
 <meta property="og:url" content="https://fortistechlabs.com/">
 <meta property="og:image" content="https://fortistechlabs.com/og-wallet-2026-10.png">
@@ -15,7 +15,7 @@
 <meta property="og:image:alt" content="fortis: non-custodial wallet for Bitcoin XBT and BTC, locked with your fingerprint">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="Fortis Wallet — non-custodial Bitcoin XBT and BTC">
-<meta name="twitter:description" content="A non-custodial wallet for Bitcoin XBT and BTC, locked with your fingerprint. Swap BTC ↔ XBT person to person. Android, open source.">
+<meta name="twitter:description" content="A wallet for Bitcoin XBT, BTC and Lightning, with your keys on your phone, locked with your fingerprint. Swap BTC ↔ XBT person to person. Android, open source.">
 <meta name="twitter:image" content="https://fortistechlabs.com/og-wallet-2026-10.png">
 <meta name="twitter:image:alt" content="fortis: non-custodial wallet for Bitcoin XBT and BTC, locked with your fingerprint">
 <link rel="icon" href="/icon.svg">
@@ -29,6 +29,7 @@
     <span class="links">
       <a href="#wallet">Wallet</a>
       <a href="/swaps">Swaps</a>
+      <a href="/lightning">Lightning</a>
       <a href="#features">Features</a>
       <a href="https://github.com/fortistechlabs/fortis" target="_blank" rel="noopener">Source</a>
       <a href="/privacy">Privacy</a>
@@ -41,7 +42,7 @@
   <div class="wrap">
     <div class="eyebrow">Fortis Tech Labs</div>
     <h1>Tools for Bitcoin self&#8209;custody</h1>
-    <p>We build non-custodial software for Bitcoin XBT and Bitcoin BTC — apps that put the keys, and the responsibility that comes with them, in the hands of the people who own the coins. No accounts, no custody, no one who can move your coins but you.</p>
+    <p>We build non-custodial software for Bitcoin XBT and Bitcoin BTC — apps that put the keys, and the responsibility that comes with them, in the hands of the people who own the coins. Your keys are made on your device and stay there. Where we do hold anything for you (small Lightning payments, until they're worth a channel of your own), <a href="/lightning#fortis-balance">we say so plainly</a>.</p>
   </div>
 </header>
 
@@ -53,7 +54,7 @@
       <div>
         <h3>Fortis Wallet</h3>
         <p class="kicker">Android 8+ · direct download &amp; Obtainium</p>
-        <p class="dim">A non-custodial mobile wallet for Bitcoin XBT and Bitcoin BTC, locked with your fingerprint. Your recovery phrase is generated on your phone, encrypted there, and never leaves it.</p>
+        <p class="dim">A mobile wallet for Bitcoin XBT, Bitcoin BTC and Lightning, locked with your fingerprint. Your recovery phrase is generated on your phone, encrypted there, and never leaves it.</p>
         <ul>
           <li><strong>Locked with your fingerprint</strong> (or face, or device PIN): the key that opens the app is held in your phone's secure hardware and is released only when you unlock — one unlock opens every wallet</li>
           <li><strong>Locks itself</strong> a minute after you leave it, and clears your keys from memory; swaps carry on in the background</li>
@@ -65,6 +66,8 @@
           <li>Send &amp; receive with QR codes, a built-in camera scanner, or paste</li>
           <li>Fee presets or a custom sat/vB rate; "take the fees out of this amount"; sweep a whole balance</li>
           <li>History with a tap-through to a block explorer; approximate value in USD, EUR or 28 other currencies</li>
+          <li><strong>Lightning</strong> as a wallet of its own (<a href="/lightning">how it works</a>): pay invoices, Lightning addresses, LNURL and BOLT12; get paid while the app is closed; move sats on-chain ⇄ Lightning; a history that itemises every fee</li>
+          <li><strong>Help &amp; support</strong> in Settings, and a <em>Send to support</em> button on every error</li>
           <li>Swap BTC ↔ XBT with other people — atomic and non-custodial (<a href="/swaps">how swaps work</a>)</li>
           <li>A 1% fee (min 400&nbsp;sat) funds the backend — added as a transaction output, shown before you sign</li>
         </ul>
@@ -162,6 +165,10 @@
         <p>Trade one coin for the other with another person. Both sides lock their coins in a contract on chain: either both get paid, or both get their coins back. Nobody, us included, can take them. <a href="/swaps">How swaps work →</a></p>
       </div>
       <div class="feature">
+        <h3>Lightning you can reconcile</h3>
+        <p>Your Lightning node runs on your phone, with keys from a phrase that never leaves it. The history is a ledger: every payment, move and fee (network, transfer, routing), with the balance after each, so every sat adds up. <a href="/lightning">How Lightning works →</a></p>
+      </div>
+      <div class="feature">
         <h3>Made for Bitcoin XBT</h3>
         <p>Bitcoin XBT is a chain almost no wallet supports. Fortis runs it right alongside regular Bitcoin (BTC), chosen per wallet.</p>
       </div>
@@ -178,12 +185,12 @@
         <p>The key that unlocks the app goes into your phone's secure element — StrongBox or the TEE — when there is one. When there isn't, Settings says so plainly: "software only." No pretending.</p>
       </div>
       <div class="feature">
-        <h3>No account, nothing held over you</h3>
-        <p>No sign-up, no login. The backend only ever sees public addresses and finished signed transactions; a random per-install token rate-limits abuse and is tied to nothing about you. If it's unreachable, the app reads the chain from public explorers instead.</p>
+        <h3>No sign-up, no login</h3>
+        <p>No email, no password on a server. For on-chain wallets the backend only sees public addresses and finished signed transactions; a random per-install token rate-limits abuse and is tied to nothing about you. If it's unreachable, the app reads the chain from public explorers instead. Lightning needs a little more, all listed in the <a href="/privacy">privacy policy</a>.</p>
       </div>
       <div class="feature">
         <h3>Yours to leave with</h3>
-        <p>A standard 12- or 24-word BIP-39 phrase with BIP-84 derivation — restore it in any compatible wallet. No Google Play Services (the scanner is built in). Open source, MIT; every release APK signed with the same published key.</p>
+        <p>A standard 12- or 24-word BIP-39 phrase with BIP-84 derivation — restore it in any compatible wallet. The scanner is built in, and the wallet works without Google Play Services (only Lightning payment notifications need it). Open source, MIT; every release APK signed with the same published key.</p>
       </div>
     </div>
   </div>
@@ -203,7 +210,7 @@
       </div>
       <div class="feature">
         <h3>No trackers</h3>
-        <p>No analytics, no ad SDKs, no third-party SDKs of any kind. Everything the backend can see is spelled out in the <a href="/privacy">privacy policy</a>.</p>
+        <p>No analytics, no ad SDKs. The one third-party SDK is Google's Firebase Cloud Messaging, used only to notify you of Lightning payments. Everything the backend can see is spelled out in the <a href="/privacy">privacy policy</a>.</p>
       </div>
     </div>
     <p class="warn" style="font-size:14px; margin-top:26px">Our software is early. Back up your recovery phrase offline and start with small amounts.</p>

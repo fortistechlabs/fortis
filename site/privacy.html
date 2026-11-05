@@ -28,6 +28,7 @@
     <span class="links">
       <a href="/#wallet">Wallet</a>
       <a href="/swaps">Swaps</a>
+      <a href="/lightning">Lightning</a>
       <a href="https://github.com/fortistechlabs/fortis" target="_blank" rel="noopener">Source</a>
       <a href="/privacy" aria-current="page">Privacy</a>
     </span>
@@ -36,12 +37,14 @@
 <div class="wrap legal">
 
   <h1>Privacy Policy</h1>
-  <p class="meta">Effective 13 Oct 2026 · applies to the Fortis&nbsp;Wallet mobile app and its backend service, operated by Fortis&nbsp;Tech&nbsp;Labs.</p>
+  <p class="meta">Effective 5 Nov 2026 · applies to the Fortis&nbsp;Wallet mobile app and its backend service, operated by Fortis&nbsp;Tech&nbsp;Labs.</p>
 
-  <p>Fortis Wallet is a <strong>non-custodial</strong> wallet for Bitcoin&nbsp;XBT
-  and Bitcoin&nbsp;BTC. Your keys and recovery phrase are generated on your
-  device, encrypted under a password you choose, and never leave the device. We cannot
-  access your funds and cannot move them for you.</p>
+  <p>Fortis Wallet is a wallet for Bitcoin&nbsp;XBT, Bitcoin&nbsp;BTC and
+  Lightning. Your keys and recovery phrases are generated on your device, encrypted
+  under a password you choose, and never leave the device. We cannot access the coins
+  in your wallets or your Lightning channel, and cannot move them for you. The one
+  exception is the <strong>Fortis balance</strong> in a Lightning wallet: small
+  Lightning payments that we hold for you (section&nbsp;9).</p>
 
   <p>This policy explains the limited data the app and its backend handle.</p>
 
@@ -84,6 +87,21 @@
   <p>The backend is served through Cloudflare (TLS, CDN, DDoS protection). Cloudflare
   processes connection data (IP address, request metadata) on our behalf under its own
   <a href="https://www.cloudflare.com/privacypolicy/">privacy policy</a>.</p>
+  <h3>Google Firebase Cloud Messaging (Lightning only)</h3>
+  <p>If you have a Lightning wallet, the app gets a push token from Google's Firebase
+  Cloud Messaging and gives it to our Lightning service, so it can notify you of an
+  incoming payment while the app is closed. Google delivers these notifications, and
+  sees the token, your device's connection to Google, and the notification text,
+  which includes the amount in sat. Google processes this under its own
+  <a href="https://policies.google.com/privacy">privacy policy</a>. The token is sent
+  to us only if you have a Lightning wallet. From version 0.6.1, the app doesn't
+  contact Firebase at all until you add a Lightning wallet (version 0.6.0 also
+  fetches a token from Google at start-up, but keeps it on the phone). Without
+  Google Play Services, no token is created.</p>
+  <h3>Lightning Dev Kit Rapid Gossip Sync (Lightning only)</h3>
+  <p>To route Lightning payments, the app downloads a public snapshot of the Lightning
+  network graph from <code>rapidsync.lightningdevkit.org</code>. That server sees your
+  IP address and when you download. It learns nothing about your payments.</p>
   <h3>Public explorers (fallback only)</h3>
   <p>If <code>api.fortistechlabs.com</code> is unreachable, the app queries a public block
   explorer directly until the backend is available again —
@@ -96,17 +114,34 @@
   <p>The camera permission is used only to scan a QR code containing a payment address,
   entirely on your device. No image is stored or transmitted.</p>
 
-  <h2>5. Crash diagnostics</h2>
+  <h2>5. Crash diagnostics, error reports and support</h2>
   <p>If the app crashes it sends a diagnostic report to a Fortis Tech Labs endpoint
   containing the app version, your Android version, your device model and
   manufacturer, the error stack trace, and (recorded server-side) your IP address.
   <strong>No</strong> wallet addresses, keys, transactions, or your recovery phrase
   are included. Reports are stored in a plain log file and are not linked to any
   account or identifier.</p>
+  <p><strong>Error reports.</strong> When the app shows you an error, it sends us a short
+  report so we can fix it: the app version, where in the app it happened, the error
+  message, a trimmed stack trace, and your per-install token. The same error is sent
+  at most once every few minutes. No keys, recovery phrase or addresses are included.
+  These reports are kept in our server logs.</p>
+  <p><strong>Support tickets.</strong> If you use <em>Settings → Help &amp; support</em>
+  or <em>Send to support</em>, we receive your message and, if you give one, your
+  email address. If you allow logs, the ticket also includes your device model,
+  Android version, language and time zone; the kinds of wallets you have (chain and
+  type, not addresses); the recent errors; your Lightning state and channel and Fortis
+  balances; and the end of your Lightning node's log, which contains your node ID,
+  your channel, and the amounts and payment hashes of recent Lightning payments. No
+  keys or recovery phrases are included. Tickets are stored on our server, readable
+  only by the operator, and forwarded by email to our support inbox (hosted by Google
+  Gmail). We keep them as long as we need to resolve the issue; ask us to delete
+  yours at any time.</p>
 
   <h2>6. What we do not do</h2>
   <ul>
-    <li>No analytics or usage-tracking SDKs.</li>
+    <li>No analytics or usage-tracking SDKs. The only third-party SDK is Firebase Cloud
+      Messaging, for Lightning payment notifications (section&nbsp;3).</li>
     <li>No advertising, no ad identifiers, no third-party trackers.</li>
     <li>No sale or sharing of personal data for marketing.</li>
   </ul>
@@ -148,37 +183,47 @@
   mempool.kilombino.com and mempool.guide (transaction lookups); they see your IP
   address and the transactions looked up.</p>
 
-  <!-- DRAFT: owner review required before publishing -->
-  <h2>9. Lightning (beta) <span class="fill">[DRAFT — owner review]</span></h2>
-  <p>Lightning is optional and off by default. When you turn on
-  <em>Settings → Lightning (beta)</em> on a software Bitcoin wallet, your phone
-  runs its own non-custodial Lightning node derived from your recovery phrase
-  and connects to our Lightning Service Provider (LSP) and Versioned Storage
-  Service (VSS):</p>
+  <h2>9. Lightning (beta)</h2>
+  <p>Lightning is optional: it is a separate wallet you add with <em>Add wallet →
+  Lightning</em>, with its own recovery phrase. Your phone runs its own Lightning node,
+  with keys derived from that phrase, and connects to our Lightning Service Provider
+  (LSP, <code>lsp.fortistechlabs.com</code>) and our Versioned Storage Service (VSS).</p>
   <ul>
-    <li><strong>What our LSP sees:</strong> your Lightning node's public key
-      (node ID), your IP address while connected on TCP port 9735, the channel
-      funding and closing transactions between your node and the LSP, and the
-      <strong>amounts and timing of payments routed through the LSP</strong>
-      (along with the next hop in the Lightning route). Because Lightning uses
-      onion routing, the LSP does not see who the final recipient or sender is
-      beyond its immediate hop, and does not know who you are.</li>
-    <li><strong>What VSS stores:</strong> encrypted blobs of your channel state
-      and encrypted payment notes, plus a random 16-byte device-lock token so
-      two phones do not run the same channel at once. Channel state blobs are
-      encrypted on your phone with keys derived from your recovery phrase before
-      upload; VSS and the backend cannot decrypt them.</li>
-    <li><strong>LNURL and Lightning Addresses:</strong> when you pay an LNURL or
-      a Lightning Address (<code>name@domain</code>), your phone connects
-      directly over HTTPS to the recipient's domain to fetch the invoice; that
-      server sees your IP address and the payment amount requested.</li>
+    <li><strong>What our LSP sees:</strong> your Lightning node's public key (node ID),
+      your IP address while connected, the channel funding, splice and closing
+      transactions between your node and the LSP, and the <strong>amounts and timing of
+      payments that pass through it</strong>, with the next hop in the route. Because
+      Lightning uses onion routing, the LSP does not see the final recipient or sender
+      beyond its immediate hop, and it does not know who you are.</li>
+    <li><strong>What our LSP stores for your node ID:</strong> payments it is holding for
+      you while your phone is offline; your <strong>Fortis balance</strong> and a ledger
+      of every movement in and out of it (amounts, fees, times, payment hashes); the
+      invoices and BOLT12 offer it issued for you; the fees you paid us; and your push
+      token (section&nbsp;3). This is tied to your node ID, not to your name or email.</li>
+    <li><strong>The Fortis balance is custodial.</strong> Small payments that arrive
+      before you have a channel, payments to your BOLT12 address, and payments you
+      didn't collect within a few hours are held by Fortis Tech Labs on your Fortis
+      balance until they move into your channel. While they're there, we hold those
+      funds, not your phone. Each balance holds at most 50,000&nbsp;sat, and we hold at most 300,000&nbsp;sat for all users together.</li>
+    <li><strong>What VSS stores:</strong> encrypted copies of your channel state and
+      payment records, plus a random device-lock token so two phones do not run the same
+      channel at once. They're encrypted on your phone, with keys derived from the
+      wallet's phrase, before upload. VSS and the backend cannot decrypt them.</li>
+    <li><strong>LNURL and Lightning addresses:</strong> when you pay an LNURL or a
+      Lightning address (<code>name@domain</code>), your phone connects directly over
+      HTTPS to the recipient's domain to fetch the invoice. That server sees your IP
+      address and the amount requested.</li>
   </ul>
 
   <h2>10. Data retention and your choices</h2>
   <ul>
     <li>On-device data: removed on uninstall or <em>Forget this wallet</em>.</li>
-    <li>Backend: no per-user account exists; per-install tokens are random and
+    <li>Backend: there is no sign-up account; per-install tokens are random and
       short-lived; connection metadata is not retained per-request.</li>
+    <li>Lightning: the LSP keeps the records in section&nbsp;9 for as long as your
+      node has a channel or a Fortis balance with us, and the ledger of the Fortis balance
+      for our accounts after that. A push token is deleted when Google reports it is
+      no longer valid.</li>
     <li>To ask about or request deletion of any residual server-side records, email
       <a href="mailto:support@fortistechlabs.com">support@fortistechlabs.com</a>.</li>
   </ul>
@@ -204,11 +249,16 @@
     <li><strong>Data collected:</strong> approximate/precise location — none;
       personal info — none; financial info — wallet addresses and on-chain transaction
       data (public), submitted transactions, and, if you swap, your offers and the
-      swap's public transaction data; app activity — none; device IDs — none.</li>
+      swap's public transaction data; with a Lightning wallet, your node ID, Fortis
+      balance and the payments that pass through our LSP; app activity — error reports
+      and, if you send one, support messages; device IDs — none, apart from the Firebase
+      push token if you have a Lightning wallet.</li>
     <li><strong>Data shared:</strong> wallet addresses and IP address are processed by
       Cloudflare (infrastructure) and, during a backend outage, by mempool.space / mempool.guide
       (fallback data source); during a swap, transaction lookups go to the public
-      explorers and NeoxEX listed in section 8.</li>
+      explorers and NeoxEX listed in section 8; with a Lightning wallet, the push token
+      and notification text are processed by Google Firebase, and support tickets reach
+      our inbox through Google Gmail.</li>
     <li><strong>Security practices:</strong> data encrypted in transit (HTTPS);
       on-device secrets encrypted at rest; users can request deletion.</li>
     <li><strong>Data collection is:</strong> not required to be linked to identity;

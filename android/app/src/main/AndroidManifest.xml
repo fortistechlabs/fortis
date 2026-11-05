@@ -46,6 +46,12 @@
             </intent-filter>
         </activity>
 
+        <!-- No FCM token at start-up: one is made only when a Lightning wallet asks
+             for it (LightningPush.token), so installs without Lightning never talk to Firebase. -->
+        <meta-data
+            android:name="firebase_messaging_auto_init_enabled"
+            android:value="false" />
+
         <!-- Lightning push: "Incoming Lightning payment" from the LSP (Firebase Cloud Messaging) -->
         <service
             android:name=".lightning.FortisMessagingService"

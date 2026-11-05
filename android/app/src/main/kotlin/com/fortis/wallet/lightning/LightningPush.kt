@@ -39,10 +39,14 @@ object LightningPush {
         )
     }
 
-    /** This phone's FCM token, or null (no Google Play services, or no network yet). */
+    /** This phone's FCM token, or null (no Google Play services, or no network yet).
+     *  Auto-init is off in the manifest; asking here (only with a Lightning wallet)
+     *  turns it on, so the token is kept fresh from then on. */
     suspend fun token(): String? = runCatching {
         suspendCancellableCoroutine<String?> { cont ->
-            FirebaseMessaging.getInstance().token.addOnCompleteListener { t ->
+            val fcm = FirebaseMessaging.getInstance()
+            fcm.isAutoInitEnabled = true
+            fcm.token.addOnCompleteListener { t ->
                 cont.resume(if (t.isSuccessful) t.result else null)
             }
         }
