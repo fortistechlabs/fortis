@@ -23,6 +23,13 @@ deploy\publish-site.bat              # double-click, or run from any shell
 deploy\publish-site.ps1 -Preview     # throwaway preview build with its own URL
 ```
 
+On Linux/macOS:
+
+```sh
+deploy/publish-site.sh               # asks for the Cloudflare token (not stored)
+deploy/publish-site.sh --preview     # preview build with its own URL
+```
+
 Uploads the current contents of `site/` as a production deployment, tagged with
 the git commit. First run also creates the `fortis-rest` Pages project (pass
 `-Project <name>` if yours is named differently).

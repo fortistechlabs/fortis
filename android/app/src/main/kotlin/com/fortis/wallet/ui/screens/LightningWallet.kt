@@ -415,7 +415,7 @@ internal fun LightningReceiveTab(vm: WalletViewModel) {
                     .size(224.dp)
                     .clip(RoundedCornerShape(Fx.rSm))
                     .background(Color.White)
-                    .combinedClickable(onClick = {}, onLongClick = copyQr, onDoubleClick = copyQr)
+                    .combinedClickable(onClick = copyQr, onLongClick = copyQr, onDoubleClick = copyQr)
                     .padding(10.dp),
             )
             Text(
@@ -989,6 +989,8 @@ internal fun ReusableOfferCard(vm: WalletViewModel) {
             GhostButton(stringResource(R.string.ln_offer_show)) { vm.loadAccountOffer() }
         } else {
             val qr = remember(offer) { qrBitmap(offer.uppercase()) }
+            // Like every QR in the app: a tap (or long press) copies the QR image.
+            val copyQr = { copyImageToClipboard(ctx, qr) }
             Image(
                 bitmap = qr.asImageBitmap(),
                 contentDescription = stringResource(R.string.cd_address_qr),
@@ -997,6 +999,7 @@ internal fun ReusableOfferCard(vm: WalletViewModel) {
                     .size(224.dp)
                     .clip(RoundedCornerShape(Fx.rSm))
                     .background(Color.White)
+                    .combinedClickable(onClick = copyQr, onLongClick = copyQr, onDoubleClick = copyQr)
                     .padding(10.dp),
             )
             val copy = { copyToClipboard(ctx, "offer", offer) }

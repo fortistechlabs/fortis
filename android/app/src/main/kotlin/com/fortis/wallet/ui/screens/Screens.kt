@@ -1135,7 +1135,7 @@ private fun ReceiveTab(vm: WalletViewModel) {
                     .size(224.dp)
                     .clip(RoundedCornerShape(Fx.rSm))
                     .background(Color.White)
-                    .combinedClickable(onClick = {}, onLongClick = copyQr, onDoubleClick = copyQr)
+                    .combinedClickable(onClick = copyQr, onLongClick = copyQr, onDoubleClick = copyQr)
                     .padding(10.dp),
             )
             Text(
