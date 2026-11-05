@@ -15,9 +15,22 @@ repository: https://github.com/fortistechlabs/fortis
 pubkey: npub1qsasj2ljwllm9a3nget7jmdl7ggswf4jtpqjlryyz7l4mxc7lu0qdwthtf
 
 name: Fortis Wallet
-summary: Non-custodial wallet for Bitcoin XBT and Bitcoin BTC
+summary: Bitcoin XBT, Bitcoin BTC and Lightning wallet, keys on your phone
 description: |
-  A non-custodial mobile wallet for Bitcoin XBT and Bitcoin BTC, locked with your fingerprint. Your recovery phrase is generated on your phone, encrypted there, and never leaves it.
+  A mobile wallet for Bitcoin XBT, Bitcoin BTC and Lightning, locked with your fingerprint. Your recovery phrases are generated on your phone, encrypted there, and never leave it.
+
+  Lightning (new in 0.6):
+  - A Lightning wallet of its own, with its own recovery phrase. Your phone runs its own Lightning node; only it can spend what's in your channel.
+  - Pay invoices, Lightning addresses, LNURL and BOLT12 offers. The most you could pay in routing fees is shown before you confirm.
+  - Get paid while the app is closed: the Fortis Lightning provider holds the payment and notifies you; open Fortis and it arrives.
+  - A reusable BOLT12 address you share once and get paid to again and again.
+  - Move sats between on-chain and Lightning in a couple of taps, and choose which BTC wallet receives them.
+  - A history that works like a ledger: every payment, move and fee (network, transfer, routing) with the balance after each, so every sat reconciles.
+  - Your first channel opens with a payment of 11,000 sat or more (fee 0.5%, minimum 1,000 sat, shown before you share the invoice).
+  - Honest about custody: smaller payments, and payments you don't collect within a few hours, are held by Fortis on your Fortis balance until they add up to more than 50,000 sat and move into a channel of your own. The app shows that balance separately. Details: https://fortistechlabs.com/lightning
+  - Encrypted channel backup, restored from the wallet's phrase. A cooperative close sends everything on-chain; a force close is offered if the provider can't be reached.
+
+  Everything else:
 
   - Locked with your fingerprint (or face, or device PIN): the key that opens the app is held in your phone's secure hardware (StrongBox or the TEE) and is released only when you unlock - one unlock opens every wallet.
   - Locks itself a minute after you leave it, and clears your keys from memory; swaps carry on in the background.
@@ -35,9 +48,10 @@ description: |
   - Cross-chain replay protection: SIGHASH_UNIFIED on every XBT send (automatic), plus an optional oversized OP_RETURN on BTC sends.
   - Extra entropy from your hands: shake the phone, scribble on screen, or CPU-timing jitter, folded into the seed.
   - In 75 languages, picked in Settings or following your phone.
-  - No analytics, no ads, no third-party SDKs; the backend only ever sees public addresses and finished signed transactions - no account, no sign-up.
+  - Help & support in Settings, and a "Send to support" button on every error.
+  - No analytics, no ads. The one third-party SDK is Firebase Cloud Messaging, used only for Lightning payment notifications, and only once you add a Lightning wallet. No account, no sign-up; for on-chain wallets the backend only sees public addresses and finished signed transactions. Privacy policy: https://fortistechlabs.com/privacy
 
-  Standard, portable keys - restore the same phrase in any BIP-84 wallet. Open source (MIT). No Google Play Services.
+  Standard, portable on-chain keys - restore the same phrase in any BIP-84 wallet. Open source (MIT). Works without Google Play Services; only Lightning notifications need it.
 
 tags:
   - bitcoin
@@ -46,6 +60,7 @@ tags:
   - cryptocurrency
   - nostr
   - xbt
+  - lightning
 
 license: MIT
 website: https://fortistechlabs.com
@@ -56,9 +71,9 @@ icon: https://fortistechlabs.com/icon.png
 
 images:
   - https://fortistechlabs.com/img/android-home.jpg
-  - https://fortistechlabs.com/img/android-send.jpg
   - https://fortistechlabs.com/img/android-receive.jpg
   - https://fortistechlabs.com/img/android-history.jpg
+  - https://fortistechlabs.com/img/android-move.jpg
   - https://fortistechlabs.com/img/swaps/swaps.jpg
   - https://fortistechlabs.com/img/swaps/funded.jpg
   - https://fortistechlabs.com/img/swaps/done.jpg
