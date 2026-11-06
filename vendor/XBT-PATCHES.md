@@ -22,13 +22,14 @@ are reworked by the task named in the last column. Sighash call sites passing
 | lightning | `src/ln/channel.rs` | `validate_commitment_signed` (HTLC signature check) | `p2wsh_sighash(.., unified: false)` placeholder | 4 |
 | lightning | `src/ln/channel.rs` | `build_signed_closing_transaction` | `hash_type(.., unified: false)` placeholder | 4 |
 | lightning | `src/sign/mod.rs` | `sign_counterparty_commitment`, `sign_holder_htlc_transaction` | `p2wsh_sighash(.., unified: false)` placeholder | 4 |
-| lightning | `src/ln/channel.rs` | `channel_type` check in the open/accept validation (`check_channel_type_xbt`-style helper) and the channel-type proposal; use `grep -n 'xbt::enabled' src/ln/channel.rs` | Global `lightning_types::xbt::enabled()` (was `crate::xbt::enabled`, re-export removed) | 3 |
-| lightning | `src/ln/channelmanager.rs` | init features | Sets `option_blake2b` from the global switch (spike) | 3 |
+| lightning | `src/ln/channel.rs` | `channel_type_from_open_channel` | Refuses opens whose channel_type lacks unified sigs; uses global `lightning_types::xbt::enabled()` (was `crate::xbt::enabled`, re-export removed) | 3 |
+| lightning | `src/ln/channel.rs` | `get_initial_channel_type` | Proposes unified sigs; uses global `lightning_types::xbt::enabled()` | 3 |
+| lightning | `src/ln/channelmanager.rs` | `provided_init_features` | Sets `option_blake2b` from the global switch (spike) | 3 |
 | lightning-types | `src/features.rs` | feature bits 512-515 (`option_blake2b`, `option_unified_sigs`), `requires_unified_sigs` | XBT feature bits (spike) | 3 |
 | lightning-types | `src/lib.rs` | `pub mod xbt` | Process-wide switch (spike) | 3 |
-| lightning-invoice | `src/lib.rs` | `InvoiceBuilder` feature setters | Sets `option_blake2b` in BOLT 11 (spike) | 3 |
+| lightning-invoice | `src/lib.rs` | `InvoiceBuilder::payment_secret` | Sets `option_blake2b` in BOLT 11 (spike) | 3 |
 | lightning-transaction-sync | (crate copied, patched in) | - | Needed so the workspace resolves one set of patched crates | 7 |
-| esplora-client | `src/blocking.rs`, `src/async.rs` | header fetch | 164-byte BLAKE2b headers (spike) | 7 |
+| esplora-client | `src/blocking.rs`, `src/async.rs` | `xbt_header` | 164-byte BLAKE2b headers (spike) | 7 |
 | bitcoin | `src/blockdata/block.rs` | `xbt_ids`, `Header::block_hash` | Block id for BLAKE2b headers (spike); temporary | 7 |
 
 ## Running the tests
