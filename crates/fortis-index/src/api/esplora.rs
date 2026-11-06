@@ -206,7 +206,11 @@ pub(crate) fn block_info_json(b: &Value) -> ApiResult<Value> {
         "mediantime": b["mediantime"],
         "nonce": b["nonce"],
         "bits": bits,
-        "difficulty": b["difficulty"],
+        // Knots reports a BLAKE2b block's difficulty as `difficulty_blake2b`;
+        // Esplora clients (BDK) need a number here.
+        "difficulty": b.get("difficulty").filter(|d| d.is_number())
+            .or_else(|| b.get("difficulty_blake2b").filter(|d| d.is_number()))
+            .cloned().unwrap_or(serde_json::json!(0.0)),
     }))
 }
 
@@ -616,6 +620,29 @@ mod tests {
         assert!(!stale.in_best_chain);
         let unknown: BlockStatus = serde_json::from_value(block_status_json(None)).unwrap();
         assert!(!unknown.in_best_chain);
+    }
+
+    fn blake2b_block(extra: Value) -> Value {
+        let mut b = json!({
+            "hash": "00000000000000000001b8e5fa1a5e7d5c3d0d6f0e2e8f3c5f8e9d1a2b3c4d5e", "height": 5,
+            "version": 536_870_912, "time": 1_762_180_000u64, "mediantime": 1_762_179_000u64, "nonce": 1,
+            "bits": "17023a04", "nTx": 1, "size": 300, "weight": 1_000,
+            "merkleroot": "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b",
+        });
+        b.as_object_mut().unwrap().extend(extra.as_object().unwrap().clone());
+        b
+    }
+
+    #[test]
+    fn block_info_uses_blake2b_difficulty() {
+        let b = blake2b_block(json!({ "difficulty": null, "difficulty_blake2b": 1.25e9 }));
+        assert_eq!(block_info_json(&b).unwrap()["difficulty"], 1.25e9);
+    }
+
+    #[test]
+    fn block_info_difficulty_defaults_to_zero() {
+        let b = blake2b_block(json!({}));
+        assert_eq!(block_info_json(&b).unwrap()["difficulty"], 0.0);
     }
 
     #[test]
