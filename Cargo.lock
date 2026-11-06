@@ -400,8 +400,6 @@ dependencies = [
 [[package]]
 name = "bitcoin"
 version = "0.32.102"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bb0ce8bd5baaa0d303a19915a6d93afed161f528654e42da2a7a97d05c59499a"
 dependencies = [
  "base58ck",
  "base64 0.21.7",
@@ -886,8 +884,6 @@ dependencies = [
 [[package]]
 name = "esplora-client"
 version = "0.12.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f19e3ea99dbfbef0c1ec26d83e69de0c579f6aa6aaac4f44597805fcc27e97af"
 dependencies = [
  "bitcoin",
  "hex-conservative 0.2.3",
@@ -1737,8 +1733,6 @@ dependencies = [
 [[package]]
 name = "lightning"
 version = "0.2.7"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "982ffb82e8362ea95e03a5de8a6004bceb7a577fc1f07d5b02cfc3fc7c930a90"
 dependencies = [
  "bech32",
  "bitcoin",
@@ -1782,8 +1776,6 @@ dependencies = [
 [[package]]
 name = "lightning-invoice"
 version = "0.34.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "47d83bd798e04ab9eecc8bbef1fa17d3808859bcdc0406bd16c55d51c8834444"
 dependencies = [
  "bech32",
  "bitcoin",
@@ -1856,8 +1848,6 @@ dependencies = [
 [[package]]
 name = "lightning-transaction-sync"
 version = "0.2.7"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dbcb06ccc3abb415465c396448562a811e4405ea3da893c52ccda31d3ed853ad"
 dependencies = [
  "bitcoin",
  "electrum-client",
@@ -1870,8 +1860,6 @@ dependencies = [
 [[package]]
 name = "lightning-types"
 version = "0.3.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c77c676d4a34cceb2ae3756916e446b4d17f9430a24107e099981f0f9aec77e6"
 dependencies = [
  "bitcoin",
 ]
