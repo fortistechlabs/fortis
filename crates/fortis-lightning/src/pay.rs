@@ -489,6 +489,7 @@ fn map_send_error(e: NodeError) -> LnError {
         NodeError::PersistenceFailed => LnError::PaymentStateUnknown,
         NodeError::DuplicatePayment => LnError::Other("duplicate_payment".into()),
         NodeError::UnsupportedCurrency => LnError::Other("unsupported_currency".into()),
+        NodeError::WrongChain => LnError::Other(NodeError::WrongChain.to_string()),
         other => LnError::Other(format!("pay: {other}")),
     }
 }

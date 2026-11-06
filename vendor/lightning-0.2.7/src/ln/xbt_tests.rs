@@ -301,6 +301,89 @@ fn xbt_static_invoice_carries_blake2b() {
 	assert!(res.invoice.invoice_features().requires_blake2b());
 }
 
+/// A BOLT 12 invoice that lacks `option_blake2b`, answering an XBT node's request, is abandoned
+/// before any HTLC: XBT shares BTC's chain hash, so the bit is all that tells the chains apart.
+#[test]
+fn xbt_abandons_bolt12_invoice_without_blake2b() {
+	use crate::events::{Event, PaymentFailureReason};
+	use crate::ln::channelmanager::PaymentId;
+	use crate::offers::offer::OfferBuilder;
+	use crate::offers::test_utils::payment_paths;
+	use crate::onion_message::messenger::{Destination, MessageSendInstructions};
+
+	let chanmon_cfgs = create_chanmon_cfgs(2);
+	let node_cfgs = create_node_cfgs(2, &chanmon_cfgs);
+	let node_chanmgrs =
+		create_node_chanmgrs(2, &node_cfgs, &[Some(xbt_cfg()), Some(xbt_cfg())]);
+	let nodes = create_network(2, &node_cfgs, &node_chanmgrs);
+	create_announced_chan_between_nodes_with_value(&nodes, 0, 1, 10_000_000, 1_000_000_000);
+
+	let alice = &nodes[0];
+	let alice_id = alice.node.get_our_node_id();
+	let bob = &nodes[1];
+	let bob_id = bob.node.get_our_node_id();
+
+	// Bob (XBT) pays an XBT offer whose signing key is alice's node key, so the test can sign a
+	// replacement invoice with it.
+	let offer = OfferBuilder::new(alice_id)
+		.chain(bitcoin::Network::Testnet)
+		.xbt_blake2b(true)
+		.description("x".into())
+		.amount_msats(10_000_000)
+		.build()
+		.unwrap();
+	assert!(offer.offer_features().requires_blake2b());
+	let payment_id = PaymentId([7; 32]);
+	bob.node.pay_for_offer(&offer, None, payment_id, Default::default()).unwrap();
+
+	let onion_message = bob.onion_messenger.next_onion_message_for_peer(alice_id).unwrap();
+	let (invoice_request, reply_path) =
+		super::offers_tests::extract_invoice_request(alice, &onion_message);
+
+	// The intercepted reply: an invoice for the request, signed by the offer key, with no blake2b.
+	let invoice = invoice_request
+		.respond_with(payment_paths(), crate::types::payment::PaymentHash([42; 32]))
+		.unwrap()
+		.build()
+		.unwrap()
+		.sign(|i: &crate::offers::invoice::UnsignedBolt12Invoice| {
+			use crate::sign::NodeSigner;
+			alice.keys_manager.sign_bolt12_invoice(i)
+		})
+		.unwrap();
+	assert!(!invoice.invoice_features().supports_blake2b());
+
+	alice
+		.onion_messenger
+		.send_onion_message(
+			crate::onion_message::offers::OffersMessage::Invoice(invoice),
+			MessageSendInstructions::WithoutReplyPath {
+				destination: Destination::BlindedPath(reply_path),
+			},
+		)
+		.unwrap();
+	let onion_message = alice.onion_messenger.next_onion_message_for_peer(bob_id).unwrap();
+	bob.onion_messenger.handle_onion_message(alice_id, &onion_message);
+
+	// No HTLC left bob, and the payment was abandoned.
+	check_added_monitors(bob, 0);
+	assert!(bob.node.get_and_clear_pending_msg_events().is_empty());
+	let events = bob.node.get_and_clear_pending_events();
+	assert_eq!(events.len(), 1, "{:?}", events);
+	match &events[0] {
+		Event::PaymentFailed { payment_id: id, reason, .. } => {
+			assert_eq!(*id, payment_id);
+			assert_eq!(*reason, Some(PaymentFailureReason::UnexpectedError));
+		},
+		e => panic!("unexpected event {:?}", e),
+	}
+	bob.logger.assert_log_contains(
+		"lightning::ln::channelmanager",
+		"XBT: invoice without option_blake2b",
+		1,
+	);
+}
+
 // ---------------------------------------------------------------------------
 // Task 4: per-channel unified signatures.
 //

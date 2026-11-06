@@ -51,7 +51,7 @@ use crate::sync::Mutex;
 use crate::sync::{LockTestExt, RwLock, RwLockReadGuard};
 use core::ops::{Bound, Deref};
 use core::str::FromStr;
-use core::sync::atomic::{AtomicUsize, Ordering};
+use core::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
 use core::{cmp, fmt};
 
 pub use lightning_types::routing::RoutingFees;
@@ -196,6 +196,9 @@ where
 	nodes: RwLock<IndexedMap<NodeId, NodeInfo>>,
 	removed_node_counters: Mutex<Vec<u32>>,
 	next_node_counter: AtomicUsize,
+	// FORTIS XBT: channel announcements whose SCID block height is below this are ignored (XBT
+	// shares BTC's genesis hash, so BTC-chain gossip passes the chain hash check). 0 = no floor.
+	min_announcement_height: AtomicU32,
 	// Lock order: removed_channels -> removed_nodes
 	//
 	// NOTE: In the following `removed_*` maps, we use seconds since UNIX epoch to track time instead
@@ -1713,6 +1716,7 @@ where
 			removed_nodes: Mutex::new(new_hash_map()),
 			removed_channels: Mutex::new(new_hash_map()),
 			pending_checks: utxo::PendingChecks::new(),
+			min_announcement_height: AtomicU32::new(0), // FORTIS XBT: no floor by default
 		})
 	}
 }
@@ -1786,7 +1790,15 @@ where
 			removed_channels: Mutex::new(new_hash_map()),
 			removed_nodes: Mutex::new(new_hash_map()),
 			pending_checks: utxo::PendingChecks::new(),
+			min_announcement_height: AtomicU32::new(0), // FORTIS XBT: no floor by default
 		}
+	}
+
+	/// FORTIS XBT: ignores `channel_announcement`s whose short channel id is in a block below
+	/// `height` (default 0, no floor). XBT forked from BTC's chain history but kept its genesis
+	/// hash, so BTC-chain channels would otherwise pass the chain hash check.
+	pub fn set_min_announcement_height(&self, height: u32) {
+		self.min_announcement_height.store(height, Ordering::Release);
 	}
 
 	fn test_node_counter_consistency(&self) {
@@ -2178,6 +2190,15 @@ where
 		if msg.chain_hash != self.chain_hash {
 			return Err(LightningError {
 				err: "Channel announcement chain hash does not match genesis hash".to_owned(),
+				action: ErrorAction::IgnoreAndLog(Level::Debug),
+			});
+		}
+
+		// FORTIS XBT: the gossip floor.
+		let min_height = self.min_announcement_height.load(Ordering::Acquire);
+		if block_from_scid(msg.short_channel_id) < min_height {
+			return Err(LightningError {
+				err: "Channel announcement is below the XBT gossip floor".to_owned(),
 				action: ErrorAction::IgnoreAndLog(Level::Debug),
 			});
 		}
@@ -2965,6 +2986,53 @@ pub(crate) mod tests {
 			Ok(_) => panic!(),
 			Err(e) => assert_eq!(e.err, "Update older than last processed update"),
 		};
+	}
+
+	#[test]
+	fn gossip_floor_ignores_old_channels() {
+		let secp_ctx = Secp256k1::new();
+		let logger = test_utils::TestLogger::new();
+		let node_1_privkey = &SecretKey::from_slice(&[42; 32]).unwrap();
+		let node_1_pubkey = PublicKey::from_secret_key(&secp_ctx, node_1_privkey);
+		let node_2_privkey = &SecretKey::from_slice(&[41; 32]).unwrap();
+
+		let network_graph = NetworkGraph::new(Network::Testnet, &logger);
+		network_graph.set_min_announcement_height(961640);
+		let gossip_sync = P2PGossipSync::new(&network_graph, None::<&test_utils::TestChainSource>, &logger);
+
+		let announce = |block: u64| {
+			get_signed_channel_announcement(
+				|unsigned| unsigned.short_channel_id = scid_from_parts(block, 1, 0).unwrap(),
+				node_1_privkey,
+				node_2_privkey,
+				&secp_ctx,
+			)
+		};
+
+		let old = announce(961639);
+		match gossip_sync.handle_channel_announcement(Some(node_1_pubkey), &old) {
+			Err(super::LightningError { action: super::ErrorAction::IgnoreAndLog(super::Level::Debug), .. }) => {},
+			other => panic!("{:?}", other),
+		}
+		assert!(network_graph
+			.read_only()
+			.channels()
+			.get(&old.contents.short_channel_id)
+			.is_none());
+
+		let at_floor = announce(961640);
+		assert!(gossip_sync.handle_channel_announcement(Some(node_1_pubkey), &at_floor).unwrap());
+		assert!(network_graph
+			.read_only()
+			.channels()
+			.get(&at_floor.contents.short_channel_id)
+			.is_some());
+
+		// The default is no floor.
+		let open_graph = NetworkGraph::new(Network::Testnet, &logger);
+		let open_sync =
+			P2PGossipSync::new(&open_graph, None::<&test_utils::TestChainSource>, &logger);
+		assert!(open_sync.handle_channel_announcement(Some(node_1_pubkey), &old).unwrap());
 	}
 
 	#[test]

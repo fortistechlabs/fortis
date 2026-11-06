@@ -101,6 +101,9 @@ impl Bolt11Payment {
 		}
 
 		let invoice = maybe_deref(invoice);
+		// FORTIS XBT: refuse an invoice for the other chain before anything is sent.
+		crate::payment::check_chain_bolt11(invoice, self.config.xbt.is_some())?;
+
 		let payment_hash = PaymentHash(invoice.payment_hash().to_byte_array());
 		let payment_id = PaymentId(invoice.payment_hash().to_byte_array());
 		if let Some(payment) = self.payment_store.get(&payment_id) {
@@ -198,6 +201,9 @@ impl Bolt11Payment {
 		}
 
 		let invoice = maybe_deref(invoice);
+		// FORTIS XBT: refuse an invoice for the other chain before anything is sent.
+		crate::payment::check_chain_bolt11(invoice, self.config.xbt.is_some())?;
+
 		if let Some(invoice_amount_msat) = invoice.amount_milli_satoshis() {
 			if amount_msat < invoice_amount_msat {
 				log_error!(
@@ -870,6 +876,9 @@ impl Bolt11Payment {
 		}
 
 		let invoice = maybe_deref(invoice);
+		// FORTIS XBT: refuse an invoice for the other chain before anything is sent.
+		crate::payment::check_chain_bolt11(invoice, self.config.xbt.is_some())?;
+
 		let payment_params = PaymentParameters::from_bolt11_invoice(invoice);
 
 		let amount_msat = invoice.amount_milli_satoshis().ok_or_else(|| {
@@ -925,6 +934,9 @@ impl Bolt11Payment {
 		}
 
 		let invoice = maybe_deref(invoice);
+		// FORTIS XBT: refuse an invoice for the other chain before anything is sent.
+		crate::payment::check_chain_bolt11(invoice, self.config.xbt.is_some())?;
+
 		let payment_params = PaymentParameters::from_bolt11_invoice(invoice);
 
 		if let Some(invoice_amount_msat) = invoice.amount_milli_satoshis() {

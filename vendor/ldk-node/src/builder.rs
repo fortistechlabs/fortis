@@ -1438,6 +1438,11 @@ fn build_with_store_internal(
 			},
 		};
 
+	// FORTIS XBT: ignore channel announcements from before the XBT fork (they are BTC channels).
+	if let Some(xbt) = config.xbt.as_ref() {
+		network_graph.set_min_announcement_height(xbt.gossip_floor_height);
+	}
+
 	let local_scorer = match io::utils::read_scorer(
 		Arc::clone(&kv_store),
 		Arc::clone(&network_graph),

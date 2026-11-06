@@ -87,6 +87,9 @@ impl Bolt12Payment {
 		}
 
 		let offer = maybe_deref(offer);
+		// FORTIS XBT: refuse an offer for the other chain before anything is sent.
+		crate::payment::check_chain_offer(&offer, self.config.xbt.is_some())?;
+
 
 		let mut random_bytes = [0u8; 32];
 		rand::rng().fill_bytes(&mut random_bytes);
@@ -199,6 +202,9 @@ impl Bolt12Payment {
 		}
 
 		let offer = maybe_deref(offer);
+		// FORTIS XBT: refuse an offer for the other chain before anything is sent.
+		crate::payment::check_chain_offer(&offer, self.config.xbt.is_some())?;
+
 
 		let mut random_bytes = [0u8; 32];
 		rand::rng().fill_bytes(&mut random_bytes);

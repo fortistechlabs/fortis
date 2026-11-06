@@ -15432,6 +15432,19 @@ where
 					&self.logger, None, None, Some(invoice.payment_hash()),
 				);
 
+				// FORTIS XBT: XBT keeps BTC's chain hash, so `option_blake2b` is all that marks an
+				// invoice as ours. Paying a BTC invoice would lose the money: abandon the payment
+				// (before any HTLC, and before `Event::InvoiceReceived` when handling manually).
+				if self.config.read().unwrap().is_xbt()
+					&& !invoice.invoice_features().supports_blake2b()
+				{
+					log_error!(logger, "XBT: invoice without option_blake2b");
+					self.abandon_payment_with_reason(
+						payment_id, PaymentFailureReason::UnexpectedError,
+					);
+					return None;
+				}
+
 				if self.config.read().unwrap().manually_handle_bolt12_invoices {
 					// Update the corresponding entry in `PendingOutboundPayment` for this invoice.
 					// This ensures that event generation remains idempotent in case we receive
@@ -15453,6 +15466,16 @@ where
 					Some(OffersContext::OutboundPayment { payment_id, .. }) => payment_id,
 					_ => return None
 				};
+				// FORTIS XBT: as for `OffersMessage::Invoice` above.
+				if self.config.read().unwrap().is_xbt()
+					&& !invoice.invoice_features().supports_blake2b()
+				{
+					log_error!(self.logger, "XBT: invoice without option_blake2b");
+					self.abandon_payment_with_reason(
+						payment_id, PaymentFailureReason::UnexpectedError,
+					);
+					return None;
+				}
 				let res = self.initiate_async_payment(&invoice, payment_id);
 				handle_pay_invoice_res!(res, invoice, self.logger);
 			},

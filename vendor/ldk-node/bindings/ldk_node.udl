@@ -298,6 +298,8 @@ enum NodeError {
 	"OfferCreationFailed",
 	"RefundCreationFailed",
 	"PaymentSendingFailed",
+	// FORTIS XBT: invoice or offer for the other Bitcoin chain.
+	"WrongChain",
 	"InvalidCustomTlvs",
 	"ProbeSendingFailed",
 	"ChannelCreationFailed",
