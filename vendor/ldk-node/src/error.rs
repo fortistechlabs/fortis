@@ -35,6 +35,9 @@ pub enum Error {
 	RefundCreationFailed,
 	/// Sending a payment has failed.
 	PaymentSendingFailed,
+	// FORTIS XBT: an invoice or offer for the other Bitcoin chain (BTC vs XBT).
+	/// The invoice or offer is for the other Bitcoin chain.
+	WrongChain,
 	/// Sending of spontaneous payment with custom TLVs failed.
 	InvalidCustomTlvs,
 	/// Sending a payment probe has failed.
@@ -143,6 +146,8 @@ impl fmt::Display for Error {
 			Self::OfferCreationFailed => write!(f, "Failed to create offer."),
 			Self::RefundCreationFailed => write!(f, "Failed to create refund."),
 			Self::PaymentSendingFailed => write!(f, "Failed to send the given payment."),
+			// FORTIS XBT: refusal before any HTLC is sent.
+			Self::WrongChain => write!(f, "This invoice or offer is for the other Bitcoin chain."),
 			Self::InvalidCustomTlvs => write!(f, "Failed to construct payment with custom TLVs."),
 			Self::ProbeSendingFailed => write!(f, "Failed to send the given payment probe."),
 			Self::ChannelCreationFailed => write!(f, "Failed to create channel."),

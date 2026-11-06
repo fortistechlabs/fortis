@@ -46,6 +46,7 @@ use crate::builder::sanitize_alias;
 pub use crate::config::{
 	default_config, AnchorChannelsConfig, BackgroundSyncConfig, ElectrumSyncConfig,
 	EsploraSyncConfig, MaxDustHTLCExposure,
+	XbtConfig, // FORTIS XBT: for the udl's XbtConfig dictionary
 };
 use crate::error::Error;
 pub use crate::graph::{ChannelInfo, ChannelUpdateInfo, NodeAnnouncementInfo, NodeInfo};

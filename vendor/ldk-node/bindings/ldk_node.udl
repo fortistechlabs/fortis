@@ -13,6 +13,14 @@ dictionary Config {
 	u64 probing_liquidity_limit_multiplier;
 	AnchorChannelsConfig? anchor_channels_config;
 	RouteParametersConfig? route_parameters;
+	// FORTIS XBT: mirrors Config::xbt (the uniffi Record must list every field)
+	XbtConfig? xbt;
+};
+
+// FORTIS XBT: mirrors config::XbtConfig
+dictionary XbtConfig {
+	u32 gossip_floor_height;
+	sequence<PublicKey> splice_peers;
 };
 
 dictionary AnchorChannelsConfig {
@@ -290,6 +298,8 @@ enum NodeError {
 	"OfferCreationFailed",
 	"RefundCreationFailed",
 	"PaymentSendingFailed",
+	// FORTIS XBT: invoice or offer for the other Bitcoin chain.
+	"WrongChain",
 	"InvalidCustomTlvs",
 	"ProbeSendingFailed",
 	"ChannelCreationFailed",
@@ -373,6 +383,7 @@ enum BuildError {
 	"LoggerSetupFailed",
 	"NetworkMismatch",
 	"AsyncPaymentsConfigMismatch",
+	"InvalidChainSource", // FORTIS XBT: XBT needs an Esplora chain source
 };
 
 [Trait]

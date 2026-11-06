@@ -262,6 +262,11 @@ features = [
     "_test_utils",
 ]
 
+# FORTIS XBT: xbt_sign_matches_wallet_core checks the wallet's 0x21 signatures against the app's
+# proven XBT signer.
+[dev-dependencies.wallet-core]
+path = "../../crates/wallet-core"
+
 [dev-dependencies.proptest]
 version = "1.0.0"
 

@@ -1,0 +1,68 @@
+[package]
+name = "lightning"
+version = "0.2.7"
+authors = ["Matt Corallo"]
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/lightningdevkit/rust-lightning/"
+readme = "../README.md"
+description = """
+A Complete Bitcoin Lightning Library in Rust.
+Handles the core functionality of the Lightning Network, allowing clients to implement custom wallet, chain interactions, storage and network logic without enforcing a specific runtime.
+"""
+edition = "2021"
+
+[package.metadata.docs.rs]
+features = ["std", "dnssec"]
+rustdoc-args = ["--cfg", "docsrs"]
+
+[features]
+# Internal test utilities exposed to other repo crates
+_test_utils = ["regex", "bitcoin/bitcoinconsensus", "lightning-types/_test_utils"]
+_externalize_tests = ["inventory", "_test_utils"]
+# Allow signing of local transactions that may have been revoked or will be revoked, for functional testing (e.g. justice tx handling).
+# This is unsafe to use in production because it may result in the counterparty publishing taking our funds.
+unsafe_revoked_tx_signing = []
+
+std = []
+
+dnssec = ["dnssec-prover/validation"]
+
+# Generates low-r bitcoin signatures, which saves 1 byte in 50% of the cases
+grind_signatures = []
+
+default = ["std", "grind_signatures"]
+
+[dependencies]
+lightning-types = { version = "0.3.5", path = "../lightning-types", default-features = false }
+lightning-invoice = { version = "0.34.0", path = "../lightning-invoice", default-features = false }
+lightning-macros = { version = "0.2.1", path = "../lightning-macros" }
+
+bech32 = { version = "0.11.0", default-features = false }
+bitcoin = { version = "0.32.2", default-features = false, features = ["secp-recovery"] }
+
+dnssec-prover = { version = "0.6", default-features = false }
+hashbrown = { version = "0.13", default-features = false }
+possiblyrandom = { version = "0.2", path = "../possiblyrandom", default-features = false }
+
+regex = { version = "1.5.6", optional = true }
+backtrace = { version = "0.3", optional = true }
+
+libm = { version = "0.2", default-features = false }
+inventory = { version = "0.3", optional = true  }
+
+[dev-dependencies]
+regex = "1.5.6"
+lightning-types = { version = "0.3.0", path = "../lightning-types", features = ["_test_utils"] }
+lightning-macros = { version = "0.2.1", path = "../lightning-macros" }
+parking_lot = { version = "0.12", default-features = false }
+
+[dev-dependencies.bitcoin]
+version = "0.32.2"
+default-features = false
+features = ["bitcoinconsensus", "secp-recovery"]
+
+[target.'cfg(ldk_bench)'.dependencies]
+criterion = { version = "0.4", optional = true, default-features = false }
+
+[lints]
+workspace = true

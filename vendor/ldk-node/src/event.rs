@@ -1701,8 +1701,10 @@ where
 				channel_id,
 				counterparty_node_id,
 				unsigned_transaction,
+				// FORTIS XBT: every input's prevout, for the wallet's 0x21 signatures on XBT
+				prevouts,
 				..
-			} => match self.wallet.sign_owned_inputs(unsigned_transaction) {
+			} => match self.wallet.sign_owned_inputs(unsigned_transaction, &prevouts) {
 				Ok(partially_signed_tx) => {
 					match self.channel_manager.funding_transaction_signed(
 						&channel_id,

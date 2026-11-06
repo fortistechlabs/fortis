@@ -195,6 +195,10 @@ pub enum BuildError {
 	NetworkMismatch,
 	/// The role of the node in an asynchronous payments context is not compatible with the current configuration.
 	AsyncPaymentsConfigMismatch,
+	// FORTIS XBT: an XBT node needs an Esplora (BLAKE2b index) chain source.
+	/// The chain source is not usable with the configuration: an XBT node ([`Config::xbt`])
+	/// needs an Esplora chain source (the BLAKE2b index); bitcoind and Electrum are refused.
+	InvalidChainSource, // FORTIS XBT: as above
 }
 
 impl fmt::Display for BuildError {
@@ -229,6 +233,10 @@ impl fmt::Display for BuildError {
 					"The async payments role is not compatible with the current configuration."
 				)
 			},
+			// FORTIS XBT: as for the variant.
+			Self::InvalidChainSource => {
+				write!(f, "XBT needs an Esplora chain source (the BLAKE2b index).") // FORTIS XBT: as above
+			}, // FORTIS XBT: as above
 		}
 	}
 }
@@ -1155,6 +1163,28 @@ fn build_with_store_internal(
 ) -> Result<Node, BuildError> {
 	optionally_install_rustls_cryptoprovider();
 
+	// FORTIS XBT: XBT has no anchor channels (LDK neither proposes nor accepts them), so no
+	// anchor reserve is kept and `negotiate_anchors_zero_fee_htlc_tx` stays off.
+	let config = if config.xbt.is_some() && config.anchor_channels_config.is_some() {
+		let mut xbt_config = (*config).clone();
+		xbt_config.anchor_channels_config = None;
+		Arc::new(xbt_config)
+	} else {
+		config
+	};
+
+	// FORTIS XBT: XBT block hashes come from the BLAKE2b index (fortis-index, Esplora API);
+	// bitcoind and Electrum report the SHA-256d hashes, so an XBT node refuses them.
+	if config.xbt.is_some() // FORTIS XBT: as above
+		&& matches!( // FORTIS XBT: as above
+			chain_data_source_config, // FORTIS XBT: as above
+			Some(ChainDataSourceConfig::Bitcoind { .. } | ChainDataSourceConfig::Electrum { .. }) // FORTIS XBT: as above
+		) // FORTIS XBT: as above
+	{ // FORTIS XBT: as above
+		log_error!(logger, "XBT needs an Esplora chain source (the BLAKE2b index)"); // FORTIS XBT: as above
+		return Err(BuildError::InvalidChainSource); // FORTIS XBT: as above
+	} // FORTIS XBT: as above
+
 	if let Err(err) = may_announce_channel(&config) {
 		if config.announcement_addresses.is_some() {
 			log_error!(logger, "Announcement addresses were set but some required configuration options for node announcement are missing: {}", err);
@@ -1361,6 +1391,7 @@ fn build_with_store_internal(
 		Arc::clone(&payment_store),
 		Arc::clone(&config),
 		Arc::clone(&logger),
+		xprv, // FORTIS XBT: the BIP 84 descriptors' master key, for 0x21 signing on XBT
 	));
 
 	// Initialize the KeysManager
@@ -1426,6 +1457,11 @@ fn build_with_store_internal(
 				}
 			},
 		};
+
+	// FORTIS XBT: ignore channel announcements from before the XBT fork (they are BTC channels).
+	if let Some(xbt) = config.xbt.as_ref() {
+		network_graph.set_min_announcement_height(xbt.gossip_floor_height);
+	}
 
 	let local_scorer = match io::utils::read_scorer(
 		Arc::clone(&kv_store),
@@ -2034,6 +2070,47 @@ mod tests {
 
 		let result = builder.build_with_store(store);
 
+		assert!(matches!(result, Err(BuildError::ReadFailed)));
+	}
+
+	// FORTIS XBT: XBT needs the BLAKE2b index (Esplora API); bitcoind and Electrum are refused.
+	fn xbt_builder() -> NodeBuilder {
+		let mut config = crate::config::Config::default();
+		config.xbt = Some(crate::config::XbtConfig::default());
+		let mut builder = NodeBuilder::from_config(config);
+		builder.set_entropy_seed_bytes([42; 64]);
+		builder.set_log_facade_logger();
+		builder
+	}
+
+	#[test]
+	fn xbt_refuses_electrum_chain_source() {
+		let mut builder = xbt_builder();
+		builder.set_chain_source_electrum("tcp://127.0.0.1:1".to_string(), None);
+		let result = builder.build_with_store(Arc::new(InMemoryStore::new()));
+		assert!(matches!(result, Err(BuildError::InvalidChainSource)));
+	}
+
+	#[test]
+	fn xbt_refuses_bitcoind_chain_source() {
+		let mut builder = xbt_builder();
+		builder.set_chain_source_bitcoind_rpc(
+			"127.0.0.1".to_string(),
+			1,
+			"u".to_string(),
+			"p".to_string(),
+		);
+		let result = builder.build_with_store(Arc::new(InMemoryStore::new()));
+		assert!(matches!(result, Err(BuildError::InvalidChainSource)));
+	}
+
+	#[test]
+	fn xbt_accepts_esplora_chain_source() {
+		// Gets past the chain source check to the (failing) channel manager read.
+		let mut builder = xbt_builder();
+		builder.set_chain_source_esplora("http://127.0.0.1:1".to_string(), None);
+		let store: Arc<DynStore> = Arc::new(ChannelManagerReadFailingStore(InMemoryStore::new()));
+		let result = builder.build_with_store(store);
 		assert!(matches!(result, Err(BuildError::ReadFailed)));
 	}
 

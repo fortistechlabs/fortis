@@ -17,6 +17,7 @@ use bdk_wallet::descriptor::ExtendedDescriptor;
 use bdk_wallet::SignOptions;
 use bdk_wallet::{Balance, KeychainKind, PersistedWallet, Update};
 use bitcoin::address::NetworkUnchecked;
+use bitcoin::bip32::{DerivationPath, Xpriv}; // FORTIS XBT: wallet keys for 0x21 signing
 use bitcoin::blockdata::constants::WITNESS_SCALE_FACTOR;
 use bitcoin::blockdata::locktime::absolute::LockTime;
 use bitcoin::hashes::Hash;
@@ -62,6 +63,8 @@ pub(crate) enum OnchainSendAmount {
 
 pub(crate) mod persist;
 pub(crate) mod ser;
+// FORTIS XBT: the wallet's SIGHASH_UNIFIED (0x21) signer for XBT spends.
+pub(crate) mod xbt_sign;
 
 pub(crate) struct Wallet {
 	// A BDK on-chain wallet.
@@ -72,6 +75,9 @@ pub(crate) struct Wallet {
 	payment_store: Arc<PaymentStore>,
 	config: Arc<Config>,
 	logger: Arc<Logger>,
+	// FORTIS XBT: the master key of the wallet's BIP 84 descriptors (the keys BDK signs with).
+	// On XBT (`config.xbt` set) our inputs are signed with it, 0x21, instead of by BDK.
+	xprv: Xpriv,
 }
 
 impl Wallet {
@@ -80,10 +86,12 @@ impl Wallet {
 		wallet_persister: KVStoreWalletPersister, broadcaster: Arc<Broadcaster>,
 		fee_estimator: Arc<OnchainFeeEstimator>, payment_store: Arc<PaymentStore>,
 		config: Arc<Config>, logger: Arc<Logger>,
+		xprv: Xpriv, // FORTIS XBT: see `Wallet::xprv`
 	) -> Self {
 		let inner = Mutex::new(wallet);
 		let persister = Mutex::new(wallet_persister);
-		Self { inner, persister, broadcaster, fee_estimator, payment_store, config, logger }
+		// FORTIS XBT: `xprv` added
+		Self { inner, persister, broadcaster, fee_estimator, payment_store, config, logger, xprv }
 	}
 
 	pub(crate) fn get_full_scan_request(&self) -> FullScanRequest<KeychainKind> {
@@ -250,16 +258,22 @@ impl Wallet {
 			},
 		};
 
-		match locked_wallet.sign(&mut psbt, SignOptions::default()) {
-			Ok(finalized) => {
-				if !finalized {
-					return Err(Error::OnchainTxCreationFailed);
-				}
-			},
-			Err(err) => {
-				log_error!(self.logger, "Failed to create funding transaction: {}", err);
-				return Err(err.into());
-			},
+		// FORTIS XBT: on XBT our inputs are signed 0x21 over every prevout, not by BDK.
+		if self.config.xbt.is_some() {
+			self.sign_xbt_wallet_spend(&locked_wallet, &mut psbt)
+				.map_err(|()| Error::OnchainTxCreationFailed)?;
+		} else {
+			match locked_wallet.sign(&mut psbt, SignOptions::default()) {
+				Ok(finalized) => {
+					if !finalized {
+						return Err(Error::OnchainTxCreationFailed);
+					}
+				},
+				Err(err) => {
+					log_error!(self.logger, "Failed to create funding transaction: {}", err);
+					return Err(err.into());
+				},
+			}
 		}
 
 		let mut locked_persister = self.persister.lock().unwrap();
@@ -516,16 +530,22 @@ impl Wallet {
 				_ => {},
 			}
 
-			match locked_wallet.sign(&mut psbt, SignOptions::default()) {
-				Ok(finalized) => {
-					if !finalized {
-						return Err(Error::OnchainTxCreationFailed);
-					}
-				},
-				Err(err) => {
-					log_error!(self.logger, "Failed to create transaction: {}", err);
-					return Err(err.into());
-				},
+			// FORTIS XBT: on XBT our inputs are signed 0x21 over every prevout, not by BDK.
+			if self.config.xbt.is_some() {
+				self.sign_xbt_wallet_spend(&locked_wallet, &mut psbt)
+					.map_err(|()| Error::OnchainTxCreationFailed)?;
+			} else {
+				match locked_wallet.sign(&mut psbt, SignOptions::default()) {
+					Ok(finalized) => {
+						if !finalized {
+							return Err(Error::OnchainTxCreationFailed);
+						}
+					},
+					Err(err) => {
+						log_error!(self.logger, "Failed to create transaction: {}", err);
+						return Err(err.into());
+					},
+				}
 			}
 
 			let mut locked_persister = self.persister.lock().unwrap();
@@ -731,13 +751,95 @@ impl Wallet {
 		Ok(address_info.address.script_pubkey())
 	}
 
+	// FORTIS XBT: signs a spend BDK built from our UTXOs alone (channel funding, sends,
+	// sweeps): every input is ours, so the prevouts come from the wallet.
+	fn sign_xbt_wallet_spend(
+		&self, locked_wallet: &PersistedWallet<KVStoreWalletPersister>, psbt: &mut Psbt,
+	) -> Result<(), ()> {
+		let mut prevouts = Vec::with_capacity(psbt.unsigned_tx.input.len());
+		for txin in &psbt.unsigned_tx.input {
+			let Some(utxo) = locked_wallet.get_utxo(txin.previous_output) else {
+				log_error!(self.logger, "XBT: input {} is not ours", txin.previous_output);
+				return Err(());
+			};
+			prevouts.push(utxo.txout);
+		}
+		let signed = self.sign_xbt_inputs(locked_wallet, psbt, &prevouts)?;
+		debug_assert_eq!(signed, prevouts.len());
+		Ok(())
+	}
+
+	// FORTIS XBT: signs every input of `psbt` that spends one of our UTXOs with
+	// SIGHASH_ALL | SIGHASH_UNIFIED (0x21) over `prevouts` (one per input, in order), and
+	// fails, signing nothing, unless all of them can be signed. `prevouts` entries for our
+	// inputs must match our UTXOs; the others are taken as given (LDK's or the peer's).
+	fn sign_xbt_inputs(
+		&self, locked_wallet: &PersistedWallet<KVStoreWalletPersister>, psbt: &mut Psbt,
+		prevouts: &[TxOut],
+	) -> Result<usize, ()> {
+		if prevouts.len() != psbt.unsigned_tx.input.len() {
+			log_error!(
+				self.logger,
+				"XBT: cannot sign, {} prevouts for {} inputs",
+				prevouts.len(),
+				psbt.unsigned_tx.input.len()
+			);
+			return Err(());
+		}
+		let mut ours = 0;
+		for (i, txin) in psbt.unsigned_tx.input.iter().enumerate() {
+			let Some(utxo) = locked_wallet.get_utxo(txin.previous_output) else { continue };
+			if utxo.txout != prevouts[i] {
+				log_error!(self.logger, "XBT: prevout {} does not match our UTXO", i);
+				return Err(());
+			}
+			let our_input = locked_wallet.get_psbt_input(utxo, None, true).map_err(|e| {
+				log_error!(self.logger, "Failed to construct PSBT input: {}", e);
+			})?;
+			psbt.inputs[i].bip32_derivation = our_input.bip32_derivation;
+			ours += 1;
+		}
+		let secp = Secp256k1::new();
+		let keys = |path: &DerivationPath| {
+			self.xprv.derive_priv(&secp, path).ok().map(|xprv| xprv.private_key)
+		};
+		let mut signing = psbt.clone();
+		let signed = xbt_sign::sign_xbt_p2wpkh(&mut signing, prevouts, &keys, &secp).map_err(|()| {
+			log_error!(self.logger, "XBT: failed to sign wallet inputs");
+		})?;
+		if signed != ours {
+			log_error!(self.logger, "XBT: signed {} of our {} inputs", signed, ours);
+			return Err(());
+		}
+		*psbt = signing;
+		Ok(signed)
+	}
+
+	// FORTIS XBT: `prevouts` (every input's spent output, in order, from
+	// `Event::FundingTransactionReadyForSigning`) is used on XBT, where our signatures commit
+	// to all of them; ignored on Bitcoin.
 	#[allow(deprecated)]
-	pub(crate) fn sign_owned_inputs(&self, unsigned_tx: Transaction) -> Result<Transaction, ()> {
+	pub(crate) fn sign_owned_inputs(
+		&self, unsigned_tx: Transaction, prevouts: &[TxOut],
+	) -> Result<Transaction, ()> {
 		let locked_wallet = self.inner.lock().unwrap();
 
 		let mut psbt = Psbt::from_unsigned_tx(unsigned_tx).map_err(|e| {
 			log_error!(self.logger, "Failed to construct PSBT: {}", e);
 		})?;
+
+		// FORTIS XBT: sign our inputs 0x21 over the event's prevouts instead of with BDK.
+		if self.config.xbt.is_some() {
+			self.sign_xbt_inputs(&locked_wallet, &mut psbt, prevouts)?;
+			return match psbt.extract_tx() {
+				Ok(tx) => Ok(tx),
+				Err(bitcoin::psbt::ExtractTxError::MissingInputValue { tx }) => Ok(tx),
+				Err(e) => {
+					log_error!(self.logger, "Failed to extract transaction: {}", e);
+					Err(())
+				},
+			};
+		}
 		for (i, txin) in psbt.unsigned_tx.input.iter().enumerate() {
 			if let Some(utxo) = locked_wallet.get_utxo(txin.previous_output) {
 				debug_assert!(!utxo.is_spent);
@@ -771,6 +873,23 @@ impl Wallet {
 	#[allow(deprecated)]
 	fn sign_psbt_inner(&self, mut psbt: Psbt) -> Result<Transaction, ()> {
 		let locked_wallet = self.inner.lock().unwrap();
+
+		// FORTIS XBT: sign our inputs 0x21 over every prevout (from the PSBT's `witness_utxo`s,
+		// which LDK sets on every input) instead of with BDK.
+		if self.config.xbt.is_some() {
+			let mut prevouts = Vec::with_capacity(psbt.inputs.len());
+			for (i, input) in psbt.inputs.iter().enumerate() {
+				let Some(prevout) = input.witness_utxo.clone() else {
+					log_error!(self.logger, "XBT: cannot sign, input {} has no witness_utxo", i);
+					return Err(());
+				};
+				prevouts.push(prevout);
+			}
+			self.sign_xbt_inputs(&locked_wallet, &mut psbt, &prevouts)?;
+			return psbt.extract_tx().map_err(|e| {
+				log_error!(self.logger, "Failed to extract transaction: {}", e);
+			});
+		}
 
 		// While BDK populates both `witness_utxo` and `non_witness_utxo` fields, LDK does not. As
 		// BDK by default doesn't trust the witness UTXO to account for the Segwit bug, we must

@@ -2,6 +2,8 @@
 [workspace]
 resolver = "2"
 members = ["crates/*"]
+# FORTIS XBT: vendored crates are patched in, not members; excluded so their own tests can run with --manifest-path.
+exclude = ["vendor/lightning-0.2.7", "vendor/ldk-node", "vendor/esplora-client-0.12.3", "vendor/lightning-transaction-sync-0.2.7"]
 
 [workspace.package]
 edition = "2021"
@@ -47,6 +49,13 @@ vss-client = { package = "vss-client-ng", version = "=0.4.1" }
 [patch.crates-io]
 tiny_http = { path = "vendor/tiny_http" }
 ldk-node = { path = "vendor/ldk-node" }
+# FORTIS XBT: LDK 0.2.7 with unified (SIGHASH_UNIFIED) signatures and BLAKE2b
+# chain support; every change is listed in vendor/XBT-PATCHES.md.
+lightning = { path = "vendor/lightning-0.2.7" }
+lightning-types = { path = "vendor/lightning-types-0.3.5" }
+lightning-invoice = { path = "vendor/lightning-invoice-0.34.1" }
+lightning-transaction-sync = { path = "vendor/lightning-transaction-sync-0.2.7" }
+esplora-client = { path = "vendor/esplora-client-0.12.3" }
 
 [profile.release]
 lto = "thin"

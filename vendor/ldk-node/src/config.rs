@@ -17,6 +17,7 @@ use lightning::routing::gossip::NodeAlias;
 use lightning::routing::router::RouteParametersConfig;
 use lightning::util::config::{
 	ChannelConfig as LdkChannelConfig, MaxDustHTLCExposure as LdkMaxDustHTLCExposure, UserConfig,
+	XbtConfig as LdkXbtConfig, // FORTIS XBT: Config::xbt maps onto UserConfig::xbt
 };
 
 use crate::logger::LogLevel;
@@ -233,6 +234,11 @@ pub struct Config {
 	/// **Note:** If unset, default parameters will be used, and you will be able to override the
 	/// parameters on a per-payment basis in the corresponding method calls.
 	pub route_parameters: Option<RouteParametersConfig>,
+	/// FORTIS XBT: follow the Bitcoin BLAKE2b chain (XBT) when `Some`: passed on as
+	/// [`UserConfig::xbt`], anchor channels are switched off (the builder clears
+	/// [`Config::anchor_channels_config`]), and every on-chain wallet spend is signed with
+	/// `SIGHASH_ALL | SIGHASH_UNIFIED` (`0x21`) for replay protection. `None` is plain Bitcoin.
+	pub xbt: Option<XbtConfig>,
 }
 
 impl Default for Config {
@@ -247,6 +253,40 @@ impl Default for Config {
 			anchor_channels_config: Some(AnchorChannelsConfig::default()),
 			route_parameters: None,
 			node_alias: None,
+			xbt: None, // FORTIS XBT: plain Bitcoin by default
+		}
+	}
+}
+
+/// FORTIS XBT: settings for a node on the Bitcoin BLAKE2b chain (XBT); see [`Config::xbt`].
+///
+/// ### Defaults
+///
+/// | Parameter             | Value  |
+/// |-----------------------|--------|
+/// | `gossip_floor_height` | 961640 |
+/// | `splice_peers`        | []     |
+#[derive(Debug, Clone, PartialEq)]
+pub struct XbtConfig {
+	/// Channel announcements whose short channel id is in a block below this height are ignored
+	/// (mainnet XBT forked at 961640).
+	pub gossip_floor_height: u32,
+	/// Peers we are willing to splice with.
+	pub splice_peers: Vec<PublicKey>,
+}
+
+impl Default for XbtConfig {
+	fn default() -> Self {
+		let ldk = LdkXbtConfig::default();
+		Self { gossip_floor_height: ldk.gossip_floor_height, splice_peers: ldk.splice_peers }
+	}
+}
+
+impl From<&XbtConfig> for LdkXbtConfig {
+	fn from(c: &XbtConfig) -> Self {
+		LdkXbtConfig {
+			gossip_floor_height: c.gossip_floor_height,
+			splice_peers: c.splice_peers.clone(),
 		}
 	}
 }
@@ -375,6 +415,8 @@ pub(crate) fn default_user_config(config: &Config) -> UserConfig {
 	user_config.channel_handshake_config.negotiate_anchors_zero_fee_htlc_tx =
 		config.anchor_channels_config.is_some();
 	user_config.reject_inbound_splices = false;
+	// FORTIS XBT: the node's chain rules (feature bits, unified channel types, no anchors).
+	user_config.xbt = config.xbt.as_ref().map(LdkXbtConfig::from);
 
 	if may_announce_channel(config).is_err() {
 		user_config.accept_forwards_to_priv_channels = false;

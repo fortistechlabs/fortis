@@ -101,6 +101,9 @@ impl Bolt11Payment {
 		}
 
 		let invoice = maybe_deref(invoice);
+		// FORTIS XBT: refuse an invoice for the other chain before anything is sent.
+		crate::payment::check_chain_bolt11(invoice, self.config.xbt.is_some())?;
+
 		let payment_hash = PaymentHash(invoice.payment_hash().to_byte_array());
 		let payment_id = PaymentId(invoice.payment_hash().to_byte_array());
 		if let Some(payment) = self.payment_store.get(&payment_id) {
@@ -198,6 +201,9 @@ impl Bolt11Payment {
 		}
 
 		let invoice = maybe_deref(invoice);
+		// FORTIS XBT: refuse an invoice for the other chain before anything is sent.
+		crate::payment::check_chain_bolt11(invoice, self.config.xbt.is_some())?;
+
 		if let Some(invoice_amount_msat) = invoice.amount_milli_satoshis() {
 			if amount_msat < invoice_amount_msat {
 				log_error!(
@@ -484,7 +490,8 @@ impl Bolt11Payment {
 		expiry_secs: u32, manual_claim_payment_hash: Option<PaymentHash>,
 	) -> Result<Option<LdkBolt11Invoice>, Error> {
 		use lightning::routing::router::{RouteHint, RouteHintHop};
-		use lightning_invoice::{InvoiceBuilder, RoutingFees};
+		// FORTIS XBT: InvoiceBuilder moved to build_public_hints_invoice.
+		use lightning_invoice::RoutingFees;
 
 		let mut public: Vec<_> = self
 			.channel_manager
@@ -535,31 +542,22 @@ impl Bolt11Payment {
 					Error::InvoiceCreationFailed
 				})?,
 		};
-		let mut builder = InvoiceBuilder::new(self.config.network.into())
-			.invoice_description(description.clone())
-			.payment_hash(Sha256::from_slice(&payment_hash.0).map_err(|_| Error::InvoiceCreationFailed)?)
-			.payment_secret(payment_secret)
-			.current_timestamp()
-			.min_final_cltv_expiry_delta(
-				lightning::ln::channelmanager::MIN_FINAL_CLTV_EXPIRY_DELTA.into(),
-			)
-			.expiry_time(std::time::Duration::from_secs(expiry_secs.into()))
-			.basic_mpp();
-		if let Some(a) = amount_msat {
-			builder = builder.amount_milli_satoshis(a);
-		}
-		for h in hints {
-			builder = builder.private_route(h);
-		}
-		let invoice = builder
-			.build_signed(|hash| {
-				bitcoin::secp256k1::Secp256k1::new()
-					.sign_ecdsa_recoverable(hash, &self.keys_manager.get_node_secret_key())
-			})
-			.map_err(|e| {
-				log_error!(self.logger, "Failed to build and sign invoice: {}", e);
-				Error::InvoiceCreationFailed
-			})?;
+		// FORTIS XBT: built by a free function so the XBT mark can be unit-tested.
+		let invoice = build_public_hints_invoice(
+			self.config.network,
+			description,
+			Sha256::from_slice(&payment_hash.0).map_err(|_| Error::InvoiceCreationFailed)?,
+			payment_secret,
+			expiry_secs,
+			amount_msat,
+			hints,
+			self.config.xbt.is_some(), // FORTIS XBT: mark the invoice as XBT
+			&self.keys_manager.get_node_secret_key(),
+		)
+		.map_err(|e| {
+			log_error!(self.logger, "Failed to build and sign invoice: {}", e);
+			Error::InvoiceCreationFailed
+		})?;
 		log_info!(self.logger, "Invoice created (public route hints): {}", invoice);
 		Ok(Some(invoice))
 	}
@@ -870,6 +868,9 @@ impl Bolt11Payment {
 		}
 
 		let invoice = maybe_deref(invoice);
+		// FORTIS XBT: refuse an invoice for the other chain before anything is sent.
+		crate::payment::check_chain_bolt11(invoice, self.config.xbt.is_some())?;
+
 		let payment_params = PaymentParameters::from_bolt11_invoice(invoice);
 
 		let amount_msat = invoice.amount_milli_satoshis().ok_or_else(|| {
@@ -925,6 +926,9 @@ impl Bolt11Payment {
 		}
 
 		let invoice = maybe_deref(invoice);
+		// FORTIS XBT: refuse an invoice for the other chain before anything is sent.
+		crate::payment::check_chain_bolt11(invoice, self.config.xbt.is_some())?;
+
 		let payment_params = PaymentParameters::from_bolt11_invoice(invoice);
 
 		if let Some(invoice_amount_msat) = invoice.amount_milli_satoshis() {
@@ -966,5 +970,93 @@ impl Bolt11Payment {
 			})?;
 
 		Ok(())
+	}
+}
+
+/// The invoice of [`Bolt11Payment::invoice_with_public_hints`] (FORTIS PATCH). FORTIS XBT: it is
+/// built here, not by `ChannelManager::create_bolt11_invoice` (which marks XBT invoices), so on
+/// XBT (`xbt`) it sets `option_blake2b` itself; without it XBT payers refuse every invoice of a
+/// node with a public channel (an LSP), as the regtest suite showed.
+fn build_public_hints_invoice(
+	network: bitcoin::Network, description: &LdkBolt11InvoiceDescription, payment_hash: Sha256,
+	payment_secret: lightning::types::payment::PaymentSecret, expiry_secs: u32,
+	amount_msat: Option<u64>, hints: Vec<lightning::routing::router::RouteHint>, xbt: bool,
+	node_secret: &bitcoin::secp256k1::SecretKey,
+) -> Result<LdkBolt11Invoice, lightning_invoice::CreationError> {
+	let mut builder = lightning_invoice::InvoiceBuilder::new(network.into())
+		.invoice_description(description.clone())
+		.payment_hash(payment_hash)
+		.payment_secret(payment_secret)
+		.current_timestamp()
+		.min_final_cltv_expiry_delta(lightning::ln::channelmanager::MIN_FINAL_CLTV_EXPIRY_DELTA.into())
+		.expiry_time(std::time::Duration::from_secs(expiry_secs.into()))
+		.basic_mpp();
+	if let Some(a) = amount_msat {
+		builder = builder.amount_milli_satoshis(a);
+	}
+	for h in hints {
+		builder = builder.private_route(h);
+	}
+	// FORTIS XBT: the invoice is for the BLAKE2b chain.
+	if xbt {
+		builder = builder.require_blake2b();
+	}
+	builder.build_signed(|hash| {
+		bitcoin::secp256k1::Secp256k1::new().sign_ecdsa_recoverable(hash, node_secret)
+	})
+}
+
+/// FORTIS XBT: the public-hints invoice carries `option_blake2b` exactly on XBT.
+#[cfg(test)]
+mod xbt_public_hints_invoice_tests {
+	use super::*;
+	use crate::payment::check_chain_bolt11;
+	use bitcoin::secp256k1::{PublicKey, Secp256k1, SecretKey};
+	use lightning::routing::router::{RouteHint, RouteHintHop};
+	use lightning_invoice::{Description, RoutingFees};
+
+	fn invoice(xbt: bool, amount_msat: Option<u64>) -> LdkBolt11Invoice {
+		let key = SecretKey::from_slice(&[0x42; 32]).unwrap();
+		let peer = PublicKey::from_secret_key(&Secp256k1::new(), &SecretKey::from_slice(&[7; 32]).unwrap());
+		let hint = RouteHint(vec![RouteHintHop {
+			src_node_id: peer,
+			short_channel_id: 42,
+			fees: RoutingFees { base_msat: 1000, proportional_millionths: 1 },
+			cltv_expiry_delta: 40,
+			htlc_minimum_msat: Some(1),
+			htlc_maximum_msat: None,
+		}]);
+		let desc = LdkBolt11InvoiceDescription::Direct(Description::new("hints".into()).unwrap());
+		build_public_hints_invoice(
+			bitcoin::Network::Regtest,
+			&desc,
+			Sha256::from_slice(&[1; 32]).unwrap(),
+			lightning::types::payment::PaymentSecret([2; 32]),
+			3600,
+			amount_msat,
+			vec![hint],
+			xbt,
+			&key,
+		)
+		.unwrap()
+	}
+
+	#[test]
+	fn xbt_public_hints_invoice_requires_blake2b() {
+		for amount in [Some(40_000_000), None] {
+			let inv = invoice(true, amount);
+			assert!(inv.features().unwrap().requires_blake2b(), "{amount:?}");
+			assert!(check_chain_bolt11(&inv, true).is_ok());
+			assert_eq!(inv.route_hints().len(), 1);
+		}
+	}
+
+	#[test]
+	fn btc_public_hints_invoice_has_no_blake2b() {
+		for amount in [Some(40_000_000), None] {
+			let inv = invoice(false, amount);
+			assert!(!inv.features().unwrap().supports_blake2b(), "{amount:?}");
+			assert!(check_chain_bolt11(&inv, false).is_ok());
+		}
 	}
 }
