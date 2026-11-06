@@ -107,6 +107,7 @@ whether we create it or check it; no call site reads config (Task 4).
 | ldk-node | `src/payment/bolt11.rs` | `build_public_hints_invoice` (new, from `Bolt11Payment::invoice_with_public_hints`), `tests xbt_public_hints_invoice_tests` | Same for the invoice with public route hints (FORTIS PATCH), used by any node with a public channel (an LSP): `require_blake2b` when `config.xbt` is set. Found by the release gate | 10 |
 | lightning | `src/offers/flow.rs` | `OffersMessageFlow::create_async_receive_offer_builder` | The async receive offer (`ChannelManager::get_async_receive_offer`, ldk-node `receive_async`) is built here from the static invoice server's paths, not by the patched builder macros, so it lacked `option_blake2b` and XBT payers refused it (`WrongChain`). Now `xbt_blake2b(self.xbt)`. Found by the release gate (`offer_while_stopped`) | 10 |
 | lightning | `src/ln/xbt_tests.rs` | `xbt_static_invoice_carries_blake2b` | Also asserts the async receive offer requires `option_blake2b` | 10 |
+| lightning | `src/ln/channel.rs`, `src/ln/xbt_tests.rs` | `ChannelContext::maybe_downgrade_channel_features` (V1 and V2 opens); `xbt_refused_open_closes_without_retry` | On XBT the last channel type is static_remote_key + unified_sigs (`get_initial_channel_type` re-adds unified_sigs), so "exhausted" compares against that. Before, every peer `error` re-sent the same `open_channel` and the channel never closed. Found by the final review (I1) | final |
 
 ## Running the tests
 

@@ -120,6 +120,58 @@ fn xbt_refuses_open_with_anchors() {
 	assert!(err.contains("XBT"), "unexpected error: {err}");
 }
 
+/// An XBT open the peer refuses has no channel type left to fall back to (static_remote_key +
+/// unified_sigs is the last XBT option), so the channel closes instead of re-sending the same
+/// `open_channel` on every `error`.
+#[test]
+fn xbt_refused_open_closes_without_retry() {
+	use crate::events::Event;
+
+	let mut receiver_cfg = xbt_cfg();
+	receiver_cfg.manually_accept_inbound_channels = true;
+	let chanmon_cfgs = create_chanmon_cfgs(2);
+	let node_cfgs = create_node_cfgs(2, &chanmon_cfgs);
+	let node_chanmgrs =
+		create_node_chanmgrs(2, &node_cfgs, &[Some(xbt_cfg()), Some(receiver_cfg)]);
+	let nodes = create_network(2, &node_cfgs, &node_chanmgrs);
+	let node_a_id = nodes[0].node.get_our_node_id();
+	let node_b_id = nodes[1].node.get_our_node_id();
+
+	nodes[0].node.create_channel(node_b_id, 100_000, 0, 0, None, None).unwrap();
+	let open = get_event_msg!(nodes[0], MessageSendEvent::SendOpenChannel, node_b_id);
+	let mut xbt_type = ChannelTypeFeatures::only_static_remote_key();
+	xbt_type.set_unified_sigs_required();
+	assert_eq!(open.common_fields.channel_type.as_ref().unwrap(), &xbt_type);
+
+	nodes[1].node.handle_open_channel(node_a_id, &open);
+	let events = nodes[1].node.get_and_clear_pending_events();
+	match events[0] {
+		Event::OpenChannelRequest { temporary_channel_id, .. } => {
+			nodes[1]
+				.node
+				.force_close_broadcasting_latest_txn(
+					&temporary_channel_id,
+					&node_a_id,
+					"refused".to_string(),
+				)
+				.unwrap();
+		},
+		_ => panic!("Unexpected event"),
+	}
+	let err = get_err_msg(&nodes[1], &node_a_id);
+	nodes[0].node.handle_error(node_b_id, &err);
+
+	let events = nodes[0].node.get_and_clear_pending_events();
+	assert_eq!(events.len(), 1, "{events:?}");
+	assert!(matches!(events[0], Event::ChannelClosed { .. }), "{events:?}");
+	let msgs = nodes[0].node.get_and_clear_pending_msg_events();
+	assert!(
+		!msgs.iter().any(|m| matches!(m, MessageSendEvent::SendOpenChannel { .. })),
+		"re-sent open_channel: {msgs:?}"
+	);
+	assert!(nodes[0].node.list_channels().is_empty());
+}
+
 #[test]
 fn btc_node_has_no_xbt_bits() {
 	let chanmon_cfgs = create_chanmon_cfgs(2);

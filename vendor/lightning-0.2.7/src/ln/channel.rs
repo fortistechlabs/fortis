@@ -6182,7 +6182,13 @@ where
 		{
 			return Err(());
 		}
-		if funding.get_channel_type() == &ChannelTypeFeatures::only_static_remote_key() {
+		// FORTIS XBT: an XBT node's last option is static_remote_key + unified_sigs
+		// (`get_initial_channel_type` always adds unified_sigs), not plain static_remote_key.
+		let mut last_option = ChannelTypeFeatures::only_static_remote_key(); // FORTIS XBT: as above
+		if user_config.is_xbt() { // FORTIS XBT: as above
+			last_option.set_unified_sigs_required(); // FORTIS XBT: as above
+		} // FORTIS XBT: as above
+		if funding.get_channel_type() == &last_option { // FORTIS XBT: compare with the XBT last option
 			// We've exhausted our options
 			return Err(());
 		}
