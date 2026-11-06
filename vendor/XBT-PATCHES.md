@@ -103,6 +103,8 @@ whether we create it or check it; no call site reads config (Task 4).
 | lightning | `src/ln/channelmanager.rs` | `OffersMessageHandler::handle_message` (`OffersMessage::Invoice` and `OffersMessage::StaticInvoice` arms) | On an XBT node an invoice without `option_blake2b` (either bit) abandons the payment (`PaymentFailureReason::UnexpectedError`, log "XBT: invoice without option_blake2b") before any HTLC and before `Event::InvoiceReceived` when invoices are handled manually. A BTC node is unchanged (it already refuses unknown required bits) | 8 |
 | lightning | `src/ln/xbt_tests.rs` | `xbt_abandons_bolt12_invoice_without_blake2b` | An intercepted reply without the bit: `Event::PaymentFailed(UnexpectedError)`, no message events, no monitor update | 8 |
 | fortis-lightning (not vendor) | `crates/fortis-lightning/src/pay.rs` | `map_send_error` | `WrongChain` shown as its own message instead of "pay: ..." | 8 |
+| ldk-node | `src/liquidity.rs` | `build_jit_invoice` (new, from `LiquiditySource::lsps2_create_jit_invoice`), `tests xbt_jit_invoice_tests` | The LSPS2 JIT invoice is built by ldk-node, not `ChannelManager::create_bolt11_invoice`, so it lacked `option_blake2b` on XBT and the LND fork refused it ("invoice does not set option_blake2b"). Now `require_blake2b` when `config.xbt` is set. Found by the release gate (`jit_open`) | 10 |
+| ldk-node | `src/payment/bolt11.rs` | `build_public_hints_invoice` (new, from `Bolt11Payment::invoice_with_public_hints`), `tests xbt_public_hints_invoice_tests` | Same for the invoice with public route hints (FORTIS PATCH), used by any node with a public channel (an LSP): `require_blake2b` when `config.xbt` is set. Found by the release gate | 10 |
 
 ## Running the tests
 
