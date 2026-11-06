@@ -180,6 +180,30 @@ pub trait Confirm {
 	/// Must be called whenever a new chain tip becomes available. May be skipped for intermediary
 	/// blocks.
 	fn best_block_updated(&self, header: &Header, height: u32);
+	// FORTIS XBT: the two `_with_hash` methods take the block's id from the chain source. On XBT
+	// (BLAKE2b) a block's id is not the double SHA-256 of its 80-byte `Header`, so it must not be
+	// recomputed with `Header::block_hash`. The defaults ignore the hash; every implementor in
+	// this crate overrides them, and its original methods pass `header.block_hash()`. An
+	// implementor whose original methods delegate like that must override both, or the two
+	// defaults recurse forever.
+	/// [`transactions_confirmed`], with the block's id as given by the chain source rather than
+	/// computed from `header`.
+	///
+	/// [`transactions_confirmed`]: Self::transactions_confirmed
+	fn transactions_confirmed_with_hash(
+		&self, header: &Header, block_hash: BlockHash, txdata: &TransactionData, height: u32,
+	) {
+		let _ = block_hash;
+		self.transactions_confirmed(header, txdata, height)
+	}
+	/// [`best_block_updated`], with the block's id as given by the chain source rather than
+	/// computed from `header`.
+	///
+	/// [`best_block_updated`]: Self::best_block_updated
+	fn best_block_updated_with_hash(&self, header: &Header, block_hash: BlockHash, height: u32) {
+		let _ = block_hash;
+		self.best_block_updated(header, height)
+	}
 	/// Returns transactions that must be monitored for reorganization out of the chain along
 	/// with the height and the hash of the block as part of which it had been previously confirmed.
 	///

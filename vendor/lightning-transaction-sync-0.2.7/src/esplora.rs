@@ -277,7 +277,9 @@ where
 		if tip_status.in_best_chain {
 			if let Some(tip_height) = tip_status.height {
 				for c in confirmables {
-					c.best_block_updated(&tip_header, tip_height);
+					// FORTIS XBT: the tip's id is the hash the index served, not computed from
+					// the header.
+					c.best_block_updated_with_hash(&tip_header, *tip_hash, tip_height);
 				}
 
 				// Prune any sufficiently confirmed output spends
@@ -351,18 +353,34 @@ where
 	) -> Result<Option<ConfirmedTx>, InternalError> {
 		if let Some(merkle_block) = maybe_await!(self.client.get_merkle_block(&txid))? {
 			let block_header = merkle_block.header;
-			let block_hash = block_header.block_hash();
-			if let Some(expected_block_hash) = expected_block_hash {
-				if expected_block_hash != block_hash {
-					log_trace!(
-						self.logger,
-						"Inconsistency: Tx {} expected in block {}, but is confirmed in {}",
-						txid,
-						expected_block_hash,
-						block_hash
-					);
-					return Err(InternalError::Inconsistency);
-				}
+			// FORTIS XBT: the block's id comes from the index (the output status's block, else
+			// the transaction's status), never `block_header.block_hash()`: an XBT block's id
+			// is not the double SHA-256 of its first 80 bytes. Where the header does not hash to
+			// that id, the index's header for the id must be the proof's header.
+			let block_hash = match expected_block_hash {
+				Some(hash) => hash,
+				None => match maybe_await!(self.client.get_tx_status(&txid))?.block_hash {
+					Some(hash) => hash,
+					None => {
+						log_trace!(
+							self.logger,
+							"Inconsistency: Tx {} was unconfirmed during syncing.",
+							txid
+						);
+						return Err(InternalError::Inconsistency);
+					},
+				},
+			};
+			if block_header.block_hash() != block_hash
+				&& maybe_await!(self.client.get_header_by_hash(&block_hash))? != block_header
+			{
+				log_trace!(
+					self.logger,
+					"Inconsistency: Tx {} expected in block {}, but its proof is for another block",
+					txid,
+					block_hash
+				);
+				return Err(InternalError::Inconsistency);
 			}
 
 			let mut matches = Vec::new();
@@ -404,12 +422,28 @@ where
 
 				if let Some(block_height) = known_block_height {
 					// We can take a shortcut here if a previous call already gave us the height.
-					return Ok(Some(ConfirmedTx { tx, txid, block_header, pos, block_height }));
+					// FORTIS XBT: `block_hash` (the index's id) is carried.
+					return Ok(Some(ConfirmedTx {
+						tx,
+						txid,
+						block_header,
+						block_hash,
+						pos,
+						block_height,
+					}));
 				}
 
 				let block_status = maybe_await!(self.client.get_block_status(&block_hash))?;
 				if let Some(block_height) = block_status.height {
-					return Ok(Some(ConfirmedTx { tx, txid, block_header, pos, block_height }));
+					// FORTIS XBT: `block_hash` (the index's id) is carried.
+					return Ok(Some(ConfirmedTx {
+						tx,
+						txid,
+						block_header,
+						block_hash,
+						pos,
+						block_height,
+					}));
 				} else {
 					// If any previously-confirmed block suddenly is no longer confirmed, we found
 					// an inconsistency and should start over.

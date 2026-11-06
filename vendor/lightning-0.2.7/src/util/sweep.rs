@@ -672,11 +672,11 @@ where
 		)
 	}
 
+	// FORTIS XBT: takes the block's id (`confirmation_hash`, was `header.block_hash()`).
 	fn transactions_confirmed_internal(
-		&self, sweeper_state: &mut SweeperState, header: &Header,
+		&self, sweeper_state: &mut SweeperState, confirmation_hash: BlockHash,
 		txdata: &chain::transaction::TransactionData, height: u32,
 	) {
-		let confirmation_hash = header.block_hash();
 		for (_, tx) in txdata {
 			for output_info in sweeper_state.outputs.iter_mut() {
 				if output_info.is_spent_in(*tx) {
@@ -688,10 +688,11 @@ where
 		sweeper_state.dirty = true;
 	}
 
+	// FORTIS XBT: takes the block's id (was `header.block_hash()`).
 	fn best_block_updated_internal(
-		&self, sweeper_state: &mut SweeperState, header: &Header, height: u32,
+		&self, sweeper_state: &mut SweeperState, block_hash: BlockHash, height: u32,
 	) {
-		sweeper_state.best_block = BestBlock::new(header.block_hash(), height);
+		sweeper_state.best_block = BestBlock::new(block_hash, height);
 		self.prune_confirmed_outputs(sweeper_state);
 
 		sweeper_state.dirty = true;
@@ -722,9 +723,10 @@ where
 				"Blocks must be connected in chain-order - the connected block height must be one greater than the previous height");
 		}
 
-		self.transactions_confirmed_internal(&mut state_lock, header, txdata, height);
+		// FORTIS XBT: Listen (full blocks) path; the id is computed from the header as before.
+		self.transactions_confirmed_internal(&mut state_lock, header.block_hash(), txdata, height);
 		if !is_rescan {
-			self.best_block_updated_internal(&mut state_lock, header, height);
+			self.best_block_updated_internal(&mut state_lock, header.block_hash(), height);
 		}
 	}
 
@@ -759,8 +761,17 @@ where
 	fn transactions_confirmed(
 		&self, header: &Header, txdata: &chain::transaction::TransactionData, height: u32,
 	) {
+		// FORTIS XBT: the id is computed only on this path; the sync passes the index's.
+		self.transactions_confirmed_with_hash(header, header.block_hash(), txdata, height)
+	}
+
+	// FORTIS XBT: was `transactions_confirmed`; the block's id is now given, not computed.
+	fn transactions_confirmed_with_hash(
+		&self, _header: &Header, block_hash: BlockHash,
+		txdata: &chain::transaction::TransactionData, height: u32,
+	) {
 		let mut state_lock = self.sweeper_state.lock().unwrap();
-		self.transactions_confirmed_internal(&mut *state_lock, header, txdata, height);
+		self.transactions_confirmed_internal(&mut *state_lock, block_hash, txdata, height);
 	}
 
 	fn transaction_unconfirmed(&self, txid: &Txid) {
@@ -786,8 +797,14 @@ where
 	}
 
 	fn best_block_updated(&self, header: &Header, height: u32) {
+		// FORTIS XBT: the id is computed only on this path; the sync passes the index's.
+		self.best_block_updated_with_hash(header, header.block_hash(), height)
+	}
+
+	// FORTIS XBT: was `best_block_updated`; the block's id is now given, not computed.
+	fn best_block_updated_with_hash(&self, _header: &Header, block_hash: BlockHash, height: u32) {
 		let mut state_lock = self.sweeper_state.lock().unwrap();
-		self.best_block_updated_internal(&mut state_lock, header, height);
+		self.best_block_updated_internal(&mut state_lock, block_hash, height);
 	}
 
 	fn get_relevant_txids(&self) -> Vec<(Txid, u32, Option<BlockHash>)> {
@@ -1093,6 +1110,19 @@ where
 		self.sweeper.best_block_updated(header, height);
 	}
 
+	// FORTIS XBT: forwards the given id.
+	fn transactions_confirmed_with_hash(
+		&self, header: &Header, block_hash: BlockHash,
+		txdata: &chain::transaction::TransactionData, height: u32,
+	) {
+		self.sweeper.transactions_confirmed_with_hash(header, block_hash, txdata, height)
+	}
+
+	// FORTIS XBT: forwards the given id.
+	fn best_block_updated_with_hash(&self, header: &Header, block_hash: BlockHash, height: u32) {
+		self.sweeper.best_block_updated_with_hash(header, block_hash, height);
+	}
+
 	fn get_relevant_txids(&self) -> Vec<(Txid, u32, Option<BlockHash>)> {
 		self.sweeper.get_relevant_txids()
 	}
@@ -1321,5 +1351,69 @@ mod tests {
 				..
 			} if confirmation_hash == header.block_hash()
 		));
+	}
+
+	// FORTIS XBT: the sweeper stores the id given through `Confirm::*_with_hash`, not
+	// `header.block_hash()` (an XBT block's id is not the latter).
+	#[test]
+	fn confirm_with_hash_uses_given_hash() {
+		let best_block = BestBlock::new(BlockHash::all_zeros(), 0);
+		let sweeper: OutputSweeper<
+			&DummyBroadcaster,
+			Box<DummyChangeDestSource>,
+			&DummyFeeEstimator,
+			&DummyFilter,
+			&PendingKVStore,
+			&DummyLogger,
+			&DummyOutputSpender,
+		> = OutputSweeper::new(
+			best_block.clone(),
+			&DummyBroadcaster,
+			&DummyFeeEstimator,
+			None,
+			&DummyOutputSpender,
+			Box::new(DummyChangeDestSource),
+			&PendingKVStore,
+			&DummyLogger,
+		);
+
+		let header = Header {
+			version: bitcoin::block::Version::NO_SOFT_FORK_SIGNALLING,
+			prev_blockhash: best_block.block_hash,
+			merkle_root: bitcoin::hash_types::TxMerkleNode::all_zeros(),
+			time: 1,
+			bits: bitcoin::pow::CompactTarget::from_consensus(42),
+			nonce: 42,
+		};
+		let id = BlockHash::from_byte_array([0xb2; 32]);
+		assert_ne!(id, header.block_hash());
+		let tracked_outpoint = bitcoin::OutPoint { txid: Txid::all_zeros(), vout: 0 };
+		let spending_tx = Transaction {
+			version: Version::TWO,
+			lock_time: LockTime::ZERO,
+			input: vec![bitcoin::TxIn { previous_output: tracked_outpoint, ..Default::default() }],
+			output: Vec::new(),
+		};
+		let descriptor = SpendableOutputDescriptor::StaticOutput {
+			outpoint: OutPoint { txid: tracked_outpoint.txid, index: tracked_outpoint.vout as u16 },
+			output: TxOut { value: Amount::from_sat(100_000), script_pubkey: ScriptBuf::new() },
+			channel_keys_id: None,
+		};
+		sweeper.sweeper_state.lock().unwrap().outputs.push(TrackedSpendableOutput {
+			descriptor,
+			channel_id: None,
+			status: OutputSpendStatus::PendingFirstConfirmation {
+				first_broadcast_hash: best_block.block_hash,
+				latest_broadcast_height: best_block.height,
+				latest_spending_tx: spending_tx.clone(),
+			},
+		});
+
+		let txdata = [(0, &spending_tx)];
+		sweeper.transactions_confirmed_with_hash(&header, id, &txdata, 1);
+		sweeper.best_block_updated_with_hash(&header, id, 1);
+
+		assert_eq!(sweeper.current_best_block(), BestBlock::new(id, 1));
+		assert_eq!(sweeper.get_relevant_txids(), vec![(spending_tx.compute_txid(), 1, Some(id))]);
 	}
 }

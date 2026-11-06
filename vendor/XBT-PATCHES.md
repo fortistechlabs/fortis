@@ -76,37 +76,45 @@ whether we create it or check it; no call site reads config (Task 4).
 | lightning | `src/chain/package.rs` | `verify_channel_type_features` | Adds `unified_sigs` to the permitted set, else a monitor of an XBT channel fails to deserialize (`UnknownRequiredFeature`) | 3 |
 | lightning | `src/ln/xbt_tests.rs`, `src/ln/mod.rs` | `mod xbt_tests` | Functional tests for the bits and channel types | 3 |
 | lightning-types | `src/features.rs` | `Blake2b` added to `OfferContext`, `InvoiceRequestContext`, `Bolt12InvoiceContext` (byte 64) | `option_blake2b` is a known feature in offers, invoice requests and BOLT 12 invoices | 3 |
-| lightning-types | `src/lib.rs` | `pub mod xbt` removed | The process-wide switch is gone. `bitcoin::block::xbt_ids::set_enabled` now has no caller, so esplora's spike block-id recording stays off until Task 7 | 3 |
+| lightning-types | `src/lib.rs` | `pub mod xbt` removed | The process-wide switch is gone (the spike's `bitcoin::block::xbt_ids` map went with the vendored `bitcoin` in Task 7) | 3 |
 | lightning-invoice | `src/lib.rs` | `InvoiceBuilder::payment_secret` (global check removed), `InvoiceBuilder::require_blake2b` (new) | The invoice's `blake2b` bit is set by the caller (ChannelManager), not a global | 3 |
+| lightning | `src/chain/mod.rs` | `Confirm::transactions_confirmed_with_hash`, `Confirm::best_block_updated_with_hash` (new provided methods) | Take the block's id from the chain source: an XBT block's id is not `Header::block_hash()` (the double SHA-256 of the 80 bytes kept of a 164-byte header). Defaults ignore the hash and call the original methods; an implementor whose originals delegate to them must override both (else they recurse) | 7 |
+| lightning | `src/ln/channelmanager.rs` | `ChannelManager` `Confirm::transactions_confirmed`, `best_block_updated` (now delegate with `header.block_hash()`), `transactions_confirmed_with_hash`, `best_block_updated_with_hash` (the former bodies) | The given id goes to the channels, `best_block` and the offers flow. `Listen::filtered_block_connected` is not patched (full-block sources, not used on XBT) | 7 |
+| lightning | `src/offers/flow.rs` | `OffersMessageFlow::best_block_updated` (delegates), `best_block_updated_with_hash` (new); `BlockHash` import | The flow's best block takes the given id | 7 |
+| lightning | `src/chain/chainmonitor.rs` | `process_chain_data`, `update_monitor_with_chain_data` (take `block_hash` instead of `header`, its only use); `Listen::filtered_block_connected` (passes `header.block_hash()`); `Confirm::transactions_confirmed`, `best_block_updated` (delegate), `transactions_confirmed_with_hash`, `best_block_updated_with_hash` | The given id reaches every monitor and the outputs registered with the `Filter` | 7 |
+| lightning | `src/chain/channelmonitor.rs` | `ChannelMonitor::transactions_confirmed`, `best_block_updated` (delegate), `transactions_confirmed_with_hash`, `best_block_updated_with_hash` (new, take the id, no header); `ChannelMonitorImpl::block_connected`, `best_block_updated`, `transactions_confirmed` (take `block_hash` instead of `header`, its only use, incl. the re-confirmation assert); `Confirm for (M, T, F, L)` `_with_hash` overrides | The monitor's best block and its confirmation entries store the given id | 7 |
+| lightning | `src/util/sweep.rs` | `OutputSweeper::transactions_confirmed_internal`, `best_block_updated_internal` (take the id); `Listen::filtered_block_connected` (passes `header.block_hash()`); `OutputSweeper` and `OutputSweeperSync` `Confirm` `_with_hash` overrides (originals delegate / forward) | The sweeper's best block and spend confirmations store the given id | 7 |
+| lightning | `src/util/sweep.rs`, `src/ln/xbt_tests.rs` | `tests::confirm_with_hash_uses_given_hash`; `xbt_tests::confirm_with_hash_uses_given_hash` and helpers (`xbt_block_id`, `xbt_chain`, `connect_with_id`, `connect_chain_with_ids`, `assert_best_block`) | Ids that differ from `header.block_hash()` are what the manager, monitors and sweeper store; funding reorged out by the stored id and reconfirmed, channel ready as usual | 7 |
 | lightning-transaction-sync | (crate copied, patched in) | - | Needed so the workspace resolves one set of patched crates | 7 |
-| esplora-client | `src/blocking.rs`, `src/async.rs` | `xbt_header` | 164-byte BLAKE2b headers (spike) | 7 |
-| bitcoin | `src/blockdata/block.rs` | `xbt_ids`, `Header::block_hash` | Block id for BLAKE2b headers (spike); temporary | 7 |
+| lightning-transaction-sync | `src/esplora.rs` | `sync_best_block_updated` | `best_block_updated_with_hash` with the tip hash from `/blocks/tip/hash` | 7 |
+| lightning-transaction-sync | `src/esplora.rs` | `get_confirmed_tx` | The block id is the output status's `block_hash`, else `get_tx_status(txid).block_hash` (unconfirmed: inconsistency, restart). If the proof's header does not hash to it, the index's header for that id (`get_header_by_hash`) must equal the proof's header, else inconsistency. BTC: same results, one extra `/tx/:txid/status` request per newly confirmed watched transaction | 7 |
+| lightning-transaction-sync | `src/common.rs` | `ConfirmedTx::block_hash` (new), `SyncState::sync_confirmed_transactions` | Carries the id and calls `transactions_confirmed_with_hash` | 7 |
+| lightning-transaction-sync | `src/electrum.rs` | `get_confirmed_transactions` (`ConfirmedTx` construction) | `block_hash: block_header.block_hash()`: Electrum is not used on XBT, behaviour unchanged | 7 |
+| lightning-transaction-sync | `src/lib.rs`, `src/xbt_tests.rs` | `xbt_sync_uses_index_hashes` | A mock Esplora serves an 80-byte tip, then a 164-byte tip with a watched transaction confirmed in it (regtest Knots fixtures); the sync reports the served ids and never calls the methods without a hash | 7 |
+| esplora-client | `src/xbt.rs` (new), `src/lib.rs` (`mod xbt`) | `header_from_bytes`, `merkle_block_from_bytes`, tests `parses_80_and_164_byte_headers`, `merkle_block_164_byte_header` | Headers of 80 or 164 bytes (the `Header` is bytes 0..80; any other length is `Error::InvalidResponse`). A merkle block proof is read with whichever header length makes its partial merkle tree commit to the header's merkle root (else the 80-byte reading's result, as upstream). Fixtures from regtest Knots. Replaces the spike's `xbt_header` / `xbt_merkle_block`, which recorded ids in `bitcoin::block::xbt_ids` | 7 |
+| esplora-client | `src/blocking.rs`, `src/async.rs` | `get_header_by_hash`, `get_merkle_block`; `get_response_hex`, `get_opt_response_hex` (`#[allow(dead_code)]`) | Parse through `crate::xbt`. Signatures unchanged; callers take the id from the hash they asked for or from the transaction's status. The two hex helpers are now unused | 7 |
+| (workspace) | `Cargo.toml` | `[patch.crates-io] bitcoin` removed; `workspace.exclude` adds `vendor/esplora-client-0.12.3`, `vendor/lightning-transaction-sync-0.2.7` | The vendored `bitcoin` (spike's `xbt_ids` map and `Header::block_hash` override) is deleted; crates.io `bitcoin` 0.32.102 (same version) is used. The two crates are excluded so their tests can run with `--manifest-path` | 7 |
 
 ## Running the tests
 
-`vendor/lightning-0.2.7` is a path-patched dependency, not a workspace member,
-so `cargo test -p lightning` fails ("not a member of the workspace" with
-dev-dependencies). The root `Cargo.toml` lists it under `workspace.exclude` so
-it can be tested on its own:
+The vendored crates are path-patched dependencies, not workspace members, so
+`cargo test -p <crate>` fails ("not a member of the workspace", or "cannot
+specify features for packages outside of workspace"). The root `Cargo.toml`
+lists them under `workspace.exclude` so each can be tested on its own. Standalone,
+the root `[patch.crates-io]` does not apply, so each command names the patched
+crates it needs with `--config` overrides. `bitcoin` is the crates.io crate
+(the vendored copy was removed in Task 7), so it needs no override.
+
+lightning (needs `requires_unified_sigs` from `lightning-types` and
+`require_blake2b` from `lightning-invoice`):
 
 ```
-cargo test --manifest-path vendor/lightning-0.2.7/Cargo.toml --features bitcoin/std \
+cargo test --manifest-path vendor/lightning-0.2.7/Cargo.toml \
   --config 'patch.crates-io.lightning-types.path="vendor/lightning-types-0.3.5"' \
-  --config 'patch.crates-io.bitcoin.path="vendor/bitcoin-0.32.102"' \
-  --config 'patch.crates-io.lightning-invoice.path="vendor/lightning-invoice-0.34.1"' --lib xbt::
+  --config 'patch.crates-io.lightning-invoice.path="vendor/lightning-invoice-0.34.1"' --lib
 ```
 
-- Standalone, the root `[patch.crates-io]` does not apply, so the three `--config`
-  overrides point lightning at the patched `lightning-types` (it needs
-  `requires_unified_sigs`), `bitcoin` and `lightning-invoice` (`require_blake2b`).
-- `--features bitcoin/std` is needed because the spike's `lightning-types`
-  calls `bitcoin::block::xbt_ids`, which exists only with bitcoin's `std`
-  feature (the workspace build unifies it in; a standalone build does not).
-- The `bitcoin` override and the `bitcoin/std` feature go away in Task 7, when
-  the vendored `bitcoin` copy is removed.
-
-`vendor/ldk-node` is excluded from the workspace for the same reason. Its tests
-need every patched crate named:
+ldk-node:
 
 ```
 cargo test --manifest-path vendor/ldk-node/Cargo.toml \
@@ -114,6 +122,23 @@ cargo test --manifest-path vendor/ldk-node/Cargo.toml \
   --config 'patch.crates-io.lightning-types.path="vendor/lightning-types-0.3.5"' \
   --config 'patch.crates-io.lightning-invoice.path="vendor/lightning-invoice-0.34.1"' \
   --config 'patch.crates-io.lightning-transaction-sync.path="vendor/lightning-transaction-sync-0.2.7"' \
-  --config 'patch.crates-io.esplora-client.path="vendor/esplora-client-0.12.3"' \
-  --config 'patch.crates-io.bitcoin.path="vendor/bitcoin-0.32.102"' --lib
+  --config 'patch.crates-io.esplora-client.path="vendor/esplora-client-0.12.3"' --lib
+```
+
+esplora-client (the XBT tests need no server; the crate's other tests need
+electrsd):
+
+```
+cargo test --manifest-path vendor/esplora-client-0.12.3/Cargo.toml --features blocking,async --lib xbt::
+```
+
+lightning-transaction-sync (the XBT test runs its own mock Esplora; it is
+built only with `esplora-blocking`):
+
+```
+cargo test --manifest-path vendor/lightning-transaction-sync-0.2.7/Cargo.toml --features esplora-blocking \
+  --config 'patch.crates-io.lightning.path="vendor/lightning-0.2.7"' \
+  --config 'patch.crates-io.lightning-types.path="vendor/lightning-types-0.3.5"' \
+  --config 'patch.crates-io.lightning-invoice.path="vendor/lightning-invoice-0.34.1"' \
+  --config 'patch.crates-io.esplora-client.path="vendor/esplora-client-0.12.3"' --lib
 ```

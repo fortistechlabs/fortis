@@ -1006,3 +1006,112 @@ fn xbt_splice_rejects_bad_shared_input_signature() {
 	}
 	assert!(nodes[0].tx_broadcaster.txn_broadcast().is_empty());
 }
+
+// FORTIS XBT: block ids from the chain source (Task 7). An XBT block's id is not the double
+// SHA-256 of its 80-byte `Header`, so the Esplora sync passes the index's id through
+// `Confirm::*_with_hash`, and everything LDK stores must carry that id.
+
+use crate::chain::{BestBlock, Confirm};
+use bitcoin::block::Header;
+use bitcoin::hashes::{sha256d, Hash};
+use bitcoin::BlockHash;
+
+/// An id for `header` that is not its `block_hash()`, as an XBT block's is not.
+fn xbt_block_id(header: &Header) -> BlockHash {
+	let mut data = bitcoin::consensus::serialize(header);
+	data.extend_from_slice(b"blake2b");
+	let id = BlockHash::from_byte_array(sha256d::Hash::hash(&data).to_byte_array());
+	assert_ne!(id, header.block_hash());
+	id
+}
+
+/// `count` headers from `height` on, each linked to the previous one's id; `salt` makes forks.
+fn xbt_chain(mut prev: BlockHash, height: u32, count: u32, salt: u32) -> Vec<(Header, BlockHash)> {
+	(height..height + count)
+		.map(|h| {
+			let header = create_dummy_header(prev, h + salt);
+			let id = xbt_block_id(&header);
+			prev = id;
+			(header, id)
+		})
+		.collect()
+}
+
+/// Connects a block to `node` only through the `_with_hash` methods, as the Esplora sync does.
+fn connect_with_id(node: &Node, header: &Header, id: BlockHash, txn: &[&Transaction], height: u32) {
+	let txdata: Vec<_> = txn.iter().enumerate().map(|(i, tx)| (i + 1, *tx)).collect();
+	let chain_monitor = &node.chain_monitor.chain_monitor;
+	chain_monitor.transactions_confirmed_with_hash(header, id, &txdata, height);
+	chain_monitor.best_block_updated_with_hash(header, id, height);
+	node.node.transactions_confirmed_with_hash(header, id, &txdata, height);
+	node.node.best_block_updated_with_hash(header, id, height);
+}
+
+fn connect_chain_with_ids(node: &Node, chain: &[(Header, BlockHash)], first: u32, tx: &Transaction) {
+	for (i, (header, id)) in chain.iter().enumerate() {
+		let txn: &[&Transaction] = if i == 0 { &[tx] } else { &[] };
+		connect_with_id(node, header, *id, txn, first + i as u32);
+	}
+}
+
+fn assert_best_block(node: &Node, best: BestBlock) {
+	assert_eq!(node.node.current_best_block(), best);
+	let chain_monitor = &node.chain_monitor.chain_monitor;
+	for channel_id in chain_monitor.list_monitors() {
+		assert_eq!(chain_monitor.get_monitor(channel_id).unwrap().current_best_block(), best);
+	}
+}
+
+#[test]
+fn confirm_with_hash_uses_given_hash() {
+	let chanmon_cfgs = create_chanmon_cfgs(2);
+	let node_cfgs = create_node_cfgs(2, &chanmon_cfgs);
+	let node_chanmgrs =
+		create_node_chanmgrs(2, &node_cfgs, &[Some(xbt_cfg()), Some(xbt_cfg())]);
+	let nodes = create_network(2, &node_cfgs, &node_chanmgrs);
+	let node_a_id = nodes[0].node.get_our_node_id();
+	let node_b_id = nodes[1].node.get_our_node_id();
+
+	let funding_tx = create_chan_between_nodes_with_value_init(&nodes[0], &nodes[1], 100_000, 0);
+	let funding_txid = funding_tx.compute_txid();
+	let (tip, tip_height) = nodes[0].best_block_info();
+	assert_eq!(nodes[1].best_block_info(), (tip, tip_height));
+	let conf_height = tip_height + 1;
+
+	// The funding transaction confirms in a block that is then reorged out, as the sync does it:
+	// the stored id shows the block is stale, the transaction is unconfirmed, the new tip given.
+	let stale = xbt_chain(tip, conf_height, 1, 0);
+	let chain = xbt_chain(tip, conf_height, CHAN_CONFIRM_DEPTH, 1_000);
+	for node in nodes.iter() {
+		let (header, id) = stale[0];
+		connect_with_id(node, &header, id, &[&funding_tx], conf_height);
+		assert_best_block(node, BestBlock::new(id, conf_height));
+		assert!(node.node.get_relevant_txids().contains(&(funding_txid, conf_height, Some(id))));
+
+		node.chain_monitor.chain_monitor.transaction_unconfirmed(&funding_txid);
+		node.node.transaction_unconfirmed(&funding_txid);
+		assert!(node.node.get_relevant_txids().is_empty());
+	}
+
+	// It confirms again on the new chain, first at node 1 and then at node 0, and the channel
+	// becomes ready as usual.
+	connect_chain_with_ids(&nodes[1], &chain, conf_height, &funding_tx);
+	let channel_ready =
+		get_event_msg!(nodes[1], MessageSendEvent::SendChannelReady, node_a_id);
+	nodes[0].node.handle_channel_ready(node_b_id, &channel_ready);
+	connect_chain_with_ids(&nodes[0], &chain, conf_height, &funding_tx);
+	expect_channel_ready_event(&nodes[0], &node_b_id);
+	let (as_funding_msgs, _) = create_chan_between_nodes_with_value_confirm_second(&nodes[1], &nodes[0]);
+	create_chan_between_nodes_with_value_b(&nodes[0], &nodes[1], &as_funding_msgs);
+
+	let (_, last_id) = *chain.last().unwrap();
+	let best = BestBlock::new(last_id, conf_height + CHAN_CONFIRM_DEPTH - 1);
+	for node in nodes.iter() {
+		assert_best_block(node, best);
+		let txids = node.node.get_relevant_txids();
+		assert_eq!(txids, vec![(funding_txid, conf_height, Some(chain[0].1))]);
+		let chans = node.node.list_channels();
+		assert_eq!(chans.len(), 1);
+		assert!(chans[0].is_channel_ready && chans[0].is_usable);
+	}
+}

@@ -77,8 +77,10 @@ impl SyncState {
 	{
 		for ctx in confirmed_txs {
 			for c in confirmables {
-				c.transactions_confirmed(
+				// FORTIS XBT: with the block's id from the chain source.
+				c.transactions_confirmed_with_hash(
 					&ctx.block_header,
+					ctx.block_hash,
 					&[(ctx.pos, &ctx.tx)],
 					ctx.block_height,
 				);
@@ -150,6 +152,9 @@ pub(crate) struct ConfirmedTx {
 	pub tx: Transaction,
 	pub txid: Txid,
 	pub block_header: Header,
+	// FORTIS XBT: the block's id from the chain source; an XBT block's id is not
+	// `block_header.block_hash()`.
+	pub block_hash: BlockHash,
 	pub block_height: u32,
 	pub pos: usize,
 }

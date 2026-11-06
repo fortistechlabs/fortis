@@ -83,6 +83,9 @@ pub mod api;
 pub mod r#async;
 #[cfg(feature = "blocking")]
 pub mod blocking;
+// FORTIS XBT: parsing of 80- and 164-byte (BLAKE2b) block headers, shared by both clients.
+#[cfg(any(feature = "blocking", feature = "async"))]
+mod xbt;
 
 pub use api::*;
 #[cfg(feature = "blocking")]

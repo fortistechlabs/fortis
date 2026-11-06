@@ -487,8 +487,11 @@ where
 	/// updated `txdata`.
 	///
 	/// Calls which represent a new blockchain tip height should set `best_height`.
+	// FORTIS XBT: takes the block's id instead of its header (the only use of the header), so
+	// the `Confirm::*_with_hash` path can pass the chain source's id.
 	fn process_chain_data<FN>(
-		&self, header: &Header, best_height: Option<u32>, txdata: &TransactionData, process: FN,
+		&self, block_hash: BlockHash, best_height: Option<u32>, txdata: &TransactionData,
+		process: FN,
 	) where
 		FN: Fn(&ChannelMonitor<ChannelSigner>, &TransactionData) -> Vec<TransactionOutputs>,
 	{
@@ -499,7 +502,7 @@ where
 			let monitor_lock = self.monitors.read().unwrap();
 			if let Some(monitor_state) = monitor_lock.get(channel_id) {
 				let update_res = self.update_monitor_with_chain_data(
-					header,
+					block_hash, // FORTIS XBT: the id, not the header
 					best_height,
 					txdata,
 					&process,
@@ -523,7 +526,7 @@ where
 		for (channel_id, monitor_state) in monitor_states.iter() {
 			if !channel_ids.contains(channel_id) {
 				let update_res = self.update_monitor_with_chain_data(
-					header,
+					block_hash, // FORTIS XBT: the id, not the header
 					best_height,
 					txdata,
 					&process,
@@ -549,9 +552,11 @@ where
 		}
 	}
 
+	// FORTIS XBT: takes the block's id instead of its header, as `process_chain_data`.
 	fn update_monitor_with_chain_data<FN>(
-		&self, header: &Header, best_height: Option<u32>, txdata: &TransactionData, process: FN,
-		channel_id: &ChannelId, monitor_state: &MonitorHolder<ChannelSigner>, channel_count: usize,
+		&self, block_hash: BlockHash, best_height: Option<u32>, txdata: &TransactionData,
+		process: FN, channel_id: &ChannelId, monitor_state: &MonitorHolder<ChannelSigner>,
+		channel_count: usize,
 	) -> Result<(), ()>
 	where
 		FN: Fn(&ChannelMonitor<ChannelSigner>, &TransactionData) -> Vec<TransactionOutputs>,
@@ -615,7 +620,7 @@ where
 		// Register any new outputs with the chain source for filtering, storing any dependent
 		// transactions from within the block that previously had not been included in txdata.
 		if let Some(ref chain_source) = self.chain_source {
-			let block_hash = header.block_hash();
+			// FORTIS XBT: `block_hash` is given (was `header.block_hash()`).
 			for (txid, mut outputs) in txn_outputs.drain(..) {
 				for (idx, output) in outputs.drain(..) {
 					// Register any new outputs with the chain source for filtering
@@ -1206,7 +1211,8 @@ where
 			header.block_hash(),
 			height
 		);
-		self.process_chain_data(header, Some(height), &txdata, |monitor, txdata| {
+		// FORTIS XBT: Listen (full blocks) path; the id is computed from the header as before.
+		self.process_chain_data(header.block_hash(), Some(height), &txdata, |monitor, txdata| {
 			monitor.block_connected(
 				header,
 				txdata,
@@ -1264,16 +1270,24 @@ where
 	ES::Target: EntropySource,
 {
 	fn transactions_confirmed(&self, header: &Header, txdata: &TransactionData, height: u32) {
+		// FORTIS XBT: the id is computed only on this path; the sync passes the index's.
+		self.transactions_confirmed_with_hash(header, header.block_hash(), txdata, height)
+	}
+
+	// FORTIS XBT: was `transactions_confirmed`; the block's id is now given, not computed.
+	fn transactions_confirmed_with_hash(
+		&self, _header: &Header, block_hash: BlockHash, txdata: &TransactionData, height: u32,
+	) {
 		log_debug!(
 			self.logger,
 			"{} provided transactions confirmed at height {} in block {}",
 			txdata.len(),
 			height,
-			header.block_hash()
+			block_hash
 		);
-		self.process_chain_data(header, None, txdata, |monitor, txdata| {
-			monitor.transactions_confirmed(
-				header,
+		self.process_chain_data(block_hash, None, txdata, |monitor, txdata| {
+			monitor.transactions_confirmed_with_hash(
+				block_hash,
 				txdata,
 				height,
 				&*self.broadcaster,
@@ -1299,18 +1313,24 @@ where
 	}
 
 	fn best_block_updated(&self, header: &Header, height: u32) {
+		// FORTIS XBT: the id is computed only on this path; the sync passes the index's.
+		self.best_block_updated_with_hash(header, header.block_hash(), height)
+	}
+
+	// FORTIS XBT: was `best_block_updated`; the block's id is now given, not computed.
+	fn best_block_updated_with_hash(&self, _header: &Header, block_hash: BlockHash, height: u32) {
 		log_debug!(
 			self.logger,
 			"New best block {} at height {} provided via best_block_updated",
-			header.block_hash(),
+			block_hash,
 			height
 		);
-		self.process_chain_data(header, Some(height), &[], |monitor, txdata| {
+		self.process_chain_data(block_hash, Some(height), &[], |monitor, txdata| {
 			// While in practice there shouldn't be any recursive calls when given empty txdata,
 			// it's still possible if a chain::Filter implementation returns a transaction.
 			debug_assert!(txdata.is_empty());
-			monitor.best_block_updated(
-				header,
+			monitor.best_block_updated_with_hash(
+				block_hash,
 				height,
 				&*self.broadcaster,
 				&*self.fee_estimator,

@@ -185,6 +185,8 @@ impl<S: Sleeper> AsyncClient<S> {
     ///
     /// This function will return an error either from the HTTP client, or the
     /// [`bitcoin::consensus::Decodable`] deserialization.
+    // FORTIS XBT: unused since headers and merkle blocks parse through crate::xbt.
+    #[allow(dead_code)]
     async fn get_response_hex<T: Decodable>(&self, path: &str) -> Result<T, Error> {
         let url = format!("{}{}", self.url, path);
         let response = self.get_with_retry(&url).await?;
@@ -206,6 +208,8 @@ impl<S: Sleeper> AsyncClient<S> {
     ///
     /// See [`AsyncEsploraClient::get_response_hex`] above for full
     /// documentation.
+    // FORTIS XBT: unused since headers and merkle blocks parse through crate::xbt.
+    #[allow(dead_code)]
     async fn get_opt_response_hex<T: Decodable>(&self, path: &str) -> Result<Option<T>, Error> {
         match self.get_response_hex(path).await {
             Ok(res) => Ok(Some(res)),
@@ -330,8 +334,10 @@ impl<S: Sleeper> AsyncClient<S> {
 
     /// Get a [`BlockHeader`] given a particular block hash.
     pub async fn get_header_by_hash(&self, block_hash: &BlockHash) -> Result<BlockHeader, Error> {
-        let b: Vec<u8> = Vec::from_hex(&self.get_response_text(&format!("/block/{block_hash}/header")).await?)?;
-        xbt_header(&b, block_hash)
+        // FORTIS XBT: 80- or 164-byte header. The block's id is the hash asked for, not the
+        // returned Header's block_hash().
+        let hex = self.get_response_text(&format!("/block/{block_hash}/header")).await?;
+        crate::xbt::header_from_bytes(&Vec::from_hex(&hex)?)
     }
 
     /// Get the [`BlockStatus`] given a particular [`BlockHash`].
@@ -361,9 +367,9 @@ impl<S: Sleeper> AsyncClient<S> {
             Err(Error::HttpResponse { status: 404, .. }) => return Ok(None),
             Err(e) => return Err(e),
         };
-        let b: Vec<u8> = Vec::from_hex(&hex)?;
-        let real = if bitcoin::block::xbt_ids::enabled() { self.get_tx_status(tx_hash).await?.block_hash } else { None };
-        Ok(Some(xbt_merkle_block(&b, real)?))
+        // FORTIS XBT: the proof's header may be 164 bytes. The block's id comes from the
+        // transaction's status, not the returned header.
+        Ok(Some(crate::xbt::merkle_block_from_bytes(&Vec::from_hex(&hex)?)?))
     }
 
     /// Get the spending status of an output given a [`Txid`] and the output
@@ -668,36 +674,4 @@ impl Sleeper for DefaultSleeper {
     fn sleep(dur: std::time::Duration) -> Self::Sleep {
         tokio::time::sleep(dur)
     }
-}
-
-// FORTIS XBT: 164-byte BLAKE2b headers. The first 80 bytes are kept
-// as the Header and the node's id for the block is recorded so that
-// Header::block_hash() returns it.
-fn xbt_header(bytes: &[u8], real: &BlockHash) -> Result<BlockHeader, Error> {
-    if bytes.len() == 164 {
-        let mut p = [0u8; 80];
-        p.copy_from_slice(&bytes[..80]);
-        bitcoin::block::xbt_ids::record(bitcoin::block::xbt_ids::prefix_hash(&p), *real);
-        return Ok(deserialize(&p)?);
-    }
-    Ok(deserialize(bytes)?)
-}
-
-/// A merkleblock-proof whose header may be 164 bytes; `real` is the id of
-/// the block the tx is in, when known.
-fn xbt_merkle_block(bytes: &[u8], real: Option<BlockHash>) -> Result<MerkleBlock, Error> {
-    if let Ok(mb) = deserialize::<MerkleBlock>(bytes) {
-        return Ok(mb);
-    }
-    if bitcoin::block::xbt_ids::enabled() && bytes.len() > 164 {
-        let mut p = [0u8; 80];
-        p.copy_from_slice(&bytes[..80]);
-        if let Some(r) = real {
-            bitcoin::block::xbt_ids::record(bitcoin::block::xbt_ids::prefix_hash(&p), r);
-        }
-        let header: BlockHeader = deserialize(&p)?;
-        let txn: bitcoin::merkle_tree::PartialMerkleTree = deserialize(&bytes[164..])?;
-        return Ok(MerkleBlock { header, txn });
-    }
-    Ok(deserialize(bytes)?)
 }

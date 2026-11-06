@@ -2451,11 +2451,34 @@ impl<Signer: EcdsaChannelSigner> ChannelMonitor<Signer> {
 		F::Target: FeeEstimator,
 		L::Target: Logger,
 	{
+		// FORTIS XBT: the id is computed only on this path.
+		self.transactions_confirmed_with_hash(
+			header.block_hash(), txdata, height, broadcaster, fee_estimator, logger)
+	}
+
+	/// [`Self::transactions_confirmed`] for the block with the given id (as given by the chain
+	/// source rather than computed from a header).
+	// FORTIS XBT: an XBT block's id is not `Header::block_hash()`; the header is not needed.
+	#[rustfmt::skip]
+	pub fn transactions_confirmed_with_hash<B: Deref, F: Deref, L: Deref>(
+		&self,
+		block_hash: BlockHash,
+		txdata: &TransactionData,
+		height: u32,
+		broadcaster: B,
+		fee_estimator: F,
+		logger: &L,
+	) -> Vec<TransactionOutputs>
+	where
+		B::Target: BroadcasterInterface,
+		F::Target: FeeEstimator,
+		L::Target: Logger,
+	{
 		let bounded_fee_estimator = LowerBoundedFeeEstimator::new(fee_estimator);
 		let mut inner = self.inner.lock().unwrap();
 		let logger = WithChannelMonitor::from_impl(logger, &*inner, None);
 		inner.transactions_confirmed(
-			header, txdata, height, broadcaster, &bounded_fee_estimator, &logger)
+			block_hash, txdata, height, broadcaster, &bounded_fee_estimator, &logger)
 	}
 
 	/// Processes a transaction that was reorganized out of the chain.
@@ -2505,11 +2528,33 @@ impl<Signer: EcdsaChannelSigner> ChannelMonitor<Signer> {
 		F::Target: FeeEstimator,
 		L::Target: Logger,
 	{
+		// FORTIS XBT: the id is computed only on this path.
+		self.best_block_updated_with_hash(
+			header.block_hash(), height, broadcaster, fee_estimator, logger)
+	}
+
+	/// [`Self::best_block_updated`] for the block with the given id (as given by the chain
+	/// source rather than computed from a header).
+	// FORTIS XBT: an XBT block's id is not `Header::block_hash()`; the header is not needed.
+	#[rustfmt::skip]
+	pub fn best_block_updated_with_hash<B: Deref, F: Deref, L: Deref>(
+		&self,
+		block_hash: BlockHash,
+		height: u32,
+		broadcaster: B,
+		fee_estimator: F,
+		logger: &L,
+	) -> Vec<TransactionOutputs>
+	where
+		B::Target: BroadcasterInterface,
+		F::Target: FeeEstimator,
+		L::Target: Logger,
+	{
 		let bounded_fee_estimator = LowerBoundedFeeEstimator::new(fee_estimator);
 		let mut inner = self.inner.lock().unwrap();
 		let logger = WithChannelMonitor::from_impl(logger, &*inner, None);
 		inner.best_block_updated(
-			header, height, broadcaster, &bounded_fee_estimator, &logger
+			block_hash, height, broadcaster, &bounded_fee_estimator, &logger
 		)
 	}
 
@@ -5390,13 +5435,14 @@ impl<Signer: EcdsaChannelSigner> ChannelMonitorImpl<Signer> {
 		self.best_block = BestBlock::new(block_hash, height);
 
 		let bounded_fee_estimator = LowerBoundedFeeEstimator::new(fee_estimator);
-		self.transactions_confirmed(header, txdata, height, broadcaster, &bounded_fee_estimator, logger)
+		// FORTIS XBT: passes the id (Listen path: computed from the header, as before).
+		self.transactions_confirmed(block_hash, txdata, height, broadcaster, &bounded_fee_estimator, logger)
 	}
 
 	#[rustfmt::skip]
 	fn best_block_updated<B: Deref, F: Deref, L: Deref>(
 		&mut self,
-		header: &Header,
+		block_hash: BlockHash, // FORTIS XBT: the id is given (was `header`, used only for it)
 		height: u32,
 		broadcaster: B,
 		fee_estimator: &LowerBoundedFeeEstimator<F>,
@@ -5407,8 +5453,6 @@ impl<Signer: EcdsaChannelSigner> ChannelMonitorImpl<Signer> {
 		F::Target: FeeEstimator,
 		L::Target: Logger,
 	{
-		let block_hash = header.block_hash();
-
 		if height > self.best_block.height {
 			self.best_block = BestBlock::new(block_hash, height);
 			log_trace!(logger, "Connecting new block {} at height {}", block_hash, height);
@@ -5428,7 +5472,7 @@ impl<Signer: EcdsaChannelSigner> ChannelMonitorImpl<Signer> {
 	#[rustfmt::skip]
 	fn transactions_confirmed<B: Deref, F: Deref, L: Deref>(
 		&mut self,
-		header: &Header,
+		block_hash: BlockHash, // FORTIS XBT: the id is given (was `header`, used only for it)
 		txdata: &TransactionData,
 		height: u32,
 		broadcaster: B,
@@ -5464,7 +5508,7 @@ impl<Signer: EcdsaChannelSigner> ChannelMonitorImpl<Signer> {
 			}
 		}
 
-		let block_hash = header.block_hash();
+		// FORTIS XBT: `block_hash` is given (was `header.block_hash()`).
 
 		// We may need to broadcast our holder commitment if we see a funding transaction reorg,
 		// with a different funding transaction confirming. It's possible we process a
@@ -5495,7 +5539,8 @@ impl<Signer: EcdsaChannelSigner> ChannelMonitorImpl<Signer> {
 			for ev in self.onchain_events_awaiting_threshold_conf.iter() {
 				if ev.txid == txid {
 					if let Some(conf_hash) = ev.block_hash {
-						assert_eq!(header.block_hash(), conf_hash,
+						// FORTIS XBT: the given id (was `header.block_hash()`).
+						assert_eq!(block_hash, conf_hash,
 							"Transaction {} was already confirmed and is being re-confirmed in a different block.\n\
 							This indicates a severe bug in the transaction connection logic - a reorg should have been processed first!", ev.txid);
 					}
@@ -6478,12 +6523,26 @@ where
 		self.0.transactions_confirmed(header, txdata, height, &*self.1, &*self.2, &self.3);
 	}
 
+	// FORTIS XBT: the given id reaches the monitor.
+	fn transactions_confirmed_with_hash(
+		&self, _header: &Header, block_hash: BlockHash, txdata: &TransactionData, height: u32,
+	) {
+		self.0.transactions_confirmed_with_hash(
+			block_hash, txdata, height, &*self.1, &*self.2, &self.3,
+		);
+	}
+
 	fn transaction_unconfirmed(&self, txid: &Txid) {
 		self.0.transaction_unconfirmed(txid, &*self.1, &*self.2, &self.3);
 	}
 
 	fn best_block_updated(&self, header: &Header, height: u32) {
 		self.0.best_block_updated(header, height, &*self.1, &*self.2, &self.3);
+	}
+
+	// FORTIS XBT: the given id reaches the monitor.
+	fn best_block_updated_with_hash(&self, _header: &Header, block_hash: BlockHash, height: u32) {
+		self.0.best_block_updated_with_hash(block_hash, height, &*self.1, &*self.2, &self.3);
 	}
 
 	fn get_relevant_txids(&self) -> Vec<(Txid, u32, Option<BlockHash>)> {

@@ -14249,13 +14249,18 @@ where
 	MR::Target: MessageRouter,
 	L::Target: Logger,
 {
-	#[rustfmt::skip]
 	fn transactions_confirmed(&self, header: &Header, txdata: &TransactionData, height: u32) {
+		// FORTIS XBT: the id is computed only on this path; the sync passes the index's.
+		self.transactions_confirmed_with_hash(header, header.block_hash(), txdata, height)
+	}
+
+	// FORTIS XBT: was `transactions_confirmed`; the block's id is now given, not computed.
+	#[rustfmt::skip]
+	fn transactions_confirmed_with_hash(&self, _header: &Header, block_hash: BlockHash, txdata: &TransactionData, height: u32) {
 		// Note that we MUST NOT end up calling methods on self.chain_monitor here - we're called
 		// during initialization prior to the chain_monitor being fully configured in some cases.
 		// See the docs for `ChannelManagerReadArgs` for more.
 
-		let block_hash = header.block_hash();
 		log_trace!(self.logger, "{} transactions included in block {} at height {} provided", txdata.len(), block_hash, height);
 
 		let _persistence_guard =
@@ -14281,13 +14286,18 @@ where
 		}
 	}
 
-	#[rustfmt::skip]
 	fn best_block_updated(&self, header: &Header, height: u32) {
+		// FORTIS XBT: the id is computed only on this path; the sync passes the index's.
+		self.best_block_updated_with_hash(header, header.block_hash(), height)
+	}
+
+	// FORTIS XBT: was `best_block_updated`; the block's id is now given, not computed.
+	#[rustfmt::skip]
+	fn best_block_updated_with_hash(&self, header: &Header, block_hash: BlockHash, height: u32) {
 		// Note that we MUST NOT end up calling methods on self.chain_monitor here - we're called
 		// during initialization prior to the chain_monitor being fully configured in some cases.
 		// See the docs for `ChannelManagerReadArgs` for more.
 
-		let block_hash = header.block_hash();
 		log_trace!(self.logger, "New best block: {} at height {}", block_hash, height);
 
 		let _persistence_guard =
@@ -14365,7 +14375,8 @@ where
 		}
 		max_time!(self.highest_seen_timestamp);
 
-		self.flow.best_block_updated(header, height);
+		// FORTIS XBT: the given id, not one computed from the header.
+		self.flow.best_block_updated_with_hash(header, block_hash, height);
 	}
 
 	fn get_relevant_txids(&self) -> Vec<(Txid, u32, Option<BlockHash>)> {

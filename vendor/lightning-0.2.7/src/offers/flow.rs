@@ -15,6 +15,7 @@ use core::sync::atomic::{AtomicUsize, Ordering};
 use core::time::Duration;
 
 use bitcoin::block::Header;
+use bitcoin::BlockHash; // FORTIS XBT: best_block_updated_with_hash
 use bitcoin::constants::ChainHash;
 use bitcoin::secp256k1::{self, PublicKey, Secp256k1};
 
@@ -224,10 +225,18 @@ where
 	/// Must be called whenever a new chain tip becomes available. May be skipped
 	/// for intermediary blocks.
 	pub fn best_block_updated(&self, header: &Header, height: u32) {
+		// FORTIS XBT: the id is computed only on this path.
+		self.best_block_updated_with_hash(header, header.block_hash(), height)
+	}
+
+	/// [`Self::best_block_updated`], with the block's id as given by the chain source rather than
+	/// computed from `header`.
+	// FORTIS XBT: was `best_block_updated`; an XBT block's id is not `header.block_hash()`.
+	pub fn best_block_updated_with_hash(&self, header: &Header, block_hash: BlockHash, height: u32) {
 		let timestamp = &self.highest_seen_timestamp;
 		let block_time = header.time as usize;
 
-		*self.best_block.write().unwrap() = BestBlock::new(header.block_hash(), height);
+		*self.best_block.write().unwrap() = BestBlock::new(block_hash, height);
 
 		loop {
 			// Update timestamp to be the max of its current value and the block

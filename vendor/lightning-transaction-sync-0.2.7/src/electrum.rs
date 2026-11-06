@@ -479,6 +479,8 @@ where
 						let confirmed_tx = ConfirmedTx {
 							tx: tx.clone(),
 							txid,
+							// FORTIS XBT: Electrum is not used on XBT; the id is computed as before.
+							block_hash: block_header.block_hash(),
 							block_header,
 							block_height: prob_conf_height,
 							pos,

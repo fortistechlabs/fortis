@@ -73,6 +73,9 @@
 
 #[cfg(any(feature = "esplora-blocking", feature = "esplora-async"))]
 mod esplora;
+// FORTIS XBT: the Esplora sync against a mock index serving 80- and 164-byte headers.
+#[cfg(all(test, feature = "esplora-blocking", not(feature = "async-interface")))]
+mod xbt_tests;
 
 #[cfg(any(feature = "_electrum"))]
 mod electrum;
