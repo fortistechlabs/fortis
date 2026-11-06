@@ -299,6 +299,10 @@ fn xbt_static_invoice_carries_blake2b() {
 	expect_offer_paths_requests(&nodes[2], &[&nodes[0], &nodes[1]]);
 	let res = pass_static_invoice_server_messages(&nodes[1], &nodes[2], recipient_id);
 	assert!(res.invoice.invoice_features().requires_blake2b());
+	// The async receive offer itself (the one payers see) is XBT too: an XBT payer refuses an
+	// offer without the bit (found by the regtest release gate, `offer_while_stopped`).
+	let offer = nodes[2].node.get_async_receive_offer().unwrap();
+	assert!(offer.offer_features().requires_blake2b());
 }
 
 /// A BOLT 12 invoice that lacks `option_blake2b`, answering an XBT node's request, is abandoned

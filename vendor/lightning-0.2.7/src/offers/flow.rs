@@ -685,6 +685,9 @@ where
 		self.create_offer_builder_intern(&*entropy_source, |_, _, _| {
 			Ok(message_paths_to_always_online_node)
 		})
+		// FORTIS XBT: option_blake2b in async receive offers. The other offers get it in
+		// ChannelManager's builder macros; this one is built here, from the server's paths.
+		.map(|(builder, nonce)| (builder.xbt_blake2b(self.xbt), nonce))
 	}
 
 	fn create_refund_builder_intern<ES: Deref, PF, I>(
