@@ -4784,6 +4784,13 @@ where
 		};
 
 		let mut peer_state = peer_state_mutex.lock().unwrap();
+		// FORTIS XBT: an XBT node splices only with the peers on its allow-list. (Checked under
+		// the peer locks, the order `internal_splice_init` takes them in with the config.)
+		if !self.xbt_splice_allowed(counterparty_node_id) {
+			return Err(APIError::APIMisuseError {
+				err: "splicing not allowed with this peer on XBT".to_owned(),
+			});
+		}
 		if !peer_state.latest_features.supports_splicing() {
 			return Err(APIError::ChannelUnavailable {
 				err: "Peer does not support splicing".to_owned(),
@@ -9710,12 +9717,14 @@ This indicates a bug inside LDK. Please report this error at https://github.com/
 			if signing_session.has_local_contribution() {
 				let mut pending_events = self.pending_events.lock().unwrap();
 				let unsigned_transaction = signing_session.unsigned_tx().tx().clone();
+				let prevouts = signing_session.unsigned_tx().prevouts(); // FORTIS XBT: for 0x21 wallet signatures
 				let event_action = (
 					Event::FundingTransactionReadyForSigning {
 						unsigned_transaction,
 						counterparty_node_id,
 						channel_id: channel.context.channel_id(),
 						user_channel_id: channel.context.get_user_id(),
+						prevouts, // FORTIS XBT: as above
 					},
 					None,
 				);
@@ -11868,6 +11877,15 @@ This indicates a bug inside LDK. Please report this error at https://github.com/
 		Ok(())
 	}
 
+	/// FORTIS XBT: whether we may splice with `counterparty_node_id`: always on BTC, and on XBT
+	/// only when it is in `XbtConfig::splice_peers`.
+	fn xbt_splice_allowed(&self, counterparty_node_id: &PublicKey) -> bool {
+		match &self.config.read().unwrap().xbt {
+			Some(xbt) => xbt.splice_peers.contains(counterparty_node_id),
+			None => true,
+		}
+	}
+
 	/// Handle incoming splice request, transition channel to splice-pending (unless some check fails).
 	#[rustfmt::skip]
 	fn internal_splice_init(&self, counterparty_node_id: &PublicKey, msg: &msgs::SpliceInit) -> Result<(), MsgHandleErrInternal> {
@@ -11898,6 +11916,11 @@ This indicates a bug inside LDK. Please report this error at https://github.com/
 				}
 
 				if let Some(ref mut funded_channel) = chan_entry.get_mut().as_funded_mut() {
+					// FORTIS XBT: an XBT node answers a peer off its splice allow-list with tx_abort.
+					if !self.xbt_splice_allowed(counterparty_node_id) {
+						let err = funded_channel.refuse_xbt_splice_init();
+						try_channel_entry!(self, peer_state, Err::<(), _>(err), chan_entry);
+					}
 					let init_res = funded_channel.splice_init(
 						msg, our_funding_contribution, &self.signer_provider, &self.entropy_source,
 						&self.get_our_node_id(), &self.logger

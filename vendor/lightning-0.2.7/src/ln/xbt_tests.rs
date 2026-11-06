@@ -586,3 +586,423 @@ fn xbt_reloaded_node_still_unified() {
 	let commitment = spending(&txn, &chan.3);
 	assert_sig_bytes(&commitment, 0, &chan.3, &[0x21, 0x21]);
 }
+
+// Task 5: splicing on XBT.
+//
+// The splice transaction spends the old funding output (the shared input, a 2-of-2 both nodes
+// sign) next to wallet inputs. On a unified channel both shared-input signatures are 0x21 over the
+// unified digest, which without ANYONECANPAY commits to the prevout of every input. LDK 0.2.7's
+// splice acceptor cannot contribute inputs (`internal_splice_init`), so "both sides contribute"
+// is two splices, one started by each node.
+
+use super::splicing_tests::{complete_interactive_funding_negotiation, complete_splice_handshake};
+use crate::chain::chaininterface::FEERATE_FLOOR_SATS_PER_KW;
+use crate::chain::channelmonitor::ANTI_REORG_DELAY;
+use crate::events::Event;
+use crate::ln::funding::{FundingTxInput, SpliceContribution};
+use crate::sign::{NodeSigner, Recipient};
+use crate::util::errors::APIError;
+use bitcoin::secp256k1::SecretKey;
+use bitcoin::{Amount, TxIn, TxOut, Witness};
+
+/// An XBT config that allows splicing with `peers`.
+fn xbt_splice_cfg(peers: Vec<PublicKey>) -> UserConfig {
+	let mut cfg = xbt_cfg();
+	cfg.xbt.as_mut().unwrap().splice_peers = peers;
+	cfg
+}
+
+fn cfg_node_id(cfg: &NodeCfg) -> PublicKey {
+	cfg.keys_manager.get_node_id(Recipient::Node).unwrap()
+}
+
+/// A wallet key of the test (the test wallet of `functional_test_utils` signs only BIP 143).
+fn wallet_key(i: u8) -> SecretKey {
+	SecretKey::from_slice(&[0x40 + i; 32]).unwrap()
+}
+
+fn wallet_spk(key: &SecretKey) -> ScriptBuf {
+	let pk = bitcoin::PublicKey::new(key.public_key(&Secp256k1::new()));
+	ScriptBuf::new_p2wpkh(&pk.wpubkey_hash().unwrap())
+}
+
+/// A coin of `value` sat paying to `key`, as a splice input. `salt` makes the transaction unique.
+fn wallet_coin(key: &SecretKey, value: u64, salt: u32) -> (FundingTxInput, Transaction) {
+	let tx = Transaction {
+		version: bitcoin::transaction::Version::TWO,
+		lock_time: bitcoin::absolute::LockTime::from_consensus(salt),
+		input: vec![TxIn::default()],
+		output: vec![TxOut { value: Amount::from_sat(value), script_pubkey: wallet_spk(key) }],
+	};
+	(FundingTxInput::new_p2wpkh(tx.clone(), 0).unwrap(), tx)
+}
+
+/// Signs the inputs of `tx` that pay to `key` as an XBT wallet does: P2WPKH, hash type 0x21, over
+/// the unified digest of every prevout in `prevouts`.
+fn sign_wallet_inputs_unified(tx: &mut Transaction, prevouts: &[TxOut], key: &SecretKey) {
+	let secp = Secp256k1::new();
+	let pk = bitcoin::PublicKey::new(key.public_key(&secp));
+	let spk = wallet_spk(key);
+	let code = spk.p2wpkh_script_code().unwrap();
+	let unsigned = tx.clone();
+	for i in 0..tx.input.len() {
+		if prevouts[i].script_pubkey != spk {
+			continue;
+		}
+		let msg =
+			crate::xbt::sighash_with_prevouts(&unsigned, prevouts, i, &code, EcdsaSighashType::All, true);
+		let mut w = Witness::new();
+		crate::xbt::push_sig(&mut w, &secp.sign_ecdsa(&msg, key), EcdsaSighashType::All, true);
+		w.push(pk.to_bytes());
+		tx.input[i].witness = w;
+	}
+}
+
+/// The output every input of `tx` spends, looked up in `sources` (the old funding transaction and
+/// the wallet coins), in input order.
+fn prevouts_from(tx: &Transaction, sources: &[&Transaction]) -> Vec<TxOut> {
+	tx.input
+		.iter()
+		.map(|i| {
+			let src = sources
+				.iter()
+				.find(|s| s.compute_txid() == i.previous_output.txid)
+				.expect("input from an unknown transaction");
+			src.output[i.previous_output.vout as usize].clone()
+		})
+		.collect()
+}
+
+/// Asserts that the shared input `idx` of the splice `tx` carries two signatures with hash type
+/// bytes `expected` and that each verifies against the digest over all of `prevouts`.
+fn assert_shared_input_sigs(tx: &Transaction, prevouts: &[TxOut], idx: usize, expected: &[u8]) {
+	let witness: Vec<&[u8]> = tx.input[idx].witness.iter().collect();
+	assert_eq!(witness.len(), 4, "not a 2-of-2 witness");
+	assert!(witness[0].is_empty());
+	let script = ScriptBuf::from(witness[3].to_vec());
+	assert_eq!(prevouts[idx].script_pubkey, script.to_p2wsh());
+	let pubkeys: Vec<PublicKey> = script
+		.instructions()
+		.filter_map(|i| match i.unwrap() {
+			Instruction::PushBytes(b) if b.len() == 33 => Some(PublicKey::from_slice(b.as_bytes()).unwrap()),
+			_ => None,
+		})
+		.collect();
+	assert_eq!(pubkeys.len(), 2);
+	let secp = Secp256k1::verification_only();
+	for (i, want) in expected.iter().enumerate() {
+		let raw = witness[1 + i];
+		assert_eq!(*raw.last().unwrap(), *want, "shared input signature {i}: hash type");
+		let sig = Signature::from_der(&raw[..raw.len() - 1]).unwrap();
+		let unified = want & crate::xbt::SIGHASH_UNIFIED != 0;
+		let base = EcdsaSighashType::from_consensus((want & !crate::xbt::SIGHASH_UNIFIED) as u32);
+		let msg = crate::xbt::sighash_with_prevouts(tx, prevouts, idx, &script, base, unified);
+		secp.verify_ecdsa(&msg, &sig, &pubkeys[i])
+			.unwrap_or_else(|_| panic!("shared input signature {i} does not verify over all prevouts"));
+	}
+}
+
+/// Asserts that wallet input `idx` of `tx` is a P2WPKH spend with hash type 0x21 that verifies
+/// against the unified digest over all of `prevouts`.
+fn assert_wallet_input_unified(tx: &Transaction, prevouts: &[TxOut], idx: usize) {
+	let witness: Vec<&[u8]> = tx.input[idx].witness.iter().collect();
+	assert_eq!(witness.len(), 2);
+	assert_eq!(*witness[0].last().unwrap(), 0x21);
+	let sig = Signature::from_der(&witness[0][..witness[0].len() - 1]).unwrap();
+	let pk = PublicKey::from_slice(witness[1]).unwrap();
+	let code = prevouts[idx].script_pubkey.p2wpkh_script_code().unwrap();
+	let msg = crate::xbt::sighash_with_prevouts(tx, prevouts, idx, &code, EcdsaSighashType::All, true);
+	Secp256k1::verification_only().verify_ecdsa(&msg, &sig, &pk).unwrap();
+}
+
+/// Runs a splice `initiator` starts with `contribution` and signs its wallet inputs with `key`
+/// (0x21, using the prevouts of `Event::FundingTransactionReadyForSigning`). Returns the splice
+/// transaction both nodes broadcast and the event's prevouts.
+fn xbt_splice<'a, 'b, 'c, 'd>(
+	initiator: &'a Node<'b, 'c, 'd>, acceptor: &'a Node<'b, 'c, 'd>, channel_id: ChannelId,
+	contribution: SpliceContribution, key: &SecretKey,
+) -> (Transaction, Vec<TxOut>) {
+	let node_id_initiator = initiator.node.get_our_node_id();
+	let node_id_acceptor = acceptor.node.get_our_node_id();
+	let script = complete_splice_handshake(initiator, acceptor, channel_id, contribution.clone());
+	let commit_sig =
+		complete_interactive_funding_negotiation(initiator, acceptor, channel_id, contribution, script);
+
+	acceptor.node.handle_commitment_signed(node_id_initiator, &commit_sig);
+	let msg_events = acceptor.node.get_and_clear_pending_msg_events();
+	assert_eq!(msg_events.len(), 2, "{msg_events:?}");
+	if let MessageSendEvent::UpdateHTLCs { ref updates, .. } = &msg_events[0] {
+		initiator.node.handle_commitment_signed(node_id_acceptor, &updates.commitment_signed[0]);
+	} else {
+		panic!();
+	}
+	if let MessageSendEvent::SendTxSignatures { ref msg, .. } = &msg_events[1] {
+		initiator.node.handle_tx_signatures(node_id_acceptor, msg);
+	} else {
+		panic!();
+	}
+
+	let event = get_event!(initiator, Event::FundingTransactionReadyForSigning);
+	let prevouts = if let Event::FundingTransactionReadyForSigning {
+		channel_id,
+		counterparty_node_id,
+		unsigned_transaction,
+		prevouts,
+		..
+	} = event
+	{
+		assert_eq!(prevouts.len(), unsigned_transaction.input.len());
+		let mut tx = unsigned_transaction;
+		sign_wallet_inputs_unified(&mut tx, &prevouts, key);
+		initiator.node.funding_transaction_signed(&channel_id, &counterparty_node_id, tx).unwrap();
+		prevouts
+	} else {
+		unreachable!()
+	};
+	let mut msg_events = initiator.node.get_and_clear_pending_msg_events();
+	assert_eq!(msg_events.len(), 1, "{msg_events:?}");
+	if let MessageSendEvent::SendTxSignatures { ref msg, .. } = msg_events.remove(0) {
+		acceptor.node.handle_tx_signatures(node_id_initiator, msg);
+	} else {
+		panic!();
+	}
+	check_added_monitors(initiator, 1);
+	check_added_monitors(acceptor, 1);
+
+	let mut initiator_txn = initiator.tx_broadcaster.txn_broadcast();
+	assert_eq!(initiator_txn.len(), 1);
+	assert_eq!(initiator_txn, acceptor.tx_broadcaster.txn_broadcast());
+	expect_splice_pending_event(initiator, &node_id_acceptor);
+	expect_splice_pending_event(acceptor, &node_id_initiator);
+	(initiator_txn.remove(0), prevouts)
+}
+
+fn shared_input_index(tx: &Transaction, old_funding: &Transaction) -> usize {
+	let txid = old_funding.compute_txid();
+	let found: Vec<usize> =
+		(0..tx.input.len()).filter(|i| tx.input[*i].previous_output.txid == txid).collect();
+	assert_eq!(found.len(), 1);
+	found[0]
+}
+
+/// Two XBT nodes that list each other in `splice_peers`, with a 100k sat channel.
+macro_rules! xbt_splice_pair {
+	($chanmon_cfgs: ident, $node_cfgs: ident, $node_chanmgrs: ident, $nodes: ident, $chan: ident) => {
+		let $chanmon_cfgs = create_chanmon_cfgs(2);
+		let $node_cfgs = create_node_cfgs(2, &$chanmon_cfgs);
+		let ids = [cfg_node_id(&$node_cfgs[0]), cfg_node_id(&$node_cfgs[1])];
+		let $node_chanmgrs = create_node_chanmgrs(
+			2,
+			&$node_cfgs,
+			&[Some(xbt_splice_cfg(vec![ids[1]])), Some(xbt_splice_cfg(vec![ids[0]]))],
+		);
+		let $nodes = create_network(2, &$node_cfgs, &$node_chanmgrs);
+		let $chan = create_announced_chan_between_nodes_with_value(&$nodes, 0, 1, 100_000, 0);
+		assert!($nodes[0].node.list_channels()[0].channel_type.as_ref().unwrap().requires_unified_sigs());
+	};
+}
+
+#[test]
+fn xbt_splice_in_shared_input_unified() {
+	xbt_splice_pair!(chanmon_cfgs, node_cfgs, node_chanmgrs, nodes, chan);
+	let key = wallet_key(0);
+	let (input, coin) = wallet_coin(&key, 200_000, 1);
+	let contribution = SpliceContribution::SpliceIn {
+		value: Amount::from_sat(50_000),
+		inputs: vec![input],
+		change_script: Some(wallet_spk(&key)),
+	};
+	let (tx, _) = xbt_splice(&nodes[0], &nodes[1], chan.2, contribution, &key);
+	assert_eq!(tx.input.len(), 2);
+
+	let prevouts = prevouts_from(&tx, &[&chan.3, &coin]);
+	let shared = shared_input_index(&tx, &chan.3);
+	assert_shared_input_sigs(&tx, &prevouts, shared, &[0x21, 0x21]);
+	assert_wallet_input_unified(&tx, &prevouts, 1 - shared);
+}
+
+#[test]
+fn xbt_splice_both_sides_contribute() {
+	// Review Focus 4: each node signs the shared input over prevouts the other node contributed.
+	xbt_splice_pair!(chanmon_cfgs, node_cfgs, node_chanmgrs, nodes, chan);
+
+	// Node 0 starts a splice with two wallet inputs: three inputs in all.
+	let key0 = wallet_key(0);
+	let (in_a, coin_a) = wallet_coin(&key0, 60_000, 1);
+	let (in_b, coin_b) = wallet_coin(&key0, 70_000, 2);
+	let contribution = SpliceContribution::SpliceIn {
+		value: Amount::from_sat(100_000),
+		inputs: vec![in_a, in_b],
+		change_script: Some(wallet_spk(&key0)),
+	};
+	let (tx1, _) = xbt_splice(&nodes[0], &nodes[1], chan.2, contribution, &key0);
+	assert_eq!(tx1.input.len(), 3);
+	let prevouts1 = prevouts_from(&tx1, &[&chan.3, &coin_a, &coin_b]);
+	let shared1 = shared_input_index(&tx1, &chan.3);
+	assert_shared_input_sigs(&tx1, &prevouts1, shared1, &[0x21, 0x21]);
+	for i in (0..3).filter(|i| *i != shared1) {
+		assert_wallet_input_unified(&tx1, &prevouts1, i);
+	}
+
+	mine_transaction(&nodes[0], &tx1);
+	mine_transaction(&nodes[1], &tx1);
+	super::splicing_tests::lock_splice_after_blocks(&nodes[0], &nodes[1], ANTI_REORG_DELAY - 1);
+
+	// Node 1 starts the next splice with its own input, which node 0 signs over.
+	let key1 = wallet_key(1);
+	let (in_c, coin_c) = wallet_coin(&key1, 80_000, 3);
+	let contribution = SpliceContribution::SpliceIn {
+		value: Amount::from_sat(40_000),
+		inputs: vec![in_c],
+		change_script: Some(wallet_spk(&key1)),
+	};
+	let (tx2, _) = xbt_splice(&nodes[1], &nodes[0], chan.2, contribution, &key1);
+	assert_eq!(tx2.input.len(), 2);
+	let prevouts2 = prevouts_from(&tx2, &[&tx1, &coin_c]);
+	let shared2 = shared_input_index(&tx2, &tx1);
+	assert_shared_input_sigs(&tx2, &prevouts2, shared2, &[0x21, 0x21]);
+	assert_wallet_input_unified(&tx2, &prevouts2, 1 - shared2);
+}
+
+#[test]
+fn xbt_splice_event_carries_prevouts() {
+	xbt_splice_pair!(chanmon_cfgs, node_cfgs, node_chanmgrs, nodes, chan);
+	let key = wallet_key(0);
+	let (in_a, coin_a) = wallet_coin(&key, 60_000, 1);
+	let (in_b, coin_b) = wallet_coin(&key, 70_000, 2);
+	let contribution = SpliceContribution::SpliceIn {
+		value: Amount::from_sat(100_000),
+		inputs: vec![in_a, in_b],
+		change_script: Some(wallet_spk(&key)),
+	};
+	let (tx, event_prevouts) = xbt_splice(&nodes[0], &nodes[1], chan.2, contribution, &key);
+	assert_eq!(event_prevouts.len(), tx.input.len());
+	assert_eq!(event_prevouts, prevouts_from(&tx, &[&chan.3, &coin_a, &coin_b]));
+}
+
+#[test]
+fn xbt_splice_refused_for_unlisted_peer() {
+	let chanmon_cfgs = create_chanmon_cfgs(2);
+	let node_cfgs = create_node_cfgs(2, &chanmon_cfgs);
+	let id1 = cfg_node_id(&node_cfgs[1]);
+	// Node 0 lists node 1; node 1 lists no one.
+	let node_chanmgrs = create_node_chanmgrs(
+		2,
+		&node_cfgs,
+		&[Some(xbt_splice_cfg(vec![id1])), Some(xbt_splice_cfg(vec![]))],
+	);
+	let nodes = create_network(2, &node_cfgs, &node_chanmgrs);
+	let node_id_0 = nodes[0].node.get_our_node_id();
+	let node_id_1 = nodes[1].node.get_our_node_id();
+	let chan = create_announced_chan_between_nodes_with_value(&nodes, 0, 1, 100_000, 50_000_000);
+
+	let contribution = SpliceContribution::SpliceOut {
+		outputs: vec![TxOut { value: Amount::from_sat(1_000), script_pubkey: wallet_spk(&wallet_key(0)) }],
+	};
+
+	// Outbound: node 1 does not list node 0.
+	let res = nodes[1].node.splice_channel(
+		&chan.2,
+		&node_id_0,
+		contribution.clone(),
+		FEERATE_FLOOR_SATS_PER_KW,
+		None,
+	);
+	match res {
+		Err(APIError::APIMisuseError { err }) => {
+			assert_eq!(err, "splicing not allowed with this peer on XBT")
+		},
+		_ => panic!("Wrong result {:?}", res),
+	}
+	assert!(nodes[1].node.get_and_clear_pending_msg_events().is_empty());
+
+	// Inbound: node 0 lists node 1 and starts; node 1 answers its splice_init with tx_abort.
+	nodes[0]
+		.node
+		.splice_channel(&chan.2, &node_id_1, contribution, FEERATE_FLOOR_SATS_PER_KW, None)
+		.unwrap();
+	let stfu = get_event_msg!(nodes[0], MessageSendEvent::SendStfu, node_id_1);
+	nodes[1].node.handle_stfu(node_id_0, &stfu);
+	let stfu = get_event_msg!(nodes[1], MessageSendEvent::SendStfu, node_id_0);
+	nodes[0].node.handle_stfu(node_id_1, &stfu);
+	let splice_init = get_event_msg!(nodes[0], MessageSendEvent::SendSpliceInit, node_id_1);
+	nodes[1].node.handle_splice_init(node_id_0, &splice_init);
+
+	let tx_abort = get_event_msg!(nodes[1], MessageSendEvent::SendTxAbort, node_id_0);
+	let reason = String::from_utf8(tx_abort.data.clone()).unwrap();
+	assert!(reason.contains("splicing not allowed with this peer on XBT"), "{reason}");
+	nodes[0].node.handle_tx_abort(node_id_1, &tx_abort);
+	let _ = get_event!(nodes[0], Event::SpliceFailed);
+	let ack = get_event_msg!(nodes[0], MessageSendEvent::SendTxAbort, node_id_1);
+	nodes[1].node.handle_tx_abort(node_id_0, &ack);
+	assert!(nodes[1].node.get_and_clear_pending_msg_events().is_empty());
+
+	// Neither node is left quiescent: payments still flow both ways.
+	send_payment(&nodes[0], &[&nodes[1]], 1_000_000);
+	send_payment(&nodes[1], &[&nodes[0]], 1_000_000);
+}
+
+#[test]
+fn xbt_splice_rejects_bad_shared_input_signature() {
+	// The counterparty's shared input signature is checked against the digest over all prevouts.
+	xbt_splice_pair!(chanmon_cfgs, node_cfgs, node_chanmgrs, nodes, chan);
+	let node_id_0 = nodes[0].node.get_our_node_id();
+	let node_id_1 = nodes[1].node.get_our_node_id();
+	let key = wallet_key(0);
+	let (input, coin) = wallet_coin(&key, 200_000, 1);
+	let contribution = SpliceContribution::SpliceIn {
+		value: Amount::from_sat(50_000),
+		inputs: vec![input],
+		change_script: Some(wallet_spk(&key)),
+	};
+	let script = complete_splice_handshake(&nodes[0], &nodes[1], chan.2, contribution.clone());
+	let commit_sig =
+		complete_interactive_funding_negotiation(&nodes[0], &nodes[1], chan.2, contribution, script);
+	nodes[1].node.handle_commitment_signed(node_id_0, &commit_sig);
+	let msg_events = nodes[1].node.get_and_clear_pending_msg_events();
+	assert_eq!(msg_events.len(), 2, "{msg_events:?}");
+	if let MessageSendEvent::UpdateHTLCs { ref updates, .. } = &msg_events[0] {
+		nodes[0].node.handle_commitment_signed(node_id_1, &updates.commitment_signed[0]);
+	} else {
+		panic!();
+	}
+	check_added_monitors(&nodes[0], 1);
+	check_added_monitors(&nodes[1], 1);
+	let mut tx_signatures = if let MessageSendEvent::SendTxSignatures { msg, .. } = &msg_events[1] {
+		msg.clone()
+	} else {
+		panic!();
+	};
+
+	// Replace node 1's shared input signature with one by a key that is not its funding key.
+	let event = get_event!(nodes[0], Event::FundingTransactionReadyForSigning);
+	let unsigned = match event {
+		Event::FundingTransactionReadyForSigning { unsigned_transaction, .. } => unsigned_transaction,
+		_ => unreachable!(),
+	};
+	let prevouts = prevouts_from(&unsigned, &[&chan.3, &coin]);
+	let shared = shared_input_index(&unsigned, &chan.3);
+	let digest = crate::xbt::sighash_with_prevouts(
+		&unsigned,
+		&prevouts,
+		shared,
+		&prevouts[shared].script_pubkey,
+		EcdsaSighashType::All,
+		true,
+	);
+	let other_key = SecretKey::from_slice(&[0x77; 32]).unwrap();
+	tx_signatures.shared_input_signature =
+		Some(Secp256k1::new().sign_ecdsa(&digest, &other_key));
+	nodes[0].node.handle_tx_signatures(node_id_1, &tx_signatures);
+
+	let msg_events = nodes[0].node.get_and_clear_pending_msg_events();
+	assert_eq!(msg_events.len(), 1, "{msg_events:?}");
+	match &msg_events[0] {
+		MessageSendEvent::HandleError { action, .. } => {
+			let s = format!("{action:?}");
+			assert!(s.contains("shared input signature"), "{s}");
+		},
+		e => panic!("{e:?}"),
+	}
+	assert!(nodes[0].tx_broadcaster.txn_broadcast().is_empty());
+}

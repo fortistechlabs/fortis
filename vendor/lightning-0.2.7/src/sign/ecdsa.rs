@@ -1,6 +1,7 @@
 //! Defines ECDSA-specific signer types.
 
 use bitcoin::transaction::Transaction;
+use bitcoin::TxOut; // FORTIS XBT: `sign_splice_shared_input` prevouts
 
 use bitcoin::secp256k1;
 use bitcoin::secp256k1::ecdsa::Signature;
@@ -254,8 +255,14 @@ pub trait EcdsaChannelSigner: ChannelSigner {
 	///
 	/// `input_index`: The index of the input within the new funding transaction `tx`,
 	///    spending the previous funding transaction's output
+	///
+	/// `prevouts`: FORTIS XBT: the output spent by every input of `tx`, in input order. On a
+	///    channel whose type has `option_unified_sigs` the signature is over the unified digest,
+	///    which commits to all of them.
 	fn sign_splice_shared_input(
 		&self, channel_parameters: &ChannelTransactionParameters, tx: &Transaction,
-		input_index: usize, secp_ctx: &Secp256k1<secp256k1::All>,
+		input_index: usize,
+		prevouts: &[TxOut], // FORTIS XBT: every input's prevout, for the unified digest
+		secp_ctx: &Secp256k1<secp256k1::All>,
 	) -> Signature;
 }

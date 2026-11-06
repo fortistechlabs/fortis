@@ -1863,6 +1863,12 @@ pub enum Event {
 		///
 		/// [`ChannelManager::funding_transaction_signed`]: crate::ln::channelmanager::ChannelManager::funding_transaction_signed
 		unsigned_transaction: Transaction,
+		/// FORTIS XBT: the output spent by every input of `unsigned_transaction`, in input order
+		/// (ours, the counterparty's and, for a splice, the old funding output). An XBT wallet
+		/// needs them all to sign its inputs with the unified hash type (0x21), whose digest
+		/// commits to every prevout. Not serialized: this event is never written (it is
+		/// regenerated after a restart).
+		prevouts: Vec<TxOut>,
 	},
 }
 

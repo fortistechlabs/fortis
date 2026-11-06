@@ -9057,6 +9057,7 @@ where
 						&self.funding.channel_transaction_parameters,
 						tx,
 						splice_input_index as usize,
+						&signing_session.unsigned_tx().prevouts(), // FORTIS XBT: every input's prevout
 						&self.context.secp_ctx,
 					),
 					#[cfg(taproot)]
@@ -9074,8 +9075,9 @@ where
 			witnesses,
 			shared_input_signature,
 		};
+		let unified = crate::xbt::is_unified(self.funding.get_channel_type()); // FORTIS XBT: channel type
 		let (tx_signatures, funding_tx) = signing_session
-			.provide_holder_witnesses(tx_signatures, &self.context.secp_ctx)
+			.provide_holder_witnesses(tx_signatures, &self.context.secp_ctx, unified) // FORTIS XBT: `unified`
 			.map_err(|err| APIError::APIMisuseError { err })?;
 
 		let logger = WithChannelContext::from(logger, &self.context, None);
@@ -9144,8 +9146,34 @@ where
 			}
 		}
 
-		let (holder_tx_signatures, funding_tx) =
-			signing_session.received_tx_signatures(msg).map_err(|msg| ChannelError::Warn(msg))?;
+		// FORTIS XBT (to `received_tx_signatures`): check the counterparty's shared input
+		// signature against the digest the channel type names (unified over every prevout, or
+		// BIP 143). LDK does not check it, and on XBT a signature over the wrong digest would
+		// only show when the splice transaction is rejected.
+		let unified = crate::xbt::is_unified(self.funding.get_channel_type());
+		if let (Some(idx), Some(sig)) =
+			(signing_session.unsigned_tx().shared_input_index(), msg.shared_input_signature.as_ref())
+		{
+			let tx = signing_session.unsigned_tx().tx();
+			let prevouts = signing_session.unsigned_tx().prevouts();
+			let msg_hash = crate::xbt::sighash_with_prevouts(
+				tx,
+				&prevouts,
+				idx as usize,
+				&self.funding.get_funding_redeemscript(),
+				EcdsaSighashType::All,
+				unified,
+			);
+			let pubkey = self.funding.counterparty_funding_pubkey();
+			if self.context.secp_ctx.verify_ecdsa(&msg_hash, sig, pubkey).is_err() {
+				return Err(ChannelError::Warn(
+					"Invalid shared input signature in tx_signatures".to_owned(),
+				));
+			}
+		}
+		let (holder_tx_signatures, funding_tx) = signing_session
+			.received_tx_signatures(msg, unified)
+			.map_err(|msg| ChannelError::Warn(msg))?;
 
 		let logger = WithChannelContext::from(logger, &self.context, None);
 		log_info!(
@@ -12275,6 +12303,14 @@ where
 		}
 
 		Ok(())
+	}
+
+	/// FORTIS XBT: refuses a `splice_init` from a peer that is not on this XBT node's splice
+	/// allow-list, answering with `tx_abort`. No splice was started, so the quiescence entered
+	/// for it ends here (the initiator ends its own when it gets the `tx_abort`).
+	pub(crate) fn refuse_xbt_splice_init(&mut self) -> ChannelError {
+		self.context.channel_state.clear_quiescent();
+		ChannelError::Abort(AbortReason::XbtSpliceNotAllowed)
 	}
 
 	pub(crate) fn splice_init<ES: Deref, L: Deref>(

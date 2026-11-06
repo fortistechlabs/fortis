@@ -32,6 +32,7 @@ use core::sync::atomic::{AtomicBool, Ordering};
 use bitcoin::sighash::EcdsaSighashType;
 use bitcoin::transaction::Transaction;
 use bitcoin::Txid;
+use bitcoin::TxOut; // FORTIS XBT: `sign_splice_shared_input` prevouts
 
 #[cfg(taproot)]
 use crate::ln::msgs::PartialSignatureWithNonce;
@@ -520,9 +521,11 @@ impl EcdsaChannelSigner for TestChannelSigner {
 
 	fn sign_splice_shared_input(
 		&self, channel_parameters: &ChannelTransactionParameters, tx: &Transaction,
-		input_index: usize, secp_ctx: &Secp256k1<secp256k1::All>,
+		input_index: usize,
+		prevouts: &[TxOut], // FORTIS XBT: every input's prevout, for the unified digest
+		secp_ctx: &Secp256k1<secp256k1::All>,
 	) -> Signature {
-		self.inner.sign_splice_shared_input(channel_parameters, tx, input_index, secp_ctx)
+		self.inner.sign_splice_shared_input(channel_parameters, tx, input_index, prevouts, secp_ctx) // FORTIS XBT: prevouts
 	}
 }
 

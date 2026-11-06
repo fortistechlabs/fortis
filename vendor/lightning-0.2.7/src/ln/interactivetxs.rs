@@ -15,7 +15,7 @@ use bitcoin::absolute::LockTime as AbsoluteLockTime;
 use bitcoin::amount::{Amount, SignedAmount};
 use bitcoin::consensus::Encodable;
 use bitcoin::constants::WITNESS_SCALE_FACTOR;
-use bitcoin::ecdsa::Signature as BitcoinSignature;
+// FORTIS XBT: `bitcoin::ecdsa::Signature` import dropped, `finalize` pushes signatures with `xbt::push_sig`
 use bitcoin::key::Secp256k1;
 use bitcoin::policy::MAX_STANDARD_TX_WEIGHT;
 use bitcoin::secp256k1::{Message, PublicKey};
@@ -139,6 +139,9 @@ pub(crate) enum AbortReason {
 	DuplicateFundingInput,
 	/// Internal error
 	InternalError(&'static str),
+	/// FORTIS XBT: the peer is not on this XBT node's splice allow-list
+	/// (`XbtConfig::splice_peers`).
+	XbtSpliceNotAllowed,
 }
 
 impl AbortReason {
@@ -196,6 +199,10 @@ impl Display for AbortReason {
 				f.write_str("More than one funding output found")
 			},
 			AbortReason::DuplicateFundingInput => f.write_str("More than one funding input found"),
+			// FORTIS XBT: the allow-list refusal
+			AbortReason::XbtSpliceNotAllowed => {
+				f.write_str("splicing not allowed with this peer on XBT")
+			},
 			AbortReason::InternalError(text) => {
 				f.write_fmt(format_args!("Internal error: {}", text))
 			},
@@ -426,6 +433,12 @@ impl ConstructedTransaction {
 		self.input_metadata.iter()
 	}
 
+	// FORTIS XBT: the output every input spends, in input order. A unified signature without
+	// ANYONECANPAY commits to all of them (the splice shared input, and XBT wallet inputs).
+	pub fn prevouts(&self) -> Vec<TxOut> {
+		self.input_metadata.iter().map(|input| input.prev_output.clone()).collect()
+	}
+
 	pub fn compute_txid(&self) -> Txid {
 		self.tx().compute_txid()
 	}
@@ -457,6 +470,7 @@ impl ConstructedTransaction {
 	fn finalize(
 		&self, holder_tx_signatures: &TxSignatures, counterparty_tx_signatures: &TxSignatures,
 		shared_input_sig: Option<&SharedInputSignature>,
+		unified: bool, // FORTIS XBT: whether the channel type has `option_unified_sigs`
 	) -> Option<Transaction> {
 		let mut tx = self.tx.clone();
 		self.add_local_witnesses(&mut tx, holder_tx_signatures.witnesses.clone());
@@ -481,15 +495,16 @@ impl ConstructedTransaction {
 
 			let mut witness = Witness::new();
 			witness.push(Vec::new());
-			let holder_sig = BitcoinSignature::sighash_all(holder_shared_input_sig);
-			let counterparty_sig = BitcoinSignature::sighash_all(counterparty_shared_input_sig);
-			if shared_input_sig.holder_signature_first {
-				witness.push_ecdsa_signature(&holder_sig);
-				witness.push_ecdsa_signature(&counterparty_sig);
+			// FORTIS XBT (through both `push_sig`s): both shared input signatures carry 0x21 on a
+			// unified channel (made over the unified digest of every prevout, see
+			// `sign_splice_shared_input`), 0x01 otherwise.
+			let (first, second) = if shared_input_sig.holder_signature_first {
+				(holder_shared_input_sig, counterparty_shared_input_sig)
 			} else {
-				witness.push_ecdsa_signature(&counterparty_sig);
-				witness.push_ecdsa_signature(&holder_sig);
-			}
+				(counterparty_shared_input_sig, holder_shared_input_sig)
+			};
+			crate::xbt::push_sig(&mut witness, &first, EcdsaSighashType::All, unified);
+			crate::xbt::push_sig(&mut witness, &second, EcdsaSighashType::All, unified);
 			witness.push(&shared_input_sig.witness_script);
 			tx.input[shared_input_index as usize].witness = witness;
 		}
@@ -612,6 +627,7 @@ impl InteractiveTxSigningSession {
 	/// unsigned transaction or if the counterparty already provided their `tx_signatures`.
 	pub fn received_tx_signatures(
 		&mut self, tx_signatures: &TxSignatures,
+		unified: bool, // FORTIS XBT: whether the channel type has `option_unified_sigs`
 	) -> Result<(Option<TxSignatures>, Option<Transaction>), String> {
 		if self.has_received_tx_signatures() {
 			return Err("Already received a tx_signatures message".to_string());
@@ -634,7 +650,7 @@ impl InteractiveTxSigningSession {
 			None
 		};
 
-		let funding_tx_opt = self.maybe_finalize_funding_tx();
+		let funding_tx_opt = self.maybe_finalize_funding_tx(unified); // FORTIS XBT: shared input hash type
 
 		Ok((holder_tx_signatures, funding_tx_opt))
 	}
@@ -645,6 +661,7 @@ impl InteractiveTxSigningSession {
 	/// unsigned transaction.
 	pub fn provide_holder_witnesses<C: bitcoin::secp256k1::Verification>(
 		&mut self, tx_signatures: TxSignatures, secp_ctx: &Secp256k1<C>,
+		unified: bool, // FORTIS XBT: whether the channel type has `option_unified_sigs`
 	) -> Result<(Option<TxSignatures>, Option<Transaction>), String> {
 		if self.holder_tx_signatures.is_some() {
 			return Err("Holder witnesses were already provided".to_string());
@@ -659,11 +676,11 @@ impl InteractiveTxSigningSession {
 			));
 		}
 
-		self.verify_interactive_tx_signatures(secp_ctx, &tx_signatures.witnesses)?;
+		self.verify_interactive_tx_signatures(secp_ctx, &tx_signatures.witnesses, unified)?; // FORTIS XBT: accept 0x21 wallet signatures
 
 		self.holder_tx_signatures = Some(tx_signatures);
 
-		let funding_tx_opt = self.maybe_finalize_funding_tx();
+		let funding_tx_opt = self.maybe_finalize_funding_tx(unified); // FORTIS XBT: shared input hash type
 		let holder_tx_signatures = (self.holder_sends_tx_signatures_first
 			|| self.has_received_tx_signatures())
 		.then(|| {
@@ -721,7 +738,7 @@ impl InteractiveTxSigningSession {
 		})
 	}
 
-	fn maybe_finalize_funding_tx(&mut self) -> Option<Transaction> {
+	fn maybe_finalize_funding_tx(&mut self, unified: bool) -> Option<Transaction> { // FORTIS XBT: `unified`
 		let holder_tx_signatures = self.holder_tx_signatures.as_ref()?;
 		let counterparty_tx_signatures = self.counterparty_tx_signatures.as_ref()?;
 		let shared_input_signature = self.shared_input_signature.as_ref();
@@ -729,11 +746,13 @@ impl InteractiveTxSigningSession {
 			holder_tx_signatures,
 			counterparty_tx_signatures,
 			shared_input_signature,
+			unified, // FORTIS XBT: shared input hash type
 		)
 	}
 
 	fn verify_interactive_tx_signatures<C: bitcoin::secp256k1::Verification>(
 		&self, secp_ctx: &Secp256k1<C>, witnesses: &Vec<Witness>,
+		unified: bool, // FORTIS XBT: whether the channel type has `option_unified_sigs`
 	) -> Result<(), String> {
 		let unsigned_tx = self.unsigned_tx();
 		let built_tx = unsigned_tx.tx();
@@ -772,6 +791,27 @@ impl InteractiveTxSigningSession {
 				let pubkey = PublicKey::from_slice(&witness[1]).map_err(|_| {
 					format!("The witness for input at index {input_idx} contains an invalid ECDSA public key")
 				})?;
+
+				// FORTIS XBT (block to the matching brace): on a unified channel an XBT wallet signs
+				// its inputs with 0x21 over the unified digest of every prevout (replay protection).
+				// `bitcoin` cannot parse that byte, so such a signature is checked here; 0x01 goes on
+				// to the BIP 143 check below.
+				let unified_all = crate::xbt::hash_type(EcdsaSighashType::All, true);
+				if unified && witness[0].last() == Some(&unified_all) {
+					let der = &witness[0][..witness[0].len() - 1];
+					let sig = bitcoin::secp256k1::ecdsa::Signature::from_der(der).map_err(|_| {
+						format!("The witness for input at index {input_idx} contains an invalid signature")
+					})?;
+					let script_code = script_pubkey.p2wpkh_script_code().expect("P2WPKH");
+					let prevouts = unsigned_tx.prevouts();
+					let msg = crate::xbt::sighash_with_prevouts(
+						built_tx, &prevouts, input_idx, &script_code, EcdsaSighashType::All, true,
+					);
+					secp_ctx.verify_ecdsa(&msg, &sig, &pubkey).map_err(|_| {
+						format!("Failed signature verification for input at index {input_idx} for P2WPKH spend")
+					})?;
+					continue;
+				}
 
 				let sig =
 					bitcoin::ecdsa::Signature::from_slice(&witness[0]).map_err(|_| {
@@ -3580,6 +3620,7 @@ mod tests {
 				.filter(|(idx, _)| idx % 2 == 0) // we only want initiator inputs (corresponds to even serial_id)
 				.map(|(_, txin)| txin.witness)
 				.collect(),
+			false, // FORTIS XBT: BTC test vectors
 		)
 	}
 

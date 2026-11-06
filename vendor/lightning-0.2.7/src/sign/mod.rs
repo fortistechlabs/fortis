@@ -1862,7 +1862,9 @@ impl EcdsaChannelSigner for InMemorySigner {
 
 	fn sign_splice_shared_input(
 		&self, channel_parameters: &ChannelTransactionParameters, tx: &Transaction,
-		input_index: usize, secp_ctx: &Secp256k1<secp256k1::All>,
+		input_index: usize,
+		prevouts: &[TxOut], // FORTIS XBT: every input's prevout, for the unified digest
+		secp_ctx: &Secp256k1<secp256k1::All>,
 	) -> Signature {
 		assert!(channel_parameters.is_populated(), "Channel parameters must be fully populated");
 		assert_eq!(
@@ -1880,15 +1882,27 @@ impl EcdsaChannelSigner for InMemorySigner {
 			&channel_parameters.counterparty_pubkeys().expect(MISSING_PARAMS_ERR).funding_pubkey;
 		let funding_redeemscript =
 			make_funding_redeemscript(&funding_pubkey, counterparty_funding_key);
-		let sighash = &sighash::SighashCache::new(tx)
-			.p2wsh_signature_hash(
-				input_index,
-				&funding_redeemscript,
-				Amount::from_sat(channel_parameters.channel_value_satoshis),
-				EcdsaSighashType::All,
-			)
-			.unwrap()[..];
-		let msg = hash_to_message!(sighash);
+		// FORTIS XBT (to the end of the function): the digest is the unified one over every
+		// prevout when the channel type has `option_unified_sigs`, BIP 143 otherwise (which reads
+		// only this input's prevout, so it is the same digest as before). The shared prevout
+		// must be the funding output being spent.
+		assert_eq!(prevouts.len(), tx.input.len(), "a prevout for every input");
+		assert_eq!(
+			prevouts[input_index],
+			TxOut {
+				value: Amount::from_sat(channel_parameters.channel_value_satoshis),
+				script_pubkey: funding_redeemscript.to_p2wsh(),
+			}
+		);
+		let unified = crate::xbt::is_unified(&channel_parameters.channel_type_features);
+		let msg = crate::xbt::sighash_with_prevouts(
+			tx,
+			prevouts,
+			input_index,
+			&funding_redeemscript,
+			EcdsaSighashType::All,
+			unified,
+		);
 		sign(secp_ctx, &msg, &funding_key)
 	}
 }

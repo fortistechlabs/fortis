@@ -159,8 +159,9 @@ delegate!(DynSigner, EcdsaChannelSigner, inner,
 		secp_ctx: &Secp256k1<secp256k1::All>) -> Result<Signature, ()>,
 	fn sign_holder_htlc_transaction(, htlc_tx: &Transaction, input: usize,
 		htlc_descriptor: &HTLCDescriptor, secp_ctx: &Secp256k1<All>) -> Result<Signature, ()>,
+	// FORTIS XBT: `prevouts`, every input's prevout, for the unified digest
 	fn sign_splice_shared_input(, channel_parameters: &ChannelTransactionParameters,
-		tx: &Transaction, input_index: usize, secp_ctx: &Secp256k1<All>) -> Signature
+		tx: &Transaction, input_index: usize, prevouts: &[TxOut], secp_ctx: &Secp256k1<All>) -> Signature
 );
 
 delegate!(DynSigner, ChannelSigner,
