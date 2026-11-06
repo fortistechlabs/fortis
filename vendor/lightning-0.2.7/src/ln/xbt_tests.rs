@@ -1412,3 +1412,241 @@ fn confirm_with_hash_uses_given_hash() {
 		assert!(chans[0].is_channel_ready && chans[0].is_usable);
 	}
 }
+
+/// FORTIS XBT: LND interop on XBT. Paying a blinded path made by the LND BLAKE2b fork
+/// (v0.21.6-beta-blake2b.23), as its BOLT 12 offers make them: the path starts at LND itself
+/// and is padded with dummy hops, and every hop's `payment_constraints.max_cltv_expiry` is the
+/// creation height + 12 (2 x the 1 hour invoice lifetime in blocks) + the CLTV the hop is still
+/// owed (routing/blindedpath/blinded_path.go). LND refuses an HTLC above it ("onion payload for
+/// intermediate hop insufficient record with type 4"), so we must not add a shadow CLTV offset.
+mod lnd_blinded_interop {
+	use crate::blinded_path::payment::{BlindedPayInfo, BlindedPaymentPath};
+	use crate::blinded_path::BlindedHop;
+	use crate::ln::channelmanager::RecipientOnionFields;
+	use crate::ln::functional_test_utils::*;
+	use crate::ln::msgs::OutboundOnionPayload;
+	use crate::ln::onion_utils::build_onion_payloads;
+	use crate::prelude::*;
+	use crate::routing::router::{find_route, PaymentParameters, RouteParameters};
+	use crate::types::features::BlindedHopFeatures;
+	use crate::util::ser::{BigSize, Readable, Writeable};
+	use crate::util::test_utils::{pubkey, TestScorer};
+	use bitcoin::secp256k1::PublicKey;
+
+	/// LND's window: max_cltv_expiry = creation height + BlocksUntilExpiry (2 x 6 blocks for a
+	/// 1 hour invoice) + the CLTV still owed at that hop.
+	const LND_BLOCKS_UNTIL_EXPIRY: u32 = 12;
+
+	/// The TLV types of an encoded onion payload, in order.
+	fn tlv_types(p: &OutboundOnionPayload) -> Vec<u64> {
+		let bytes = p.encode();
+		let mut r = &bytes[..];
+		let len = BigSize::read(&mut r).unwrap().0 as usize;
+		assert_eq!(len, r.len());
+		let mut types = Vec::new();
+		while !r.is_empty() {
+			types.push(BigSize::read(&mut r).unwrap().0);
+			let l = BigSize::read(&mut r).unwrap().0 as usize;
+			r = &r[l..];
+		}
+		types
+	}
+
+	/// A path shaped like the LND fork's offer paths in the regtest gate: introduction node
+	/// `intro`, then two dummy hops; the first hop's blinded node id is `first_id` (LND writes
+	/// the introduction node's real id there). Final delta 80 + 3 (BlockPadding), two dummy
+	/// hops of 80 x 1.1: payinfo CLTV delta 259.
+	fn lnd_shaped_path(intro: PublicKey, first_id: PublicKey) -> BlindedPaymentPath {
+		let payinfo = BlindedPayInfo {
+			fee_base_msat: 2_200,
+			fee_proportional_millionths: 3,
+			cltv_expiry_delta: 259,
+			htlc_minimum_msat: 1_000,
+			htlc_maximum_msat: 500_000_000,
+			features: BlindedHopFeatures::empty(),
+		};
+		let blinded_hops = vec![
+			BlindedHop { blinded_node_id: first_id, encrypted_payload: vec![1; 70] },
+			BlindedHop { blinded_node_id: pubkey(51), encrypted_payload: vec![2; 70] },
+			BlindedHop { blinded_node_id: pubkey(52), encrypted_payload: vec![3; 70] },
+		];
+		BlindedPaymentPath::from_blinded_path_and_payinfo(intro, pubkey(50), blinded_hops, payinfo)
+	}
+
+	/// P -> S -> LND, LND's offer path: LND (introduction node, the payee) and two dummy hops.
+	/// The payload LDK builds must be what LND's hop iterator accepts
+	/// (htlcswitch/hop/payload.go `ValidateParsedPayloadTypes`, `ValidatePayloadWithBlinded`,
+	/// `ValidateBlindedRouteData`): S gets a plain forward whose outgoing CLTV is within LND's
+	/// max_cltv_expiry, LND's own hop carries only encrypted data (10) and the path key (12),
+	/// the dummy hop only 10, and the final hop 2, 4, 10 and 18 with no shadow offset.
+	#[test]
+	fn lnd_offer_path_payload_within_lnd_max_cltv() {
+		let chanmon_cfgs = create_chanmon_cfgs(3);
+		let node_cfgs = create_node_cfgs(3, &chanmon_cfgs);
+		let node_chanmgrs = create_node_chanmgrs(3, &node_cfgs, &[None, None, None]);
+		let nodes = create_network(3, &node_cfgs, &node_chanmgrs);
+		create_announced_chan_between_nodes_with_value(&nodes, 0, 1, 1_000_000, 0);
+		create_announced_chan_between_nodes_with_value(&nodes, 1, 2, 1_000_000, 0);
+		let lnd = nodes[2].node.get_our_node_id();
+
+		let path = lnd_shaped_path(lnd, lnd);
+		let amt_msat = 15_000_000;
+		let route_params = RouteParameters::from_payment_params_and_value(
+			PaymentParameters::blinded(vec![path]),
+			amt_msat,
+		);
+
+		let payer = nodes[0].node.get_our_node_id();
+		let first_hops = nodes[0].node.list_usable_channels();
+		let first_hops = first_hops.iter().collect::<Vec<_>>();
+		// LND made its path at the height the payer sends at; the payer's HTLCs start one above.
+		let lnd_height = nodes[0].best_block_info().1;
+		let cur_height = lnd_height + 1;
+		let lnd_intro_max_cltv = lnd_height + LND_BLOCKS_UNTIL_EXPIRY + 259;
+		let recipient_onion = RecipientOnionFields::spontaneous_empty();
+		// The shadow offset is random: try many seeds.
+		for seed in 0..32u8 {
+			let route = find_route(
+				&payer,
+				&route_params,
+				&nodes[0].network_graph,
+				Some(&first_hops),
+				nodes[0].logger,
+				&TestScorer::new(),
+				&Default::default(),
+				&[seed; 32],
+			)
+			.unwrap();
+			assert_eq!(route.paths.len(), 1);
+			let p = &route.paths[0];
+			assert_eq!(p.hops.len(), 2);
+			assert_eq!(p.hops[1].pubkey, lnd);
+			assert_eq!(p.hops[1].cltv_expiry_delta, 259);
+			assert_eq!(p.blinded_tail.as_ref().unwrap().excess_final_cltv_expiry_delta, 0);
+
+			let (payloads, _, _) = build_onion_payloads(
+				p, amt_msat, &recipient_onion, cur_height, &None, None, None,
+			)
+			.unwrap();
+			assert_eq!(payloads.len(), 4);
+			match &payloads[0] {
+				OutboundOnionPayload::Forward { outgoing_cltv_value, .. } => {
+					// The HTLC S sends LND: exactly the payinfo delta, within LND's limit.
+					assert_eq!(*outgoing_cltv_value, cur_height + 259);
+					assert!(*outgoing_cltv_value <= lnd_intro_max_cltv, "seed {seed}");
+				},
+				_ => panic!("S must get a plain forward"),
+			}
+			assert_eq!(tlv_types(&payloads[0]), vec![2, 4, 6]);
+			assert!(matches!(
+				payloads[1],
+				OutboundOnionPayload::BlindedForward { intro_node_blinding_point: Some(_), .. }
+			));
+			assert_eq!(tlv_types(&payloads[1]), vec![10, 12]);
+			assert!(matches!(
+				payloads[2],
+				OutboundOnionPayload::BlindedForward { intro_node_blinding_point: None, .. }
+			));
+			assert_eq!(tlv_types(&payloads[2]), vec![10]);
+			match &payloads[3] {
+				OutboundOnionPayload::BlindedReceive {
+					cltv_expiry_height,
+					sender_intended_htlc_amt_msat,
+					total_msat,
+					..
+				} => {
+					assert_eq!(*cltv_expiry_height, cur_height);
+					assert_eq!(*sender_intended_htlc_amt_msat, amt_msat);
+					assert_eq!(*total_msat, amt_msat);
+				},
+				_ => panic!("the last hop must be a blinded receive"),
+			}
+			assert_eq!(tlv_types(&payloads[3]), vec![2, 4, 10, 18]);
+		}
+	}
+
+	/// The same route into a blinded path whose first hop has a blinded id (as BOLT 4, LDK and
+	/// every other implementation blind it) keeps the shadow offset: LDK receivers count on it
+	/// (the final onion CLTV is the expiry they track a claimable HTLC by).
+	#[test]
+	fn other_blinded_paths_keep_shadow_offset() {
+		let chanmon_cfgs = create_chanmon_cfgs(3);
+		let node_cfgs = create_node_cfgs(3, &chanmon_cfgs);
+		let node_chanmgrs = create_node_chanmgrs(3, &node_cfgs, &[None, None, None]);
+		let nodes = create_network(3, &node_cfgs, &node_chanmgrs);
+		create_announced_chan_between_nodes_with_value(&nodes, 0, 1, 1_000_000, 0);
+		create_announced_chan_between_nodes_with_value(&nodes, 1, 2, 1_000_000, 0);
+		let intro = nodes[2].node.get_our_node_id();
+		let route_params = RouteParameters::from_payment_params_and_value(
+			PaymentParameters::blinded(vec![lnd_shaped_path(intro, pubkey(53))]),
+			15_000_000,
+		);
+		let first_hops = nodes[0].node.list_usable_channels();
+		let first_hops = first_hops.iter().collect::<Vec<_>>();
+		for seed in 0..32u8 {
+			let route = find_route(
+				&nodes[0].node.get_our_node_id(),
+				&route_params,
+				&nodes[0].network_graph,
+				Some(&first_hops),
+				nodes[0].logger,
+				&TestScorer::new(),
+				&Default::default(),
+				&[seed; 32],
+			)
+			.unwrap();
+			let p = &route.paths[0];
+			let excess = p.blinded_tail.as_ref().unwrap().excess_final_cltv_expiry_delta;
+			assert!(excess > 0, "seed {seed}");
+			assert_eq!(p.hops[1].cltv_expiry_delta, 259 + excess);
+		}
+	}
+
+	/// A blinded path LDK itself makes (BOLT 4 blinding, introduction node S, payee LND's
+	/// position) does not look like LND's: its first blinded node id is not S's real id, so a
+	/// route into it keeps the shadow offset.
+	#[test]
+	fn ldk_made_blinded_path_keeps_shadow_offset() {
+		let chanmon_cfgs = create_chanmon_cfgs(3);
+		let node_cfgs = create_node_cfgs(3, &chanmon_cfgs);
+		let node_chanmgrs = create_node_chanmgrs(3, &node_cfgs, &[None, None, None]);
+		let nodes = create_network(3, &node_cfgs, &node_chanmgrs);
+		create_announced_chan_between_nodes_with_value(&nodes, 0, 1, 1_000_000, 0);
+		let chan_upd_1_2 =
+			create_announced_chan_between_nodes_with_value(&nodes, 1, 2, 1_000_000, 0).0.contents;
+		let intro = nodes[1].node.get_our_node_id();
+		let (_, _, payment_secret) = get_payment_preimage_hash(&nodes[2], Some(15_000_000), None);
+		let path = crate::ln::blinded_payment_tests::blinded_payment_path(
+			payment_secret,
+			1,
+			1_0000_0000,
+			vec![intro, nodes[2].node.get_our_node_id()],
+			&[&chan_upd_1_2],
+			&chanmon_cfgs[2].keys_manager,
+		);
+		assert_ne!(path.blinded_hops()[0].blinded_node_id, intro);
+		let route_params = RouteParameters::from_payment_params_and_value(
+			PaymentParameters::blinded(vec![path]),
+			15_000_000,
+		);
+		let first_hops = nodes[0].node.list_usable_channels();
+		let first_hops = first_hops.iter().collect::<Vec<_>>();
+		for seed in 0..32u8 {
+			let route = find_route(
+				&nodes[0].node.get_our_node_id(),
+				&route_params,
+				&nodes[0].network_graph,
+				Some(&first_hops),
+				nodes[0].logger,
+				&TestScorer::new(),
+				&Default::default(),
+				&[seed; 32],
+			)
+			.unwrap();
+			let p = &route.paths[0];
+			assert_eq!(p.hops.last().unwrap().pubkey, intro);
+			let excess = p.blinded_tail.as_ref().unwrap().excess_final_cltv_expiry_delta;
+			assert!(excess > 0, "seed {seed}");
+		}
+	}
+}

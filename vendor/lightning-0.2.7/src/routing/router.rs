@@ -3750,6 +3750,18 @@ where L::Target: Logger {
 	Ok(route)
 }
 
+/// FORTIS XBT: LND interop on XBT. Whether `path` pays into a blinded path made by LND: the
+/// first blinded hop's blinded node id is the introduction node's real id (LND writes it so;
+/// a hop blinded per BOLT 4 has a blinded id, never the real one).
+fn is_lnd_blinded_path(path: &Path) -> bool {
+	match (&path.blinded_tail, path.hops.last()) {
+		(Some(tail), Some(intro)) => {
+			tail.hops.first().map_or(false, |h| h.blinded_node_id == intro.pubkey)
+		},
+		_ => false,
+	}
+}
+
 // When an adversarial intermediary node observes a payment, it may be able to infer its
 // destination, if the remaining CLTV expiry delta exactly matches a feasible path in the network
 // graph. In order to improve privacy, this method obfuscates the CLTV expiry deltas along the
@@ -3762,6 +3774,19 @@ fn add_random_cltv_offset(route: &mut Route, payment_params: &PaymentParameters,
 	let network_nodes = network_graph.nodes();
 
 	for path in route.paths.iter_mut() {
+		// FORTIS XBT: LND interop on XBT (the LND BLAKE2b fork's BOLT 12 offers). No shadow
+		// offset on a path into a blinded path LND made. LND sets every blinded hop's
+		// `payment_constraints.max_cltv_expiry` (encrypted: we cannot read it) to the creation
+		// height + 2 x the invoice lifetime in blocks (12 for its 1 hour offer invoices) + the
+		// payinfo CLTV still owed, and refuses an HTLC above it ("insufficient record with type
+		// 4"); our offset is 40 to 432 blocks. BOLT 4 makes the offset optional ("if a random
+		// offset was added"). LND marks its paths: it overwrites the first blinded hop's
+		// blinded node id with the introduction node's real id (blindedpath/blinded_path.go),
+		// which a path blinded per BOLT 4 does not have. Every other path (LDK's own, whose
+		// receivers count on the offset in the final onion CLTV) keeps the offset.
+		if is_lnd_blinded_path(path) {
+			continue;
+		}
 		let mut shadow_ctlv_expiry_delta_offset: u32 = 0;
 
 		// Remember the last three nodes of the random walk and avoid looping back on them.
