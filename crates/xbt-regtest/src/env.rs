@@ -380,6 +380,9 @@ pub struct Env {
 	pub lnd_s_channel: RefCell<Option<ldk_node::UserChannelId>>,
 	/// What P paid S in the penalty channel (P gets it back, S loses it).
 	pub penalty_msat: Cell<u64>,
+	/// Outputs of a force close that `who` must sweep before the suite ends: (who, label,
+	/// txid, vout); `sweeps_settle` checks each has a confirmed spender.
+	pub must_sweep: RefCell<Vec<(Who, String, String, u32)>>,
 	pub bolt12_interop: RefCell<String>,
 }
 
@@ -487,6 +490,7 @@ impl Env {
 			jit_channel: RefCell::new(None),
 			lnd_s_channel: RefCell::new(None),
 			penalty_msat: Cell::new(0),
+			must_sweep: RefCell::new(vec![]),
 			bolt12_interop: RefCell::new("not run".into()),
 		};
 		env.mine(6)?;

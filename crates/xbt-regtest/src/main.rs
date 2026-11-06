@@ -66,7 +66,7 @@ fn main() -> ExitCode {
 
 	println!("\n================ XBT regtest summary ================");
 	for (name, r) in &results {
-		println!("{name:<22}{r}");
+		println!("{name:<26}{r}");
 	}
 	if let Some(env) = &env {
 		println!("BOLT12_INTEROP={}", env.bolt12_interop.borrow());

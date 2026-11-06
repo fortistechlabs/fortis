@@ -187,8 +187,12 @@ client, async payments client) and S (LSP: LSPS2 service, async payments
 server), both with `xbt: Some(XbtConfig { gossip_floor_height: 20,
 splice_peers: [the other] })`, against LND, through the scenarios `jit_open`,
 `pay_both_ways`, `splice_in`, `splice_out`, `bolt12_both_ways`,
-`offer_while_stopped`, `coop_close`, `force_close_htlcs`, `penalty` and
-`sweeps_settle`. Every transaction they make is checked as confirmed by
+`offer_while_stopped`, `coop_close`, `force_close_after_splice`,
+`force_close_htlcs`, `penalty` and `sweeps_settle`. `force_close_after_splice`
+(spec §4) splices a P-S channel and then force-closes it: the commitment
+spends the splice output with [0x21, 0x21], and `sweeps_settle` checks that its
+to_local (P) and to_remote (S) outputs are swept and confirmed and count in
+the final accounting. Every transaction they make is checked as confirmed by
 Knots with the expected signature hash type bytes per input (0x21 for every
 signature on a unified channel and for the wallet's inputs; plain allowed
 only where one side alone signs). The summary prints each scenario's result,

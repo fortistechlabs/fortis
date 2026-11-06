@@ -34,6 +34,7 @@ pub const ALL: &[(&str, Scenario)] = &[
 	("bolt12_both_ways", bolt12_both_ways),
 	("offer_while_stopped", offer_while_stopped),
 	("coop_close", coop_close),
+	("force_close_after_splice", force_close_after_splice),
 	("force_close_htlcs", force_close_htlcs),
 	("penalty", penalty),
 	("sweeps_settle", sweeps_settle),
@@ -276,9 +277,8 @@ fn pay_both_ways(env: &Env) -> R<Outcome> {
 
 // ------------------------------------------------------------------ 3, 4
 
-/// Waits for a splice of the JIT channel to lock; returns the new funding txid.
-fn splice_and_lock(env: &Env, what: &str) -> R<String> {
-	let ucid = env.jit_channel.borrow().ok_or("no JIT channel")?;
+/// Waits for a splice of P's channel `ucid` to lock; returns the new funding txid.
+fn splice_and_lock(env: &Env, ucid: UserChannelId, what: &str) -> R<String> {
 	let Event::SplicePending { new_funding_txo, .. } = env.p.wait_for(&format!("{what} pending"), 60, |e| {
 		matches!(e, Event::SplicePending { user_channel_id, .. } if *user_channel_id == ucid)
 	})?
@@ -323,7 +323,7 @@ fn splice_in(env: &Env) -> R<Outcome> {
 	let before = channel_by_id(&env.p, ucid)?;
 	let old = funding_of(&before)?;
 	env.p.node().splice_in(&ucid, env.s.id, 50_000).map_err(|e| format!("splice_in: {e}"))?;
-	let txid = splice_and_lock(env, "splice-in")?;
+	let txid = splice_and_lock(env, ucid, "splice-in")?;
 	let exp = splice_expectation(&txid, &old)?;
 	if exp.len() < 2 {
 		return Err(format!("splice-in {txid} has no wallet input"));
@@ -343,7 +343,7 @@ fn splice_out(env: &Env) -> R<Outcome> {
 	let old = funding_of(&channel_by_id(&env.p, ucid)?)?;
 	let addr = env.p.node().onchain_payment().new_address().map_err(|e| e.to_string())?;
 	env.p.node().splice_out(&ucid, env.s.id, &addr, 30_000).map_err(|e| format!("splice_out: {e}"))?;
-	let txid = splice_and_lock(env, "splice-out")?;
+	let txid = splice_and_lock(env, ucid, "splice-out")?;
 	let exp = splice_expectation(&txid, &old)?;
 	let info = confirmed_with(&txid, &exp)?;
 	if !info.outputs.iter().any(|(v, a)| *v == 30_000 && *a == addr.to_string()) {
@@ -501,6 +501,64 @@ fn coop_close(env: &Env) -> R<Outcome> {
 	let info = confirmed_with(&closing, &[UU])?;
 	record(env, "P-S cooperative close", &info, Some(Who::S));
 	env.mine(5)?;
+	env.p.wait_for("P channel closed", 60, |e| matches!(e, Event::ChannelClosed { user_channel_id, .. } if *user_channel_id == ucid))?;
+	env.s.wait_for("S channel closed", 60, |e| matches!(e, Event::ChannelClosed { counterparty_node_id, .. } if *counterparty_node_id == Some(env.p.id)))?;
+	Ok(Outcome::Pass)
+}
+
+// ------------------------------------------------------------------ 7b
+
+/// A force close after a splice (spec §4): P opens a channel to S, pays S 30,000 sat over
+/// it, splices 50,000 sat in, then force-closes. P's commitment spends the splice's funding
+/// output and is [0x21, 0x21]; its to_local (P, after the delay) and to_remote (S) outputs
+/// must be swept and confirmed by `sweeps_settle`, and count in its final accounting.
+fn force_close_after_splice(env: &Env) -> R<Outcome> {
+	let ucid = env
+		.p
+		.node()
+		.open_channel(env.s.id, env.s_addr.clone(), 200_000, None, None)
+		.map_err(|e| format!("P open to S: {e}"))?;
+	let Event::ChannelPending { funding_txo, .. } = env.p.wait_for("channel pending", 30, |e| {
+		matches!(e, Event::ChannelPending { user_channel_id, .. } if *user_channel_id == ucid)
+	})?
+	else {
+		unreachable!()
+	};
+	env.mine(6)?;
+	env.p.wait_for("channel ready", 60, |e| matches!(e, Event::ChannelReady { user_channel_id, .. } if *user_channel_id == ucid))?;
+	let info = confirmed_all(&funding_txo.txid.to_string(), U)?;
+	record(env, "P->S splice channel funding (P wallet inputs)", &info, Some(Who::P));
+
+	// S gets a balance, so the commitment has a to_remote output.
+	let inv = env.s.node().bolt11_payment().receive(30_000_000, &desc("xr splice-close"), 3600).map_err(|e| e.to_string())?;
+	send_retry(&env.p, "P pays S 30,000 sat", 90, |n| n.bolt11_payment().send(&inv, None))?;
+	env.s.wait_received(hash_of(&inv), 30)?;
+
+	let old = funding_of(&channel_by_id(&env.p, ucid)?)?;
+	env.p.node().splice_in(&ucid, env.s.id, 50_000).map_err(|e| format!("splice_in: {e}"))?;
+	let splice = splice_and_lock(env, ucid, "splice-in (before force close)")?;
+	let exp = splice_expectation(&splice, &old)?;
+	let info = confirmed_with(&splice, &exp)?;
+	record(env, "splice-in before force close (shared + P wallet)", &info, Some(Who::P));
+	let (fund, vout) = funding_of(&channel_by_id(&env.p, ucid)?)?;
+	if fund != splice {
+		return Err(format!("channel funding {fund} is not the splice {splice}"));
+	}
+
+	env.p.node().force_close_channel(&ucid, env.s.id, None).map_err(|e| format!("force close: {e}"))?;
+	let commit = env.wait_spender("P's commitment (spliced channel)", &fund, vout, 1, 0)?;
+	confirm(env, &commit)?;
+	let info = confirmed_with(&commit, &[UU])?;
+	record(env, "P commitment after splice", &info, Some(Who::P));
+	let to_remote = output_with_value(&info, 30_000)?;
+	let to_local: Vec<u32> = (0..info.outputs.len() as u32).filter(|i| *i != to_remote).collect();
+	let [to_local] = to_local[..] else {
+		return Err(format!("P's commitment {commit}: expected to_local and to_remote: {:?}", info.outputs));
+	};
+	println!("  to_local {commit}:{to_local} ({} sat), to_remote {commit}:{to_remote} (30,000 sat)", info.outputs[to_local as usize].0);
+	env.must_sweep.borrow_mut().push((Who::P, "P to_local after splice".into(), commit.clone(), to_local));
+	env.must_sweep.borrow_mut().push((Who::S, "S to_remote after splice".into(), commit.clone(), to_remote));
+
 	env.p.wait_for("P channel closed", 60, |e| matches!(e, Event::ChannelClosed { user_channel_id, .. } if *user_channel_id == ucid))?;
 	env.s.wait_for("S channel closed", 60, |e| matches!(e, Event::ChannelClosed { counterparty_node_id, .. } if *counterparty_node_id == Some(env.p.id)))?;
 	Ok(Outcome::Pass)
@@ -731,6 +789,19 @@ fn sweeps_settle(env: &Env) -> R<Outcome> {
 	}
 
 	let mut errors = vec![];
+	// The outputs of the force close after the splice: each swept by its owner, confirmed.
+	for (who, label, txid, vout) in env.must_sweep.borrow().iter() {
+		match env.spender(txid, *vout)? {
+			Some(s) if check::tx(&s).map(|t| t.confirmations).unwrap_or(0) >= 1 => {
+				if !env.recorded(&s) {
+					let info = confirmed_all(&s, &[])?;
+					record(env, &format!("{who:?} sweep"), &info, Some(*who));
+				}
+				println!("  {label} {txid}:{vout} swept by {s}");
+			},
+			other => errors.push(format!("{label} {txid}:{vout} not swept and confirmed ({other:?})")),
+		}
+	}
 	for n in env.nodes() {
 		let adj = match n.who {
 			Who::P => env.penalty_msat.get() as i64,
