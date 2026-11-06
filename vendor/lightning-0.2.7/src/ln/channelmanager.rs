@@ -15444,6 +15444,17 @@ where
 					);
 					return None;
 				}
+				// FORTIS XBT: the mirror: a BTC node refuses an XBT invoice (either blake2b bit),
+				// before any HTLC and before `Event::InvoiceReceived`.
+				if !self.config.read().unwrap().is_xbt() // FORTIS XBT: as above
+					&& invoice.invoice_features().supports_blake2b() // FORTIS XBT: as above
+				{ // FORTIS XBT: as above
+					log_error!(logger, "BTC: invoice with option_blake2b"); // FORTIS XBT: as above
+					self.abandon_payment_with_reason( // FORTIS XBT: as above
+						payment_id, PaymentFailureReason::UnexpectedError, // FORTIS XBT: as above
+					); // FORTIS XBT: as above
+					return None; // FORTIS XBT: as above
+				} // FORTIS XBT: as above
 
 				if self.config.read().unwrap().manually_handle_bolt12_invoices {
 					// Update the corresponding entry in `PendingOutboundPayment` for this invoice.
@@ -15476,6 +15487,16 @@ where
 					);
 					return None;
 				}
+				// FORTIS XBT: the mirror, as for `OffersMessage::Invoice` above.
+				if !self.config.read().unwrap().is_xbt() // FORTIS XBT: as above
+					&& invoice.invoice_features().supports_blake2b() // FORTIS XBT: as above
+				{ // FORTIS XBT: as above
+					log_error!(self.logger, "BTC: invoice with option_blake2b"); // FORTIS XBT: as above
+					self.abandon_payment_with_reason( // FORTIS XBT: as above
+						payment_id, PaymentFailureReason::UnexpectedError, // FORTIS XBT: as above
+					); // FORTIS XBT: as above
+					return None; // FORTIS XBT: as above
+				} // FORTIS XBT: as above
 				let res = self.initiate_async_payment(&invoice, payment_id);
 				handle_pay_invoice_res!(res, invoice, self.logger);
 			},

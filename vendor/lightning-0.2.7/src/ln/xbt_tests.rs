@@ -361,7 +361,6 @@ fn xbt_static_invoice_carries_blake2b() {
 /// before any HTLC: XBT shares BTC's chain hash, so the bit is all that tells the chains apart.
 #[test]
 fn xbt_abandons_bolt12_invoice_without_blake2b() {
-	use crate::events::{Event, PaymentFailureReason};
 	use crate::ln::channelmanager::PaymentId;
 	use crate::offers::offer::OfferBuilder;
 	use crate::offers::test_utils::payment_paths;
@@ -421,10 +420,17 @@ fn xbt_abandons_bolt12_invoice_without_blake2b() {
 	let onion_message = alice.onion_messenger.next_onion_message_for_peer(bob_id).unwrap();
 	bob.onion_messenger.handle_onion_message(alice_id, &onion_message);
 
-	// No HTLC left bob, and the payment was abandoned.
-	check_added_monitors(bob, 0);
-	assert!(bob.node.get_and_clear_pending_msg_events().is_empty());
-	let events = bob.node.get_and_clear_pending_events();
+	assert_invoice_abandoned(bob, payment_id, "XBT: invoice without option_blake2b");
+}
+
+/// Asserts that no HTLC left `payer` and that the payment was abandoned for the other chain's
+/// invoice (`log` names which way round), with no `invoice_error` sent back.
+fn assert_invoice_abandoned(payer: &Node, payment_id: crate::ln::channelmanager::PaymentId, log: &str) {
+	use crate::events::{Event, PaymentFailureReason};
+
+	check_added_monitors(payer, 0);
+	assert!(payer.node.get_and_clear_pending_msg_events().is_empty());
+	let events = payer.node.get_and_clear_pending_events();
 	assert_eq!(events.len(), 1, "{:?}", events);
 	match &events[0] {
 		Event::PaymentFailed { payment_id: id, reason, .. } => {
@@ -433,11 +439,135 @@ fn xbt_abandons_bolt12_invoice_without_blake2b() {
 		},
 		e => panic!("unexpected event {:?}", e),
 	}
-	bob.logger.assert_log_contains(
-		"lightning::ln::channelmanager",
-		"XBT: invoice without option_blake2b",
-		1,
-	);
+	payer.logger.assert_log_contains("lightning::ln::channelmanager", log, 1);
+}
+
+/// The mirror: a BTC node paying a BTC offer refuses an invoice that carries `option_blake2b`
+/// (an XBT invoice), before any HTLC.
+#[test]
+fn btc_abandons_offer_invoice_with_blake2b() {
+	use crate::ln::channelmanager::PaymentId;
+	use crate::offers::offer::OfferBuilder;
+	use crate::offers::test_utils::payment_paths;
+	use crate::onion_message::messenger::{Destination, MessageSendInstructions};
+
+	let chanmon_cfgs = create_chanmon_cfgs(2);
+	let node_cfgs = create_node_cfgs(2, &chanmon_cfgs);
+	let node_chanmgrs = create_node_chanmgrs(2, &node_cfgs, &[None, None]);
+	let nodes = create_network(2, &node_cfgs, &node_chanmgrs);
+	create_announced_chan_between_nodes_with_value(&nodes, 0, 1, 10_000_000, 1_000_000_000);
+
+	let alice = &nodes[0];
+	let alice_id = alice.node.get_our_node_id();
+	let bob = &nodes[1];
+	let bob_id = bob.node.get_our_node_id();
+
+	let offer = OfferBuilder::new(alice_id)
+		.chain(bitcoin::Network::Testnet)
+		.description("x".into())
+		.amount_msats(10_000_000)
+		.build()
+		.unwrap();
+	assert!(!offer.offer_features().supports_blake2b());
+	let payment_id = PaymentId([8; 32]);
+	bob.node.pay_for_offer(&offer, None, payment_id, Default::default()).unwrap();
+
+	let onion_message = bob.onion_messenger.next_onion_message_for_peer(alice_id).unwrap();
+	let (invoice_request, reply_path) =
+		super::offers_tests::extract_invoice_request(alice, &onion_message);
+
+	// The intercepted reply: an invoice for the request with `option_blake2b` (bit 512).
+	let invoice = invoice_request
+		.respond_with(payment_paths(), crate::types::payment::PaymentHash([42; 32]))
+		.unwrap()
+		.xbt_blake2b(true)
+		.build()
+		.unwrap()
+		.sign(|i: &crate::offers::invoice::UnsignedBolt12Invoice| {
+			use crate::sign::NodeSigner;
+			alice.keys_manager.sign_bolt12_invoice(i)
+		})
+		.unwrap();
+	assert!(invoice.invoice_features().requires_blake2b());
+
+	alice
+		.onion_messenger
+		.send_onion_message(
+			crate::onion_message::offers::OffersMessage::Invoice(invoice),
+			MessageSendInstructions::WithoutReplyPath {
+				destination: Destination::BlindedPath(reply_path),
+			},
+		)
+		.unwrap();
+	let onion_message = alice.onion_messenger.next_onion_message_for_peer(bob_id).unwrap();
+	bob.onion_messenger.handle_onion_message(alice_id, &onion_message);
+
+	assert_invoice_abandoned(bob, payment_id, "BTC: invoice with option_blake2b");
+}
+
+/// The mirror in the refund flow: a BTC node's refund answered with an invoice that carries
+/// `option_blake2b` is abandoned before any HTLC.
+#[test]
+fn btc_abandons_refund_invoice_with_blake2b() {
+	use crate::ln::channelmanager::PaymentId;
+	use crate::ln::outbound_payment::Retry;
+	use crate::offers::test_utils::payment_paths;
+	use crate::onion_message::messenger::{Destination, MessageSendInstructions};
+	use crate::routing::router::RouteParametersConfig;
+
+	let chanmon_cfgs = create_chanmon_cfgs(2);
+	let node_cfgs = create_node_cfgs(2, &chanmon_cfgs);
+	let node_chanmgrs = create_node_chanmgrs(2, &node_cfgs, &[None, None]);
+	let nodes = create_network(2, &node_cfgs, &node_chanmgrs);
+	create_announced_chan_between_nodes_with_value(&nodes, 0, 1, 10_000_000, 1_000_000_000);
+
+	let alice = &nodes[0];
+	let alice_id = alice.node.get_our_node_id();
+	let bob = &nodes[1];
+	let bob_id = bob.node.get_our_node_id();
+
+	let payment_id = PaymentId([9; 32]);
+	let refund = bob
+		.node
+		.create_refund_builder(
+			10_000_000,
+			core::time::Duration::from_secs(u64::MAX),
+			payment_id,
+			Retry::Attempts(0),
+			RouteParametersConfig::default(),
+		)
+		.unwrap()
+		.build()
+		.unwrap();
+	assert!(!refund.features().supports_blake2b());
+
+	// Alice answers the refund with an invoice carrying `option_blake2b` (bit 512).
+	let invoice = refund
+		.respond_with(payment_paths(), crate::types::payment::PaymentHash([43; 32]), alice_id)
+		.unwrap()
+		.xbt_blake2b(true)
+		.build()
+		.unwrap()
+		.sign(|i: &crate::offers::invoice::UnsignedBolt12Invoice| {
+			use crate::sign::NodeSigner;
+			alice.keys_manager.sign_bolt12_invoice(i)
+		})
+		.unwrap();
+	assert!(invoice.invoice_features().requires_blake2b());
+
+	alice
+		.onion_messenger
+		.send_onion_message(
+			crate::onion_message::offers::OffersMessage::Invoice(invoice),
+			MessageSendInstructions::WithoutReplyPath {
+				destination: Destination::BlindedPath(refund.paths()[0].clone()),
+			},
+		)
+		.unwrap();
+	let onion_message = alice.onion_messenger.next_onion_message_for_peer(bob_id).unwrap();
+	bob.onion_messenger.handle_onion_message(alice_id, &onion_message);
+
+	assert_invoice_abandoned(bob, payment_id, "BTC: invoice with option_blake2b");
 }
 
 // ---------------------------------------------------------------------------
