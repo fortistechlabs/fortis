@@ -1740,7 +1740,7 @@ impl EcdsaChannelSigner for InMemorySigner {
 		assert!(channel_parameters.is_populated(), "Channel parameters must be fully populated");
 
 		let witness_script = htlc_descriptor.witness_script(secp_ctx);
-		// FORTIS SPIKE (XBT): the holder's own HTLC signature is a bilateral
+		// FORTIS XBT: the holder's own HTLC signature is a bilateral
 		// one too (0x21 under option_unified_sigs, BOLT 3).
 		let sighash = crate::xbt::p2wsh_sighash(
 			&*htlc_tx,

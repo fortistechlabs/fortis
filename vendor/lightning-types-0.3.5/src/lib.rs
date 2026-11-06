@@ -29,7 +29,7 @@ pub mod routing;
 pub mod string;
 mod unicode;
 
-/// SPIKE (FORTIS PATCH): the process-wide XBT (BLAKE2b chain) switch; see `lightning::xbt`.
+/// FORTIS XBT: the process-wide XBT (BLAKE2b chain) switch; see `lightning::xbt`.
 pub mod xbt {
 	use core::sync::atomic::{AtomicBool, Ordering};
 	static ENABLED: AtomicBool = AtomicBool::new(false);

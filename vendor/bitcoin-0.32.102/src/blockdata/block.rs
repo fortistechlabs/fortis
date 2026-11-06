@@ -1242,7 +1242,7 @@ mod benches {
 }
 
 
-/// FORTIS SPIKE (XBT): the BLAKE2b fork's blocks have 164-byte headers whose
+/// FORTIS XBT: the BLAKE2b fork's blocks have 164-byte headers whose
 /// id is not the double SHA-256 of their first 80 bytes. Code that reads one
 /// keeps those 80 bytes as a [`Header`] (prev, merkle root, time and bits sit
 /// at the same offsets) and records here the id the node gave the block, so

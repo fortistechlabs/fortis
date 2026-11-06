@@ -24,7 +24,7 @@ use bitcoin::hashes::Hash;
 use bitcoin::secp256k1::constants::PUBLIC_KEY_SIZE;
 use bitcoin::secp256k1::{ecdsa::Signature, Secp256k1};
 use bitcoin::secp256k1::{PublicKey, SecretKey};
-use bitcoin::{secp256k1, sighash, FeeRate, Sequence, TxIn};
+use bitcoin::{secp256k1, FeeRate, Sequence, TxIn}; // FORTIS XBT: dropped unused sighash import (digests go through crate::xbt)
 
 use crate::blinded_path::message::BlindedMessagePath;
 use crate::chain::chaininterface::{
@@ -13762,7 +13762,7 @@ pub(super) fn channel_type_from_open_channel(
 			"Channel Type cannot require both anchor types".to_owned(),
 		));
 	}
-	// FORTIS SPIKE: XBT. BOLT 2 (lightning-blake2b): the receiver MUST fail an
+	// FORTIS XBT: BOLT 2 (lightning-blake2b): the receiver MUST fail an
 	// open whose channel_type lacks option_unified_sigs.
 	if lightning_types::xbt::enabled() && !channel_type.requires_unified_sigs() {  // FORTIS XBT: global switch, removed in Tasks 3/7 (was crate::xbt::enabled)
 		return Err(ChannelError::close(
@@ -14399,7 +14399,7 @@ pub(super) fn get_initial_channel_type(
 		ret.set_anchors_zero_fee_htlc_tx_required();
 	}
 
-	// FORTIS SPIKE: XBT. BOLT 2 (lightning-blake2b): a node following the
+	// FORTIS XBT: BOLT 2 (lightning-blake2b): a node following the
 	// BLAKE2b rules MUST include option_unified_sigs in channel_type.
 	if lightning_types::xbt::enabled() {  // FORTIS XBT: global switch, removed in Tasks 3/7 (was crate::xbt::enabled)
 		ret.set_unified_sigs_required();

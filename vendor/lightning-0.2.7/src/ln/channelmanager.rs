@@ -15814,7 +15814,7 @@ pub fn provided_init_features(config: &UserConfig) -> InitFeatures {
 		features.set_htlc_hold_optional();
 	}
 
-	// FORTIS SPIKE: XBT. BOLT 9 (lightning-blake2b): MUST set bit 512 in init
+	// FORTIS XBT: BOLT 9 (lightning-blake2b): MUST set bit 512 in init
 	// and node_announcement; signal option_unified_sigs.
 	if lightning_types::xbt::enabled() {  // FORTIS XBT: global switch, removed in Tasks 3/7 (was crate::xbt::enabled)
 		features.set_blake2b_required();

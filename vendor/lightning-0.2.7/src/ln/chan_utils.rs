@@ -14,7 +14,7 @@ use bitcoin::amount::Amount;
 use bitcoin::constants::WITNESS_SCALE_FACTOR;
 use bitcoin::opcodes;
 use bitcoin::script::{Builder, Script, ScriptBuf};
-use bitcoin::sighash;
+// FORTIS XBT: bitcoin::sighash import removed, all digests now go through crate::xbt
 use bitcoin::sighash::EcdsaSighashType;
 use bitcoin::transaction::Version;
 use bitcoin::transaction::{OutPoint, Transaction, TxIn, TxOut};

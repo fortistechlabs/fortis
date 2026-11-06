@@ -78,7 +78,7 @@ pub mod offers;
 pub mod onion_message;
 pub mod routing;
 pub mod sign;
-// SPIKE (FORTIS PATCH): XBT (BLAKE2b) Lightning.
+// FORTIS XBT: per-call unified sighash for XBT (BLAKE2b) Lightning.
 pub mod xbt;
 
 pub(crate) mod crypto;

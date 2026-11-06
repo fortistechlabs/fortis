@@ -177,7 +177,7 @@ mod sealed {
 			HtlcHold,
 			// Byte 20 - 63
 			,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
-			// Byte 64 (FORTIS SPIKE: XBT)
+			// Byte 64 (FORTIS XBT: feature bits 512-515)
 			Blake2b | UnifiedSigs,
 		]
 	);
@@ -214,7 +214,7 @@ mod sealed {
 			DnsResolver,
 			// Byte 33 - 63
 			,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
-			// Byte 64 (FORTIS SPIKE: XBT)
+			// Byte 64 (FORTIS XBT: feature bits 512-515)
 			Blake2b | UnifiedSigs,
 		]
 	);
@@ -238,7 +238,7 @@ mod sealed {
 		Trampoline,
 		// Byte 8 - 63
 		,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
-		// Byte 64 (FORTIS SPIKE: XBT)
+		// Byte 64 (FORTIS XBT: feature bits 512-515)
 		Blake2b,
 	]);
 	define_context!(OfferContext, []);
@@ -285,7 +285,7 @@ mod sealed {
 		AnchorZeroFeeCommitmentsStaging,
 		// Byte 18 - 63
 		,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
-		// Byte 64 (FORTIS SPIKE: XBT)
+		// Byte 64 (FORTIS XBT: feature bits 512-515)
 		UnifiedSigs,
 	]);
 
@@ -768,7 +768,7 @@ mod sealed {
 		requires_dns_resolution
 	);
 
-	// FORTIS SPIKE: lightning-blake2b/bolts option_blake2b and option_unified_sigs.
+	// FORTIS XBT: lightning-blake2b/bolts option_blake2b and option_unified_sigs.
 	define_feature!(
 		513,
 		Blake2b,

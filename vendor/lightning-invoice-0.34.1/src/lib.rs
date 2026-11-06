@@ -865,7 +865,7 @@ impl<D: tb::Bool, H: tb::Bool, T: tb::Bool, C: tb::Bool, M: tb::Bool>
 				f.set_variable_length_onion_required();
 				f.set_payment_secret_required();
 				if lightning_types::xbt::enabled() {
-					f.set_blake2b_required(); // FORTIS SPIKE: XBT
+					f.set_blake2b_required(); // FORTIS XBT
 				}
 			}
 		}
@@ -875,7 +875,7 @@ impl<D: tb::Bool, H: tb::Bool, T: tb::Bool, C: tb::Bool, M: tb::Bool>
 			features.set_variable_length_onion_required();
 			features.set_payment_secret_required();
 			if lightning_types::xbt::enabled() {
-				features.set_blake2b_required(); // FORTIS SPIKE: XBT
+				features.set_blake2b_required(); // FORTIS XBT
 			}
 			self.tagged_fields.push(TaggedField::Features(features));
 		}

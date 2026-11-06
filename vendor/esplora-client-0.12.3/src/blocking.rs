@@ -584,7 +584,7 @@ fn is_status_retryable(status: i32) -> bool {
     RETRYABLE_ERROR_CODES.contains(&status)
 }
 
-// FORTIS SPIKE (XBT): 164-byte BLAKE2b headers. The first 80 bytes are kept
+// FORTIS XBT: 164-byte BLAKE2b headers. The first 80 bytes are kept
 // as the Header and the node's id for the block is recorded so that
 // Header::block_hash() returns it.
 fn xbt_header(bytes: &[u8], real: &BlockHash) -> Result<BlockHeader, Error> {
