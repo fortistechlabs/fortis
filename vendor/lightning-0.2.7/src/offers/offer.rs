@@ -521,6 +521,14 @@ macro_rules! offer_builder_test_methods { (
 impl<'a, M: MetadataStrategy, T: secp256k1::Signing> OfferBuilder<'a, M, T> {
 	offer_builder_methods!(self, Self, Self, self, mut);
 
+	/// FORTIS XBT: when `is_xbt`, requires `option_blake2b` in the offer's features.
+	pub(crate) fn xbt_blake2b(mut self, is_xbt: bool) -> Self {
+		if is_xbt {
+			self.offer.features.set_blake2b_required();
+		}
+		self
+	}
+
 	#[cfg(test)]
 	offer_builder_test_methods!(self, Self, Self, self, mut);
 }

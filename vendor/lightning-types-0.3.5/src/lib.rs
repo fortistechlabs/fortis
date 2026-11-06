@@ -28,18 +28,3 @@ pub mod payment;
 pub mod routing;
 pub mod string;
 mod unicode;
-
-/// FORTIS XBT: the process-wide XBT (BLAKE2b chain) switch; see `lightning::xbt`.
-pub mod xbt {
-	use core::sync::atomic::{AtomicBool, Ordering};
-	static ENABLED: AtomicBool = AtomicBool::new(false);
-	/// Turns XBT mode on for this process (before any node is built).
-	pub fn set_enabled(on: bool) {
-		ENABLED.store(on, Ordering::SeqCst);
-		bitcoin::block::xbt_ids::set_enabled(on);
-	}
-	/// Whether this process follows the BLAKE2b rules.
-	pub fn enabled() -> bool {
-		ENABLED.load(Ordering::Relaxed)
-	}
-}

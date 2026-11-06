@@ -119,5 +119,8 @@ pub mod splicing_tests;
 pub mod update_fee_tests;
 #[cfg(test)]
 mod zero_fee_commitment_tests;
+// FORTIS XBT: XBT feature bit and channel type tests
+#[cfg(test)]
+mod xbt_tests;
 
 pub use self::peer_channel_encryptor::LN_MAX_MSG_LEN;

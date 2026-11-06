@@ -13733,6 +13733,7 @@ where
 /// [`msgs::CommonOpenChannelFields`].
 pub(super) fn channel_type_from_open_channel(
 	common_fields: &msgs::CommonOpenChannelFields, our_supported_features: &ChannelTypeFeatures,
+	is_xbt: bool, // FORTIS XBT: from `UserConfig::is_xbt`, replaces the spike's global switch
 ) -> Result<ChannelTypeFeatures, ChannelError> {
 	let channel_type = common_fields.channel_type.as_ref().ok_or_else(|| {
 		ChannelError::close("option_channel_type assumed to be supported".to_owned())
@@ -13763,10 +13764,19 @@ pub(super) fn channel_type_from_open_channel(
 		));
 	}
 	// FORTIS XBT: BOLT 2 (lightning-blake2b): the receiver MUST fail an
-	// open whose channel_type lacks option_unified_sigs.
-	if lightning_types::xbt::enabled() && !channel_type.requires_unified_sigs() {  // FORTIS XBT: global switch, removed in Tasks 3/7 (was crate::xbt::enabled)
+	// open whose channel_type lacks option_unified_sigs, and an XBT node never takes anchors.
+	if is_xbt && !channel_type.requires_unified_sigs() {
 		return Err(ChannelError::close(
 			"XBT: channel_type must include option_unified_sigs".to_owned(),
+		));
+	}
+	if is_xbt
+		&& (channel_type.supports_anchors_zero_fee_htlc_tx()
+			|| channel_type.supports_anchors_nonzero_fee_htlc_tx()
+			|| channel_type.supports_anchor_zero_fee_commitments())
+	{
+		return Err(ChannelError::close(
+			"XBT: channel_type must not include anchors".to_owned(),
 		));
 	}
 	// Make sure we support all of the features behind the channel type.
@@ -13803,7 +13813,7 @@ where
 
 		// First check the channel type is known, failing before we do anything else if we don't
 		// support this channel type.
-		let channel_type = channel_type_from_open_channel(&msg.common_fields, our_supported_features)?;
+		let channel_type = channel_type_from_open_channel(&msg.common_fields, our_supported_features, config.is_xbt())?; // FORTIS XBT: is_xbt from config
 
 		let holder_selected_channel_reserve_satoshis = get_holder_selected_channel_reserve_satoshis(msg.common_fields.funding_satoshis, config)
 			.map_err(|()| ChannelError::close(format!("The channel value {} is smaller than {MIN_THEIR_CHAN_RESERVE_SATOSHIS}", msg.common_fields.funding_satoshis)))?;
@@ -14208,7 +14218,7 @@ where
 			"The channel value {channel_value_satoshis} is smaller than their dust limit {their_dust_limit_satoshis}"
 		)))?;
 
-		let channel_type = channel_type_from_open_channel(&msg.common_fields, our_supported_features)?;
+		let channel_type = channel_type_from_open_channel(&msg.common_fields, our_supported_features, config.is_xbt())?; // FORTIS XBT: is_xbt from config
 
 		let counterparty_pubkeys = ChannelPublicKeys {
 			funding_pubkey: msg.common_fields.funding_pubkey,
@@ -14383,17 +14393,20 @@ pub(super) fn get_initial_channel_type(
 		ret.set_scid_privacy_required();
 	}
 
+	// FORTIS XBT: an XBT node never proposes anchor channel types (they are skipped below).
 	// Optionally, if the user would like to negotiate `option_zero_fee_commitments` we set it now.
 	// If they don't understand it (or we don't want it), we check the same conditions for
 	// `option_anchors_zero_fee_htlc_tx`. The counterparty can still refuse the channel and we'll
 	// try to fall back (all the way to `only_static_remotekey`).
-	if config.channel_handshake_config.negotiate_anchor_zero_fee_commitments
+	if !config.is_xbt() // FORTIS XBT: no anchors on XBT
+		&& config.channel_handshake_config.negotiate_anchor_zero_fee_commitments
 		&& their_features.supports_anchor_zero_fee_commitments()
 	{
 		ret.set_anchor_zero_fee_commitments_required();
 		// `option_static_remote_key` is assumed by `option_zero_fee_commitments`.
 		ret.clear_static_remote_key();
-	} else if config.channel_handshake_config.negotiate_anchors_zero_fee_htlc_tx
+	} else if !config.is_xbt() // FORTIS XBT: no anchors on XBT
+		&& config.channel_handshake_config.negotiate_anchors_zero_fee_htlc_tx
 		&& their_features.supports_anchors_zero_fee_htlc_tx()
 	{
 		ret.set_anchors_zero_fee_htlc_tx_required();
@@ -14401,7 +14414,7 @@ pub(super) fn get_initial_channel_type(
 
 	// FORTIS XBT: BOLT 2 (lightning-blake2b): a node following the
 	// BLAKE2b rules MUST include option_unified_sigs in channel_type.
-	if lightning_types::xbt::enabled() {  // FORTIS XBT: global switch, removed in Tasks 3/7 (was crate::xbt::enabled)
+	if config.is_xbt() { // FORTIS XBT: per-node config instead of the spike's global switch
 		ret.set_unified_sigs_required();
 	}
 

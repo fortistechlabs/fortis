@@ -241,8 +241,18 @@ mod sealed {
 		// Byte 64 (FORTIS XBT: feature bits 512-515)
 		Blake2b,
 	]);
-	define_context!(OfferContext, []);
-	define_context!(InvoiceRequestContext, []);
+	define_context!(OfferContext, [
+		// Byte 0 - 63
+		,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+		// Byte 64 (FORTIS XBT: option_blake2b in offers)
+		Blake2b,
+	]);
+	define_context!(InvoiceRequestContext, [
+		// Byte 0 - 63
+		,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+		// Byte 64 (FORTIS XBT: option_blake2b in invoice requests)
+		Blake2b,
+	]);
 	define_context!(Bolt12InvoiceContext, [
 		// Byte 0
 		,
@@ -260,6 +270,10 @@ mod sealed {
 		,
 		// Byte 7
 		Trampoline,
+		// Byte 8 - 63
+		,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+		// Byte 64 (FORTIS XBT: option_blake2b in BOLT 12 invoices)
+		Blake2b,
 	]);
 	define_context!(BlindedHopContext, []);
 	// This isn't a "real" feature context, and is only used in the channel_type field in an
@@ -772,7 +786,7 @@ mod sealed {
 	define_feature!(
 		513,
 		Blake2b,
-		[InitContext, NodeContext, Bolt11InvoiceContext],
+		[InitContext, NodeContext, Bolt11InvoiceContext, OfferContext, InvoiceRequestContext, Bolt12InvoiceContext],
 		"Feature flags for `option_blake2b` (follows the BLAKE2b proof of work rules).",
 		set_blake2b_optional,
 		set_blake2b_required,

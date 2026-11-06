@@ -864,9 +864,6 @@ impl<D: tb::Bool, H: tb::Bool, T: tb::Bool, C: tb::Bool, M: tb::Bool>
 				found_features = true;
 				f.set_variable_length_onion_required();
 				f.set_payment_secret_required();
-				if lightning_types::xbt::enabled() {
-					f.set_blake2b_required(); // FORTIS XBT: BOLT 11 option_blake2b
-				}
 			}
 		}
 		self.tagged_fields.push(TaggedField::PaymentSecret(payment_secret));
@@ -874,9 +871,6 @@ impl<D: tb::Bool, H: tb::Bool, T: tb::Bool, C: tb::Bool, M: tb::Bool>
 			let mut features = Bolt11InvoiceFeatures::empty();
 			features.set_variable_length_onion_required();
 			features.set_payment_secret_required();
-			if lightning_types::xbt::enabled() {
-				features.set_blake2b_required(); // FORTIS XBT: BOLT 11 option_blake2b
-			}
 			self.tagged_fields.push(TaggedField::Features(features));
 		}
 		self.set_flags()
@@ -935,6 +929,17 @@ impl<D: tb::Bool, H: tb::Bool, T: tb::Bool, C: tb::Bool, M: tb::Bool>
 		for field in self.tagged_fields.iter_mut() {
 			if let TaggedField::Features(f) = field {
 				f.set_basic_mpp_optional();
+			}
+		}
+		self
+	}
+
+	/// FORTIS XBT: sets the `option_blake2b` feature as required (BOLT 11 invoices for the
+	/// Bitcoin BLAKE2b chain). The caller decides, e.g. from `UserConfig::is_xbt`.
+	pub fn require_blake2b(mut self) -> Self {
+		for field in self.tagged_fields.iter_mut() {
+			if let TaggedField::Features(f) = field {
+				f.set_blake2b_required();
 			}
 		}
 		self

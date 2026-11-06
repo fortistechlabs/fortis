@@ -10199,7 +10199,8 @@ This indicates a bug inside LDK. Please report this error at https://github.com/
 		// We can get the channel type at this point already as we'll need it immediately in both the
 		// manual and the automatic acceptance cases.
 		let channel_type = channel::channel_type_from_open_channel(
-			common_fields, &self.channel_type_features()
+			common_fields, &self.channel_type_features(),
+			self.config.read().unwrap().is_xbt() // FORTIS XBT: from config
 		).map_err(|e| MsgHandleErrInternal::from_chan_no_close(e, common_fields.temporary_channel_id))?;
 
 		// If we're doing manual acceptance checks on the channel, then defer creation until we're sure we want to accept.
@@ -12642,6 +12643,10 @@ This indicates a bug inside LDK. Please report this error at https://github.com/
 				min_final_cltv_expiry_delta.map(|x| x.saturating_add(3)).unwrap_or(MIN_FINAL_CLTV_EXPIRY_DELTA).into()
 			);
 
+		if self.config.read().unwrap().is_xbt() {
+			invoice = invoice.require_blake2b(); // FORTIS XBT: BOLT 11 option_blake2b from config
+		}
+
 		if let Some(invoice_expiry_delta_secs) = invoice_expiry_delta_secs{
 			invoice = invoice.expiry_time(Duration::from_secs(invoice_expiry_delta_secs.into()));
 		}
@@ -12740,6 +12745,7 @@ macro_rules! create_offer_builder { ($self: ident, $builder: ty) => {
 		let builder = $self.flow.create_offer_builder(
 			&*$self.entropy_source, $self.get_peers_for_blinded_path()
 		)?;
+		let builder = builder.xbt_blake2b($self.config.read().unwrap().is_xbt()); // FORTIS XBT: option_blake2b in offers
 
 		Ok(builder.into())
 	}
@@ -12765,6 +12771,7 @@ macro_rules! create_offer_builder { ($self: ident, $builder: ty) => {
 		let builder = $self.flow.create_offer_builder_using_router(
 			router, &*$self.entropy_source, $self.get_peers_for_blinded_path()
 		)?;
+		let builder = builder.xbt_blake2b($self.config.read().unwrap().is_xbt()); // FORTIS XBT: option_blake2b in offers
 
 		Ok(builder.into())
 	}
@@ -12821,6 +12828,7 @@ macro_rules! create_refund_builder { ($self: ident, $builder: ty) => {
 			entropy, amount_msats, absolute_expiry,
 			payment_id, $self.get_peers_for_blinded_path()
 		)?;
+		let builder = builder.xbt_blake2b($self.config.read().unwrap().is_xbt()); // FORTIS XBT: option_blake2b in refunds
 
 		let _persistence_guard = PersistenceNotifierGuard::notify_on_drop($self);
 
@@ -12865,6 +12873,7 @@ macro_rules! create_refund_builder { ($self: ident, $builder: ty) => {
 			router, entropy, amount_msats, absolute_expiry,
 			payment_id, $self.get_peers_for_blinded_path()
 		)?;
+		let builder = builder.xbt_blake2b($self.config.read().unwrap().is_xbt()); // FORTIS XBT: option_blake2b in refunds
 
 		let _persistence_guard = PersistenceNotifierGuard::notify_on_drop($self);
 
@@ -13104,6 +13113,7 @@ where
 		let builder = self.flow.create_invoice_request_builder(
 			offer, nonce, payment_id,
 		)?;
+		let builder = builder.xbt_blake2b(self.config.read().unwrap().is_xbt()); // FORTIS XBT: option_blake2b in invoice requests
 
 		let builder = match quantity {
 			None => builder,
@@ -15798,7 +15808,8 @@ pub fn provided_init_features(config: &UserConfig) -> InitFeatures {
 	features.set_quiescence_optional();
 	features.set_splicing_optional();
 
-	if config.channel_handshake_config.negotiate_anchors_zero_fee_htlc_tx {
+	// FORTIS XBT: an XBT node does not advertise anchor channel types.
+	if !config.is_xbt() && config.channel_handshake_config.negotiate_anchors_zero_fee_htlc_tx {
 		features.set_anchors_zero_fee_htlc_tx_optional();
 	}
 	#[cfg(dual_funding)]
@@ -15806,7 +15817,8 @@ pub fn provided_init_features(config: &UserConfig) -> InitFeatures {
 		features.set_dual_fund_optional();
 	}
 
-	if config.channel_handshake_config.negotiate_anchor_zero_fee_commitments {
+	// FORTIS XBT: an XBT node does not advertise anchor channel types.
+	if !config.is_xbt() && config.channel_handshake_config.negotiate_anchor_zero_fee_commitments {
 		features.set_anchor_zero_fee_commitments_optional();
 	}
 
@@ -15816,7 +15828,7 @@ pub fn provided_init_features(config: &UserConfig) -> InitFeatures {
 
 	// FORTIS XBT: BOLT 9 (lightning-blake2b): MUST set bit 512 in init
 	// and node_announcement; signal option_unified_sigs.
-	if lightning_types::xbt::enabled() {  // FORTIS XBT: global switch, removed in Tasks 3/7 (was crate::xbt::enabled)
+	if config.is_xbt() { // FORTIS XBT: per-node config instead of the spike's global switch
 		features.set_blake2b_required();
 		features.set_unified_sigs_optional();
 	}

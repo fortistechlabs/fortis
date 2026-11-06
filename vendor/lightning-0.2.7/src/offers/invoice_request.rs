@@ -403,6 +403,14 @@ impl<'a, 'b, T: secp256k1::Signing> InvoiceRequestBuilder<'a, 'b, T> {
 	invoice_request_derived_payer_signing_pubkey_builder_methods!(self, Self, T);
 	invoice_request_builder_methods!(self, Self, Self, self, T, mut);
 
+	/// FORTIS XBT: when `is_xbt`, requires `option_blake2b` in the request's features.
+	pub(crate) fn xbt_blake2b(mut self, is_xbt: bool) -> Self {
+		if is_xbt {
+			self.invoice_request.features.set_blake2b_required();
+		}
+		self
+	}
+
 	#[cfg(test)]
 	invoice_request_builder_test_methods!(self, Self, Self, self, mut);
 }

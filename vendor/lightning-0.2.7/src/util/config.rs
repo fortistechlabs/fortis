@@ -15,6 +15,7 @@ use crate::ln::channelmanager::{BREAKDOWN_TIMEOUT, MAX_LOCAL_BREAKDOWN_TIMEOUT};
 
 #[cfg(fuzzing)]
 use crate::util::ser::Readable;
+use bitcoin::secp256k1::PublicKey; // FORTIS XBT: for `XbtConfig::splice_peers`
 
 /// Configuration we set when applicable.
 ///
@@ -974,6 +975,38 @@ pub struct UserConfig {
 	///
 	/// [`ChannelManager::splice_channel`]: crate::ln::channelmanager::ChannelManager::splice_channel
 	pub reject_inbound_splices: bool,
+	/// FORTIS XBT: set to follow the Bitcoin BLAKE2b chain (XBT) rules. `None` (the default) is
+	/// plain Bitcoin behaviour. See [`XbtConfig`] and [`UserConfig::is_xbt`].
+	///
+	/// Default value: `None`
+	pub xbt: Option<XbtConfig>,
+}
+
+/// FORTIS XBT: settings for a node that follows the Bitcoin BLAKE2b chain (XBT).
+#[derive(Clone, Debug, PartialEq)]
+pub struct XbtConfig {
+	/// The block height below which gossip is not requested. Mainnet XBT forked at 961640.
+	///
+	/// Default value: `961640`
+	pub gossip_floor_height: u32,
+	/// Peers we are willing to splice with.
+	///
+	/// Default value: empty
+	pub splice_peers: Vec<PublicKey>,
+}
+
+impl Default for XbtConfig {
+	fn default() -> Self {
+		XbtConfig { gossip_floor_height: 961640, splice_peers: Vec::new() }
+	}
+}
+
+impl UserConfig {
+	/// FORTIS XBT: whether this node follows the XBT (BLAKE2b chain) rules: `option_blake2b`
+	/// required, `option_unified_sigs` in every channel type, and no anchor channel types.
+	pub fn is_xbt(&self) -> bool {
+		self.xbt.is_some()
+	}
 }
 
 impl Default for UserConfig {
@@ -992,6 +1025,7 @@ impl Default for UserConfig {
 			enable_htlc_hold: false,
 			hold_outbound_htlcs_at_next_hop: false,
 			reject_inbound_splices: true,
+			xbt: None, // FORTIS XBT: plain Bitcoin by default
 		}
 	}
 }
@@ -1028,6 +1062,7 @@ impl Readable for UserConfig {
 			hold_outbound_htlcs_at_next_hop,
 			enable_htlc_hold,
 			reject_inbound_splices,
+			xbt: None, // FORTIS XBT: the fuzzer never picks XBT
 		})
 	}
 }
