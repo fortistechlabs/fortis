@@ -155,3 +155,38 @@ cargo test --manifest-path vendor/lightning-transaction-sync-0.2.7/Cargo.toml --
   --config 'patch.crates-io.lightning-invoice.path="vendor/lightning-invoice-0.34.1"' \
   --config 'patch.crates-io.esplora-client.path="vendor/esplora-client-0.12.3"' --lib
 ```
+
+## Release gate
+
+`tools/xbt-regtest/run.sh` must pass for any change under `vendor/`, before
+it is merged or released. It is the only check that the patched crates
+produce transactions Knots accepts (BLAKE2b active at height 20) and that
+they interoperate with paulscode's LND fork; the unit and functional tests
+above do not touch a real chain.
+
+```
+cargo build -p fortis-index            # run.sh also builds it
+tools/xbt-regtest/run.sh               # exit code 0 = pass
+```
+
+It builds the LND fork once (`build-lnd.sh`, needs `mise` with go 1.27.3,
+`offersrpc` tag), wipes the regtest state under `$XR`
+(`~/.cache/fortis-xbt-regtest`), starts Knots, fortis-index, the fee server
+and LND (`up.sh`), runs `cargo run -p xbt-regtest -- all` and stops the
+environment (`down.sh`) on any exit. Only the regtest ports in
+`tools/xbt-regtest/env.sh` are used; nothing else on the host is touched.
+
+The suite (`crates/xbt-regtest`) runs two ldk-node nodes, P (phone: LSPS2
+client, async payments client) and S (LSP: LSPS2 service, async payments
+server), both with `xbt: Some(XbtConfig { gossip_floor_height: 20,
+splice_peers: [the other] })`, against LND, through the scenarios `jit_open`,
+`pay_both_ways`, `splice_in`, `splice_out`, `bolt12_both_ways`,
+`offer_while_stopped`, `coop_close`, `force_close_htlcs`, `penalty` and
+`sweeps_settle`. Every transaction they make is checked as confirmed by
+Knots with the expected signature hash type bytes per input (0x21 for every
+signature on a unified channel and for the wallet's inputs; plain allowed
+only where one side alone signs). The summary prints each scenario's result,
+`BOLT12_INTEROP=pass|fail (...)` (LND offers; reported, does not fail the
+gate) and every confirmed txid with its signature bytes. Only
+`BOLT12_INTEROP` and `offer_while_stopped` (`SKIPPED ...`) may be other than
+`PASS`.

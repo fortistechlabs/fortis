@@ -13,6 +13,8 @@ XR_INDEX_PORT=18094
 XR_FEE_PORT=18095
 XR_LND_RPC_PORT=10109
 XR_LND_P2P_PORT=19735
+# Node S (the LSP) of the suite, crates/xbt-regtest; node P does not listen.
+XR_LDK_S_PORT=19737
 XR_LND_ACTIVATION_HEIGHT=20
 XR_LND_TAG=v0.21.6-beta-blake2b.23
 XR_LND_REPO=https://github.com/paulscode/lightning-fork
