@@ -383,6 +383,7 @@ enum BuildError {
 	"LoggerSetupFailed",
 	"NetworkMismatch",
 	"AsyncPaymentsConfigMismatch",
+	"InvalidChainSource", // FORTIS XBT: XBT needs an Esplora chain source
 };
 
 [Trait]
