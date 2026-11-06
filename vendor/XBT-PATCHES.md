@@ -6,9 +6,10 @@ line in the source carries a `// FORTIS XBT: <why>` comment. Spec:
 `docs/superpowers/specs/2026-11-06-xbt-lightning-design.md`.
 
 Rows marked "spike" were brought over from the spike worktree unchanged and
-are reworked by the task named in the last column. Sighash call sites passing
-`unified: false` are placeholders until Task 4 threads the channel's
-`ChannelTypeFeatures` through.
+are reworked by the task named in the last column. Every bilateral signature
+(commitment, closing, HTLC) is unified exactly when the channel's
+`ChannelTypeFeatures::requires_unified_sigs()` is true (`xbt::is_unified`),
+whether we create it or check it; no call site reads config (Task 4).
 
 | Crate | File | Function / item | Reason | Task |
 |---|---|---|---|---|
@@ -16,12 +17,27 @@ are reworked by the task named in the last column. Sighash call sites passing
 | lightning | `src/xbt_unified_sighash.json` | test vectors | Knots' `SignatureHashUnified` vectors (142 rows) | 2 |
 | lightning | `src/lib.rs` | `pub mod xbt` | Exposes the module (spike) | 2 |
 | lightning | `src/ln/chan_utils.rs`, `src/ln/channel.rs` | imports | Dropped `bitcoin::sighash`, unused once digests go through `crate::xbt` | 2 |
-| lightning | `src/ln/chan_utils.rs` | `build_htlc_input_witness` | `push_sig(.., unified: false)` placeholder | 4 |
-| lightning | `src/ln/chan_utils.rs` | `BuiltCommitmentTransaction::get_sighash_all`, `TrustedClosingTransaction::get_sighash_all`, `HolderCommitmentTransaction::add_holder_sig` | `p2wsh_sighash` / `push_sig` with `unified: false` placeholder | 4 |
-| lightning | `src/ln/chan_utils.rs` | `TrustedCommitmentTransaction::get_htlc_sigs` | `p2wsh_sighash(.., unified: false)` placeholder | 4 |
-| lightning | `src/ln/channel.rs` | `validate_commitment_signed` (HTLC signature check) | `p2wsh_sighash(.., unified: false)` placeholder | 4 |
-| lightning | `src/ln/channel.rs` | `build_signed_closing_transaction` | `hash_type(.., unified: false)` placeholder | 4 |
-| lightning | `src/sign/mod.rs` | `sign_counterparty_commitment`, `sign_holder_htlc_transaction` | `p2wsh_sighash(.., unified: false)` placeholder | 4 |
+| lightning | `src/ln/chan_utils.rs` | `build_htlc_input_witness` | Both HTLC signature bytes (remote and local) from `is_unified(channel_type_features)` | 4 |
+| lightning | `src/ln/chan_utils.rs` | `HolderCommitmentTransaction::add_holder_sig` | Both commitment signature bytes from the commitment's own `channel_type_features` (no params reachable; stored in the monitor's commitment, survives reload) | 4 |
+| lightning | `src/ln/chan_utils.rs` | `BuiltCommitmentTransaction::get_sighash_all`, `sign_counterparty_commitment`, `sign_holder_commitment` | New `unified: bool` parameter (the built transaction has no channel type); every caller passes `is_unified` of the channel type. A public API change, so a missed caller fails to compile | 4 |
+| lightning | `src/ln/chan_utils.rs` | `TrustedClosingTransaction::get_sighash_all`, `TrustedClosingTransaction::sign` | New `unified: bool` parameter, as above (`ClosingTransaction` has no channel type) | 4 |
+| lightning | `src/ln/chan_utils.rs` | `TrustedCommitmentTransaction::get_htlc_sigs` | Digest from `is_unified(self.channel_type_features)` | 4 |
+| lightning | `src/sign/mod.rs` | `InMemorySigner::sign_counterparty_commitment` | Commitment signature and HTLC signatures from `channel_parameters.channel_type_features` | 4 |
+| lightning | `src/sign/mod.rs` | `InMemorySigner::sign_holder_commitment`, `unsafe_sign_holder_commitment` | From `channel_parameters.channel_type_features` (debug-asserted equal to the commitment's) | 4 |
+| lightning | `src/sign/mod.rs` | `InMemorySigner::sign_holder_htlc_transaction` | From the descriptor's `channel_parameters.channel_type_features` (the spike's missed site) | 4 |
+| lightning | `src/sign/mod.rs` | `InMemorySigner::sign_closing_transaction` | From `channel_parameters.channel_type_features` | 4 |
+| lightning | `src/ln/channel.rs` | `check_counterparty_commitment_signature` (funding_created / funding_signed), `validate_commitment_signed` (commitment and HTLC signatures) | Peer signatures checked against the digest `funding.get_channel_type()` names | 4 |
+| lightning | `src/ln/channel.rs` | `signer_maybe_unblocked` (pending closing_signed debug check), `closing_signed` (both checks), `build_signed_closing_transaction` | Closing signature checks and both witness bytes from `funding.get_channel_type()` | 4 |
+| lightning | `src/ln/channel.rs` | `tests::outbound_commitment_test` (BOLT 3 vectors) | Passes `unified: false`: the vectors are BTC channels | 4 |
+| lightning | `src/util/test_channel_signer.rs` | `TestChannelSigner::sign_holder_htlc_transaction`, imports | The test signer's check of the counterparty HTLC signature uses `xbt::p2wsh_sighash` with the channel type (it panicked on unified channels) | 4 |
+| lightning | `src/ln/xbt_tests.rs` | `assert_sig_bytes` and six tests | Hash type bytes and signature validity of commitment, HTLC-timeout, HTLC-success and closing transactions; BTC and XBT pairs in one process; after reload | 4 |
+| lightning | `src/sign/mod.rs` | `sign_counterparty_payment_input` (to_remote sweep), `sign_dynamic_p2wsh_input` (to_local sweep), `sign_justice_revoked_output`, `sign_justice_revoked_htlc`, `sign_counterparty_htlc_transaction` (claim of an HTLC on the counterparty's commitment), `KeysManager::sign_spendable_outputs_psbt` (static output sweep) | Plain spend, allowed: only we sign | - |
+| lightning | `src/chain/package.rs` | `PackageSolvingData::finalize_input` (`RevokedOutput`, `RevokedHTLCOutput`, `CounterpartyOfferedHTLCOutput`, `CounterpartyReceivedHTLCOutput`: `EcdsaSighashType::All as u8`) | Plain spend, allowed: penalty and counterparty-HTLC claims only we sign. The holder HTLC path (`HolderHTLCOutput::get_maybe_signed_htlc_tx`) and holder commitment path go through `build_htlc_input_witness` / `add_holder_sig` and are unified | - |
+| lightning | `src/chain/channelmonitor.rs` | `sign_to_local_justice_tx` (`BitcoinSignature::sighash_all`) | Plain spend, allowed: justice transaction only we sign | - |
+| lightning | `src/chain/channelmonitor.rs` | `tests::test_claim_txn_weight_computation` `sign_input!` (about line 7287) | Test-only weight check with dummy keys; plain spend, allowed. Builds no counterparty-checked signature | - |
+| lightning | `src/sign/mod.rs`, `src/ln/chan_utils.rs`, `src/events/bump_transaction/mod.rs` | `sign_holder_keyed_anchor_input`, `build_keyed_anchor_input_witness`; the `SinglePlusAnyoneCanPay` (0x83) HTLC branches | Anchors are off on XBT (never proposed, refused), so these never run on a unified channel. Behaviour for BTC unchanged | - |
+| lightning | `src/sign/mod.rs`, `src/ln/interactivetxs.rs` | `sign_splice_shared_input`; shared input witness and peer signature checks | Splice shared input: Task 5 | 5 |
+| lightning | `src/util/test_utils.rs`, `src/ln/monitor_tests.rs` | wallet test signer; a monitor test's hand-built HTLC claim | Test-only, BTC channels; plain | - |
 | lightning-types | `src/features.rs` | feature bits 512-515 (`option_blake2b`, `option_unified_sigs`), `requires_unified_sigs` | XBT feature bits (spike, kept) | 2 |
 | lightning | `src/util/config.rs` | `XbtConfig`, `UserConfig::xbt`, `UserConfig::is_xbt`, `Default for UserConfig`, fuzzing `Readable for UserConfig` | Per-node XBT switch (`Option<XbtConfig>`, default `None`); replaces the spike's process-wide switch. `UserConfig` has no serialization outside fuzzing, so no TLV | 3 |
 | lightning | `src/ln/channel.rs` | `channel_type_from_open_channel` (new `is_xbt` param; callers `InboundV1Channel::new`, `InboundV2Channel::new` and `ChannelManager::internal_open_channel` pass `config.is_xbt()`) | XBT refuses an `open_channel` whose type lacks `option_unified_sigs` or has any anchor bit (`ChannelError::close` mentioning "XBT") | 3 |

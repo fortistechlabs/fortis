@@ -941,11 +941,13 @@ pub fn build_htlc_input_witness(
 		EcdsaSighashType::All
 	};
 
+	// FORTIS XBT: both HTLC signatures are bilateral, unified when the channel type says so.
+	let unified = crate::xbt::is_unified(channel_type_features);
 	let mut witness = Witness::new();
 	// First push the multisig dummy, note that due to BIP147 (NULLDUMMY) it must be a zero-length element.
 	witness.push(vec![]);
-	crate::xbt::push_sig(&mut witness, remote_sig, remote_sighash_type, false); // FORTIS XBT: TODO Task 4
-	crate::xbt::push_sig(&mut witness, local_sig, EcdsaSighashType::All, false); // FORTIS XBT: TODO Task 4
+	crate::xbt::push_sig(&mut witness, remote_sig, remote_sighash_type, unified); // FORTIS XBT: channel type
+	crate::xbt::push_sig(&mut witness, local_sig, EcdsaSighashType::All, unified); // FORTIS XBT: channel type
 	if let Some(preimage) = preimage {
 		witness.push(preimage.0.to_vec());
 	} else {
@@ -1397,13 +1399,15 @@ impl HolderCommitmentTransaction {
 		// First push the multisig dummy, note that due to BIP147 (NULLDUMMY) it must be a zero-length element.
 		let mut tx = self.inner.built.transaction.clone();
 		tx.input[0].witness.push(Vec::new());
+		// FORTIS XBT: the hash type byte follows this commitment's channel type.
+		let unified = crate::xbt::is_unified(&self.inner.channel_type_features);
 
 		if self.holder_sig_first {
-			crate::xbt::push_sig(&mut tx.input[0].witness, &holder_sig, EcdsaSighashType::All, false); // FORTIS XBT: TODO Task 4
-			crate::xbt::push_sig(&mut tx.input[0].witness, &self.counterparty_sig, EcdsaSighashType::All, false); // FORTIS XBT: TODO Task 4
+			crate::xbt::push_sig(&mut tx.input[0].witness, &holder_sig, EcdsaSighashType::All, unified); // FORTIS XBT: channel type
+			crate::xbt::push_sig(&mut tx.input[0].witness, &self.counterparty_sig, EcdsaSighashType::All, unified); // FORTIS XBT: channel type
 		} else {
-			crate::xbt::push_sig(&mut tx.input[0].witness, &self.counterparty_sig, EcdsaSighashType::All, false); // FORTIS XBT: TODO Task 4
-			crate::xbt::push_sig(&mut tx.input[0].witness, &holder_sig, EcdsaSighashType::All, false); // FORTIS XBT: TODO Task 4
+			crate::xbt::push_sig(&mut tx.input[0].witness, &self.counterparty_sig, EcdsaSighashType::All, unified); // FORTIS XBT: channel type
+			crate::xbt::push_sig(&mut tx.input[0].witness, &holder_sig, EcdsaSighashType::All, unified); // FORTIS XBT: channel type
 		}
 
 		tx.input[0].witness.push(funding_redeemscript.as_bytes().to_vec());
@@ -1432,29 +1436,34 @@ impl BuiltCommitmentTransaction {
 	/// Get the SIGHASH_ALL sighash value of the transaction.
 	///
 	/// This can be used to verify a signature.
+	///
+	/// FORTIS XBT: `unified` is [`crate::xbt::is_unified`] of the channel type; it selects the
+	/// unified digest (hash type 0x21) over BIP 143 (0x01).
 	#[rustfmt::skip]
-	pub fn get_sighash_all(&self, funding_redeemscript: &Script, channel_value_satoshis: u64) -> Message {
-		crate::xbt::p2wsh_sighash(&self.transaction, 0, funding_redeemscript, Amount::from_sat(channel_value_satoshis), EcdsaSighashType::All, false) // FORTIS XBT: TODO Task 4
+	pub fn get_sighash_all(&self, funding_redeemscript: &Script, channel_value_satoshis: u64, unified: bool) -> Message {
+		crate::xbt::p2wsh_sighash(&self.transaction, 0, funding_redeemscript, Amount::from_sat(channel_value_satoshis), EcdsaSighashType::All, unified) // FORTIS XBT: channel type
 	}
 
 	/// Signs the counterparty's commitment transaction.
 	pub fn sign_counterparty_commitment<T: secp256k1::Signing>(
 		&self, funding_key: &SecretKey, funding_redeemscript: &Script, channel_value_satoshis: u64,
+		unified: bool, // FORTIS XBT: channel type
 		secp_ctx: &Secp256k1<T>,
 	) -> Signature {
-		let sighash = self.get_sighash_all(funding_redeemscript, channel_value_satoshis);
+		let sighash = self.get_sighash_all(funding_redeemscript, channel_value_satoshis, unified); // FORTIS XBT: channel type
 		sign(secp_ctx, &sighash, funding_key)
 	}
 
 	/// Signs the holder commitment transaction because we are about to broadcast it.
 	pub fn sign_holder_commitment<T: secp256k1::Signing, ES: Deref>(
 		&self, funding_key: &SecretKey, funding_redeemscript: &Script, channel_value_satoshis: u64,
+		unified: bool, // FORTIS XBT: channel type
 		entropy_source: &ES, secp_ctx: &Secp256k1<T>,
 	) -> Signature
 	where
 		ES::Target: EntropySource,
 	{
-		let sighash = self.get_sighash_all(funding_redeemscript, channel_value_satoshis);
+		let sighash = self.get_sighash_all(funding_redeemscript, channel_value_satoshis, unified); // FORTIS XBT: channel type
 		sign_with_aux_rand(secp_ctx, &sighash, funding_key, entropy_source)
 	}
 }
@@ -1575,18 +1584,22 @@ impl<'a> TrustedClosingTransaction<'a> {
 	/// Get the SIGHASH_ALL sighash value of the transaction.
 	///
 	/// This can be used to verify a signature.
+	///
+	/// FORTIS XBT: `unified` is [`crate::xbt::is_unified`] of the channel type; it selects the
+	/// unified digest (hash type 0x21) over BIP 143 (0x01).
 	#[rustfmt::skip]
-	pub fn get_sighash_all(&self, funding_redeemscript: &Script, channel_value_satoshis: u64) -> Message {
-		crate::xbt::p2wsh_sighash(&self.inner.built, 0, funding_redeemscript, Amount::from_sat(channel_value_satoshis), EcdsaSighashType::All, false) // FORTIS XBT: TODO Task 4
+	pub fn get_sighash_all(&self, funding_redeemscript: &Script, channel_value_satoshis: u64, unified: bool) -> Message {
+		crate::xbt::p2wsh_sighash(&self.inner.built, 0, funding_redeemscript, Amount::from_sat(channel_value_satoshis), EcdsaSighashType::All, unified) // FORTIS XBT: channel type
 	}
 
 	/// Sign a transaction, either because we are counter-signing the counterparty's transaction or
 	/// because we are about to broadcast a holder transaction.
 	pub fn sign<T: secp256k1::Signing>(
 		&self, funding_key: &SecretKey, funding_redeemscript: &Script, channel_value_satoshis: u64,
+		unified: bool, // FORTIS XBT: channel type
 		secp_ctx: &Secp256k1<T>,
 	) -> Signature {
-		let sighash = self.get_sighash_all(funding_redeemscript, channel_value_satoshis);
+		let sighash = self.get_sighash_all(funding_redeemscript, channel_value_satoshis, unified); // FORTIS XBT: channel type
 		sign(secp_ctx, &sighash, funding_key)
 	}
 }
@@ -2149,7 +2162,8 @@ impl<'a> TrustedCommitmentTransaction<'a> {
 
 			let htlc_redeemscript = get_htlc_redeemscript_with_explicit_keys(&this_htlc, &self.channel_type_features, &keys.broadcaster_htlc_key, &keys.countersignatory_htlc_key, &keys.revocation_key);
 
-			let sighash = crate::xbt::p2wsh_sighash(&htlc_tx, 0, &htlc_redeemscript, this_htlc.to_bitcoin_amount(), EcdsaSighashType::All, false); // FORTIS XBT: TODO Task 4
+			let unified = crate::xbt::is_unified(&self.channel_type_features); // FORTIS XBT: channel type
+			let sighash = crate::xbt::p2wsh_sighash(&htlc_tx, 0, &htlc_redeemscript, this_htlc.to_bitcoin_amount(), EcdsaSighashType::All, unified); // FORTIS XBT: channel type
 			ret.push(sign_with_aux_rand(secp_ctx, &sighash, &holder_htlc_key, entropy_source));
 		}
 		Ok(ret)

@@ -3190,7 +3190,9 @@ where
 		let initial_commitment_tx = commitment_data.tx;
 		let trusted_tx = initial_commitment_tx.trust();
 		let initial_commitment_bitcoin_tx = trusted_tx.built_transaction();
-		let sighash = initial_commitment_bitcoin_tx.get_sighash_all(&funding_script, self.funding().get_value_satoshis());
+		// FORTIS XBT: the peer's signature is checked against the digest the channel type names.
+		let unified = crate::xbt::is_unified(self.funding().get_channel_type());
+		let sighash = initial_commitment_bitcoin_tx.get_sighash_all(&funding_script, self.funding().get_value_satoshis(), unified);
 		// They sign the holder commitment transaction...
 		log_trace!(logger, "Checking {} tx signature {} by key {} against tx {} (sighash {}) with redeemscript {} for channel {}.",
 			self.received_msg(), log_bytes!(sig.serialize_compact()[..]), log_bytes!(self.funding().counterparty_funding_pubkey().serialize()),
@@ -4937,7 +4939,10 @@ where
 		let commitment_txid = {
 			let trusted_tx = commitment_data.tx.trust();
 			let bitcoin_tx = trusted_tx.built_transaction();
-			let sighash = bitcoin_tx.get_sighash_all(&funding_script, funding.get_value_satoshis());
+			// FORTIS XBT: the peer's signature is checked against the digest the channel type names.
+			let unified = crate::xbt::is_unified(funding.get_channel_type());
+			let sighash =
+				bitcoin_tx.get_sighash_all(&funding_script, funding.get_value_satoshis(), unified);
 
 			log_trace!(logger, "Checking commitment tx signature {} by key {} against tx {} (sighash {}) with redeemscript {} in channel {}",
 				log_bytes!(msg.signature.serialize_compact()[..]),
@@ -5005,7 +5010,7 @@ where
 				&htlc_redeemscript,
 				htlc.to_bitcoin_amount(),
 				htlc_sighashtype,
-				false, // FORTIS XBT: TODO Task 4
+				crate::xbt::is_unified(channel_type), // FORTIS XBT: channel type
 			);
 			log_trace!(logger, "Checking HTLC tx signature {} by key {} against tx {} (sighash {}) with redeemscript {} in channel {}.",
 				log_bytes!(counterparty_sig.serialize_compact()[..]),
@@ -9575,7 +9580,8 @@ where
 						let signed_tx = if let (Some(ClosingSigned { signature, .. }), Some(counterparty_sig)) =
 							(closing_signed.as_ref(), self.context.last_received_closing_sig) {
 							let funding_redeemscript = self.funding.get_funding_redeemscript();
-							let sighash = closing_tx.trust().get_sighash_all(&funding_redeemscript, self.funding.get_value_satoshis());
+							let unified = crate::xbt::is_unified(self.funding.get_channel_type()); // FORTIS XBT: channel type
+							let sighash = closing_tx.trust().get_sighash_all(&funding_redeemscript, self.funding.get_value_satoshis(), unified);
 							debug_assert!(self.context.secp_ctx.verify_ecdsa(&sighash, &counterparty_sig,
 																			 &self.funding.get_counterparty_pubkeys().funding_pubkey).is_ok());
 							Some(self.build_signed_closing_transaction(&closing_tx, &counterparty_sig, signature))
@@ -10510,10 +10516,12 @@ where
 
 		let funding_key = self.funding.get_holder_pubkeys().funding_pubkey.serialize();
 		let counterparty_funding_key = self.funding.counterparty_funding_pubkey().serialize();
+		// FORTIS XBT: both closing signatures are bilateral, unified when the channel type says so.
+		let unified = crate::xbt::is_unified(self.funding.get_channel_type());
 		let mut holder_sig = sig.serialize_der().to_vec();
-		holder_sig.push(crate::xbt::hash_type(EcdsaSighashType::All, false)); // FORTIS XBT: TODO Task 4
+		holder_sig.push(crate::xbt::hash_type(EcdsaSighashType::All, unified)); // FORTIS XBT: channel type
 		let mut cp_sig = counterparty_sig.serialize_der().to_vec();
-		cp_sig.push(crate::xbt::hash_type(EcdsaSighashType::All, false)); // FORTIS XBT: TODO Task 4
+		cp_sig.push(crate::xbt::hash_type(EcdsaSighashType::All, unified)); // FORTIS XBT: channel type
 		if funding_key[..] < counterparty_funding_key[..] {
 			tx.input[0].witness.push(holder_sig);
 			tx.input[0].witness.push(cp_sig);
@@ -10640,9 +10648,13 @@ where
 		if used_total_fee != msg.fee_satoshis {
 			return Err(ChannelError::close(format!("Remote sent us a closing_signed with a fee other than the value they can claim. Fee in message: {}. Actual closing tx fee: {}", msg.fee_satoshis, used_total_fee)));
 		}
-		let sighash = closing_tx
-			.trust()
-			.get_sighash_all(&funding_redeemscript, self.funding.get_value_satoshis());
+		// FORTIS XBT: the peer's closing signature is checked against the channel type's digest.
+		let unified = crate::xbt::is_unified(self.funding.get_channel_type());
+		let sighash = closing_tx.trust().get_sighash_all(
+			&funding_redeemscript,
+			self.funding.get_value_satoshis(),
+			unified,
+		);
 
 		match self.context.secp_ctx.verify_ecdsa(
 			&sighash,
@@ -10656,9 +10668,11 @@ where
 				skip_remote_output = true;
 				closing_tx =
 					self.build_closing_transaction(msg.fee_satoshis, skip_remote_output)?.0;
-				let sighash = closing_tx
-					.trust()
-					.get_sighash_all(&funding_redeemscript, self.funding.get_value_satoshis());
+				let sighash = closing_tx.trust().get_sighash_all(
+					&funding_redeemscript,
+					self.funding.get_value_satoshis(),
+					unified, // FORTIS XBT: channel type
+				);
 				let res = self.context.secp_ctx.verify_ecdsa(
 					&sighash,
 					&msg.signature,
@@ -16954,7 +16968,7 @@ mod tests {
 				let unsigned_tx = trusted_tx.built_transaction();
 				let redeemscript = chan.funding.get_funding_redeemscript();
 				let counterparty_signature = Signature::from_der(&<Vec<u8>>::from_hex($counterparty_sig_hex).unwrap()[..]).unwrap();
-				let sighash = unsigned_tx.get_sighash_all(&redeemscript, chan.funding.get_value_satoshis());
+				let sighash = unsigned_tx.get_sighash_all(&redeemscript, chan.funding.get_value_satoshis(), false); // FORTIS XBT: BOLT 3 vectors are BTC channels
 				log_trace!(logger, "unsigned_tx = {}", serialize(&unsigned_tx.transaction).as_hex());
 				assert!(secp_ctx.verify_ecdsa(&sighash, &counterparty_signature, chan.funding.counterparty_funding_pubkey()).is_ok(), "verify counterparty commitment sig");
 

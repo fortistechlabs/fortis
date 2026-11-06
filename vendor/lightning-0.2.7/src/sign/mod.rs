@@ -1537,11 +1537,14 @@ impl EcdsaChannelSigner for InMemorySigner {
 		let channel_funding_redeemscript =
 			make_funding_redeemscript(&funding_pubkey, &counterparty_keys.funding_pubkey);
 
+		// FORTIS XBT: every signature sent to the peer follows the channel type.
+		let unified = crate::xbt::is_unified(&channel_parameters.channel_type_features);
 		let built_tx = trusted_tx.built_transaction();
 		let commitment_sig = built_tx.sign_counterparty_commitment(
 			&funding_key,
 			&channel_funding_redeemscript,
 			channel_parameters.channel_value_satoshis,
+			unified, // FORTIS XBT: channel type
 			secp_ctx,
 		);
 		let commitment_txid = built_tx.txid;
@@ -1573,7 +1576,7 @@ impl EcdsaChannelSigner for InMemorySigner {
 				&htlc_redeemscript,
 				htlc.to_bitcoin_amount(),
 				htlc_sighashtype,
-			false, // FORTIS XBT: TODO Task 4
+				unified, // FORTIS XBT: channel type
 			);
 			let holder_htlc_key = chan_utils::derive_private_key(
 				&secp_ctx,
@@ -1599,10 +1602,14 @@ impl EcdsaChannelSigner for InMemorySigner {
 		let funding_redeemscript =
 			make_funding_redeemscript(&funding_pubkey, &counterparty_keys.funding_pubkey);
 		let trusted_tx = commitment_tx.trust();
+		// FORTIS XBT: the holder commitment carries the peer's signature too, so ours matches it.
+		let unified = crate::xbt::is_unified(&channel_parameters.channel_type_features);
+		debug_assert_eq!(unified, crate::xbt::is_unified(trusted_tx.channel_type_features()));
 		Ok(trusted_tx.built_transaction().sign_holder_commitment(
 			&funding_key,
 			&funding_redeemscript,
 			channel_parameters.channel_value_satoshis,
+			unified, // FORTIS XBT: channel type
 			&self,
 			secp_ctx,
 		))
@@ -1622,10 +1629,14 @@ impl EcdsaChannelSigner for InMemorySigner {
 		let funding_redeemscript =
 			make_funding_redeemscript(&funding_pubkey, &counterparty_keys.funding_pubkey);
 		let trusted_tx = commitment_tx.trust();
+		// FORTIS XBT: the holder commitment carries the peer's signature too, so ours matches it.
+		let unified = crate::xbt::is_unified(&channel_parameters.channel_type_features);
+		debug_assert_eq!(unified, crate::xbt::is_unified(trusted_tx.channel_type_features()));
 		Ok(trusted_tx.built_transaction().sign_holder_commitment(
 			&funding_key,
 			&funding_redeemscript,
 			channel_parameters.channel_value_satoshis,
+			unified, // FORTIS XBT: channel type
 			&self,
 			secp_ctx,
 		))
@@ -1748,7 +1759,7 @@ impl EcdsaChannelSigner for InMemorySigner {
 			&witness_script,
 			htlc_descriptor.htlc.to_bitcoin_amount(),
 			EcdsaSighashType::All,
-			false, // FORTIS XBT: TODO Task 4
+			crate::xbt::is_unified(&channel_parameters.channel_type_features), // FORTIS XBT: channel type
 		);
 		let our_htlc_private_key = chan_utils::derive_private_key(
 			&secp_ctx,
@@ -1819,6 +1830,7 @@ impl EcdsaChannelSigner for InMemorySigner {
 			&funding_key,
 			&channel_funding_redeemscript,
 			channel_parameters.channel_value_satoshis,
+			crate::xbt::is_unified(&channel_parameters.channel_type_features), // FORTIS XBT: channel type
 			secp_ctx,
 		))
 	}
