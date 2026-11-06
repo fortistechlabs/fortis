@@ -1155,6 +1155,16 @@ fn build_with_store_internal(
 ) -> Result<Node, BuildError> {
 	optionally_install_rustls_cryptoprovider();
 
+	// FORTIS XBT: XBT has no anchor channels (LDK neither proposes nor accepts them), so no
+	// anchor reserve is kept and `negotiate_anchors_zero_fee_htlc_tx` stays off.
+	let config = if config.xbt.is_some() && config.anchor_channels_config.is_some() {
+		let mut xbt_config = (*config).clone();
+		xbt_config.anchor_channels_config = None;
+		Arc::new(xbt_config)
+	} else {
+		config
+	};
+
 	if let Err(err) = may_announce_channel(&config) {
 		if config.announcement_addresses.is_some() {
 			log_error!(logger, "Announcement addresses were set but some required configuration options for node announcement are missing: {}", err);
@@ -1361,6 +1371,7 @@ fn build_with_store_internal(
 		Arc::clone(&payment_store),
 		Arc::clone(&config),
 		Arc::clone(&logger),
+		xprv, // FORTIS XBT: the BIP 84 descriptors' master key, for 0x21 signing on XBT
 	));
 
 	// Initialize the KeysManager

@@ -3,7 +3,7 @@
 resolver = "2"
 members = ["crates/*"]
 # FORTIS XBT: vendored crates are patched in, not members; excluded so their own tests can run with --manifest-path.
-exclude = ["vendor/lightning-0.2.7"]
+exclude = ["vendor/lightning-0.2.7", "vendor/ldk-node"]
 
 [workspace.package]
 edition = "2021"

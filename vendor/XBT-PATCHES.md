@@ -50,6 +50,16 @@ whether we create it or check it; no call site reads config (Task 4).
 | lightning | `src/ln/channelmanager.rs`, `src/events/mod.rs` | `Event::FundingTransactionReadyForSigning::prevouts` (new field), emitted in `handle_channel_resumption` | Every input's prevout, in order, for the wallet's 0x21 signatures. Not serialized: the event type (49) is never written and is regenerated after a restart, so there is no TLV | 5 |
 | lightning | `src/ln/xbt_tests.rs` | splice tests and helpers (`xbt_splice`, `assert_shared_input_sigs`, `assert_wallet_input_unified`, `sign_wallet_inputs_unified`) | Shared input 0x21/0x21 verified over all prevouts (2 and 3 inputs, each node initiating), event prevouts, allow-list refusal both ways, bad counterparty signature refused | 5 |
 | lightning | `src/util/test_utils.rs`, `src/ln/monitor_tests.rs` | wallet test signer; a monitor test's hand-built HTLC claim | Test-only, BTC channels; plain | - |
+| ldk-node | `src/config.rs` | `XbtConfig` (new), `Config::xbt`, `Default for Config`, `default_user_config` | Per-node XBT switch (`Option<XbtConfig>`, default `None`; `XbtConfig` defaults 961640 / no splice peers), mapped onto `UserConfig::xbt` | 6 |
+| ldk-node | `src/builder.rs` | `build_with_store_internal` | With `xbt` set, `anchor_channels_config` is cleared (no anchor reserve, `negotiate_anchors_zero_fee_htlc_tx` off); passes the BIP 84 master `xprv` to `Wallet::new` | 6 |
+| ldk-node | `src/wallet/xbt_sign.rs` | `sign_xbt_p2wpkh` (new), tests | Signs our P2WPKH inputs `[sig \|\| 0x21, pubkey]` over the unified digest of every prevout (`xbt::sighash_with_prevouts`, P2PKH script code); byte-identical to wallet-core's `MasterKey::sign_p2wpkh_tx` | 6 |
+| ldk-node | `src/wallet/mod.rs` | `Wallet::xprv`, `Wallet::new`, `sign_xbt_wallet_spend` (new), `sign_xbt_inputs` (new) | On XBT the wallet signs with the descriptors' master key instead of BDK. Fails (signs nothing) unless there is one prevout per input, our prevouts match our UTXOs, and every input of ours gets signed | 6 |
+| ldk-node | `src/wallet/mod.rs` | `create_funding_transaction`, `send_to_address` (sends and drains/sweeps of the wallet) | XBT: `sign_xbt_wallet_spend` (prevouts from our UTXOs) instead of `locked_wallet.sign` | 6 |
+| ldk-node | `src/wallet/mod.rs`, `src/event.rs` | `sign_owned_inputs` (new `prevouts` parameter), `FundingTransactionReadyForSigning` handler | XBT: splice/dual-funded contributions signed over the event's `prevouts`; BTC ignores them | 6 |
+| ldk-node | `src/wallet/mod.rs` | `sign_psbt_inner` (`WalletSource::sign_psbt`) | XBT: prevouts from every input's `witness_utxo` (refused if one is missing). Only LDK's anchor bumping calls it, which never runs on XBT | 6 |
+| ldk-node | `src/wallet/mod.rs` | `WalletKeysManager::spend_spendable_outputs` | Not patched: sweeps of channel outputs (`OutputSweeper`) exist only on XBT and only we sign them, so they keep plain hash types (allowed) | - |
+| ldk-node | `bindings/ldk_node.udl`, `src/ffi/types.rs` | `Config.xbt`, `dictionary XbtConfig`, re-export | The `uniffi` feature's `Config` record must list every field | 6 |
+| ldk-node | `Cargo.toml` | `[dev-dependencies.wallet-core]` (path) | `xbt_sign_matches_wallet_core` compares against the app's XBT signer | 6 |
 | lightning-types | `src/features.rs` | feature bits 512-515 (`option_blake2b`, `option_unified_sigs`), `requires_unified_sigs` | XBT feature bits (spike, kept) | 2 |
 | lightning | `src/util/config.rs` | `XbtConfig`, `UserConfig::xbt`, `UserConfig::is_xbt`, `Default for UserConfig`, fuzzing `Readable for UserConfig` | Per-node XBT switch (`Option<XbtConfig>`, default `None`); replaces the spike's process-wide switch. `UserConfig` has no serialization outside fuzzing, so no TLV | 3 |
 | lightning | `src/ln/channel.rs` | `channel_type_from_open_channel` (new `is_xbt` param; callers `InboundV1Channel::new`, `InboundV2Channel::new` and `ChannelManager::internal_open_channel` pass `config.is_xbt()`) | XBT refuses an `open_channel` whose type lacks `option_unified_sigs` or has any anchor bit (`ChannelError::close` mentioning "XBT") | 3 |
@@ -94,3 +104,16 @@ cargo test --manifest-path vendor/lightning-0.2.7/Cargo.toml --features bitcoin/
   feature (the workspace build unifies it in; a standalone build does not).
 - The `bitcoin` override and the `bitcoin/std` feature go away in Task 7, when
   the vendored `bitcoin` copy is removed.
+
+`vendor/ldk-node` is excluded from the workspace for the same reason. Its tests
+need every patched crate named:
+
+```
+cargo test --manifest-path vendor/ldk-node/Cargo.toml \
+  --config 'patch.crates-io.lightning.path="vendor/lightning-0.2.7"' \
+  --config 'patch.crates-io.lightning-types.path="vendor/lightning-types-0.3.5"' \
+  --config 'patch.crates-io.lightning-invoice.path="vendor/lightning-invoice-0.34.1"' \
+  --config 'patch.crates-io.lightning-transaction-sync.path="vendor/lightning-transaction-sync-0.2.7"' \
+  --config 'patch.crates-io.esplora-client.path="vendor/esplora-client-0.12.3"' \
+  --config 'patch.crates-io.bitcoin.path="vendor/bitcoin-0.32.102"' --lib
+```
