@@ -268,7 +268,8 @@ impl Default for Config {
 /// | `splice_peers`        | []     |
 #[derive(Debug, Clone, PartialEq)]
 pub struct XbtConfig {
-	/// The block height below which gossip is not requested (mainnet XBT forked at 961640).
+	/// Channel announcements whose short channel id is in a block below this height are ignored
+	/// (mainnet XBT forked at 961640).
 	pub gossip_floor_height: u32,
 	/// Peers we are willing to splice with.
 	pub splice_peers: Vec<PublicKey>,

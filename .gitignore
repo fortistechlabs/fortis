@@ -34,3 +34,6 @@ deploy/.env
 /fortis-wallet.apk
 web/derive-full.html
 android/app/google-services.json
+
+# vendored crates built standalone (see vendor/XBT-PATCHES.md) write their own lock files
+vendor/*/Cargo.lock

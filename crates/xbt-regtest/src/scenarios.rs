@@ -429,6 +429,13 @@ fn lnd_pays_s_offer(env: &Env) -> R<()> {
 /// message mailbox). When P starts it answers LND with an invoice, LND pays it through S and P
 /// claims. (S cannot be the payer: LDK 0.2 cannot send into a blinded path introduced at
 /// itself, and S is P's static invoice server.)
+///
+/// What this proves: a held `invoice_request` (an onion message S keeps for offline P) is
+/// answered after P restarts, and the LND payer then pays P. It does not prove a held HTLC: LND
+/// pays only after P is back online. Single-LSP held-HTLC async payment (S holding the payer's
+/// HTLC until P is online) is blocked in upstream LDK 0.2.7: `process_pending_update_add_htlcs`
+/// calls `can_forward_htlc` (whose `can_forward_htlc_to_outgoing_channel` fails a forward to a
+/// channel that is not live with `ChannelDisabled`) before the HTLC is held.
 fn offer_while_stopped(env: &Env) -> R<Outcome> {
 	let paths = env
 		.s

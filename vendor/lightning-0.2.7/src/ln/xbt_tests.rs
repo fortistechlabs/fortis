@@ -1090,6 +1090,34 @@ fn xbt_splice_in_shared_input_unified() {
 	assert_wallet_input_unified(&tx, &prevouts, 1 - shared);
 }
 
+/// A BTC pair's splice keeps BIP 143: the shared input's two signatures are 0x01, 0x01 and verify
+/// against the plain digest.
+#[test]
+fn btc_splice_in_shared_input_plain() {
+	let chanmon_cfgs = create_chanmon_cfgs(2);
+	let node_cfgs = create_node_cfgs(2, &chanmon_cfgs);
+	let node_chanmgrs = create_node_chanmgrs(2, &node_cfgs, &[None, None]);
+	let nodes = create_network(2, &node_cfgs, &node_chanmgrs);
+	let chan = create_announced_chan_between_nodes_with_value(&nodes, 0, 1, 100_000, 0);
+	assert!(!nodes[0].node.list_channels()[0].channel_type.as_ref().unwrap().supports_unified_sigs());
+
+	let coin = provide_anchor_reserves(&nodes);
+	let contribution = SpliceContribution::SpliceIn {
+		value: Amount::from_sat(50_000),
+		inputs: vec![FundingTxInput::new_p2wpkh(coin.clone(), 0).unwrap()],
+		change_script: Some({
+			use crate::events::bump_transaction::sync::WalletSourceSync;
+			nodes[0].wallet_source.get_change_script().unwrap()
+		}),
+	};
+	let tx = super::splicing_tests::splice_channel(&nodes[0], &nodes[1], chan.2, contribution);
+	assert_eq!(tx.input.len(), 2);
+
+	let prevouts = prevouts_from(&tx, &[&chan.3, &coin]);
+	let shared = shared_input_index(&tx, &chan.3);
+	assert_shared_input_sigs(&tx, &prevouts, shared, &[0x01, 0x01]);
+}
+
 #[test]
 fn xbt_splice_both_sides_contribute() {
 	// Review Focus 4: each node signs the shared input over prevouts the other node contributed.

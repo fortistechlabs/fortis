@@ -15,11 +15,23 @@ if [ -x "$XR/bin/lnd" ] && [ -x "$XR/bin/lncli" ] &&
 fi
 
 mkdir -p "$XR/src" "$XR/bin"
-if [ ! -d "$XR/src/lightning-fork/.git" ]; then
-  git clone --depth 1 --branch "$XR_LND_TAG" "$XR_LND_REPO" "$XR/src/lightning-fork"
+src="$XR/src/lightning-fork"
+if [ ! -d "$src/.git" ]; then
+  git clone --depth 1 --branch "$XR_LND_TAG" "$XR_LND_REPO" "$src"
+fi
+# An existing checkout may be at an older tag: move it to $XR_LND_TAG.
+tag_commit() { git -C "$src" rev-parse -q --verify "refs/tags/$XR_LND_TAG^{commit}" || true; }
+if [ -z "$(tag_commit)" ] || [ "$(git -C "$src" rev-parse HEAD)" != "$(tag_commit)" ]; then
+  echo "build-lnd: checkout in $src is not at $XR_LND_TAG, fetching it"
+  git -C "$src" fetch --depth 1 "$XR_LND_REPO" "refs/tags/$XR_LND_TAG:refs/tags/$XR_LND_TAG"
+  git -C "$src" checkout -q --detach "$(tag_commit)"
+fi
+if [ "$(git -C "$src" rev-parse HEAD)" != "$(tag_commit)" ]; then
+  echo "build-lnd: $src is not at $XR_LND_TAG" >&2
+  exit 1
 fi
 
-cd "$XR/src/lightning-fork"
+cd "$src"
 mise exec go@1.27.3 -- go build -tags "$tags" -o "$XR/bin/lnd" ./cmd/lnd
 mise exec go@1.27.3 -- go build -tags "$tags" -o "$XR/bin/lncli" ./cmd/lncli
 echo "$stamp" >"$XR/bin/build-stamp"

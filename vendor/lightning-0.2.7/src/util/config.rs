@@ -985,7 +985,8 @@ pub struct UserConfig {
 /// FORTIS XBT: settings for a node that follows the Bitcoin BLAKE2b chain (XBT).
 #[derive(Clone, Debug, PartialEq)]
 pub struct XbtConfig {
-	/// The block height below which gossip is not requested. Mainnet XBT forked at 961640.
+	/// Channel announcements whose short channel id is in a block below this height are ignored
+	/// (`NetworkGraph::set_min_announcement_height`). Mainnet XBT forked at 961640.
 	///
 	/// Default value: `961640`
 	pub gossip_floor_height: u32,

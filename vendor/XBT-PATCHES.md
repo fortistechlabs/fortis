@@ -99,7 +99,7 @@ whether we create it or check it; no call site reads config (Task 4).
 | ldk-node | `src/payment/bolt12.rs` | `send`, `send_using_amount` | Call `check_chain_offer` first | 8 |
 | ldk-node | `src/error.rs`, `bindings/ldk_node.udl` | `Error::WrongChain` (new), `Display`, `NodeError` enum | "This invoice or offer is for the other Bitcoin chain." | 8 |
 | ldk-node | `src/builder.rs` | `build_with_store_internal` | With `xbt` set, `NetworkGraph::set_min_announcement_height(xbt.gossip_floor_height)` after the graph is created or read | 8 |
-| lightning | `src/routing/gossip.rs` | `NetworkGraph::min_announcement_height` (new field, both constructors), `set_min_announcement_height` (new), `update_channel_from_unsigned_announcement_intern`, `tests::gossip_floor_ignores_old_channels` | `channel_announcement`s whose SCID block is below the floor are ignored (`IgnoreAndLog(Debug)`); default 0. Rapid gossip sync bypasses announcements and is not filtered | 8 |
+| lightning | `src/routing/gossip.rs` | imports (`AtomicU32`), `NetworkGraph::min_announcement_height` (new field, both constructors), `set_min_announcement_height` (new), `update_channel_from_unsigned_announcement_intern`, `tests::gossip_floor_ignores_old_channels` | `channel_announcement`s whose SCID block is below the floor are ignored (`IgnoreAndLog(Debug)`); default 0. Rapid gossip sync bypasses announcements and is not filtered | 8 |
 | lightning | `src/ln/channelmanager.rs` | `OffersMessageHandler::handle_message` (`OffersMessage::Invoice` and `OffersMessage::StaticInvoice` arms) | On an XBT node an invoice without `option_blake2b` (either bit) abandons the payment (`PaymentFailureReason::UnexpectedError`, log "XBT: invoice without option_blake2b") before any HTLC and before `Event::InvoiceReceived` when invoices are handled manually. A BTC node refuses the mirror case, see the I3 row below | 8 |
 | lightning | `src/ln/xbt_tests.rs` | `xbt_abandons_bolt12_invoice_without_blake2b` | An intercepted reply without the bit: `Event::PaymentFailed(UnexpectedError)`, no message events, no monitor update | 8 |
 | fortis-lightning (not vendor) | `crates/fortis-lightning/src/pay.rs` | `map_send_error` | `WrongChain` shown as its own message instead of "pay: ..." | 8 |
@@ -112,6 +112,7 @@ whether we create it or check it; no call site reads config (Task 4).
 | lightning | `src/ln/xbt_tests.rs` | `btc_abandons_offer_invoice_with_blake2b`, `btc_abandons_refund_invoice_with_blake2b`, `assert_invoice_abandoned` (shared with `xbt_abandons_bolt12_invoice_without_blake2b`) | BTC payer in the offer flow and in the refund flow receives an invoice with bit 512: `PaymentFailed(UnexpectedError)`, no HTLC | final |
 | ldk-node | `src/builder.rs`, `bindings/ldk_node.udl` | `BuildError::InvalidChainSource` (new variant, `Display`, UDL enum), `build_with_store_internal` | With `xbt` set, a bitcoind (RPC or REST) or Electrum chain source is refused at build: they report SHA-256d block hashes, XBT needs the BLAKE2b index (Esplora API). No chain source (the Esplora default) is allowed. Found by the final review (I4) | final |
 | ldk-node | `src/builder.rs` | `tests::xbt_refuses_electrum_chain_source`, `tests::xbt_refuses_bitcoind_chain_source`, `tests::xbt_accepts_esplora_chain_source` | Build fails with `InvalidChainSource` for Electrum and bitcoind; Esplora gets past the check | final |
+| lightning | `src/ln/xbt_tests.rs` | `btc_splice_in_shared_input_plain` | A BTC pair's splice-in: the shared input's signatures are 0x01, 0x01 and verify against BIP 143 over all prevouts (the BTC counterpart of `xbt_splice_in_shared_input_unified`). Final review (M8) | final |
 
 ## Running the tests
 
@@ -194,3 +195,22 @@ only where one side alone signs). The summary prints each scenario's result,
 `BOLT12_INTEROP=pass|fail (...)` (LND offers; reported, does not fail the
 gate) and every confirmed txid with its signature bytes. Every scenario must
 be `PASS`; only `BOLT12_INTEROP` may be `fail`.
+
+What `offer_while_stopped` proves, and what it does not: a held
+`invoice_request` (the onion message S keeps for an offline P) is answered
+after P restarts, and the LND payer then pays P. It is not a held HTLC: LND
+pays only once P is back. Single-LSP held-HTLC async payment (S holding the
+payer's HTLC until P comes online) is blocked in upstream LDK 0.2.7:
+`ChannelManager::process_pending_update_add_htlcs` calls `can_forward_htlc`
+before it holds the HTLC, and `can_forward_htlc_to_outgoing_channel` fails a
+forward to a channel that is not live (`ChannelDisabled`).
+
+### Known interop gap (Plan B)
+
+`BOLT12_INTEROP=fail`: P paying an LND-fork offer fails. P routes
+P -> S -> LND into the offer's blinded path (LND's path starts at LND itself,
+padded with dummy hops), and LND refuses the HTLC: "unable
+to decode forwarding instructions: onion payload for intermediate hop
+insufficient record with type 4" (from LND's log, `[ERR] HSWC`, shown in the
+summary); P ends with `RouteNotFound`. LND paying S's offer works. This does
+not fail the gate; it is a known interop gap left for Plan B.

@@ -51,7 +51,7 @@ use crate::sync::Mutex;
 use crate::sync::{LockTestExt, RwLock, RwLockReadGuard};
 use core::ops::{Bound, Deref};
 use core::str::FromStr;
-use core::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
+use core::sync::atomic::{AtomicU32, AtomicUsize, Ordering}; // FORTIS XBT: AtomicU32 for the gossip floor
 use core::{cmp, fmt};
 
 pub use lightning_types::routing::RoutingFees;
@@ -2194,7 +2194,7 @@ where
 			});
 		}
 
-		// FORTIS XBT: the gossip floor.
+		// FORTIS XBT: the gossip floor (this block).
 		let min_height = self.min_announcement_height.load(Ordering::Acquire);
 		if block_from_scid(msg.short_channel_id) < min_height {
 			return Err(LightningError {
@@ -2988,6 +2988,7 @@ pub(crate) mod tests {
 		};
 	}
 
+	// FORTIS XBT: the gossip floor (`set_min_announcement_height`).
 	#[test]
 	fn gossip_floor_ignores_old_channels() {
 		let secp_ctx = Secp256k1::new();
