@@ -3973,7 +3973,7 @@ where
 			ChainHash::using_genesis_block(params.network), params.best_block,
 			our_network_pubkey, current_timestamp, expanded_inbound_key,
 			node_signer.get_receive_auth_key(), secp_ctx.clone(), message_router, logger.clone(),
-		);
+		).with_xbt(config.is_xbt()); // FORTIS XBT: option_blake2b in BOLT 12 invoices
 
 		ChannelManager {
 			config: RwLock::new(config),
@@ -18174,6 +18174,7 @@ where
 			args.message_router,
 			args.logger.clone(),
 		)
+		.with_xbt(args.config.is_xbt()) // FORTIS XBT: option_blake2b in BOLT 12 invoices
 		.with_async_payments_offers_cache(async_receive_offer_cache);
 
 		let channel_manager = ChannelManager {

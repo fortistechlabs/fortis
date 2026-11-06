@@ -475,6 +475,14 @@ impl<'a, S: SigningPubkeyStrategy> InvoiceBuilder<'a, S> {
 		mut
 	);
 
+	/// FORTIS XBT: when `is_xbt`, requires `option_blake2b` in the invoice's features.
+	pub(crate) fn xbt_blake2b(mut self, is_xbt: bool) -> Self {
+		if is_xbt {
+			self.invoice.fields_mut().features.set_blake2b_required();
+		}
+		self
+	}
+
 	#[cfg(test)]
 	invoice_builder_methods_test!(self, Self, Self, self, mut);
 	#[cfg(test)]

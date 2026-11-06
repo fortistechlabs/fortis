@@ -70,8 +70,9 @@ use bitcoin::secp256k1::{PublicKey, Secp256k1};
 use core::convert::Infallible;
 use core::time::Duration;
 
-struct StaticInvoiceServerFlowResult {
-	invoice: StaticInvoice,
+// FORTIS XBT: visible to xbt_tests
+pub(super) struct StaticInvoiceServerFlowResult {
+	pub(super) invoice: StaticInvoice, // FORTIS XBT: visible to xbt_tests
 	invoice_slot: u16,
 	invoice_request_path: BlindedMessagePath,
 
@@ -138,7 +139,8 @@ fn invoice_flow_up_to_send_serve_static_invoice(
 
 // Go through the flow of interactively building a `StaticInvoice` and storing it with the static
 // invoice server, returning the invoice and messages that were exchanged along the way at the end.
-fn pass_static_invoice_server_messages(
+// FORTIS XBT: visible to xbt_tests
+pub(super) fn pass_static_invoice_server_messages(
 	server: &Node, recipient: &Node, recipient_id: Vec<u8>,
 ) -> StaticInvoiceServerFlowResult {
 	// Force the server and recipient to send OMs directly to each other for testing simplicity.
@@ -355,7 +357,8 @@ fn extract_payment_preimage(event: &Event) -> PaymentPreimage {
 	}
 }
 
-fn expect_offer_paths_requests(recipient: &Node, next_hop_nodes: &[&Node]) {
+// FORTIS XBT: visible to xbt_tests
+pub(super) fn expect_offer_paths_requests(recipient: &Node, next_hop_nodes: &[&Node]) {
 	// We want to check that the async recipient has enqueued at least one `OfferPathsRequest` and no
 	// other message types. Check this by iterating through all their outbound onion messages, peeling
 	// multiple times if the messages are forwarded through other nodes.

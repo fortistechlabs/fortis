@@ -107,6 +107,10 @@ where
 	pending_dns_onion_messages: Mutex<Vec<(DNSResolverMessage, MessageSendInstructions)>>,
 
 	logger: L,
+
+	// FORTIS XBT: whether invoices built by this flow carry `option_blake2b`; set from
+	// `UserConfig::is_xbt` by `ChannelManager` via `with_xbt`.
+	xbt: bool,
 }
 
 impl<MR: Deref, L: Deref> OffersMessageFlow<MR, L>
@@ -145,7 +149,16 @@ where
 			async_receive_offer_cache: Mutex::new(AsyncReceiveOfferCache::new()),
 
 			logger,
+
+			xbt: false, // FORTIS XBT: plain Bitcoin unless `with_xbt(true)`
 		}
+	}
+
+	/// FORTIS XBT: makes every BOLT 12 invoice and static invoice this flow builds require
+	/// `option_blake2b` when `xbt` is set.
+	pub fn with_xbt(mut self, xbt: bool) -> Self {
+		self.xbt = xbt;
+		self
 	}
 
 	/// If we are an async recipient, on startup we'll interactively build offers and static invoices
@@ -887,7 +900,7 @@ where
 			offer_nonce,
 			secp_ctx,
 		)
-		.map(|inv| inv.allow_mpp().relative_expiry(relative_expiry_secs))
+		.map(|inv| inv.allow_mpp().xbt_blake2b(self.xbt).relative_expiry(relative_expiry_secs)) // FORTIS XBT: option_blake2b
 	}
 
 	/// Creates an [`InvoiceBuilder`] using the provided [`Refund`].
@@ -954,6 +967,8 @@ where
 			entropy,
 		)?;
 
+		let builder = builder.xbt_blake2b(self.xbt); // FORTIS XBT: option_blake2b
+
 		Ok(builder.into())
 	}
 
@@ -1015,7 +1030,7 @@ where
 			);
 			builder
 				.map(InvoiceBuilder::<DerivedSigningPubkey>::from)
-				.and_then(|builder| builder.allow_mpp().build_and_sign(secp_ctx))
+				.and_then(|builder| builder.allow_mpp().xbt_blake2b(self.xbt).build_and_sign(secp_ctx)) // FORTIS XBT: option_blake2b
 				.map_err(InvoiceError::from)
 		} else {
 			#[cfg(feature = "std")]
@@ -1024,7 +1039,7 @@ where
 			let builder = invoice_request.respond_with_no_std(payment_paths, payment_hash, created_at);
 			builder
 				.map(InvoiceBuilder::<ExplicitSigningPubkey>::from)
-				.and_then(|builder| builder.allow_mpp().build())
+				.and_then(|builder| builder.allow_mpp().xbt_blake2b(self.xbt).build()) // FORTIS XBT: option_blake2b
 				.map_err(InvoiceError::from)
 				.and_then(|invoice| {
 					#[cfg(c_bindings)]

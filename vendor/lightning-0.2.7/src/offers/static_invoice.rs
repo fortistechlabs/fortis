@@ -189,6 +189,14 @@ impl<'a> StaticInvoiceBuilder<'a> {
 
 	invoice_builder_methods_common!(self, Self, self.invoice, Self, self, StaticInvoice, mut);
 
+	/// FORTIS XBT: when `is_xbt`, requires `option_blake2b` in the invoice's features.
+	pub(crate) fn xbt_blake2b(mut self, is_xbt: bool) -> Self {
+		if is_xbt {
+			self.invoice.features.set_blake2b_required();
+		}
+		self
+	}
+
 	#[cfg(test)]
 	invoice_builder_methods_test_common!(self, Self, self.invoice, Self, self, mut);
 }

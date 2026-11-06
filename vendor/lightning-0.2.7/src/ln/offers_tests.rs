@@ -130,7 +130,8 @@ fn check_compact_path_introduction_node<'a, 'b, 'c>(
 		&& matches!(path.introduction_node(), IntroductionNode::DirectedShortChannelId(..))
 }
 
-fn route_bolt12_payment<'a, 'b, 'c>(
+// FORTIS XBT: visible to xbt_tests
+pub(super) fn route_bolt12_payment<'a, 'b, 'c>(
 	node: &Node<'a, 'b, 'c>, path: &[&Node<'a, 'b, 'c>], invoice: &Bolt12Invoice
 ) {
 	// Monitor added when handling the invoice onion message.
@@ -149,7 +150,8 @@ fn route_bolt12_payment<'a, 'b, 'c>(
 	do_pass_along_path(args);
 }
 
-fn claim_bolt12_payment<'a, 'b, 'c>(
+// FORTIS XBT: visible to xbt_tests
+pub(super) fn claim_bolt12_payment<'a, 'b, 'c>(
 	node: &Node<'a, 'b, 'c>, path: &[&Node<'a, 'b, 'c>], expected_payment_context: PaymentContext, invoice: &Bolt12Invoice
 ) {
 	let recipient = &path[path.len() - 1];
@@ -203,7 +205,8 @@ pub(super) fn extract_invoice_request<'a, 'b, 'c>(
 	}
 }
 
-fn extract_invoice<'a, 'b, 'c>(node: &Node<'a, 'b, 'c>, message: &OnionMessage) -> (Bolt12Invoice, BlindedMessagePath) {
+// FORTIS XBT: visible to xbt_tests
+pub(super) fn extract_invoice<'a, 'b, 'c>(node: &Node<'a, 'b, 'c>, message: &OnionMessage) -> (Bolt12Invoice, BlindedMessagePath) {
 	match node.onion_messenger.peel_onion_message(message) {
 		Ok(PeeledOnion::Offers(message, _, reply_path)) => match message {
 			OffersMessage::InvoiceRequest(invoice_request) => panic!("Unexpected invoice_request: {:?}", invoice_request),
