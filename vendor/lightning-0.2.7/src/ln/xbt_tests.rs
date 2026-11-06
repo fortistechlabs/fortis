@@ -1455,7 +1455,8 @@ mod lnd_blinded_interop {
 	/// A path shaped like the LND fork's offer paths in the regtest gate: introduction node
 	/// `intro`, then two dummy hops; the first hop's blinded node id is `first_id` (LND writes
 	/// the introduction node's real id there). Final delta 80 + 3 (BlockPadding), two dummy
-	/// hops of 80 x 1.1: payinfo CLTV delta 259.
+	/// hops of 80 x 1.1: payinfo CLTV delta 259. FORTIS XBT: the encrypted payloads are fake;
+	/// this proves LDK's CLTV/TLV layout, LND's acceptance is proven by the regtest gate.
 	fn lnd_shaped_path(intro: PublicKey, first_id: PublicKey) -> BlindedPaymentPath {
 		let payinfo = BlindedPayInfo {
 			fee_base_msat: 2_200,
@@ -1599,6 +1600,44 @@ mod lnd_blinded_interop {
 			let excess = p.blinded_tail.as_ref().unwrap().excess_final_cltv_expiry_delta;
 			assert!(excess > 0, "seed {seed}");
 			assert_eq!(p.hops[1].cltv_expiry_delta, 259 + excess);
+		}
+	}
+
+	/// LND's default (`MinNumRealBlindedPathHops` = 1) makes a path whose introduction node is a
+	/// real peer of the payee: intro = S (nodes[1]), payee further along, first blinded id = S's
+	/// real id. It carries LND's mark too, so the shadow offset is skipped.
+	#[test]
+	fn lnd_path_with_real_peer_intro_skips_shadow_offset() {
+		let chanmon_cfgs = create_chanmon_cfgs(3);
+		let node_cfgs = create_node_cfgs(3, &chanmon_cfgs);
+		let node_chanmgrs = create_node_chanmgrs(3, &node_cfgs, &[None, None, None]);
+		let nodes = create_network(3, &node_cfgs, &node_chanmgrs);
+		create_announced_chan_between_nodes_with_value(&nodes, 0, 1, 1_000_000, 0);
+		create_announced_chan_between_nodes_with_value(&nodes, 1, 2, 1_000_000, 0);
+		let intro = nodes[1].node.get_our_node_id();
+		let route_params = RouteParameters::from_payment_params_and_value(
+			PaymentParameters::blinded(vec![lnd_shaped_path(intro, intro)]),
+			15_000_000,
+		);
+		let first_hops = nodes[0].node.list_usable_channels();
+		let first_hops = first_hops.iter().collect::<Vec<_>>();
+		for seed in 0..32u8 {
+			let route = find_route(
+				&nodes[0].node.get_our_node_id(),
+				&route_params,
+				&nodes[0].network_graph,
+				Some(&first_hops),
+				nodes[0].logger,
+				&TestScorer::new(),
+				&Default::default(),
+				&[seed; 32],
+			)
+			.unwrap();
+			let p = &route.paths[0];
+			assert_eq!(p.hops.last().unwrap().pubkey, intro);
+			let excess = p.blinded_tail.as_ref().unwrap().excess_final_cltv_expiry_delta;
+			assert_eq!(excess, 0, "seed {seed}");
+			assert_eq!(p.hops.last().unwrap().cltv_expiry_delta, 259);
 		}
 	}
 

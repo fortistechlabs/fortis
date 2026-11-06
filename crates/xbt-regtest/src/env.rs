@@ -397,7 +397,7 @@ fn sync_retrying_timeouts(node: &Ldk) -> R<()> {
 	loop {
 		match node.node().sync_wallets() {
 			Ok(()) => return Ok(()),
-			Err(e) if attempt < 3 && e.to_string().contains("timed out") => {
+			Err(e) if attempt < 3 && e == ldk_node::NodeError::TxSyncTimeout => {
 				println!("  {}: sync_wallets timed out ({e}); syncing again (attempt {})", node.name, attempt + 1);
 				attempt += 1;
 			},

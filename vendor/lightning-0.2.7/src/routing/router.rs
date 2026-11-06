@@ -3752,7 +3752,9 @@ where L::Target: Logger {
 
 /// FORTIS XBT: LND interop on XBT. Whether `path` pays into a blinded path made by LND: the
 /// first blinded hop's blinded node id is the introduction node's real id (LND writes it so;
-/// a hop blinded per BOLT 4 has a blinded id, never the real one).
+/// a hop blinded per BOLT 4 has a blinded id, never the real one). Applies on BTC too
+/// (upstream LND marks its paths the same way); BTC payers to LND blinded paths lose only the
+/// shadow offset (privacy padding).
 fn is_lnd_blinded_path(path: &Path) -> bool {
 	match (&path.blinded_tail, path.hops.last()) {
 		(Some(tail), Some(intro)) => {
@@ -3782,8 +3784,10 @@ fn add_random_cltv_offset(route: &mut Route, payment_params: &PaymentParameters,
 		// 4"); our offset is 40 to 432 blocks. BOLT 4 makes the offset optional ("if a random
 		// offset was added"). LND marks its paths: it overwrites the first blinded hop's
 		// blinded node id with the introduction node's real id (blindedpath/blinded_path.go),
-		// which a path blinded per BOLT 4 does not have. Every other path (LDK's own, whose
-		// receivers count on the offset in the final onion CLTV) keeps the offset.
+		// which a path blinded per BOLT 4 does not have. Every other path keeps the offset
+		// (kept for privacy; unchanged upstream behaviour). Applies on BTC too (upstream LND marks
+		// its paths the same way); BTC payers to LND blinded paths lose only the shadow offset
+		// (privacy padding).
 		if is_lnd_blinded_path(path) {
 			continue;
 		}

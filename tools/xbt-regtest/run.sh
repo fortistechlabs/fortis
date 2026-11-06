@@ -19,6 +19,7 @@ case "$XR" in
   *) echo "run: refusing to wipe unexpected XR=$XR" >&2; exit 1 ;;
 esac
 rm -rf "$XR"/{knots,index-db,lnd-data,fees,logs,ldk-p,ldk-s,ldk-s.stale}
+rm -rf "$XR"/ldk-*
 
 trap '"$here/down.sh"' EXIT
 "$here/up.sh"
