@@ -383,7 +383,27 @@ pub struct Env {
 	/// Outputs of a force close that `who` must sweep before the suite ends: (who, label,
 	/// txid, vout); `sweeps_settle` checks each has a confirmed spender.
 	pub must_sweep: RefCell<Vec<(Who, String, String, u32)>>,
-	pub bolt12_interop: RefCell<String>,
+}
+
+/// `sync_wallets`, again (at most twice more) if it timed out. ldk-node gives a Lightning
+/// wallet sync 10 s. Asked who spent a channel funding output that is hundreds of blocks
+/// old (S's LND channel, closed in `sweeps_settle`), fortis-index scans 50 blocks per request
+/// and answers 503 "ask again" until it finds the spend, and esplora-client retries a 503
+/// with doubling backoff (0.25 s, 0.5 s, 1 s, ...): past about 5 slices the sync times out.
+/// The index keeps how far it scanned, so the next sync picks up where it stopped.
+/// Any other error, or a third timeout, fails.
+fn sync_retrying_timeouts(node: &Ldk) -> R<()> {
+	let mut attempt = 1;
+	loop {
+		match node.node().sync_wallets() {
+			Ok(()) => return Ok(()),
+			Err(e) if attempt < 3 && e.to_string().contains("timed out") => {
+				println!("  {}: sync_wallets timed out ({e}); syncing again (attempt {})", node.name, attempt + 1);
+				attempt += 1;
+			},
+			Err(e) => return Err(format!("{}: sync_wallets: {e}", node.name)),
+		}
+	}
 }
 
 pub fn lsps2_service_config() -> LSPS2ServiceConfig {
@@ -491,7 +511,6 @@ impl Env {
 			lnd_s_channel: RefCell::new(None),
 			penalty_msat: Cell::new(0),
 			must_sweep: RefCell::new(vec![]),
-			bolt12_interop: RefCell::new("not run".into()),
 		};
 		env.mine(6)?;
 		for n in [&env.p, &env.s] {
@@ -521,7 +540,7 @@ impl Env {
 		self.scan_blocks()?;
 		for node in self.nodes() {
 			if node.running() {
-				node.node().sync_wallets().map_err(|e| format!("{}: sync_wallets: {e}", node.name))?;
+				sync_retrying_timeouts(node)?;
 				node.pump();
 			}
 		}

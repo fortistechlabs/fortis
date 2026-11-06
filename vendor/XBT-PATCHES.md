@@ -115,6 +115,8 @@ whether we create it or check it; no call site reads config (Task 4).
 | lightning | `src/ln/xbt_tests.rs` | `btc_splice_in_shared_input_plain` | A BTC pair's splice-in: the shared input's signatures are 0x01, 0x01 and verify against BIP 143 over all prevouts (the BTC counterpart of `xbt_splice_in_shared_input_unified`). Final review (M8) | final |
 | lightning | `src/routing/router.rs` | `is_lnd_blinded_path` (new), `add_random_cltv_offset` | LND interop on XBT (BOLT 12 offers of the LND BLAKE2b fork). No shadow CLTV offset on a path into a blinded path LND made, recognised by LND's mark: the first blinded hop's blinded node id is the introduction node's real id (LND's `blindedpath/blinded_path.go` overwrites it; BOLT 4 blinding never yields it). LND sets each hop's encrypted `max_cltv_expiry` to creation height + 2 x the invoice lifetime in blocks (12 for its 1 hour offer invoices) + the payinfo CLTV still owed, so our 40 to 432 block offset was refused at LND's own hop ("onion payload for intermediate hop insufficient record with type 4"). BOLT 4 makes the offset optional. Every other blinded path, and every unblinded one, keeps the offset (LDK receivers track a claimable HTLC by the final onion CLTV, so they need it). Upstream test `blinded_path_cltv_shadow_offset` unchanged | LND interop |
 | lightning | `src/ln/xbt_tests.rs` | `lnd_blinded_interop::lnd_offer_path_payload_within_lnd_max_cltv`, `lnd_blinded_interop::other_blinded_paths_keep_shadow_offset`, `lnd_blinded_interop::ldk_made_blinded_path_keeps_shadow_offset` | Route P -> S -> LND into an LND-shaped path (introduction node = payee, two dummy hops, payinfo delta 259, first blinded id = LND's real id), 32 seeds: S's outgoing CLTV is exactly height + 259, within LND's max (height + 12 + 259); TLV types S [2, 4, 6], LND [10, 12], dummy [10], final [2, 4, 10, 18], final CLTV = height. The same path with a blinded first id keeps an offset > 0, and so does a path LDK itself blinds (`BlindedPaymentPath::new`, whose first blinded id is not the introduction node's id). The first fails (339 != 259) without the router change | LND interop |
+| xbt-regtest | `crates/xbt-regtest/src/scenarios.rs`, `env.rs`, `main.rs` | `bolt12_both_ways`; `Env::bolt12_interop` and the `BOLT12_INTEROP=` summary line removed | P paying an LND offer and LND paying S's offer are required: either failing fails the scenario (with LND's last `[ERR] HSWC` line for P -> LND) | LND interop |
+| xbt-regtest | `crates/xbt-regtest/src/env.rs` | `sync_retrying_timeouts` (used by `Env::mine`) | A `sync_wallets` that times out is retried, at most twice, with a line in the log. ldk-node allows a Lightning wallet sync 10 s; asked who spent S's LND channel funding (hundreds of blocks old, closed in `sweeps_settle`), fortis-index scans 50 blocks per request and answers 503 until it finds the spend, and esplora-client retries 503 with doubling backoff, so the sync can pass 10 s (seen in 4 of 6 runs on Knots 29.5, before and after the router change). The index keeps its scan position, so the next sync completes. Any other error, or a third timeout, still fails | gate |
 
 ## Running the tests
 
@@ -197,10 +199,11 @@ to_local (P) and to_remote (S) outputs are swept and confirmed and count in
 the final accounting. Every transaction they make is checked as confirmed by
 Knots with the expected signature hash type bytes per input (0x21 for every
 signature on a unified channel and for the wallet's inputs; plain allowed
-only where one side alone signs). The summary prints each scenario's result,
-`BOLT12_INTEROP=pass|fail (...)` (LND offers; reported, does not fail the
-gate) and every confirmed txid with its signature bytes. Every scenario must
-be `PASS`; only `BOLT12_INTEROP` may be `fail`.
+only where one side alone signs). The summary prints each scenario's result
+and every confirmed txid with its signature bytes. Every scenario must be `PASS`, `bolt12_both_ways` included:
+P and S pay each other's offers, P pays an LND-fork offer (P -> S -> LND,
+into the offer's blinded path, which LND starts at itself and pads with dummy
+hops) and LND pays S's offer.
 
 What `offer_while_stopped` proves, and what it does not: a held
 `invoice_request` (the onion message S keeps for an offline P) is answered
@@ -211,12 +214,14 @@ payer's HTLC until P comes online) is blocked in upstream LDK 0.2.7:
 before it holds the HTLC, and `can_forward_htlc_to_outgoing_channel` fails a
 forward to a channel that is not live (`ChannelDisabled`).
 
-### Known interop gap (Plan B)
+### LND offers (was the Plan B interop gap)
 
-`BOLT12_INTEROP=fail`: P paying an LND-fork offer fails. P routes
-P -> S -> LND into the offer's blinded path (LND's path starts at LND itself,
-padded with dummy hops), and LND refuses the HTLC: "unable
-to decode forwarding instructions: onion payload for intermediate hop
-insufficient record with type 4" (from LND's log, `[ERR] HSWC`, shown in the
-summary); P ends with `RouteNotFound`. LND paying S's offer works. This does
-not fail the gate; it is a known interop gap left for Plan B.
+P paying an LND-fork offer used to fail: LND refused the HTLC at its own hop,
+"onion payload for intermediate hop insufficient record with type 4" (type 4
+is outgoing_cltv_value; LND reports a `max_cltv_expiry` violation that way).
+LND gives its blinded paths `max_cltv_expiry` = creation height + 12 blocks
+(2 x its 1 hour offer invoice lifetime) + the payinfo CLTV, and P added a
+40 to 432 block shadow CLTV offset. P no longer adds the offset to a path LND
+made (`is_lnd_blinded_path`, router row above). It is now a required step of
+the gate. A payer has to pay within about 11 blocks of LND issuing the
+invoice; that is LND's window, not ours.

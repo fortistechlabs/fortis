@@ -355,8 +355,12 @@ fn splice_out(env: &Env) -> R<Outcome> {
 
 // ------------------------------------------------------------------ 5
 
-/// P and S pay each other's offers (must pass); P pays an LND offer and LND
-/// pays S's offer (interop: recorded as BOLT12_INTEROP, does not fail the suite).
+/// P and S pay each other's offers, P pays an LND offer and LND pays S's offer; all must pass.
+///
+/// P -> LND goes P -> S -> LND into the offer's blinded path, which LND starts at itself and
+/// pads with dummy hops. LND caps the CLTV of that path at its creation height + 12 blocks
+/// + the payinfo delta; P adds no shadow CLTV offset to a path LND made (vendor patch, see
+/// XBT-PATCHES.md), otherwise LND refuses the HTLC ("insufficient record with type 4").
 fn bolt12_both_ways(env: &Env) -> R<Outcome> {
 	let s_offer = env.s.node().bolt12_payment().receive(10_000_000, "xr S offer", None, None).map_err(|e| format!("S offer: {e}"))?;
 	send_retry(&env.p, "P pays S's offer", 90, |n| n.bolt12_payment().send(&s_offer, None, None, None))?;
@@ -365,25 +369,11 @@ fn bolt12_both_ways(env: &Env) -> R<Outcome> {
 	send_retry(&env.s, "S pays P's offer", 90, |n| n.bolt12_payment().send(&p_offer, None, None, None))?;
 	env.p.wait_received_amount(12_000_000, 30)?;
 
-	let interop = bolt12_interop(env);
-	println!("  BOLT12_INTEROP: {interop:?}");
-	*env.bolt12_interop.borrow_mut() = match interop {
-		Ok(()) => "pass".into(),
-		Err(e) => format!("fail ({e})"),
-	};
+	p_pays_lnd_offer(env).map_err(|e| format!("P -> LND offer: {e}{}", lnd_htlc_error()))?;
+	println!("  P -> LND offer: paid");
+	lnd_pays_s_offer(env).map_err(|e| format!("LND -> S offer: {e}"))?;
+	println!("  LND -> S offer: paid");
 	Ok(Outcome::Pass)
-}
-
-/// Both interop directions, each tried whatever the other did.
-fn bolt12_interop(env: &Env) -> R<()> {
-	let p_to_lnd = p_pays_lnd_offer(env).map_err(|e| format!("P -> LND offer: {e}{}", lnd_htlc_error()));
-	println!("  P -> LND offer: {p_to_lnd:?}");
-	let lnd_to_s = lnd_pays_s_offer(env).map_err(|e| format!("LND -> S offer: {e}"));
-	println!("  LND -> S offer: {lnd_to_s:?}");
-	match (p_to_lnd, lnd_to_s) {
-		(Ok(()), Ok(())) => Ok(()),
-		(a, b) => Err([a.err(), b.err()].into_iter().flatten().collect::<Vec<_>>().join("; ")),
-	}
 }
 
 /// LND's last refusal of an HTLC, from its log (why a payment to it failed).

@@ -69,7 +69,6 @@ fn main() -> ExitCode {
 		println!("{name:<26}{r}");
 	}
 	if let Some(env) = &env {
-		println!("BOLT12_INTEROP={}", env.bolt12_interop.borrow());
 		println!("\ntransactions confirmed by Knots (signature hash types per input):");
 		for t in env.txs.borrow().iter() {
 			println!("  {:<58}{}  fee {:>5} sat  {}", t.label, t.txid, t.fee_sat, check::fmt_sigs(&t.sig_bytes));
