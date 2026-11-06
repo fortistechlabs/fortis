@@ -490,6 +490,7 @@ impl Bolt11Payment {
 		expiry_secs: u32, manual_claim_payment_hash: Option<PaymentHash>,
 	) -> Result<Option<LdkBolt11Invoice>, Error> {
 		use lightning::routing::router::{RouteHint, RouteHintHop};
+		// FORTIS XBT: InvoiceBuilder moved to build_public_hints_invoice.
 		use lightning_invoice::RoutingFees;
 
 		let mut public: Vec<_> = self

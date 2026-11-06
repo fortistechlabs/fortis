@@ -187,6 +187,5 @@ Knots with the expected signature hash type bytes per input (0x21 for every
 signature on a unified channel and for the wallet's inputs; plain allowed
 only where one side alone signs). The summary prints each scenario's result,
 `BOLT12_INTEROP=pass|fail (...)` (LND offers; reported, does not fail the
-gate) and every confirmed txid with its signature bytes. Only
-`BOLT12_INTEROP` and `offer_while_stopped` (`SKIPPED ...`) may be other than
-`PASS`.
+gate) and every confirmed txid with its signature bytes. Every scenario must
+be `PASS`; only `BOLT12_INTEROP` may be `fail`.

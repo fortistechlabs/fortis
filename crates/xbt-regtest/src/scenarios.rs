@@ -5,10 +5,10 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use ldk_node::bitcoin::hashes::{sha256, Hash};
 use ldk_node::bitcoin::secp256k1::PublicKey;
-use ldk_node::lightning::blinded_path::{Direction, IntroductionNode};
 use ldk_node::lightning::offers::offer::Offer;
 use ldk_node::lightning_invoice::{Bolt11Invoice, Bolt11InvoiceDescription, Description};
 use ldk_node::lightning_types::payment::PaymentHash;
+use ldk_node::payment::{PaymentDirection, PaymentKind};
 use ldk_node::{ChannelDetails, Event, LightningBalance, PendingSweepBalance, UserChannelId};
 
 use crate::check::{self, confirmed_all, confirmed_with, output_with_value, TxInfo};
@@ -22,7 +22,6 @@ const UU: &[u8] = &[0x21, 0x21];
 
 pub enum Outcome {
 	Pass,
-	Skipped(String),
 }
 
 pub type Scenario = fn(&Env) -> R<Outcome>;
@@ -205,8 +204,8 @@ pub fn setup(env: &Env) -> R<()> {
 	env.s.wait_for("LND channel ready", 60, |e| matches!(e, Event::ChannelReady { .. }))?;
 	env.wait_lnd_active(1)?;
 	*env.lnd_s_channel.borrow_mut() = Some(user_channel_id);
-	let info = confirmed_all(&funding, &[])?;
-	record(env, "LND->S funding (LND wallet)", &info, None);
+	let info = confirmed_all(&funding, U)?;
+	record(env, "LND->S funding (LND wallet inputs)", &info, None);
 
 	env.p.node().connect(env.s.id, env.s_addr.clone(), true).map_err(|e| format!("P connect S: {e}"))?;
 	poll("P to learn the LND-S channel by gossip", 180, || {
@@ -361,10 +360,10 @@ fn splice_out(env: &Env) -> R<Outcome> {
 fn bolt12_both_ways(env: &Env) -> R<Outcome> {
 	let s_offer = env.s.node().bolt12_payment().receive(10_000_000, "xr S offer", None, None).map_err(|e| format!("S offer: {e}"))?;
 	send_retry(&env.p, "P pays S's offer", 90, |n| n.bolt12_payment().send(&s_offer, None, None, None))?;
-	env.s.wait_any_received(30)?;
+	env.s.wait_received_amount(10_000_000, 30)?;
 	let p_offer = env.p.node().bolt12_payment().receive(12_000_000, "xr P offer", None, None).map_err(|e| format!("P offer: {e}"))?;
 	send_retry(&env.s, "S pays P's offer", 90, |n| n.bolt12_payment().send(&p_offer, None, None, None))?;
-	env.p.wait_any_received(30)?;
+	env.p.wait_received_amount(12_000_000, 30)?;
 
 	let interop = bolt12_interop(env);
 	println!("  BOLT12_INTEROP: {interop:?}");
@@ -416,89 +415,71 @@ fn lnd_pays_s_offer(env: &Env) -> R<()> {
 	if !ok {
 		return Err(out.trim().to_string());
 	}
-	env.s.wait_any_received(60)?;
+	env.s.wait_received_amount(16_000_000, 60)?;
 	Ok(())
 }
 
 // ------------------------------------------------------------------ 6
 
-/// S pays P's async (static invoice) offer while P is stopped; P starts and claims.
+/// LND pays P's async offer while P is stopped; P starts and claims.
+///
+/// P registers with S (static invoice server) for an async offer, then stops. LND sends its
+/// invoice request over the offer's path (introduced at S). S answers with P's static invoice
+/// and forwards the request to P; S holds the forwarded request while P is offline (its onion
+/// message mailbox). When P starts it answers LND with an invoice, LND pays it through S and P
+/// claims. (S cannot be the payer: LDK 0.2 cannot send into a blinded path introduced at
+/// itself, and S is P's static invoice server.)
 fn offer_while_stopped(env: &Env) -> R<Outcome> {
-	let skip = |why: String| {
-		let s = format!("SKIPPED (Plan B covers with fortis-lsp): {why}");
-		*env.offer_while_stopped.borrow_mut() = s.clone();
-		Ok(Outcome::Skipped(s))
-	};
-	let paths = match env.s.node().bolt12_payment().blinded_paths_for_async_recipient(env.p.id.serialize().to_vec()) {
-		Ok(p) => p,
-		Err(e) => return skip(format!("S cannot make paths for P: {e}")),
-	};
-	if let Err(e) = env.p.node().bolt12_payment().set_paths_to_static_invoice_server(paths) {
-		return skip(format!("P cannot take S's paths: {e}"));
-	}
-	let offer = match poll("P's async offer", 180, || {
+	let paths = env
+		.s
+		.node()
+		.bolt12_payment()
+		.blinded_paths_for_async_recipient(env.p.id.serialize().to_vec())
+		.map_err(|e| format!("S cannot make async paths for P: {e}"))?;
+	env.p
+		.node()
+		.bolt12_payment()
+		.set_paths_to_static_invoice_server(paths)
+		.map_err(|e| format!("P cannot take S's async paths: {e}"))?;
+	let offer = poll("P's async offer", 180, || {
 		env.p.pump();
 		env.s.pump();
 		Ok(env.p.node().bolt12_payment().receive_async().ok())
-	}) {
-		Ok(o) => o,
-		Err(e) => return skip(e),
-	};
+	})?;
 	println!("  P's async offer: {offer}");
 	if !offer.offer_features().requires_blake2b() {
 		return Err("P's async offer does not require option_blake2b".into());
 	}
-	// The offer's paths lead to S, the static invoice server. LDK 0.2 cannot send an onion
-	// message into a blinded path that starts and ends at itself (BlindedPathAdvanceFailed,
-	// then InvoiceRequestExpired), so S cannot request the static invoice of its own client's
-	// offer. The payer must be a third node, as in ldk-node's own async payment test.
-	let intros: Vec<Option<PublicKey>> = offer.paths().iter().map(|p| intro_node(env, p.introduction_node())).collect();
-	println!("  async offer introduction nodes: {intros:?} (S {})", env.s.id);
-	let via_s = intros.iter().all(|i| *i == Some(env.s.id));
-	if via_s {
-		return skip(
-			"the offer's paths start and end at S, and LDK 0.2 cannot send an invoice request \
-			 into a blinded path that starts and ends at itself, so S cannot pay its own \
-			 client's async offer; the offer itself was built and requires option_blake2b"
-				.into(),
-		);
-	}
+
 	env.p.stop()?;
-	let id = env
-		.s
-		.node()
-		.bolt12_payment()
-		.send_using_amount(&offer, 8_000_000, None, None, None)
-		.map_err(|e| format!("S pays P's async offer: {e}"))?;
-	// Let the payment reach the point where it waits for P.
+	let amount_msat = 8_000_000u64;
+	let lno = offer.to_string();
+	let amt = amount_msat.to_string();
+	let payer = std::thread::spawn(move || {
+		ln_try(&["offer", "pay", "--amount_msat", &amt, "--timeout", "120", &lno])
+	});
+	// LND's request is on its way while P is offline.
 	sleep_ms(5000);
+	if payer.is_finished() {
+		let (_, out) = payer.join().map_err(|_| "lncli thread panicked")?;
+		return Err(format!("LND finished paying before P started: {}", out.trim()));
+	}
 	env.p.start()?;
 	env.p.node().connect(env.s.id, env.s_addr.clone(), true).map_err(|e| format!("P reconnect: {e}"))?;
-	env.s.wait_payment(id, 120)?;
-	let got = env.p.wait_any_received(60)?;
-	if got != 8_000_000 {
-		return Err(format!("P received {got} msat, expected 8,000,000"));
+	let (ok, out) = payer.join().map_err(|_| "lncli thread panicked")?;
+	println!("  lncli offer pay: {}", out.trim());
+	if !ok {
+		return Err(format!("LND could not pay P's async offer: {}", out.trim()));
 	}
-	*env.offer_while_stopped.borrow_mut() = "pass".into();
+	let v: serde_json::Value =
+		serde_json::from_str(out.trim()).map_err(|e| format!("lncli offer pay output: {e}: {out}"))?;
+	let paid = v["payment_preimage"].as_str().map_or(false, |p| !p.is_empty())
+		&& v["amount_msat"] == serde_json::Value::String(amount_msat.to_string());
+	if !paid {
+		return Err(format!("LND's payment did not succeed for {amount_msat} msat: {v}"));
+	}
+	env.p.wait_received_amount(amount_msat, 60)?;
 	Ok(Outcome::Pass)
-}
-
-/// The node an introduction node names (S's own channels resolve a compact one).
-fn intro_node(env: &Env, intro: &IntroductionNode) -> Option<PublicKey> {
-	match intro {
-		IntroductionNode::NodeId(id) => Some(*id),
-		IntroductionNode::DirectedShortChannelId(dir, scid) => {
-			let c = env.s.node().list_channels().into_iter().find(|c| {
-				c.short_channel_id == Some(*scid) || c.outbound_scid_alias == Some(*scid) || c.inbound_scid_alias == Some(*scid)
-			})?;
-			let (a, b) = (env.s.id, c.counterparty_node_id);
-			let (one, two) = if a.serialize() < b.serialize() { (a, b) } else { (b, a) };
-			Some(match dir {
-				Direction::NodeOne => one,
-				Direction::NodeTwo => two,
-			})
-		},
-	}
 }
 
 // ------------------------------------------------------------------ 7
@@ -638,11 +619,27 @@ fn penalty(env: &Env) -> R<Outcome> {
 	let justice = env.wait_spender("P's justice transaction", &revoked, s_out, 1, 20)?;
 	confirm(env, &justice)?;
 	let info = confirmed_all(&justice, &[])?;
-	let got: u64 = info.outputs.iter().map(|(v, _)| v).sum();
-	println!("  justice pays {got} sat, fee {} sat", info.fee_sat);
 	record(env, "P justice", &info, Some(Who::P));
-	if got + info.fee_sat < 40_000 {
-		return Err(format!("the justice transaction took {} sat, S's revoked balance is 40,000", got + info.fee_sat));
+	// The justice transaction pays P's wallet directly (ldk-node's destination script is a
+	// wallet address): P's wallet records it as an inbound on-chain payment, and what reaches P
+	// is S's whole revoked balance less the justice fee.
+	let to_p = poll("P's wallet to record the justice transaction", 60, || {
+		env.p.node().sync_wallets().map_err(|e| e.to_string())?;
+		Ok(env.p.node().list_payments().into_iter().find_map(|p| match p.kind {
+			PaymentKind::Onchain { txid, .. }
+				if txid.to_string() == justice && p.direction == PaymentDirection::Inbound =>
+			{
+				Some(p.amount_msat.unwrap_or(0) / 1000)
+			},
+			_ => None,
+		}))
+	})?;
+	println!("  justice pays P's wallet {to_p} sat (fee {} sat)", info.fee_sat);
+	if to_p + info.fee_sat < 40_000 {
+		return Err(format!(
+			"the justice transaction pays P's wallet {to_p} sat + fee {} sat, less than S's revoked balance of 40,000",
+			info.fee_sat
+		));
 	}
 	Ok(Outcome::Pass)
 }

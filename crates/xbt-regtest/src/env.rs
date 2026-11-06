@@ -332,12 +332,12 @@ impl Ldk {
 		}
 	}
 
-	/// Waits for any payment received (async payments have no hash we know up front).
-	pub fn wait_any_received(&self, secs: u64) -> R<u64> {
-		match self.wait_for("a payment received", secs, |e| matches!(e, Event::PaymentReceived { .. }))? {
-			Event::PaymentReceived { amount_msat, .. } => Ok(amount_msat),
-			_ => unreachable!(),
-		}
+	/// Waits for a payment received of exactly `amount_msat` (offers: no hash up front).
+	pub fn wait_received_amount(&self, amount_msat: u64, secs: u64) -> R<()> {
+		self.wait_for(&format!("a payment of {amount_msat} msat received"), secs, |e| {
+			matches!(e, Event::PaymentReceived { amount_msat: a, .. } if *a == amount_msat)
+		})?;
+		Ok(())
 	}
 
 	pub fn onchain_sats(&self) -> u64 {
@@ -381,7 +381,6 @@ pub struct Env {
 	/// What P paid S in the penalty channel (P gets it back, S loses it).
 	pub penalty_msat: Cell<u64>,
 	pub bolt12_interop: RefCell<String>,
-	pub offer_while_stopped: RefCell<String>,
 }
 
 pub fn lsps2_service_config() -> LSPS2ServiceConfig {
@@ -489,7 +488,6 @@ impl Env {
 			lnd_s_channel: RefCell::new(None),
 			penalty_msat: Cell::new(0),
 			bolt12_interop: RefCell::new("not run".into()),
-			offer_while_stopped: RefCell::new("not run".into()),
 		};
 		env.mine(6)?;
 		for n in [&env.p, &env.s] {

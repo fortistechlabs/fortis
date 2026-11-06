@@ -49,7 +49,6 @@ fn main() -> ExitCode {
 			println!("\n== {name}");
 			let r = match scenario(env) {
 				Ok(Outcome::Pass) => "PASS".to_string(),
-				Ok(Outcome::Skipped(why)) => why,
 				Err(e) => {
 					failed = true;
 					format!("FAIL: {e}")
