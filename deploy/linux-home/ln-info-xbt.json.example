@@ -1,0 +1,14 @@
+{
+  "node_id": "<fill in from fortis-lsp-xbt node_id>",
+  "host": "lsp.fortistechlabs.com",
+  "port": 9835,
+  "lsps2_token": null,
+  "fee": { "ppm": 10000, "min_sat": 1000 },
+  "min_payment_sat": 51000,
+  "max_payment_sat": 250000,
+  "channel_min_sat": 100000,
+  "channel_max_sat": 500000,
+  "enabled": false,
+  "message": "XBT Lightning is coming soon",
+  "network": "bitcoin"
+}

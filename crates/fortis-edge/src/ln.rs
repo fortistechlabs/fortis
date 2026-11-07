@@ -158,8 +158,25 @@ fn read_capped(path: &Path) -> Result<LnInfo> {
 /// The served `/ln/info`: the last good version of `--ln-info-file`.
 pub struct LnInfoSource {
     path: PathBuf,
-    current: RwLock<(Arc<Vec<u8>>, LnInfo)>,
+    /// Added to the served object (`"chain": "xbt"`); none for BTC, whose
+    /// document stays exactly what the file says.
+    chain: Option<&'static str>,
+    /// `None` only for an [`open_optional`](Self::open_optional) source whose
+    /// file has never been valid.
+    current: RwLock<Option<(Arc<Vec<u8>>, LnInfo)>>,
     seen: Mutex<Stamp>,
+}
+
+/// The served bytes of `info`, with `chain` set when given.
+fn encode(info: &LnInfo, chain: Option<&str>) -> Result<Vec<u8>> {
+    match chain {
+        None => Ok(serde_json::to_vec(info)?),
+        Some(c) => {
+            let mut v = serde_json::to_value(info)?;
+            v["chain"] = serde_json::Value::from(c);
+            Ok(serde_json::to_vec(&v)?)
+        }
+    }
 }
 
 impl LnInfoSource {
@@ -167,17 +184,33 @@ impl LnInfoSource {
     pub fn open(path: &Path) -> Result<LnInfoSource> {
         let seen = stamp(path);
         let info = read_capped(path)?;
-        let body = Arc::new(serde_json::to_vec(&info)?);
-        Ok(LnInfoSource { path: path.to_path_buf(), current: RwLock::new((body, info)), seen: Mutex::new(seen) })
+        let body = Arc::new(encode(&info, None)?);
+        Ok(LnInfoSource { path: path.to_path_buf(), chain: None, current: RwLock::new(Some((body, info))), seen: Mutex::new(seen) })
     }
 
-    /// The JSON body to serve.
-    pub fn body(&self) -> Arc<Vec<u8>> {
-        Arc::clone(&self.current.read().unwrap_or_else(|e| e.into_inner()).0)
+    /// For the `xbt` object of `/ln/info`: like [`open`](Self::open), but a
+    /// missing or invalid file is only logged (BTC does not depend on it) and
+    /// the source serves nothing until the file is valid; the body carries
+    /// `"chain": chain`.
+    pub fn open_optional(path: &Path, chain: &'static str) -> LnInfoSource {
+        let seen = stamp(path);
+        let current = match read_capped(path).and_then(|info| Ok((Arc::new(encode(&info, Some(chain))?), info))) {
+            Ok(cur) => Some(cur),
+            Err(e) => {
+                eprintln!("fortis-edge: ln info: ignoring {}: {e:#}; serving none until it is valid", path.display());
+                None
+            }
+        };
+        LnInfoSource { path: path.to_path_buf(), chain: Some(chain), current: RwLock::new(current), seen: Mutex::new(seen) }
     }
 
-    pub fn info(&self) -> LnInfo {
-        self.current.read().unwrap_or_else(|e| e.into_inner()).1.clone()
+    /// The JSON body to serve; `None` only if the file has never been valid.
+    pub fn body(&self) -> Option<Arc<Vec<u8>>> {
+        self.current.read().unwrap_or_else(|e| e.into_inner()).as_ref().map(|c| Arc::clone(&c.0))
+    }
+
+    pub fn info(&self) -> Option<LnInfo> {
+        self.current.read().unwrap_or_else(|e| e.into_inner()).as_ref().map(|c| c.1.clone())
     }
 
     /// One poll: re-reads the file if it changed. `Some(true)` = a new
@@ -200,7 +233,7 @@ impl LnInfoSource {
         }
         match read_capped(&self.path) {
             Ok(info) => {
-                let body = match serde_json::to_vec(&info) {
+                let body = match encode(&info, self.chain) {
                     Ok(b) => Arc::new(b),
                     Err(e) => {
                         eprintln!("fortis-edge: ln info: cannot encode {}: {e}; keeping the last good one", self.path.display());
@@ -213,7 +246,7 @@ impl LnInfoSource {
                     info.enabled,
                     info.network
                 );
-                *self.current.write().unwrap_or_else(|e| e.into_inner()) = (body, info);
+                *self.current.write().unwrap_or_else(|e| e.into_inner()) = Some((body, info));
                 Some(true)
             }
             Err(e) => {
@@ -237,6 +270,18 @@ impl LnInfoSource {
             })
             .expect("spawn ln-info watcher");
     }
+}
+
+/// `btc_body` (the BTC document) with `"xbt": <xbt_body>` added as its last
+/// member. Spliced as bytes, so the BTC part is byte-for-byte what it was.
+pub fn with_xbt(btc_body: &[u8], xbt_body: &[u8]) -> Vec<u8> {
+    let head = btc_body.strip_suffix(b"}").unwrap_or(btc_body);
+    let mut out = Vec::with_capacity(btc_body.len() + xbt_body.len() + 8);
+    out.extend_from_slice(head);
+    out.extend_from_slice(b",\"xbt\":");
+    out.extend_from_slice(xbt_body);
+    out.push(b'}');
+    out
 }
 
 /// The VSS API calls the proxy forwards: vss-server's `/vss/<op>` routes.
@@ -790,7 +835,7 @@ mod tests {
         std::fs::write(&p, serde_json::to_vec(&good()).unwrap()).unwrap();
         let src = LnInfoSource::open(&p).unwrap();
         assert_eq!(src.poll_once(), None, "unchanged");
-        assert!(src.info().enabled);
+        assert!(src.info().unwrap().enabled);
 
         let mut off = good();
         off["enabled"] = json!(false);
@@ -798,22 +843,22 @@ mod tests {
         // Different size, so the change shows even on a coarse-mtime fs.
         std::fs::write(&p, serde_json::to_vec_pretty(&off).unwrap()).unwrap();
         assert_eq!(src.poll_once(), Some(true));
-        assert!(!src.info().enabled);
-        let served: Value = serde_json::from_slice(&src.body()).unwrap();
+        assert!(!src.info().unwrap().enabled);
+        let served: Value = serde_json::from_slice(&src.body().unwrap()).unwrap();
         assert_eq!(served["message"], "paused");
 
         std::fs::write(&p, b"{ broken").unwrap();
         assert_eq!(src.poll_once(), Some(false));
         assert_eq!(src.poll_once(), None, "a rejected version is not re-read every poll");
-        assert!(!src.info().enabled, "last good kept");
+        assert!(!src.info().unwrap().enabled, "last good kept");
 
         std::fs::remove_file(&p).unwrap();
         assert_eq!(src.poll_once(), Some(false));
-        assert!(!src.info().enabled, "a vanished file keeps the last good one");
+        assert!(!src.info().unwrap().enabled, "a vanished file keeps the last good one");
 
         std::fs::write(&p, serde_json::to_vec(&good()).unwrap()).unwrap();
         assert_eq!(src.poll_once(), Some(true));
-        assert!(src.info().enabled);
+        assert!(src.info().unwrap().enabled);
     }
 
     #[test]

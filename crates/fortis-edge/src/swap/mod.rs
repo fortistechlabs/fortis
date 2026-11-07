@@ -4283,8 +4283,10 @@ mod tests {
             metrics: crate::Metrics::default(),
             swap,
             ln_info: None,
+            ln_info_xbt: None,
             vss: None,
             lsp_admin: None,
+            lsp_xbt_admin: None,
             vss_limiter: crate::RateLimiter::new(600, 300),
         };
         (st, dir)
