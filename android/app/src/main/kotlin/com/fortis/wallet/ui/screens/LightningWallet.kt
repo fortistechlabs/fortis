@@ -247,8 +247,16 @@ fun LightningWalletTab(vm: WalletViewModel) {
             when (tab) {
                 "receive" -> {
                     LightningReceiveTab(vm)
-                    // The XBT wallet's offer only while its LSP holds custody; BTC's always.
-                    if (com.fortis.wallet.lightning.offerShown(c.chain, vm.accountBalance)) ReusableOfferCard(vm)
+                    // BTC's offer card always shows (its offer on a tap). XBT's shows only once
+                    // its LSP returned an offer, which it refuses while it holds no custody: ask
+                    // for it as soon as the node is up.
+                    if (c.chain == com.fortis.wallet.data.LN_XBT_CHAIN) {
+                        val ready = lnState is LnState.Ready
+                        LaunchedEffect(c.id, ready) {
+                            if (ready && vm.accountOffer == null) vm.loadAccountOffer()
+                        }
+                    }
+                    if (com.fortis.wallet.lightning.offerShown(c.chain, vm.accountOffer)) ReusableOfferCard(vm)
                 }
                 "send" -> key(vm.sentCount) { LightningSendTab(vm) } // a sent payment starts the form over
                 "move" -> key(vm.sentCount) { TransferToOnchainTab(vm) }

@@ -365,14 +365,37 @@ class XbtLightningWalletTest {
     }
 
     @Test
-    fun xbt_offer_tab_only_while_its_lsp_holds_custody() {
-        // BTC: always, as before (also before the account has answered).
+    fun xbt_offer_card_only_once_its_lsp_returned_an_offer() = runBlocking {
+        val signer = object : AccountSigner {
+            override fun nodeId() = "02" + "11".repeat(32)
+            override fun sign(body: String) = "sig"
+        }
+        // The XBT LSP refuses `offer` with custody_full while its custody_max_sat is 0 — even
+        // though the account's balance reports room (max_msat is the per-account cap).
+        val noCustody = FortisAccount({ body, _ ->
+            when (org.json.JSONObject(body).getString("op")) {
+                "balance" -> 200 to """{"balance_msat":0,"held_msat":0,"max_msat":50000000}"""
+                else -> 409 to """{"error":"custody_full","min_channel_sat":20000}"""
+            }
+        })
+        assertEquals(50_000_000uL, noCustody.balance(signer).maxMsat)
+        val refused = noCustody.offerOrNull(signer)
+        assertNull(refused)
+        assertFalse(offerShown(LN_XBT_CHAIN, refused))
+        // Custody on: the offer it returns shows.
+        val custody = FortisAccount({ _, _ -> 200 to """{"offer":"lno1qcustody"}""" })
+        val offer = custody.offerOrNull(signer)
+        assertEquals("lno1qcustody", offer)
+        assertTrue(offerShown(LN_XBT_CHAIN, offer))
+        // BTC: always, as before (also before an offer was fetched).
         assertTrue(offerShown(LN_CHAIN, null))
-        assertTrue(offerShown(LN_CHAIN, AccountBalance(0uL, 0uL, 0uL)))
-        // XBT: only once its account reports custody room.
-        assertFalse(offerShown(LN_XBT_CHAIN, null))
-        assertFalse(offerShown(LN_XBT_CHAIN, AccountBalance(0uL, 0uL, 0uL)))
-        assertTrue(offerShown(LN_XBT_CHAIN, AccountBalance(0uL, 0uL, 50_000_000uL)))
+        assertTrue(offerShown(LN_CHAIN, "lno1q"))
+        // Any other failure is a failure, not "no custody".
+        try {
+            FortisAccount({ _, _ -> 503 to "" }).offerOrNull(signer)
+            fail("expected AccountError.Network")
+        } catch (_: AccountError.Network) {
+        }
     }
 
     // ---- push routing --------------------------------------------------------

@@ -123,10 +123,20 @@ suspend fun sweepAddress(
     return address(w)
 }
 
-/** The XBT wallet's Offer card shows only while the XBT LSP holds custody (its Fortis account
- *  reports room); the BTC wallet's always shows, as before. */
-fun offerShown(walletChain: String, account: AccountBalance?): Boolean =
-    walletChain != LN_XBT_CHAIN || (account?.maxMsat ?: 0uL) > 0uL
+/** The XBT wallet's Offer card shows only once its LSP returned an offer ([offer]): the XBT LSP
+ *  refuses one (`custody_full`, [offerOrNull] → null) while it holds no custody
+ *  (`custody_max_sat = 0`). The account's `max_msat` is the per-account cap, not custody, so it
+ *  cannot tell. The BTC wallet's always shows, as before. */
+fun offerShown(walletChain: String, offer: String?): Boolean =
+    walletChain != LN_XBT_CHAIN || offer != null
+
+/** The account's reusable offer; null when its LSP holds no custody (`custody_full`). Any
+ *  other failure throws. */
+suspend fun FortisAccount.offerOrNull(signer: AccountSigner): String? = try {
+    offer(signer)
+} catch (e: AccountError.CustodyFull) {
+    null
+}
 
 /** The app's two Lightning nodes: one session per Lightning wallet chain, each made by [make]
  *  for its own [LnChain] (data dir, LSP, VSS store and settings all follow from that). */

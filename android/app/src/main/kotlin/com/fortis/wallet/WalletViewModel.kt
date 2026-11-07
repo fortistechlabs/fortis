@@ -13,6 +13,7 @@ import com.fortis.wallet.lightning.LightningSession
 import com.fortis.wallet.lightning.LnState
 import com.fortis.wallet.lightning.canAddLightningWallet
 import com.fortis.wallet.lightning.lightningWalletOf
+import com.fortis.wallet.lightning.offerOrNull
 import com.fortis.wallet.swap.SwapService
 import com.fortis.wallet.swap.indexUsed
 import com.fortis.wallet.swap.withFreshIndex
@@ -583,11 +584,11 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
         side.accountOfferError = null
         val s = accountSigner(side) ?: run { side.accountOfferError = str(R.string.transfer_needs_lightning); return@launch }
         try {
-            side.accountOffer = withContext(Dispatchers.IO) { side.account.offer(s) }
+            // No custody (custody_full): no offer. The XBT card stays hidden; BTC says so.
+            side.accountOffer = withContext(Dispatchers.IO) { side.account.offerOrNull(s) }
+            if (side.accountOffer == null) side.accountOfferError = str(R.string.ln_offer_unavailable)
         } catch (e: CancellationException) {
             throw e
-        } catch (e: com.fortis.wallet.lightning.AccountError.CustodyFull) {
-            side.accountOfferError = str(R.string.ln_offer_unavailable)
         } catch (e: Exception) {
             side.accountOfferError = str(R.string.ln_offer_unavailable)
         }
