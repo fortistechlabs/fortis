@@ -459,6 +459,7 @@
     <string name="ln_err_other">閃電網路發生錯誤——請稍後再試。</string>
     <string name="ln_err_payment_state_unknown">付款狀態仍在確認中——重試前請先查看紀錄。</string>
     <string name="ln_err_wrong_network">此付款請求屬於另一個比特幣網路。</string>
+    <string name="ln_err_wrong_chain">此付款請求屬於另一條閃電網路鏈(BTC 或 XBT)。</string>
     <string name="ln_takeover_action">改在此裝置上使用閃電網路</string>
     <string name="ln_takeover_body">另一台裝置將停止為此錢包使用閃電網路。僅在你不再於該裝置使用時才繼續；同時執行兩者可能使你的通道資金面臨風險。</string>
     <string name="ln_takeover_title">要在此裝置上使用閃電網路嗎？</string>

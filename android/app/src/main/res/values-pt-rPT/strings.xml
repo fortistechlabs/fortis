@@ -462,6 +462,7 @@
     <string name="ln_err_other">Erro do Lightning — tente novamente dentro de instantes.</string>
     <string name="ln_err_payment_state_unknown">O estado do pagamento ainda está a ser confirmado — consulte o histórico antes de tentar de novo.</string>
     <string name="ln_err_wrong_network">Este pedido de pagamento é para outra rede Bitcoin.</string>
+    <string name="ln_err_wrong_chain">Este pedido de pagamento é para outra chain Lightning (BTC ou XBT).</string>
     <string name="ln_takeover_action">Usar o Lightning aqui</string>
     <string name="ln_takeover_body">O outro dispositivo deixará de usar o Lightning com esta carteira. Continue apenas se já não o usa lá; usar ambos ao mesmo tempo pode pôr em risco os fundos do seu canal.</string>
     <string name="ln_takeover_title">Usar o Lightning neste dispositivo?</string>

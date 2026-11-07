@@ -14,7 +14,7 @@ use fortis_lightning::ldk_node::bitcoin::{Address, Network, OutPoint, Txid};
 use fortis_lightning::lnurl::{self, LnurlPayParams, UreqGet};
 use fortis_lightning::recover::{self, EsploraBroadcast, EsploraScan, StaticUtxo};
 use fortis_lightning::{
-    vss_state_exists, Balances, ChainSource, ChannelState, Direction, LnChain, LnError, LnEvent,
+    vss_state_exists, Balances, ChainSource, ChannelState, Direction, LnChain as CoreChain, LnError, LnEvent,
     LspInfo, LspLimits, Node, NodeConfig, ParseError, Payment, PaymentTarget, ReceiveQuote,
     StartMode, Status, VssConfig,
 };
@@ -36,6 +36,8 @@ pub enum LnFfiError {
     InvoiceExpired,
     #[error("wrong_network")]
     WrongNetwork,
+    #[error("wrong_chain")]
+    WrongChain,
     #[error("payment_state_unknown")]
     PaymentStateUnknown,
     #[error("amount_out_of_range")]
@@ -58,9 +60,7 @@ impl From<LnError> for LnFfiError {
             LnError::AmountOutOfRange { min_msat, max_msat } => {
                 LnFfiError::AmountOutOfRange { min_msat, max_msat }
             }
-            LnError::WrongChain => LnFfiError::Other {
-                reason: "wrong_chain".into(),
-            },
+            LnError::WrongChain => LnFfiError::WrongChain,
             e @ LnError::Config(_) => LnFfiError::Other {
                 reason: e.to_string(),
             },
@@ -79,6 +79,7 @@ impl From<LnFfiError> for LnError {
             LnFfiError::NoRoute => LnError::NoRoute,
             LnFfiError::InvoiceExpired => LnError::InvoiceExpired,
             LnFfiError::WrongNetwork => LnError::WrongNetwork,
+            LnFfiError::WrongChain => LnError::WrongChain,
             LnFfiError::PaymentStateUnknown => LnError::PaymentStateUnknown,
             LnFfiError::AmountOutOfRange { min_msat, max_msat } => {
                 LnError::AmountOutOfRange { min_msat, max_msat }
@@ -190,8 +191,27 @@ impl From<LnVssConfig> for VssConfig {
     }
 }
 
+/// Which chain a Lightning node runs on. XBT shares BTC's `lnbc` prefix and
+/// chain hash, so only the node's setting and an invoice's `option_blake2b`
+/// feature tell them apart.
+#[derive(uniffi::Enum, Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LnChain {
+    Btc,
+    Xbt,
+}
+
+impl From<LnChain> for CoreChain {
+    fn from(c: LnChain) -> Self {
+        match c {
+            LnChain::Btc => CoreChain::Btc,
+            LnChain::Xbt => CoreChain::Xbt,
+        }
+    }
+}
+
 #[derive(uniffi::Record)]
 pub struct LnNodeConfig {
+    pub chain: LnChain,
     pub bip39_seed: Vec<u8>,
     pub network: String,
     pub data_dir: String,
@@ -641,6 +661,51 @@ pub fn ln_parse(text: String, network: String) -> Result<LnTarget, LnFfiError> {
     LnTarget::try_from(target)
 }
 
+/// The chain a parsed target is for.
+#[derive(uniffi::Enum, Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LnTargetChain {
+    Btc,
+    Xbt,
+    /// Not known until an invoice is fetched (LNURL, Lightning Address) or
+    /// not a Lightning target at all (plain on-chain).
+    Unknown,
+}
+
+fn bolt11_chain(invoice: &str) -> LnTargetChain {
+    use fortis_lightning::ldk_node::lightning_invoice::Bolt11Invoice;
+    match Bolt11Invoice::from_str(&invoice.trim().to_ascii_lowercase()) {
+        Ok(inv) if inv.features().is_some_and(|f| f.supports_blake2b()) => LnTargetChain::Xbt,
+        Ok(_) => LnTargetChain::Btc,
+        Err(_) => LnTargetChain::Unknown,
+    }
+}
+
+fn offer_chain(offer: &str) -> LnTargetChain {
+    use fortis_lightning::ldk_node::lightning::offers::offer::Offer;
+    match Offer::from_str(&offer.trim().to_ascii_lowercase()) {
+        Ok(o) if o.offer_features().supports_blake2b() => LnTargetChain::Xbt,
+        Ok(_) => LnTargetChain::Btc,
+        Err(_) => LnTargetChain::Unknown,
+    }
+}
+
+/// Whether a parsed Lightning invoice or offer is BTC or XBT, from its
+/// `option_blake2b` feature (bit 512/513).
+#[uniffi::export]
+pub fn ln_target_chain(target: LnTarget) -> LnTargetChain {
+    match target {
+        LnTarget::Bolt11 { invoice, .. } => bolt11_chain(&invoice),
+        LnTarget::Bolt12Offer { offer, .. } => offer_chain(&offer),
+        LnTarget::Unified { lightning, .. } => match lightning {
+            LnUnifiedLightning::Bolt11 { invoice, .. } => bolt11_chain(&invoice),
+            LnUnifiedLightning::Bolt12Offer { offer, .. } => offer_chain(&offer),
+        },
+        LnTarget::LnurlPay { .. } | LnTarget::LightningAddress { .. } | LnTarget::OnChain { .. } => {
+            LnTargetChain::Unknown
+        }
+    }
+}
+
 #[uniffi::export]
 pub fn ln_parse_at(text: String, network: String, now_secs: u64) -> Result<LnTarget, LnFfiError> {
     let net = parse_network(&network)?;
@@ -768,7 +833,7 @@ impl LnNode {
     pub fn new(cfg: LnNodeConfig) -> Result<Arc<Self>, LnFfiError> {
         let network = parse_network(&cfg.network)?;
         let node = Node::new(NodeConfig {
-            chain: LnChain::Btc,
+            chain: cfg.chain.into(),
             bip39_seed: cfg.bip39_seed,
             network,
             data_dir: PathBuf::from(cfg.data_dir),

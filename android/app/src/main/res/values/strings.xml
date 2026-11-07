@@ -528,6 +528,7 @@
     <string name="ln_err_no_route">Couldn\'t find a Lightning route to the recipient.</string>
     <string name="ln_err_invoice_expired">This Lightning invoice has expired.</string>
     <string name="ln_err_wrong_network">This payment request is for a different Bitcoin network.</string>
+    <string name="ln_err_wrong_chain">This payment request is for a different Lightning chain (BTC or XBT).</string>
     <string name="ln_err_payment_state_unknown">Payment status is still being confirmed — check history before retrying.</string>
     <string name="ln_err_amount_out_of_range">Amount is outside the allowed Lightning payment range.</string>
     <string name="ln_err_other">Lightning error — try again shortly.</string>

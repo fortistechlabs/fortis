@@ -52,6 +52,7 @@ class LnErrorCopyTest {
             LnFfiException.NoRoute(),
             LnFfiException.InvoiceExpired(),
             LnFfiException.WrongNetwork(),
+            LnFfiException.WrongChain(),
             LnFfiException.PaymentStateUnknown(),
             LnFfiException.AmountOutOfRange(minMsat = 1_000uL, maxMsat = 500_000_000uL),
             LnFfiException.Other(reason = "unexpected"),

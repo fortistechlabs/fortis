@@ -2,13 +2,14 @@
 
 use fortis_lightning::ldk_node::bitcoin::Network;
 use fortis_lightning::{
+    LnChain as CoreChain,
     Balances, ChannelState, Direction, LnError, LnEvent, LspLimits, ParseError, Payment,
     PaymentTarget, ReceiveQuote, StartMode, Status,
 };
 use wallet_ffi::{
     ln_bip39_seed, ln_estimate_fee_msat, ln_parse, ln_parse_at, LnBalances, LnChannelState,
     LnDirection, LnEventRecord, LnFfiError, LnLspLimits, LnPayment, LnPaymentStatus,
-    LnReceiveQuote, LnStartMode, LnTarget, LnUnifiedLightning,
+    LnReceiveQuote, LnStartMode, LnTarget, LnTargetChain, LnUnifiedLightning, ln_target_chain, LnChain,
 };
 
 const B11_25M: &str = "lnbc25m1pvjluezpp5qqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqypqdq5vdhkven9v5sxyetpdeessp5zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zygs9q5sqqqqqqqqqqqqqqqpqsq67gye39hfg3zd8rgc80k32tvy9xk2xunwm5lzexnvpx6fd77en8qaq424dxgt56cag2dpt359k3ssyhetktkpqh24jqnjyw6uqd08sgptq44qu";
@@ -245,4 +246,83 @@ fn record_and_enum_conversions_roundtrip() {
     )
     .unwrap();
     assert_eq!(seed.len(), 64);
+}
+
+// --- chain detection (XBT shares BTC's `lnbc` prefix; only option_blake2b differs) ---
+
+// Built by the vendored OfferBuilder with `xbt_blake2b(true)` / default, signing key pubkey(42).
+const XBT_OFFER: &str = "lno1pgphscn5p3qszqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqpvggrt0j7j3uzp9n549hxpu0sxlmpwe2ql5qplgwkg628wrzk5acfcskq";
+const BTC_OFFER_NO_BIT: &str = "lno1pgpkyarrzcssxkl9a9rcyzt8f2twvrclqdlkzaj5plgqr7sav355wux9dfmsn3pv";
+
+/// A mainnet invoice signed with a fixed key; `xbt` sets feature bit 512.
+fn fixture_invoice(xbt: bool) -> String {
+    use fortis_lightning::ldk_node::bitcoin::hashes::{sha256, Hash};
+    use fortis_lightning::ldk_node::bitcoin::secp256k1::{Message, Secp256k1, SecretKey};
+    use fortis_lightning::ldk_node::lightning_invoice::{Currency, InvoiceBuilder, PaymentSecret};
+    use std::time::Duration;
+
+    let sk = SecretKey::from_slice(&[0x42; 32]).unwrap();
+    let b = InvoiceBuilder::new(Currency::Bitcoin)
+        .description("fixture".into())
+        .payment_hash(sha256::Hash::hash(&[1u8; 32]))
+        .payment_secret(PaymentSecret([7u8; 32]))
+        .duration_since_epoch(Duration::from_secs(1_700_000_000))
+        .min_final_cltv_expiry_delta(144)
+        .amount_milli_satoshis(1_000_000)
+        .basic_mpp();
+    let b = if xbt { b.require_blake2b() } else { b };
+    let secp = Secp256k1::new();
+    b.build_signed(|h| secp.sign_ecdsa_recoverable(&Message::from_digest(*h.as_ref()), &sk))
+        .unwrap()
+        .to_string()
+}
+
+fn chain_of(text: &str) -> LnTargetChain {
+    ln_target_chain(ln_parse_at(text.into(), "bitcoin".into(), 1_700_000_010).unwrap())
+}
+
+#[test]
+fn target_chain_btc_invoice() {
+    assert_eq!(chain_of(&fixture_invoice(false)), LnTargetChain::Btc);
+    let old = ln_parse_at(B11_25M.into(), "bitcoin".into(), NOW_VALID).unwrap();
+    assert_eq!(ln_target_chain(old), LnTargetChain::Btc);
+}
+
+#[test]
+fn target_chain_xbt_invoice() {
+    let inv = fixture_invoice(true);
+    assert_eq!(chain_of(&inv), LnTargetChain::Xbt);
+    // The same invoice inside a BIP21 link is judged by its Lightning part.
+    assert_eq!(chain_of(&format!("bitcoin:{ADDR}?lightning={inv}")), LnTargetChain::Xbt);
+}
+
+#[test]
+fn target_chain_offers() {
+    assert_eq!(chain_of(XBT_OFFER), LnTargetChain::Xbt);
+    assert_eq!(chain_of(BTC_OFFER_NO_BIT), LnTargetChain::Btc);
+    assert_eq!(chain_of(OFFER), LnTargetChain::Btc);
+    assert_eq!(chain_of(&format!("bitcoin:{ADDR}?lno={XBT_OFFER}")), LnTargetChain::Xbt);
+}
+
+#[test]
+fn target_chain_lnurl_unknown() {
+    for t in [
+        "lnurlp://example.com/.well-known/lnurlp/alice",
+        "alice@example.com",
+        ADDR,
+    ] {
+        assert_eq!(chain_of(t), LnTargetChain::Unknown, "{t}");
+    }
+}
+
+#[test]
+fn node_config_chain_roundtrip() {
+    assert_eq!(CoreChain::from(LnChain::Btc), CoreChain::Btc);
+    assert_eq!(CoreChain::from(LnChain::Xbt), CoreChain::Xbt);
+}
+
+#[test]
+fn wrong_chain_error_maps_both_ways() {
+    assert_eq!(LnFfiError::from(LnError::WrongChain), LnFfiError::WrongChain);
+    assert!(matches!(LnError::from(LnFfiError::WrongChain), LnError::WrongChain));
 }

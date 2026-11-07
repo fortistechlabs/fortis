@@ -459,6 +459,7 @@
     <string name="ln_err_other">闪电网络出错——请稍后重试。</string>
     <string name="ln_err_payment_state_unknown">付款状态仍在确认中——重试前请先查看历史记录。</string>
     <string name="ln_err_wrong_network">此付款请求属于另一个比特币网络。</string>
+    <string name="ln_err_wrong_chain">此付款请求属于另一条闪电网络链(BTC 或 XBT)。</string>
     <string name="ln_takeover_action">改在此设备上使用闪电网络</string>
     <string name="ln_takeover_body">另一台设备将停止为此钱包使用闪电网络。仅当你不再在那台设备上使用时才继续；同时运行两者可能会使你的通道资金面临风险。</string>
     <string name="ln_takeover_title">在此设备上使用闪电网络？</string>

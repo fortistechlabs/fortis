@@ -18,6 +18,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import uniffi.wallet_ffi.LnBalances
+import uniffi.wallet_ffi.LnChain
 import uniffi.wallet_ffi.LnChannelState
 import uniffi.wallet_ffi.LnDirection
 import uniffi.wallet_ffi.LnEventRecord
@@ -565,6 +566,7 @@ class LightningSession(
             ?: store.vssAuthHeader(walletId)
         val esploraUrl = store.esploraUrl(walletId)
         val cfg = LnNodeConfig(
+            chain = LnChain.BTC,
             bip39Seed = seed.copyOf(),
             network = w?.network ?: lnInfo.network,
             dataDir = store.dataDir(walletId),

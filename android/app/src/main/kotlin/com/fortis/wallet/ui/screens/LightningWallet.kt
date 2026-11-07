@@ -900,6 +900,7 @@ fun lnErrorMessage(e: com.fortis.wallet.lightning.LnFfiError): Int = when (e) {
     is uniffi.wallet_ffi.LnFfiException.NoRoute -> R.string.ln_err_no_route
     is uniffi.wallet_ffi.LnFfiException.InvoiceExpired -> R.string.ln_err_invoice_expired
     is uniffi.wallet_ffi.LnFfiException.WrongNetwork -> R.string.ln_err_wrong_network
+    is uniffi.wallet_ffi.LnFfiException.WrongChain -> R.string.ln_err_wrong_chain
     is uniffi.wallet_ffi.LnFfiException.PaymentStateUnknown -> R.string.ln_err_payment_state_unknown
     is uniffi.wallet_ffi.LnFfiException.AmountOutOfRange -> R.string.ln_err_amount_out_of_range
     is uniffi.wallet_ffi.LnFfiException.Other -> R.string.ln_err_other
