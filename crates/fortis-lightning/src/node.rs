@@ -195,6 +195,19 @@ pub enum LnChain {
 
 /// XBT forked from BTC at this height; older channel announcements are BTC's.
 const XBT_GOSSIP_FLOOR_HEIGHT: u32 = 961640;
+/// BLAKE2b's activation height on an XBT regtest (Knots
+/// `testactivationheight=blake2b@20`, as `tools/xbt-regtest` runs it): the
+/// regtest chain's gossip floor. A mainnet floor there would drop every
+/// channel announcement, so the node could not route past its LSP.
+const XBT_REGTEST_GOSSIP_FLOOR_HEIGHT: u32 = 20;
+
+/// The height below which channel announcements are not XBT's.
+fn xbt_gossip_floor_height(network: Network) -> u32 {
+    match network {
+        Network::Regtest => XBT_REGTEST_GOSSIP_FLOOR_HEIGHT,
+        _ => XBT_GOSSIP_FLOOR_HEIGHT,
+    }
+}
 
 /// What a [`LnChain`] changes in the ldk-node builder.
 #[derive(Debug, Clone, PartialEq)]
@@ -208,7 +221,7 @@ pub(crate) fn ldk_settings(chain: LnChain, network: Network, lsp_id: PublicKey) 
     match chain {
         LnChain::Xbt => LdkSettings {
             xbt: Some(ldk_node::config::XbtConfig {
-                gossip_floor_height: XBT_GOSSIP_FLOOR_HEIGHT,
+                gossip_floor_height: xbt_gossip_floor_height(network),
                 splice_peers: vec![lsp_id],
                 splice_all_peers: false,
             }),
@@ -1620,12 +1633,14 @@ mod tests {
     #[test]
     fn xbt_settings() {
         let id = lsp_key();
-        for net in [Network::Bitcoin, Network::Regtest] {
+        // The gossip floor is the network's BLAKE2b activation height:
+        // 961,640 on mainnet, 20 on regtest (the XBT regtest gate's Knots).
+        for (net, floor) in [(Network::Bitcoin, 961640), (Network::Regtest, 20)] {
             let s = ldk_settings(LnChain::Xbt, net, id);
             assert_eq!(
                 s.xbt,
                 Some(ldk_node::config::XbtConfig {
-                    gossip_floor_height: 961640,
+                    gossip_floor_height: floor,
                     splice_peers: vec![id],
                     splice_all_peers: false,
                 })
