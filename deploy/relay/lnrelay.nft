@@ -1,11 +1,14 @@
-# /etc/wireguard/lnrelay.nft on the VPS: forward TCP 9735 to the home LSP.
+# /etc/wireguard/lnrelay.nft on the VPS: forward TCP 9735 (BTC LSP) and 9835 (XBT LSP)
+# to the home host.
 table ip lnrelay {
   chain pre {
     type nat hook prerouting priority -100;
     tcp dport 9735 dnat to 10.8.0.2:9735
+    tcp dport 9835 dnat to 10.8.0.2:9835
   }
   chain post {
     type nat hook postrouting priority 100;
     ip daddr 10.8.0.2 tcp dport 9735 masquerade
+    ip daddr 10.8.0.2 tcp dport 9835 masquerade
   }
 }

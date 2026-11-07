@@ -272,3 +272,117 @@ Before offering the Lightning wallet to general users, run the mainnet canary wi
 
 ### Canary run log
 - Status: Backend deployed (edge `/ln/info` and `/ln/vss`, VSS, LSP); relay `lsp.fortistechlabs.com` → e2-micro → home LSP verified for TCP. Pending: LSP funding (0.005 BTC canary) and Pixel `.dev`/`.dev2` execution. Note: test sending before receiving from an outside wallet (§4, inbound liquidity). Force close and sweeps need the edge with the Lightning fee exemption (`crates/fortis-edge/src/ln_fee.rs`); before it, the edge refused the phone's own broadcasts (402).
+
+---
+
+## 11. XBT LSP
+
+A second `fortis-lsp` instance for XBT (Bitcoin BLAKE2b chain): its own unit `fortis-lsp-xbt`, config `/etc/fortis/lsp-xbt.toml`, data `/var/lib/fortis/lsp-xbt` (its own `keys_seed`, so its own `node_id`), admin and metrics on `127.0.0.1:9746`, peers on `0.0.0.0:9835` (announced as `lsp.fortistechlabs.com:9835` through the relay). It reads the chain from the XBT index (`http://127.0.0.1:8094`), gossips peer to peer (never RGS), and starts with `custody_max_sat = 0`.
+
+New in this rollout:
+
+- `fortis-index --spends-from-height <h>` builds the spends index (who spent which output; served at `/tx/<txid>/outspend/<vout>`): XBT `961640`, BTC `973000`.
+- `fortis-lsp` keys `chain = "xbt"`, `esplora_url` and `xbt_gossip_floor_height` (example: [`linux-home/lsp-xbt.toml.example`](linux-home/lsp-xbt.toml.example)).
+- `fortis-edge` flags `--ln-info-xbt-file` and `--lsp-xbt-admin-url http://127.0.0.1:9746` (example: [`linux-home/ln-info-xbt.json.example`](linux-home/ln-info-xbt.json.example)).
+
+Do the steps in order. Each one is safe to stop after. `install.sh` restarts several units at once, so it is not used here: install by hand as shown.
+
+Build first, as your user: `cargo build --release -p fortis-index -p fortis-edge -p fortis-lsp`.
+
+### 11.1 Check the BTC spends height (before touching an index)
+
+The unit files in this repo carry `--spends-from-height 973000` for BTC. Every live BTC LSP channel must have been funded at or above that height, or its close would not be indexed. The LSP has no channel listing, so look up each funding transaction:
+
+```sh
+# funding txids: the channel-ready lines in the journal and ldk_node.log
+sudo journalctl -u fortis-lsp --no-pager | grep -i 'channel .* ready'
+sudo grep -i funding /var/lib/fortis/lsp/ldk_node.log | tail -n 20
+# for each funding txid (core-cli = bitcoin-cli for Bitcoin Core):
+core-cli getrawtransaction <funding_txid> true      # note "blockhash"
+core-cli getblockheader <blockhash>                  # "height"
+```
+
+The oldest funding height must be >= 973000. If it is lower, edit `deploy/linux-home/fortis-btc-index.service` and set `--spends-from-height` below that height (any lower value is safe; it only makes the backfill longer). If there are no channels yet, keep 973000. `sudo curl -s http://127.0.0.1:9736/metrics | grep fortis_lsp_channels` gives the channel count to compare against what you found.
+
+### 11.2 Deploy the indexes
+
+1. **Both index nodes need `-txindex`** (the spends lookups fetch the spending transactions). Confirm for each node before going on; `txindex` must report `"synced": true`:
+   ```sh
+   bitcoin-cli -rpcport=8432 -rpccookiefile=/var/lib/bitcoin-knots/.cookie getindexinfo    # XBT (Knots)
+   core-cli getindexinfo                                                                 # BTC (Core)
+   ```
+   If either lacks `txindex` or is still syncing, stop here and fix the node first.
+2. **Dry run (recommended).** Copy a small index DB, or run the new `fortis-index` against regtest (`tools/xbt-regtest`), and watch it backfill before running it on the live DBs. At the least, watch the first batches in step 4 and run the spot check in step 5.
+3. **Install and restart:**
+   ```sh
+   sudo install -m 0755 target/release/fortis-index /usr/local/bin/fortis-index
+   sudo install -m 0644 deploy/linux-home/fortis-xbt-index.service deploy/linux-home/fortis-btc-index.service /etc/systemd/system/
+   sudo systemctl daemon-reload
+   sudo systemctl restart fortis-xbt-index fortis-btc-index
+   ```
+4. **Watch the backfill** in each journal (`journalctl -u fortis-xbt-index -f`, `-u fortis-btc-index -f`): one `spends backfill: <h>/<to>` line per 100-block batch, then `spends backfill: done`. A batch that is refused is logged with its reason. Each batch briefly pauses block indexing while it flushes, so the index tip lags a little until `done`. Wait for `done` in both journals.
+5. **Spot check** with a closed channel you know, for example an old P2WSH funding transaction: `curl -s 127.0.0.1:8094/tx/<funding txid>/outspend/<vout>` must report `"spent": true` with the closing transaction. Do it once for XBT (8094) and, if you have a closed BTC channel above 973000, for BTC (8095).
+
+Cautions:
+
+- **Start the new index binary first, before running the `verify` tool.** `verify` opens the DB as a RocksDB secondary and fails on a DB the new binary has not opened once.
+- **Do not downgrade `fortis-index` once spends are enabled.** The old undo decoding rejects the new trailing spends section. Keep the old binary only for the window before the restart in step 3 (to roll back, reinstall it and restart before the new one has run; after that, the way back is restoring a DB copy or resyncing).
+
+### 11.3 Deploy and set up the XBT LSP
+
+1. **Install the binary.** `fortis-lsp` is one binary for both LSPs:
+   ```sh
+   sudo install -m 0755 target/release/fortis-lsp /usr/local/bin/fortis-lsp
+   ```
+2. **Restart the BTC LSP**, since it shares the binary, and check it came up as before: the same `node_id` and channels.
+   ```sh
+   curl -s http://127.0.0.1:9736/info | jq .node_id        # note it BEFORE the restart
+   sudo systemctl restart fortis-lsp
+   curl -s http://127.0.0.1:9736/info | jq .node_id        # must be identical
+   curl -s http://127.0.0.1:9736/metrics | grep fortis_lsp_channels
+   ```
+   The BTC config must not contain `esplora_url`, and the XBT config is rejected if it contains `bitcoind_rpc`, `rpc_user`, `rpc_password_file` or `rgs_url`. Do not copy `lsp.toml` to make the XBT one.
+3. **Install the XBT config and unit:**
+   ```sh
+   sudo install -m 0640 -o root -g fortis deploy/linux-home/lsp-xbt.toml.example /etc/fortis/lsp-xbt.toml
+   sudo install -m 0644 deploy/linux-home/fortis-lsp-xbt.service /etc/systemd/system/
+   sudo install -d -o fortis -g fortis -m 0700 /var/lib/fortis/lsp-xbt
+   sudo systemctl daemon-reload
+   ```
+   Review `/etc/fortis/lsp-xbt.toml`: `chain = "xbt"`, `esplora_url = "http://127.0.0.1:8094"`, `xbt_gossip_floor_height = 961640`, `custody_max_sat = 0`.
+4. **Start it:** `sudo systemctl enable --now fortis-lsp-xbt`, then `journalctl -u fortis-lsp-xbt -f`. It needs `fortis-xbt-index` running and synced.
+5. **Back up `/var/lib/fortis/lsp-xbt/keys_seed` off the host before funding** (§6's script covers `lsp`, not `lsp-xbt`: add it there).
+6. **Read the `node_id`:** `curl -s http://127.0.0.1:9746/info | jq .node_id`. You need it in 11.5.
+
+Lightning on XBT uses only P2WSH channels (no taproot channels). If taproot channels are ever enabled, the spends index's skip rule must be revisited first.
+
+### 11.4 Open the relay port
+
+1. On the VPS, install the updated `deploy/relay/lnrelay.nft` as `/etc/wireguard/lnrelay.nft` (it now also forwards 9835) and reload it (`sudo nft -f /etc/wireguard/lnrelay.nft`, or restart `wg-quick@wg0` as in `deploy/relay/README.md`).
+2. In the GCP console, add a VPC firewall rule, ingress, source 0.0.0.0/0, `tcp:9835`. nftables alone is not enough.
+3. From mobile data (not the home network): `nc -vz lsp.fortistechlabs.com 9835` must succeed.
+
+### 11.5 Turn on the edge (still disabled)
+
+1. Create `/etc/fortis/ln-info-xbt.json` from [`linux-home/ln-info-xbt.json.example`](linux-home/ln-info-xbt.json.example): fill in `node_id` from 11.3, keep `"enabled": false`.
+2. In `/etc/fortis/edge.env`, append to `EXTRA_ARGS`: `--ln-info-xbt-file /etc/fortis/ln-info-xbt.json --lsp-xbt-admin-url http://127.0.0.1:9746`.
+3. `sudo systemctl restart fortis-edge`.
+4. Check that the object appears: `curl -s https://<edge>/ln/info | jq .xbt` (with an install token, as for the BTC document). Old apps ignore the unknown field.
+
+Pushes from the XBT LSP carry `"chain":"xbt"`, which only the new app understands.
+
+### 11.6 Fund and connect
+
+Back up the seed (11.3 step 5) first. Send XBT to the `onchain_address` in `journalctl -u fortis-lsp-xbt`, then add outbound channels to well-connected XBT Lightning nodes in `/etc/fortis/lsp-xbt.toml` as in §4:
+
+```toml
+[[outbound]]
+peer = "<node_id>@<host>:<port>"
+sat = 150000
+```
+
+and `sudo systemctl restart fortis-lsp-xbt`. Watch `journalctl -u fortis-lsp-xbt -f` as in §4.
+
+### 11.7 Wait for the app
+
+Do not set `"enabled": true` in `ln-info-xbt.json` until the app that understands XBT Lightning (Plan C) is released and its real-phone canary has passed. Keep `custody_max_sat = 0` until you have decided to hold customer funds.

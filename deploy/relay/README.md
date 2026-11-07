@@ -1,7 +1,7 @@
 # TCP relay for fortis-lsp (small VPS in front of a home LSP)
 
 Use this when the home connection cannot take inbound connections (CGNAT /
-IPv6-only). The VPS has a public IPv4 address and forwards TCP 9735 to the LSP
+IPv6-only). The VPS has a public IPv4 address and forwards TCP 9735 (and 9835 for the XBT LSP) to the LSP
 at home over a WireGuard tunnel that **the home machine opens outbound**.
 The VPS holds no seed, no funds and no Bitcoin Core: it only forwards bytes
 (BOLT 8 is encrypted end to end), so losing or reclaiming it costs nothing but
@@ -20,7 +20,7 @@ Addresses used below: tunnel 10.8.0.1 (VPS) and 10.8.0.2 (home), UDP 51820.
 - Reserve a **static external IPv4** and attach it, so it survives restarts.
   External IPv4 addresses can be billed separately from the free VM: check
   Billing and set a budget alert.
-- VPC firewall rules (ingress, source 0.0.0.0/0): `tcp:9735` and `udp:51820`.
+- VPC firewall rules (ingress, source 0.0.0.0/0): `tcp:9735`, `tcp:9835` (the XBT LSP) and `udp:51820`.
 - Egress above the free monthly allowance is billed; Lightning traffic is small.
 - The region adds latency for European users; the relay itself adds nothing else.
 
@@ -54,6 +54,7 @@ It routes only 10.8.0.1/32 through the tunnel, never your other traffic.
 ping -c2 10.8.0.1                         # home → VPS
 sudo wg show                              # "latest handshake" within a minute
 nc -vz <VPS_IP> 9735                      # from outside (phone on mobile data)
+nc -vz <VPS_IP> 9835                      # the XBT LSP, same check
 ```
 
 ## 5. DNS
