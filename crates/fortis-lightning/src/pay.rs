@@ -489,7 +489,7 @@ fn map_send_error(e: NodeError) -> LnError {
         NodeError::PersistenceFailed => LnError::PaymentStateUnknown,
         NodeError::DuplicatePayment => LnError::Other("duplicate_payment".into()),
         NodeError::UnsupportedCurrency => LnError::Other("unsupported_currency".into()),
-        NodeError::WrongChain => LnError::Other(NodeError::WrongChain.to_string()),
+        NodeError::WrongChain => LnError::WrongChain,
         other => LnError::Other(format!("pay: {other}")),
     }
 }
@@ -815,8 +815,14 @@ mod tests {
         Node::new(node_cfg(dir)).unwrap()
     }
 
+    #[test]
+    fn wrong_chain_maps_to_ln_error() {
+        assert_eq!(map_send_error(NodeError::WrongChain), LnError::WrongChain);
+    }
+
     fn node_cfg(dir: &str) -> NodeConfig {
         NodeConfig {
+            chain: crate::LnChain::Btc,
             bip39_seed: vec![3; 64],
             network: Network::Regtest,
             data_dir: std::env::temp_dir().join(dir),
@@ -912,6 +918,7 @@ mod tests {
     fn gate_failure_is_backup_unavailable() {
         // Port 1 on loopback: refused at once.
         let n = Node::new(NodeConfig {
+            chain: crate::LnChain::Btc,
             vss: VssConfig {
                 url: "http://127.0.0.1:1/vss".into(),
                 auth_header: String::new(),

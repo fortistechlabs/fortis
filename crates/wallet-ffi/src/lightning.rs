@@ -14,9 +14,9 @@ use fortis_lightning::ldk_node::bitcoin::{Address, Network, OutPoint, Txid};
 use fortis_lightning::lnurl::{self, LnurlPayParams, UreqGet};
 use fortis_lightning::recover::{self, EsploraBroadcast, EsploraScan, StaticUtxo};
 use fortis_lightning::{
-    vss_state_exists, Balances, ChainSource, ChannelState, Direction, LnError, LnEvent, LspInfo,
-    LspLimits, Node, NodeConfig, ParseError, Payment, PaymentTarget, ReceiveQuote, StartMode,
-    Status, VssConfig,
+    vss_state_exists, Balances, ChainSource, ChannelState, Direction, LnChain, LnError, LnEvent,
+    LspInfo, LspLimits, Node, NodeConfig, ParseError, Payment, PaymentTarget, ReceiveQuote,
+    StartMode, Status, VssConfig,
 };
 use zeroize::Zeroizing;
 
@@ -58,6 +58,12 @@ impl From<LnError> for LnFfiError {
             LnError::AmountOutOfRange { min_msat, max_msat } => {
                 LnFfiError::AmountOutOfRange { min_msat, max_msat }
             }
+            LnError::WrongChain => LnFfiError::Other {
+                reason: "wrong_chain".into(),
+            },
+            e @ LnError::Config(_) => LnFfiError::Other {
+                reason: e.to_string(),
+            },
             LnError::Other(reason) => LnFfiError::Other { reason },
         }
     }
@@ -762,6 +768,7 @@ impl LnNode {
     pub fn new(cfg: LnNodeConfig) -> Result<Arc<Self>, LnFfiError> {
         let network = parse_network(&cfg.network)?;
         let node = Node::new(NodeConfig {
+            chain: LnChain::Btc,
             bip39_seed: cfg.bip39_seed,
             network,
             data_dir: PathBuf::from(cfg.data_dir),

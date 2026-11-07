@@ -175,6 +175,7 @@ fn client_config(
     dirs: &TempDir,
 ) -> NodeConfig {
     NodeConfig {
+        chain: fortis_lightning::LnChain::Btc,
         bip39_seed: test_seed(41).to_vec(),
         network: Network::Regtest,
         data_dir: dirs.path("client"),
@@ -252,6 +253,7 @@ fn refused_promptly<T: std::fmt::Debug>(what: &str, f: impl FnOnce() -> Result<T
 fn start_mode_reports_mode() {
     let dirs = TempDir::new("exit-nonet");
     let node = Node::new(NodeConfig {
+        chain: fortis_lightning::LnChain::Btc,
         bip39_seed: test_seed(43).to_vec(),
         network: Network::Regtest,
         data_dir: dirs.path("client"),

@@ -76,6 +76,7 @@ impl Env {
     /// A `NodeConfig` for this wallet with data dir `dir` against `vss`.
     fn config_via(&self, dir: &str, vss: VssConfig) -> NodeConfig {
         NodeConfig {
+            chain: fortis_lightning::LnChain::Btc,
             bip39_seed: self.seed.to_vec(),
             network: Network::Regtest,
             data_dir: self.dirs.path(dir),

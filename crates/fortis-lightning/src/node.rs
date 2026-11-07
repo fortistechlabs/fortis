@@ -184,6 +184,45 @@ impl std::fmt::Debug for ChainSource {
     }
 }
 
+/// Which Bitcoin-family chain the Lightning node runs on.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LnChain {
+    Btc,
+    /// XBT (the BLAKE2b fork): Esplora only, peer-to-peer gossip, no anchors,
+    /// splicing with the LSP.
+    Xbt,
+}
+
+/// XBT forked from BTC at this height; older channel announcements are BTC's.
+const XBT_GOSSIP_FLOOR_HEIGHT: u32 = 961640;
+
+/// What a [`LnChain`] changes in the ldk-node builder.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct LdkSettings {
+    pub xbt: Option<ldk_node::config::XbtConfig>,
+    pub rgs_url: Option<String>,
+    pub anchors_trust_lsp: bool,
+}
+
+pub(crate) fn ldk_settings(chain: LnChain, network: Network, lsp_id: PublicKey) -> LdkSettings {
+    match chain {
+        LnChain::Xbt => LdkSettings {
+            xbt: Some(ldk_node::config::XbtConfig {
+                gossip_floor_height: XBT_GOSSIP_FLOOR_HEIGHT,
+                splice_peers: vec![lsp_id],
+                splice_all_peers: false,
+            }),
+            rgs_url: None,
+            anchors_trust_lsp: false,
+        },
+        LnChain::Btc => LdkSettings {
+            xbt: None,
+            rgs_url: (network == Network::Bitcoin).then(|| MAINNET_RGS_URL.to_string()),
+            anchors_trust_lsp: true,
+        },
+    }
+}
+
 /// Everything [`Node::new`] needs. No `Debug` or `Clone`: it holds the seed,
 /// which [`Node::new`] takes out and wipes.
 pub struct NodeConfig {
@@ -197,6 +236,8 @@ pub struct NodeConfig {
     pub lsp: LspInfo,
     pub vss: VssConfig,
     pub limits: LspLimits,
+    /// Which chain the node runs on. `Btc` is today's behaviour.
+    pub chain: LnChain,
 }
 
 /// The node's funds, in five parts that never count a sat twice:
@@ -271,6 +312,7 @@ pub struct Node {
     network: Network,
     data_dir: PathBuf,
     chain_source: ChainSource,
+    chain: LnChain,
     vss: VssConfig,
     limits: LspLimits,
     lsp_id: PublicKey,
@@ -476,6 +518,12 @@ impl Node {
             .node_id
             .parse()
             .map_err(|e| LnError::Other(format!("lsp node id: {e}")))?;
+        if cfg.chain == LnChain::Xbt && matches!(cfg.chain_source, ChainSource::BitcoindRpc { .. })
+        {
+            return Err(LnError::Config(
+                "xbt requires an esplora chain source".into(),
+            ));
+        }
         let lsp_addr: SocketAddress = format!("{}:{}", cfg.lsp.host, cfg.lsp.port)
             .parse()
             .map_err(|e| LnError::Other(format!("lsp address: {e:?}")))?;
@@ -490,6 +538,7 @@ impl Node {
             network: cfg.network,
             data_dir: cfg.data_dir,
             chain_source: cfg.chain_source,
+            chain: cfg.chain,
             vss: cfg.vss.clone(),
             limits: cfg.limits,
             lsp_id,
@@ -594,6 +643,7 @@ impl Node {
             network: self.network,
             data_dir: self.data_dir.to_string_lossy().into_owned(),
             chain_source: self.chain_source.clone(),
+            chain: self.chain,
             vss: self.vss.clone(),
             lsp_id: self.lsp_id,
             lsp_addr: self.lsp_addr.clone(),
@@ -1142,6 +1192,7 @@ struct StartJob {
     network: Network,
     data_dir: String,
     chain_source: ChainSource,
+    chain: LnChain,
     vss: VssConfig,
     lsp_id: PublicKey,
     lsp_addr: SocketAddress,
@@ -1308,10 +1359,15 @@ impl StartJob {
         }
         self.set(Stage::Build);
         // The LSP gets closes confirmed for us: no 25,000 sat anchor reserve.
+        let settings = ldk_settings(self.chain, self.network, self.lsp_id);
         let mut config = ldk_node::config::Config::default();
-        if let Some(a) = config.anchor_channels_config.as_mut() {
-            a.trusted_peers_no_reserve.push(self.lsp_id);
+        if settings.anchors_trust_lsp {
+            if let Some(a) = config.anchor_channels_config.as_mut() {
+                a.trusted_peers_no_reserve.push(self.lsp_id);
+            }
         }
+        // The builder drops anchors itself when `xbt` is set.
+        config.xbt = settings.xbt;
         let mut b = Builder::from_config(config);
         b.set_network(self.network);
         match &self.chain_source {
@@ -1346,8 +1402,9 @@ impl StartJob {
         // graph down the same connection on every connect, holding up the
         // payments queued behind it by seconds. Mainnet only (no RGS server for
         // test networks; a node there routes over its own channels).
-        if self.network == Network::Bitcoin {
-            b.set_gossip_source_rgs(MAINNET_RGS_URL.to_string());
+        // XBT has no RGS server: it keeps the builder's default P2P gossip.
+        if let Some(url) = settings.rgs_url {
+            b.set_gossip_source_rgs(url);
         }
         b.set_entropy_seed_bytes(*self.ldk_seed);
         b.set_storage_dir_path(self.data_dir.clone());
@@ -1538,7 +1595,60 @@ mod tests {
                 channel_min_sat: 3,
                 channel_max_sat: 4,
             },
+            chain: LnChain::Btc,
         }
+    }
+
+    fn lsp_key() -> PublicKey {
+        "0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798"
+            .parse()
+            .unwrap()
+    }
+
+    #[test]
+    fn btc_settings_unchanged() {
+        let id = lsp_key();
+        let main = ldk_settings(LnChain::Btc, Network::Bitcoin, id);
+        assert_eq!(main.xbt, None);
+        assert_eq!(main.rgs_url.as_deref(), Some(MAINNET_RGS_URL));
+        assert!(main.anchors_trust_lsp);
+        let reg = ldk_settings(LnChain::Btc, Network::Regtest, id);
+        assert_eq!(reg.rgs_url, None);
+        assert!(reg.anchors_trust_lsp);
+    }
+
+    #[test]
+    fn xbt_settings() {
+        let id = lsp_key();
+        for net in [Network::Bitcoin, Network::Regtest] {
+            let s = ldk_settings(LnChain::Xbt, net, id);
+            assert_eq!(
+                s.xbt,
+                Some(ldk_node::config::XbtConfig {
+                    gossip_floor_height: 961640,
+                    splice_peers: vec![id],
+                    splice_all_peers: false,
+                })
+            );
+            assert_eq!(s.rgs_url, None);
+            assert!(!s.anchors_trust_lsp);
+        }
+    }
+
+    #[test]
+    fn xbt_with_bitcoind_rpc_is_a_config_error() {
+        let mut c = cfg(vec![9u8; 64]);
+        c.chain = LnChain::Xbt;
+        c.chain_source = ChainSource::BitcoindRpc {
+            host: "h".into(),
+            port: 1,
+            user: "u".into(),
+            password: "p".into(),
+        };
+        assert!(matches!(Node::new(c), Err(LnError::Config(_))));
+        let mut ok = cfg(vec![9u8; 64]);
+        ok.chain = LnChain::Xbt;
+        assert!(Node::new(ok).is_ok());
     }
 
     #[test]

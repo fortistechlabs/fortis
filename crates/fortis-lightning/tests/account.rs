@@ -25,6 +25,7 @@ const SAT: u64 = 1_000;
 
 fn client(rt: &Regtest, lsp: &Lsp, vss: &Vss, dirs: &TempDir, tag: &str, seed: u8) -> Node {
     let node = Node::new(NodeConfig {
+        chain: fortis_lightning::LnChain::Btc,
         bip39_seed: test_seed(seed).to_vec(),
         network: Network::Regtest,
         data_dir: dirs.path(tag),

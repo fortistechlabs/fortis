@@ -64,6 +64,7 @@ impl Env {
         let lsp = Lsp::start(&rt, &[]);
         let dirs = TempDir::new("channel");
         let client = Node::new(NodeConfig {
+            chain: fortis_lightning::LnChain::Btc,
             bip39_seed: test_seed(23).to_vec(),
             network: Network::Regtest,
             data_dir: dirs.path("client"),
@@ -195,6 +196,7 @@ fn have_binaries() -> bool {
 fn offline_node(tag: &str) -> (Node, TempDir) {
     let dir = TempDir::new(tag);
     let node = Node::new(NodeConfig {
+        chain: fortis_lightning::LnChain::Btc,
         bip39_seed: test_seed(29).to_vec(),
         network: Network::Regtest,
         data_dir: dir.path("client"),

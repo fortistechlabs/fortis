@@ -74,6 +74,7 @@ fn client_connects_to_fortis_lsp() {
     // counts it as a peer.
     let dirs = TempDir::new("lsp-smoke");
     let client = Node::new(NodeConfig {
+        chain: fortis_lightning::LnChain::Btc,
         bip39_seed: test_seed(7).to_vec(),
         network: Network::Regtest,
         data_dir: dirs.path("client"),

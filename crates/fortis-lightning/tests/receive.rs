@@ -40,6 +40,7 @@ impl Env {
         let lsp = Lsp::start(&rt, lsp_overrides);
         let dirs = TempDir::new("receive");
         let client = Node::new(NodeConfig {
+            chain: fortis_lightning::LnChain::Btc,
             bip39_seed: test_seed(7).to_vec(),
             network: Network::Regtest,
             data_dir: dirs.path("client"),
@@ -323,6 +324,7 @@ fn fee_percentage_applies() {
 fn receive_before_start_errors() {
     let dirs = TempDir::new("receive-unstarted");
     let node = Node::new(NodeConfig {
+        chain: fortis_lightning::LnChain::Btc,
         bip39_seed: test_seed(3).to_vec(),
         network: Network::Regtest,
         data_dir: dirs.path("client"),
