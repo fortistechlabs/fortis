@@ -6,10 +6,11 @@ import java.util.Locale
  *  convention for on-chain values, independent of the device locale. */
 fun fmtCoin(sat: Long): String = "%.8f".format(Locale.ROOT, sat / 1e8)
 
-/** The coin a wallet on [chain] holds: BTC on "btc" and on the Lightning wallet ("ln"), else XBT. */
+/** The coin a wallet on [chain] holds: BTC on "btc" and on the Lightning wallet ("ln"), else XBT
+ *  (the XBT Lightning wallet, "ln-xbt", included). */
 fun chainUnit(chain: String?): String = when (chain) {
     "btc", com.fortis.wallet.data.LN_CHAIN -> "BTC"
-    else -> "XBT"
+    else -> "XBT" // "xbt", com.fortis.wallet.data.LN_XBT_CHAIN
 }
 
 /** A formatted coin amount split before its decimal point — `"20999999"` and

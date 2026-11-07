@@ -364,7 +364,7 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
     val lightning = LightningSession(
         scope = viewModelScope,
         store = store,
-        info = EdgeLnInfoApi(http, HOSTED_EDGE) {
+        info = EdgeLnInfoApi(http, HOSTED_EDGE, uniffi.wallet_ffi.LnChain.BTC) {
             val id = selectedId ?: wallets.firstOrNull { it.isLightning }?.id
             if (id != null) ensureWalletToken(id) else fortis.swapStore.edgeToken(http, HOSTED_EDGE)
         },
@@ -382,12 +382,13 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
             val tok = runCatching { ensureWalletToken(walletId) }.getOrNull().orEmpty()
             if (tok.isNotBlank()) "Bearer $tok" else ""
         },
+        chain = uniffi.wallet_ffi.LnChain.BTC,
     )
 
     // --- the Fortis account (spec §7): small balances the LSP holds for the Lightning wallet ---
 
     val fortisAccount = com.fortis.wallet.lightning.FortisAccount(
-        com.fortis.wallet.lightning.EdgeAccountTransport(http, HOSTED_EDGE) {
+        com.fortis.wallet.lightning.EdgeAccountTransport(http, HOSTED_EDGE, uniffi.wallet_ffi.LnChain.BTC) {
             val id = lightningWalletOf(wallets)?.id
             if (id != null) ensureWalletToken(id) else fortis.swapStore.edgeToken(http, HOSTED_EDGE)
         },

@@ -14,7 +14,9 @@ import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import com.fortis.wallet.HOSTED_EDGE
 import uniffi.wallet_ffi.LnBalances
+import uniffi.wallet_ffi.LnChain
 import uniffi.wallet_ffi.LnChannelState
 import uniffi.wallet_ffi.LnFfiException
 import uniffi.wallet_ffi.LnNodeConfig
@@ -552,5 +554,75 @@ class LightningSessionTest {
         } finally {
             scope.cancel()
         }
+    }
+
+    private val xbtLnWallet = btcMainnetWallet.copy(id = "w-ln-xbt", name = "Lightning (XBT)", chain = "ln-xbt")
+
+    /** Starts [walletId] on a [chain] session; the config the node got, or null if no node was made. */
+    private fun startAndCapture(store: LightningStore, walletId: String, chain: LnChain): Pair<LnNodeConfig?, LnState> = runBlocking {
+        var captured: LnNodeConfig? = null
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        try {
+            val session = LightningSession(
+                scope = scope,
+                store = store,
+                nodeFactory = { cfg -> captured = cfg; FakeNode() },
+                info = LnInfoApi { sampleInfo(nodeIdSuffix = if (chain == LnChain.XBT) "22" else "11") },
+                chain = chain,
+            )
+            session.onUnlocked(walletId, sampleSeed).join()
+            captured to session.state.value
+        } finally {
+            scope.cancel()
+        }
+    }
+
+    @Test
+    fun session_xbt_uses_xbt_esplora_and_config() {
+        val store = InMemoryLightningStore(mapOf(xbtLnWallet.id to xbtLnWallet))
+        val (cfg, st) = startAndCapture(store, xbtLnWallet.id, LnChain.XBT)
+        assertTrue("expected Ready, got $st", st is LnState.Ready)
+        assertNotNull(cfg)
+        assertEquals(LnChain.XBT, cfg!!.chain)
+        assertEquals("$HOSTED_EDGE/xbt", cfg.esploraUrl)
+        assertEquals("Bearer tok-123", cfg.esploraAuthHeader)
+        assertEquals("02" + "22".repeat(32), cfg.lsp.nodeId)
+        assertEquals("$HOSTED_EDGE/ln/vss", cfg.vss.url)
+    }
+
+    @Test
+    fun session_btc_config_unchanged() {
+        val store = InMemoryLightningStore(mapOf(btcMainnetWallet.id to btcMainnetWallet))
+        val (cfg, _) = startAndCapture(store, btcMainnetWallet.id, LnChain.BTC)
+        assertEquals(LnChain.BTC, cfg!!.chain)
+        assertEquals("$HOSTED_EDGE/btc", cfg.esploraUrl)
+    }
+
+    @Test
+    fun session_starts_only_its_own_chain_wallet() {
+        val store = InMemoryLightningStore(listOf(btcMainnetWallet, xbtLnWallet).associateBy { it.id })
+        val (xOnBtc, s1) = startAndCapture(store, xbtLnWallet.id, LnChain.BTC)
+        assertNull(xOnBtc)
+        assertEquals(LnState.Off, s1)
+        val (bOnXbt, s2) = startAndCapture(store, btcMainnetWallet.id, LnChain.XBT)
+        assertNull(bOnXbt)
+        assertEquals(LnState.Off, s2)
+    }
+
+    @Test
+    fun ln_and_ln_xbt_sessions_never_share_a_data_dir() {
+        val store = InMemoryLightningStore(listOf(btcMainnetWallet, xbtLnWallet).associateBy { it.id })
+        val btc = startAndCapture(store, btcMainnetWallet.id, LnChain.BTC).first!!
+        val xbt = startAndCapture(store, xbtLnWallet.id, LnChain.XBT).first!!
+        assertTrue(btc.dataDir != xbt.dataDir)
+    }
+
+    @Test
+    fun lightning_esplora_url_per_chain() {
+        assertEquals("$HOSTED_EDGE/btc", lightningEsploraUrl(LnChain.BTC, ownBtcServer = null))
+        assertEquals("https://mine.example/api", lightningEsploraUrl(LnChain.BTC, ownBtcServer = "https://mine.example/api"))
+        // XBT Lightning always reads the hosted edge.
+        assertEquals("$HOSTED_EDGE/xbt", lightningEsploraUrl(LnChain.XBT, ownBtcServer = null))
+        assertEquals("$HOSTED_EDGE/xbt", lightningEsploraUrl(LnChain.XBT, ownBtcServer = "https://mine.example/api"))
     }
 }

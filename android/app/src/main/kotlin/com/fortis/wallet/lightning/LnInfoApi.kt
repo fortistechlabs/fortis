@@ -5,6 +5,7 @@ import com.fortis.wallet.data.send
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.json.JSONObject
+import uniffi.wallet_ffi.LnChain
 import uniffi.wallet_ffi.LnFfiException
 import uniffi.wallet_ffi.LnLspInfo
 import uniffi.wallet_ffi.LnLspLimits
@@ -118,6 +119,27 @@ fun parseLnInfo(o: JSONObject): LnInfo {
     )
 }
 
+/** The whole `/ln/info` document: the BTC LSP at the top level, and the XBT
+ *  LSP's object of the same shape under `xbt` when the edge has one. */
+data class LnInfoDoc(val btc: LnInfo, val xbt: LnInfo?)
+
+/** A bad BTC part throws as [parseLnInfo] does. A missing or invalid `xbt`
+ *  object is null: it never breaks the BTC wallet. */
+fun parseLnInfoDoc(json: String): LnInfoDoc {
+    val o = JSONObject(json)
+    val btc = parseLnInfo(o)
+    val xbt = o.optJSONObject("xbt")?.let { x ->
+        try {
+            parseLnInfo(x)
+        } catch (e: org.json.JSONException) {
+            null
+        } catch (e: IllegalArgumentException) {
+            null
+        }
+    }
+    return LnInfoDoc(btc, xbt)
+}
+
 fun interface LnInfoApi {
     suspend fun fetch(): LnInfo
 }
@@ -125,6 +147,8 @@ fun interface LnInfoApi {
 class EdgeLnInfoApi(
     private val http: OkHttpClient,
     base: String = HOSTED_EDGE,
+    /** Which LSP's info [fetch] gives: the document's top level (BTC) or its `xbt` object. */
+    private val chain: LnChain,
     private val token: suspend () -> String,
 ) : LnInfoApi {
     private val base = base.trimEnd('/')
@@ -141,11 +165,16 @@ class EdgeLnInfoApi(
             if (!r.isSuccessful) {
                 throw LnFfiException.LspUnreachable()
             }
-            try {
-                parseLnInfo(body)
+            val info = try {
+                when (chain) {
+                    LnChain.BTC -> parseLnInfo(body)
+                    LnChain.XBT -> parseLnInfoDoc(body).xbt
+                }
             } catch (e: Exception) {
-                throw LnFfiException.LspUnreachable()
+                null
             }
+            // No `xbt` object (an older edge, or XBT not configured) reads as an unreachable LSP.
+            info ?: throw LnFfiException.LspUnreachable()
         }
     }
 }

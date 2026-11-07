@@ -2,6 +2,7 @@ package com.fortis.wallet.lightning
 
 import com.fortis.wallet.HOSTED_EDGE
 import com.fortis.wallet.data.WalletConfig
+import com.fortis.wallet.data.lnChainOf
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -33,9 +34,16 @@ import uniffi.wallet_ffi.LnStartMode
 import uniffi.wallet_ffi.LnTarget
 import uniffi.wallet_ffi.LnVssConfig
 
+/** The Esplora a Lightning node on [chain] reads. BTC uses the user's own BTC
+ *  server when one is on ([ownBtcServer]); XBT Lightning always reads the hosted edge. */
+fun lightningEsploraUrl(chain: LnChain, ownBtcServer: String?): String = when (chain) {
+    LnChain.BTC -> ownBtcServer ?: "$HOSTED_EDGE/btc"
+    LnChain.XBT -> "$HOSTED_EDGE/xbt"
+}
+
 interface LightningStore {
     suspend fun walletConfig(walletId: String): WalletConfig? = null
-    suspend fun esploraUrl(walletId: String): String = "$HOSTED_EDGE/btc"
+    suspend fun esploraUrl(walletId: String, chain: LnChain): String = lightningEsploraUrl(chain, ownBtcServer = null)
     suspend fun vssUrl(walletId: String): String = "$HOSTED_EDGE/ln/vss"
     suspend fun vssAuthHeader(walletId: String): String = ""
     fun dataDir(walletId: String): String = "/tmp/fortis-ln/$walletId"
@@ -47,13 +55,15 @@ interface LightningStore {
 
 class InMemoryLightningStore(
     private val wallets: Map<String, WalletConfig> = emptyMap(),
+    /** The BTC node's Esplora (the XBT node's is always the hosted edge's). */
     private val esplora: String = "$HOSTED_EDGE/btc",
     private val vss: String = "$HOSTED_EDGE/ln/vss",
 ) : LightningStore {
 
     override suspend fun walletConfig(walletId: String): WalletConfig? = wallets[walletId]
 
-    override suspend fun esploraUrl(walletId: String): String = esplora
+    override suspend fun esploraUrl(walletId: String, chain: LnChain): String =
+        lightningEsploraUrl(chain, ownBtcServer = esplora)
 
     override suspend fun vssUrl(walletId: String): String = vss
 
@@ -186,6 +196,8 @@ class LightningSession(
      *  was broadcast, so the caller can move on to a fresh receive address. */
     private val onSweepBroadcast: (suspend (walletId: String) -> Unit)? = null,
     private val ensureAuthHeader: (suspend (walletId: String) -> String)? = null,
+    /** The chain this session's node runs on; it starts only that chain's Lightning wallet. */
+    private val chain: LnChain = LnChain.BTC,
 ) {
     private val mutex = Mutex()
 
@@ -240,7 +252,7 @@ class LightningSession(
         return scope.launch {
             mutex.withLock {
                 val w = store.walletConfig(walletId)
-                if (w != null && !isLightningWallet(w)) {
+                if (w != null && lnChainOf(w.chain) != chain) {
                     seedCopy.fill(0)
                     stopCurrentNodeLocked()
                     unlockedSeed?.fill(0)
@@ -564,9 +576,9 @@ class LightningSession(
         val authHeader = ensureAuthHeader?.invoke(walletId)
             ?.takeIf { it.isNotBlank() }
             ?: store.vssAuthHeader(walletId)
-        val esploraUrl = store.esploraUrl(walletId)
+        val esploraUrl = store.esploraUrl(walletId, chain)
         val cfg = LnNodeConfig(
-            chain = LnChain.BTC,
+            chain = chain,
             bip39Seed = seed.copyOf(),
             network = w?.network ?: lnInfo.network,
             dataDir = store.dataDir(walletId),

@@ -20,6 +20,19 @@ const val LOCK_PASSWORD = "password"
 /** The chain id of the (one-per-app) Lightning wallet. */
 const val LN_CHAIN = "ln"
 
+/** The chain id of the (one-per-app) XBT Lightning wallet. */
+const val LN_XBT_CHAIN = "ln-xbt"
+
+/** A Lightning wallet of either chain. */
+fun isLightningChain(chain: String): Boolean = lnChainOf(chain) != null
+
+/** The chain a Lightning wallet's node runs on; null for an on-chain wallet. */
+fun lnChainOf(chain: String): uniffi.wallet_ffi.LnChain? = when (chain) {
+    LN_CHAIN -> uniffi.wallet_ffi.LnChain.BTC
+    LN_XBT_CHAIN -> uniffi.wallet_ffi.LnChain.XBT
+    else -> null
+}
+
 /** The XBT chain was persisted as "btcb2" before the ticker rename — upgrade any
  *  value read back from storage. */
 private fun normalizeChain(chain: String) = if (chain == "btcb2") "xbt" else chain
@@ -287,8 +300,11 @@ class Store(private val ctx: Context) : com.fortis.wallet.lightning.LightningSto
         return decode(p[K.wallets]).firstOrNull { it.id == walletId }
     }
 
-    override suspend fun esploraUrl(walletId: String): String =
-        ownServer("btc") ?: "${com.fortis.wallet.HOSTED_EDGE}/btc"
+    override suspend fun esploraUrl(walletId: String, chain: uniffi.wallet_ffi.LnChain): String =
+        com.fortis.wallet.lightning.lightningEsploraUrl(
+            chain,
+            ownBtcServer = if (chain == uniffi.wallet_ffi.LnChain.BTC) ownServer("btc") else null,
+        )
 
     override suspend fun vssUrl(walletId: String): String =
         "${com.fortis.wallet.HOSTED_EDGE}/ln/vss"
