@@ -11878,10 +11878,10 @@ This indicates a bug inside LDK. Please report this error at https://github.com/
 	}
 
 	/// FORTIS XBT: whether we may splice with `counterparty_node_id`: always on BTC, and on XBT
-	/// only when it is in `XbtConfig::splice_peers`.
+	/// only when it is in `XbtConfig::splice_peers` (or `XbtConfig::splice_all_peers` is set).
 	fn xbt_splice_allowed(&self, counterparty_node_id: &PublicKey) -> bool {
 		match &self.config.read().unwrap().xbt {
-			Some(xbt) => xbt.splice_peers.contains(counterparty_node_id),
+			Some(xbt) => xbt.splice_all_peers || xbt.splice_peers.contains(counterparty_node_id),
 			None => true,
 		}
 	}

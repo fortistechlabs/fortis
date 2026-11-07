@@ -408,7 +408,7 @@ fn base_config(dir: &str, splice_peers: Vec<PublicKey>) -> Config {
 	let mut config = Config::default();
 	config.storage_dir_path = dir.to_string();
 	config.network = Network::Regtest;
-	config.xbt = Some(XbtConfig { gossip_floor_height: GOSSIP_FLOOR, splice_peers });
+	config.xbt = Some(XbtConfig { gossip_floor_height: GOSSIP_FLOOR, splice_peers, splice_all_peers: false });
 	config
 }
 
