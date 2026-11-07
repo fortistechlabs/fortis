@@ -681,7 +681,8 @@ mod tests {
         assert_eq!(c.channel_size_factor, btc.channel_size_factor);
         assert_eq!(c.channel_min_sat, btc.channel_min_sat);
         assert_eq!(c.channel_max_sat, btc.channel_max_sat);
-        assert_eq!(c.low_liquidity_sat, btc.low_liquidity_sat);
+        assert_eq!(c.low_liquidity_sat, 300_000);
+        assert_eq!(c.fcm_service_account, Some(PathBuf::from("/etc/fortis/fcm-service-account.json")));
     }
 
     #[test]

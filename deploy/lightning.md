@@ -299,17 +299,21 @@ Build first, as your user: `cargo build --release -p fortis-index -p fortis-edge
 
 ### 11.1 Check the BTC spends height (before touching an index)
 
-The unit file in this repo carries `--spends-from-height 973000` for BTC. Every live BTC LSP channel must have been funded at or above that height, or its close would not be indexed. Every Fortis channel (LSP to phone, LSP outbound) was funded after the BTC LSP node was created, so it is enough that block 973000 is older than the node:
+The unit file in this repo carries `--spends-from-height 973000` for BTC. Every live BTC LSP channel must have been funded at or above that height, or its close would not be indexed. The phones' Fortis channels are only with this LSP, and every one of them (LSP to phone, LSP outbound) was funded after the BTC LSP node was created, so it is enough that block 973000 is older than the node:
 
 ```sh
-# (a) when the node was created (keys_seed is written once, at creation); '-' = no birth time, use the mtime
+# (a) when the node was created (keys_seed is written once, at creation):
+#     birth time (%w; '-' if the filesystem has none) and modification time (%y)
 sudo stat -c '%w  %y' /var/lib/fortis/lsp/keys_seed
-# (b) the time of block 973000 (core-cli = bitcoin-cli for Bitcoin Core)
-core-cli getblockheader $(core-cli getblockhash 973000)     # "time"
+# (b) the time of block 973000 on Bitcoin Core (the "time" field)
+sudo bitcoin-cli -rpcport=8332 -rpccookiefile=/var/lib/bitcoin-core/.cookie getblockheader \
+  $(sudo bitcoin-cli -rpcport=8332 -rpccookiefile=/var/lib/bitcoin-core/.cookie getblockhash 973000)
 date -d @<time>
 ```
 
-Proceed only if the block time from (b) is earlier than the keys_seed time from (a). Otherwise pick a lower height whose block time is earlier (repeat (b) with that height), and put it in `--spends-from-height` in `deploy/linux-home/fortis-btc-index.service` before 11.2. A lower value is always safe; it only makes the backfill longer.
+Take the creation time as the **earlier** of the two times from (a) (only the mtime if the birth time is `-`). If `keys_seed` was ever restored from a backup or moved from another host, these times are those of the copy, not of the node: use the date the node was first created instead (from your notes or the first backup).
+
+Proceed only if the block time from (b) is at least **2 hours** earlier than that creation time (a block's timestamp can run up to 2 hours ahead of real time). Otherwise pick a lower height whose block time is (repeat (b) with that height), and put it in `--spends-from-height` in `deploy/linux-home/fortis-btc-index.service` before 11.2. A lower value is always safe; it only makes the backfill longer.
 
 ### 11.2 Deploy the indexes
 
@@ -320,8 +324,13 @@ Proceed only if the block time from (b) is earlier than the keys_seed time from 
    sudo bitcoin-cli -rpcport=8332 -rpccookiefile=/var/lib/bitcoin-core/.cookie getindexinfo    # BTC (Core)
    ```
    On both nodes the output must list `txindex` with `"synced": true`. If either lacks it or is still syncing, stop here and fix the node first.
-2. **Dry run (recommended).** Copy a small index DB, or run the new `fortis-index` against regtest (`tools/xbt-regtest`), and watch it backfill before running it on the live DBs. At the least, watch the first batches in step 4 and run the spot check in step 5.
-3. **Install and restart:**
+2. **Dry run (recommended).** Run the new `fortis-index` against a copy of the XBT index DB (with its own ports and data directory) and watch it backfill before running it on the live DBs. A fresh DB, such as the one `tools/xbt-regtest` builds, starts its spends index at height 0 and never backfills, so it does not exercise this. At the least, watch the first batches in step 4 and run the spot check in step 5.
+3. **Install and restart.** First compare the repo's unit files with the installed ones, in case the host has local edits; carry any you want to keep into the repo files before installing:
+   ```sh
+   diff /etc/systemd/system/fortis-xbt-index.service deploy/linux-home/fortis-xbt-index.service
+   diff /etc/systemd/system/fortis-btc-index.service deploy/linux-home/fortis-btc-index.service
+   ```
+   The only differences should be the new `--spends-from-height` arguments. Then:
    ```sh
    sudo install -m 0755 target/release/fortis-index /usr/local/bin/fortis-index
    sudo install -m 0644 deploy/linux-home/fortis-xbt-index.service deploy/linux-home/fortis-btc-index.service /etc/systemd/system/
@@ -360,7 +369,7 @@ Cautions:
    sudo install -d -o fortis -g fortis -m 0700 /var/lib/fortis/lsp-xbt
    sudo systemctl daemon-reload
    ```
-   Review `/etc/fortis/lsp-xbt.toml`: `chain = "xbt"`, `esplora_url = "http://127.0.0.1:8094"`, `xbt_gossip_floor_height = 961640`, `custody_max_sat = 0`.
+   Review `/etc/fortis/lsp-xbt.toml`: `chain = "xbt"`, `esplora_url = "http://127.0.0.1:8094"`, `xbt_gossip_floor_height = 961640`, `custody_max_sat = 0`. Set `fcm_service_account` to the same key file as in `/etc/fortis/lsp.toml` (`sudo grep fcm_service_account /etc/fortis/lsp.toml`): push notifications to phones need it, and without it held payments are not announced to a sleeping phone.
 4. **Start it:** `sudo systemctl enable --now fortis-lsp-xbt`, then `journalctl -u fortis-lsp-xbt -f`. It needs `fortis-xbt-index` running and synced.
 5. **Back up `/var/lib/fortis/lsp-xbt/keys_seed` off the host before funding** (the nightly script in §6 also copies `lsp-xbt`, but take this first copy by hand before funding).
 6. **Read the `node_id`:** `curl -s http://127.0.0.1:9746/info | jq .node_id`. You need it in 11.5.

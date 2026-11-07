@@ -40,8 +40,10 @@ channel_max_sat = 500000
 # Optional LSPS2 token clients must present (matches lsps2_token in /ln/info).
 # token = "..."
 
-# Log a warning on stderr while on-chain liquidity is below 2 000 000 sat.
-low_liquidity_sat = 2000000
+# Log a warning on stderr while on-chain liquidity is below 300 000 sat: enough
+# for one more of the largest JIT channels (250 000 sat with these values).
+# Lower than the BTC LSP's 2 000 000, since this LSP starts with a small float.
+low_liquidity_sat = 300000
 
 # Prometheus GET /metrics and GET /info, and the admin endpoints (loopback only).
 metrics_listen = "127.0.0.1:9746"
@@ -50,6 +52,12 @@ allow_public_metrics = false
 # Public identity: where other nodes reach this LSP (the public relay, DNAT 9835).
 alias = "Fortis XBT"
 announce_addresses = ["lsp.fortistechlabs.com:9835"]
+
+# Firebase service-account key for push notifications that wake a phone with a
+# payment held for it: the same key file as fcm_service_account in
+# /etc/fortis/lsp.toml (copy that path here). Unset: no push. Keep it above any
+# [[outbound]] table.
+fcm_service_account = "/etc/fortis/fcm-service-account.json"
 
 # Fortis accounts: 0 = disabled (the default) until the operator has confirmed
 # holding customer funds is allowed. Set a limit in sat to enable them.
