@@ -242,9 +242,22 @@ fetching a new one, so the user would need to request again.
   blocks after funding (`crates/fortis-index/src/spends.rs:16`, ~205-222), so a
   phone on the index may never see a confirmed counterparty close of a channel
   older than about 2 weeks. This is a funds-safety item to resolve in Plan B.
-  **Resolved by the spends index (Plan B Task 1–2):** an output funded at or
-  above `--spends-from-height` has no window (the column family covers every
-  block from that height; any blocks past its watermark are scanned without a
-  cap). Outputs funded below it keep the old 2016-block scan, so the start
-  height must be at or below the oldest live channel's funding.
+  **Resolved by the spends index (Plan B Task 1–2):** these output types have
+  no window:
+  - P2WSH (channel funding, commitment `to_local`, HTLC and anchor outputs,
+    swap HTLCs) funded at or above `--spends-from-height`: answered from the
+    `spends` column family. Any blocks past its watermark are scanned, with
+    no cap.
+  - P2WPKH (the `to_remote` of a static_remote_key commitment, and sweep
+    destinations) funded at or above the index's own start height: answered
+    from the address history, which holds every transaction funding or
+    spending the program. Any blocks past the index tip are scanned, with no
+    cap. This does not depend on `--spends-from-height`.
+
+  What stays on the old 2016-block scan:
+  - P2WSH outputs funded below `--spends-from-height`, so the start height
+    must be at or below the oldest live channel's funding;
+  - every other type: P2TR, P2SH (including P2SH-wrapped P2WPKH) and legacy.
+    No Fortis channel output uses these: channels are P2WSH only, with no
+    taproot channels and anchors off on XBT.
 

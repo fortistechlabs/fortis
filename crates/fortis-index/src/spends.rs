@@ -2,9 +2,10 @@
 //! (`GET /tx/:txid`, `/tx/:txid/hex`, `/tx/:txid/outspend/:vout`). A swap's
 //! HTLC is P2WSH, which the address index never stores, so its spend is found
 //! from the node: the mempool (or the node's own spender index, when it has
-//! one), else from the index's `spends` column family when it covers the
-//! funding height (any age: no window), else by scanning blocks forward from
-//! the one that funded it.
+//! one), else from the index itself — a P2WPKH output's address history, or
+//! the `spends` column family for a P2WSH output funded in its range (any
+//! age: no window) — else by scanning blocks forward from the one that funded
+//! it.
 
 use std::collections::{HashMap, HashSet};
 use std::sync::Mutex;
@@ -12,6 +13,8 @@ use std::sync::Mutex;
 use anyhow::Result;
 use bitcoin::{BlockHash, OutPoint, Transaction, Txid};
 use serde_json::{json, Value};
+
+use crate::keys::Program;
 
 /// Most blocks one output's spend is searched for past its funding block. A
 /// swap HTLC is spent within its locktime — 48 h, about 288 blocks, at most.
@@ -176,11 +179,15 @@ impl Spends {
     /// Who spent `txid:vout`, if anyone. In order:
     /// 1. unspent per the node, or a spender the node names (mempool, or its
     ///    own spender index);
-    /// 2. a P2WSH output funded at or above the index's `spends` start
+    /// 2. a P2WPKH output whose funding the address history holds: the
+    ///    history's first later transaction that spends it (in a main-chain
+    ///    block), else — spent per the node — a scan of the blocks above the
+    ///    index tip, with no window;
+    /// 3. a P2WSH output funded at or above the index's `spends` start
     ///    height and at or below its watermark `w`: the column family's row
     ///    (if its block is still on the main chain), else — spent per the
     ///    node — a scan of blocks `w + 1..=` node tip, with no window;
-    /// 3. otherwise, a scan from the funding block, within [`MAX_SCAN_BLOCKS`].
+    /// 4. otherwise, a scan from the funding block, within [`MAX_SCAN_BLOCKS`].
     ///
     /// Never `Unspent` while the node says the output is spent.
     pub fn outspend(&self, txid: &Txid, vout: u32) -> Result<Outspend, OutspendError> {
@@ -235,6 +242,17 @@ impl Spends {
         }
         .ok_or_else(|| OutspendError::Pending(format!("{op} is spent but its funding isn't mined")))?;
 
+        // A P2WPKH output: the address history holds every transaction that
+        // funds or spends it, from the index's start.
+        if let Some(p) = p2wpkh_program(out) {
+            if let Some((found, indexed_tip)) = self.address_spend(&op, &p)? {
+                if let Some(found) = found {
+                    self.remember(op, Cached::Found(found.clone()));
+                    return Ok(found);
+                }
+                return self.scan_above(op, indexed_tip, scanned);
+            }
+        }
         // Only a P2WSH output (a channel, HTLC or swap script) is sure to have
         // its spend recorded (`spendcf::recorded` skips single-key spends).
         let p2wsh = out["scriptPubKey"]["type"] == "witness_v0_scripthash";
@@ -243,13 +261,7 @@ impl Spends {
                 self.remember(op, Cached::Found(found.clone()));
                 return Ok(found);
             }
-            // Spent, but in no block the index has recorded: above `w`.
-            let start = w + 1;
-            let from = match scanned {
-                Some((f, t)) if f <= start => start.max(t + 1),
-                _ => start,
-            };
-            return self.scan(op, start, from, self.node.tip()?, false);
+            return self.scan_above(op, w, scanned);
         }
 
         if let Some(last) = exhausted {
@@ -270,6 +282,56 @@ impl Spends {
             )));
         }
         self.scan(op, funded_at, from, last, true)
+    }
+
+    /// Spent (per the node) but in no block through `indexed` the index
+    /// knows: scan the blocks above it up to the node tip, with no window.
+    fn scan_above(&self, op: OutPoint, indexed: u32, scanned: Option<(u32, u32)>) -> Result<Outspend, OutspendError> {
+        let start = indexed + 1;
+        let from = match scanned {
+            Some((f, t)) if f <= start => start.max(t + 1),
+            _ => start,
+        };
+        self.scan(op, start, from, self.node.tip()?, false)
+    }
+
+    /// `op`'s spend from the address history of its P2WPKH program `p`, with
+    /// the index tip it is complete through. `None` if the history can't
+    /// answer: no index, or it doesn't hold `op`'s funding (funded below the
+    /// index's start). The spend found is `None` if no transaction after the
+    /// funding spends `op` in a main-chain block (a candidate whose block
+    /// left the main chain is no answer).
+    fn address_spend(&self, op: &OutPoint, p: &Program) -> Result<Option<(Option<Outspend>, u32)>, OutspendError> {
+        let Some(db) = &self.index else {
+            return Ok(None);
+        };
+        let r = db.reader();
+        let Some((indexed_tip, _)) = r.tip()? else {
+            return Ok(None);
+        };
+        // Newest first, down to the funding: what touched `p` after it.
+        let mut after = Vec::new();
+        let mut funded = false;
+        for n in r.history(p, usize::MAX)? {
+            let Some(txid) = r.txid(n)? else { continue };
+            if txid == op.txid {
+                funded = true;
+                break;
+            }
+            after.push(txid);
+        }
+        if !funded {
+            return Ok(None);
+        }
+        // Oldest first: a spend usually soon follows its funding.
+        for txid in after.iter().rev() {
+            match self.spent_by(txid, op) {
+                Ok(found @ Outspend::Spent { block: Some(_), .. }) => return Ok(Some((Some(found), indexed_tip))),
+                Ok(_) | Err(OutspendError::Pending(_)) => {}
+                Err(e) => return Err(e),
+            }
+        }
+        Ok(Some((None, indexed_tip)))
     }
 
     /// The index's spends watermark, if its `spends` column family is
@@ -368,6 +430,19 @@ impl Spends {
             }
         }
         cache.insert(op, c);
+    }
+}
+
+/// The program of a P2WPKH output (`vout` entry of verbose
+/// `getrawtransaction`); `None` for any other type.
+fn p2wpkh_program(out: &Value) -> Option<Program> {
+    if out["scriptPubKey"]["type"] != "witness_v0_keyhash" {
+        return None;
+    }
+    let spk = hex::decode(out["scriptPubKey"]["hex"].as_str()?).ok()?;
+    match spk.as_slice() {
+        [0x00, 0x14, p @ ..] => p.try_into().ok(),
+        _ => None,
     }
 }
 
@@ -575,6 +650,7 @@ mod tests {
                         "vout": i.previous_output.vout,
                     })).collect::<Vec<_>>(),
                     "vout": t.output.iter().map(|o| json!({ "scriptPubKey": {
+                        "hex": hex::encode(o.script_pubkey.as_bytes()),
                         "type": if o.script_pubkey.is_op_return() {
                             "nulldata"
                         } else if o.script_pubkey.is_p2wpkh() {
@@ -1236,10 +1312,10 @@ mod tests {
         assert_eq!(fake.chain.lock().unwrap().fetched, (250..=255).collect::<Vec<_>>(), "path 3, from the funding block");
     }
 
-    /// A P2WPKH output's spend is never recorded (`spendcf::recorded`): in
-    /// range of the index, it still takes the old scan and is found.
+    /// A P2WPKH output whose funding the address history doesn't hold (funded
+    /// below the index's start) takes the old scan, and is found.
     #[test]
-    fn an_unrecorded_output_type_uses_the_old_scan() {
+    fn a_p2wpkh_output_the_history_lacks_uses_the_old_scan() {
         let (mut c, _) = chain_to(100, 300, 100);
         let mut funding = tx(&[OutPoint::new(Txid::from_byte_array([6; 32]), 0)], 2);
         funding.output[0].script_pubkey = ScriptBuf::new_p2wpkh(&bitcoin::WPubkeyHash::from_byte_array([3; 20]));
@@ -1254,5 +1330,110 @@ mod tests {
             s.outspend(&op.txid, 0).unwrap(),
             Outspend::Spent { txid: spend.compute_txid(), vin: 0, block: Some((bh(130), 130)) }
         );
+    }
+
+    // --- P2WPKH outputs, from the address history ---
+
+    use crate::extract::{Funded, Spent, TxRows};
+
+    const PKH: [u8; 20] = [3; 20];
+
+    /// Blocks `base..=tip`; block `fh` funds a P2WPKH output (program `PKH`).
+    fn p2wpkh_chain(base: u32, tip: u32, fh: u32) -> (Chain, OutPoint) {
+        let (mut c, _) = chain_to(base, tip, fh);
+        let mut funding = tx(&[OutPoint::new(Txid::from_byte_array([6; 32]), 0)], 2);
+        funding.output[0].script_pubkey = ScriptBuf::new_p2wpkh(&bitcoin::WPubkeyHash::from_byte_array(PKH));
+        mine(&mut c, fh, &funding);
+        (c, OutPoint::new(funding.compute_txid(), 0))
+    }
+
+    /// A P2WPKH spend of `op` (two witness items, a 33-byte key).
+    fn pkh_spend(op: OutPoint, tag: u64) -> Transaction {
+        let mut t = tx(&[op], tag);
+        t.input[0].witness = Witness::from_slice(&[vec![1; 72], vec![2; 33]]);
+        t
+    }
+
+    /// An index of blocks `base..=through` whose address rows are `rows`
+    /// (height, tx touching `PKH`: funding `op`, spending it, or neither).
+    fn history_index(base: u32, through: u32, rows: &[(u32, TxRows)]) -> (tempfile::TempDir, Db) {
+        let dir = tempfile::tempdir().unwrap();
+        let db = open_db(&dir, None);
+        let blocks: Vec<ParsedBlock> = (base..=through)
+            .map(|h| ParsedBlock {
+                txs: rows.iter().filter(|(at, _)| *at == h).map(|(_, r)| r.clone()).collect(),
+                ..pblock(h, vec![])
+            })
+            .collect();
+        db.apply(&blocks, 0, Durability::Bulk, false).unwrap();
+        (dir, db)
+    }
+
+    fn funds(op: OutPoint) -> TxRows {
+        TxRows { txid: op.txid, funded: vec![Funded { program: PKH, vout: op.vout, value: 1 }], spent: vec![] }
+    }
+
+    fn spends_row(t: &Transaction, op: OutPoint) -> TxRows {
+        TxRows { txid: t.compute_txid(), funded: vec![], spent: vec![Spent { program: PKH, prevout: op }] }
+    }
+
+    #[test]
+    fn p2wpkh_spend_found_from_history_without_scanning() {
+        let (mut c, op) = p2wpkh_chain(100, 5_105, 100);
+        // Another payment to the same address in between: a candidate that isn't it.
+        let mut dust = tx(&[OutPoint::new(Txid::from_byte_array([4; 32]), 0)], 3);
+        dust.output[0].script_pubkey = ScriptBuf::new_p2wpkh(&bitcoin::WPubkeyHash::from_byte_array(PKH));
+        mine(&mut c, 3_000, &dust);
+        let spend = pkh_spend(op, 91);
+        mine(&mut c, 5_100, &spend);
+        let dust_op = OutPoint::new(dust.compute_txid(), 0);
+        let (_dir, db) = history_index(100, 5_105, &[(100, funds(op)), (3_000, funds(dust_op)), (5_100, spends_row(&spend, op))]);
+        let (s, fake) = indexed(c, &db);
+        assert_eq!(
+            s.outspend(&op.txid, 0).unwrap(),
+            Outspend::Spent { txid: spend.compute_txid(), vin: 0, block: Some((bh(5_100), 5_100)) }
+        );
+        assert_eq!(fake.fetches(), 0);
+    }
+
+    #[test]
+    fn p2wpkh_unspent() {
+        let (mut c, op) = p2wpkh_chain(100, 5_105, 100);
+        c.utxos.push(op);
+        let (_dir, db) = history_index(100, 5_105, &[(100, funds(op))]);
+        let (s, fake) = indexed(c, &db);
+        assert_eq!(s.outspend(&op.txid, 0).unwrap(), Outspend::Unspent);
+        assert_eq!(fake.fetches(), 0);
+    }
+
+    /// Spent in a block the node has and the index hasn't processed: only
+    /// the blocks above the index tip are scanned, however old the funding.
+    #[test]
+    fn p2wpkh_spent_above_the_index_tip_is_found_by_the_tip_scan() {
+        let (mut c, op) = p2wpkh_chain(100, 2_505, 100);
+        let spend = pkh_spend(op, 92);
+        mine(&mut c, 2_503, &spend);
+        let (_dir, db) = history_index(100, 2_500, &[(100, funds(op))]);
+        let (s, fake) = indexed(c, &db);
+        assert_eq!(
+            s.outspend(&op.txid, 0).unwrap(),
+            Outspend::Spent { txid: spend.compute_txid(), vin: 0, block: Some((bh(2_503), 2_503)) }
+        );
+        assert_eq!(fake.chain.lock().unwrap().fetched, vec![2_501, 2_502, 2_503]);
+    }
+
+    /// A history row whose spender's block left the main chain is not an
+    /// answer; spent and not found: pending (never Unspent, never final).
+    #[test]
+    fn p2wpkh_stale_history_spender_is_not_answered() {
+        let (mut c, op) = p2wpkh_chain(100, 2_505, 100);
+        let gone = pkh_spend(op, 93);
+        mine(&mut c, 2_400, &gone);
+        let (_dir, db) = history_index(100, 2_505, &[(100, funds(op)), (2_400, spends_row(&gone, op))]);
+        c.stale.push(bh(2_400));
+        c.blocks[2_300] = (bh(12_400), vec![]);
+        let (s, fake) = indexed(c, &db);
+        assert!(matches!(s.outspend(&op.txid, 0), Err(OutspendError::Pending(_))));
+        assert_eq!(fake.fetches(), 0, "the index is at the node tip: nothing above it to scan");
     }
 }

@@ -719,25 +719,37 @@ fn a_backfill_batch_is_refused_when_the_index_moved() {
         hs.map(|h| (h, hash(h), vec![spend(h as u8, 0, 0x40 + h as u8, 0)])).collect()
     };
     // Planned from another watermark: refused.
-    assert!(!db.write_backfill(Some(11), &batch(12..=13)).unwrap());
+    assert_eq!(
+        db.write_backfill(Some(11), &batch(12..=13)).unwrap(),
+        Err(BackfillRefused::MarkMoved { planned: Some(11), now: None })
+    );
     // A block that isn't the index's (reorged, or not yet indexed): refused.
     let mut wrong = batch(10..=11);
     wrong[1].1 = hash(99);
-    assert!(!db.write_backfill(None, &wrong).unwrap());
-    assert!(!db.write_backfill(None, &batch(10..=15)).unwrap(), "15 isn't indexed");
+    assert_eq!(
+        db.write_backfill(None, &wrong).unwrap(),
+        Err(BackfillRefused::NotIndexed { height: 11, node: hash(99), index: Some(hash(11)) })
+    );
+    assert_eq!(
+        db.write_backfill(None, &batch(10..=15)).unwrap(),
+        Err(BackfillRefused::NotIndexed { height: 15, node: hash(15), index: None })
+    );
     assert_eq!(db.spends_watermark(), None);
     assert_eq!(db.spend_of(&op(10, 0)).unwrap(), None, "nothing written");
     // As planned: written, mark moved.
-    assert!(db.write_backfill(None, &batch(10..=12)).unwrap());
+    assert_eq!(db.write_backfill(None, &batch(10..=12)).unwrap(), Ok(()));
     assert_eq!(db.spends_watermark(), Some(12));
     assert_eq!(db.spend_of(&op(11, 0)).unwrap(), Some(SpendRec { txid: txid(0x4b), vin: 0, height: 11 }));
     // The same plan again (another writer got there first): refused.
-    assert!(!db.write_backfill(None, &batch(10..=12)).unwrap());
+    assert!(db.write_backfill(None, &batch(10..=12)).unwrap().is_err());
     // Rolled back below the mark: the old plan is refused, the new one fits.
     let tip = db.load_blocks().unwrap();
     let (r13, r14) = (tip[3].1, tip[4].1);
     db.rollback(14, &r14, Some((13, r13.hash))).unwrap();
     db.rollback(13, &r13, Some((12, tip[2].1.hash))).unwrap();
-    assert!(!db.write_backfill(Some(12), &batch(13..=14)).unwrap());
+    assert!(matches!(
+        db.write_backfill(Some(12), &batch(13..=14)).unwrap(),
+        Err(BackfillRefused::NotIndexed { height: 13, index: None, .. })
+    ));
     assert_eq!(db.spends_watermark(), Some(12));
 }

@@ -103,6 +103,19 @@ pub struct NoUndo {
     pub height: u32,
 }
 
+/// Why [`Db::write_backfill`] wrote nothing.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum BackfillRefused {
+    #[error("the watermark moved (planned from {planned:?}, now {now:?})")]
+    MarkMoved { planned: Option<u32>, now: Option<u32> },
+    #[error("block {height} is {node} on the node but {index:?} in the index")]
+    NotIndexed {
+        height: u32,
+        node: BlockHash,
+        index: Option<BlockHash>,
+    },
+}
+
 #[derive(Clone)]
 pub struct Db {
     db: Arc<DB>,
@@ -453,18 +466,24 @@ impl Db {
     /// watermark is still `expect` (what the backfill planned from, so the
     /// first height is `expect + 1`, or the start height when `None`) and
     /// every block is the index's own block at its height (none rolled back or
-    /// not yet indexed). `Ok(false)`, writing nothing, otherwise: plan again.
-    pub fn write_backfill(&self, expect: Option<u32>, blocks: &[(u32, BlockHash, Vec<BlockSpend>)]) -> Result<bool> {
+    /// not yet indexed). Otherwise nothing is written and the reason is
+    /// returned: plan again.
+    pub fn write_backfill(
+        &self,
+        expect: Option<u32>,
+        blocks: &[(u32, BlockHash, Vec<BlockSpend>)],
+    ) -> Result<Result<(), BackfillRefused>> {
         let Some(from) = self.spends_from else {
             bail!("spends backfill without a start height");
         };
         let Some(&(last, _, _)) = blocks.last() else {
-            return Ok(true);
+            return Ok(Ok(()));
         };
         let first = expect.map_or(from, |w| w + 1);
         let _spends = self.lock_spends();
-        if self.read_spends_watermark()? != expect {
-            return Ok(false);
+        let now = self.read_spends_watermark()?;
+        if now != expect {
+            return Ok(Err(BackfillRefused::MarkMoved { planned: expect, now }));
         }
         let cf_blocks = self.cf(CF_BLOCKS);
         for (i, (h, hash, _)) in blocks.iter().enumerate() {
@@ -472,8 +491,9 @@ impl Db {
                 bail!("spends backfill batch: height {h} where {} was due", first + i as u32);
             }
             let ours = self.db.get_cf(cf_blocks, height_key(*h))?;
-            if ours.map(|v| BlockRec::decode(&v)).transpose()?.map(|r| r.hash) != Some(*hash) {
-                return Ok(false);
+            let ours = ours.map(|v| BlockRec::decode(&v)).transpose()?.map(|r| r.hash);
+            if ours != Some(*hash) {
+                return Ok(Err(BackfillRefused::NotIndexed { height: *h, node: *hash, index: ours }));
             }
         }
         // Bulk (WAL-less) block writes may not be flushed yet: a crash must
@@ -489,7 +509,7 @@ impl Db {
         }
         wb.put_cf(self.cf(CF_META), META_SPENDS_WATERMARK, spends_mark(from, last));
         self.db.write_opt(wb, &durable()).context("writing spends backfill batch")?;
-        Ok(true)
+        Ok(Ok(()))
     }
 
     /// Every `blocks` row, ascending by height.

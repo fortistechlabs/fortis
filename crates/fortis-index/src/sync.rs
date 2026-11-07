@@ -10,7 +10,7 @@ use anyhow::{Context, Result};
 
 use crate::chain::HeaderFormat;
 use crate::chainstate::{BlockTable, SharedChain};
-use crate::db::{Db, Durability, NoUndo, OpenError, MAX_REORG_DEPTH};
+use crate::db::{BackfillRefused, Db, Durability, NoUndo, OpenError, MAX_REORG_DEPTH};
 use crate::extract::ParsedBlock;
 use crate::fetch::{fetch_range, FetchConfig};
 use crate::source::BlockSource;
@@ -320,22 +320,29 @@ pub const BACKFILL_BATCH: u32 = 100;
 /// (The backfill thread uses [`backfill_spends_until`], which can be stopped.)
 #[cfg_attr(not(test), allow(dead_code))]
 pub fn backfill_spends(db: &Db, node: &dyn SpendNode, from: u32, to: u32) -> Result<()> {
-    backfill_spends_until(db, node, from, to, &AtomicBool::new(false))
+    backfill_spends_until(db, node, from, to, &AtomicBool::new(false)).map(|_| ())
 }
 
 /// [`backfill_spends`], abandoning the batch in hand once `stop` is set.
-fn backfill_spends_until(db: &Db, node: &dyn SpendNode, from: u32, to: u32, stop: &AtomicBool) -> Result<()> {
+/// Returns why a batch was refused, if one was.
+fn backfill_spends_until(
+    db: &Db,
+    node: &dyn SpendNode,
+    from: u32,
+    to: u32,
+    stop: &AtomicBool,
+) -> Result<Option<BackfillRefused>> {
     loop {
         let w = db.spends_watermark();
         let first = w.map_or(from, |w| from.max(w + 1));
         if first > to {
-            return Ok(());
+            return Ok(None);
         }
         let last = to.min(first + (BACKFILL_BATCH - 1));
         let mut batch = Vec::with_capacity((last - first + 1) as usize);
         for h in first..=last {
             if stop.load(Ordering::SeqCst) {
-                return Ok(());
+                return Ok(None);
             }
             let (hash, txs) = node.block(h).with_context(|| format!("spends backfill: block {h}"))?;
             let spends = txs
@@ -344,8 +351,8 @@ fn backfill_spends_until(db: &Db, node: &dyn SpendNode, from: u32, to: u32, stop
                 .collect();
             batch.push((h, hash, spends));
         }
-        if !db.write_backfill(w, &batch)? {
-            return Ok(());
+        if let Err(refused) = db.write_backfill(w, &batch)? {
+            return Ok(Some(refused));
         }
         eprintln!("spends backfill: {last}/{to}");
     }
@@ -358,6 +365,7 @@ fn backfill_spends_until(db: &Db, node: &dyn SpendNode, from: u32, to: u32, stop
 /// `stop` is set.
 pub fn run_spends_backfill(db: &Db, node: &dyn SpendNode, from: u32, stop: &AtomicBool) {
     let mut delay = Duration::from_secs(1);
+    let mut refusals = 0u32;
     while !stop.load(Ordering::SeqCst) {
         let tip = match db.reader().tip() {
             Ok(t) => t.map(|(h, _)| h),
@@ -376,10 +384,24 @@ pub fn run_spends_backfill(db: &Db, node: &dyn SpendNode, from: u32, stop: &Atom
             Some(t) if w.is_some_and(|w| w >= t) => break,
             Some(t) => t,
         };
-        match backfill_spends_until(db, node, from, tip, stop) {
-            Ok(()) if db.spends_watermark() != w => delay = Duration::from_secs(1),
-            // No progress (the index and node disagree, e.g. mid-reorg): wait.
-            Ok(()) => sleep_unless_stopped(Duration::from_secs(1), stop),
+        let result = backfill_spends_until(db, node, from, tip, stop);
+        if db.spends_watermark() != w {
+            delay = Duration::from_secs(1);
+            refusals = 0;
+        }
+        match result {
+            Ok(None) => {}
+            // Planned on a view that changed (a block applied or rolled back,
+            // or the node not yet where the index is): plan again. Logged on
+            // the first refusal in a row and every 60th after, so a backfill
+            // that stays stuck is visible.
+            Ok(Some(refused)) => {
+                if refusals.is_multiple_of(60) {
+                    eprintln!("spends backfill: batch refused ({} in a row): {refused}", refusals + 1);
+                }
+                refusals += 1;
+                sleep_unless_stopped(Duration::from_secs(1), stop);
+            }
             Err(e) => {
                 eprintln!("spends backfill: {e:#} — retrying in {delay:?}");
                 sleep_unless_stopped(delay, stop);
