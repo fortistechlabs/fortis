@@ -116,7 +116,6 @@ whether we create it or check it; no call site reads config (Task 4).
 | lightning | `src/routing/router.rs` | `is_lnd_blinded_path` (new), `add_random_cltv_offset` | LND interop on XBT (BOLT 12 offers of the LND BLAKE2b fork). No shadow CLTV offset on a path into a blinded path LND made, recognised by LND's mark: the first blinded hop's blinded node id is the introduction node's real id (LND's `blindedpath/blinded_path.go` overwrites it; BOLT 4 blinding never yields it). LND sets each hop's encrypted `max_cltv_expiry` to creation height + 2 x the invoice lifetime in blocks (12 for its 1 hour offer invoices) + the payinfo CLTV still owed, so our 40 to 432 block offset was refused at LND's own hop ("onion payload for intermediate hop insufficient record with type 4"). BOLT 4 makes the offset optional. Every other blinded path, and every unblinded one, keeps the offset (kept for privacy; unchanged upstream behaviour). Applies on BTC too (upstream LND marks its paths the same way); BTC payers to LND blinded paths lose only the shadow offset (privacy padding). The gate covers only LND's intro=LND-with-dummy-hops shape; LND's default `MinNumRealBlindedPathHops`=1 (real-peer introduction node) is covered by the unit test `lnd_path_with_real_peer_intro_skips_shadow_offset` only. Upstream test `blinded_path_cltv_shadow_offset` unchanged | LND interop |
 | lightning | `src/ln/xbt_tests.rs` | `lnd_blinded_interop::lnd_offer_path_payload_within_lnd_max_cltv`, `lnd_blinded_interop::other_blinded_paths_keep_shadow_offset`, `lnd_blinded_interop::ldk_made_blinded_path_keeps_shadow_offset` | Route P -> S -> LND into an LND-shaped path (introduction node = payee, two dummy hops, payinfo delta 259, first blinded id = LND's real id), 32 seeds: S's outgoing CLTV is exactly height + 259, within LND's max (height + 12 + 259); TLV types S [2, 4, 6], LND [10, 12], dummy [10], final [2, 4, 10, 18], final CLTV = height. The same path with a blinded first id keeps an offset > 0, and so does a path LDK itself blinds (`BlindedPaymentPath::new`, whose first blinded id is not the introduction node's id). The first fails (339 != 259) without the router change | LND interop |
 | xbt-regtest | `crates/xbt-regtest/src/scenarios.rs`, `env.rs`, `main.rs` | `bolt12_both_ways`; `Env::bolt12_interop` and the `BOLT12_INTEROP=` summary line removed | P paying an LND offer and LND paying S's offer are required: either failing fails the scenario (with LND's last `[ERR] HSWC` line for P -> LND) | LND interop |
-| xbt-regtest | `crates/xbt-regtest/src/env.rs` | `sync_retrying_timeouts` (used by `Env::mine`) | A `sync_wallets` that times out is retried, at most twice, with a line in the log. ldk-node allows a Lightning wallet sync 10 s; asked who spent S's LND channel funding (hundreds of blocks old, closed in `sweeps_settle`), fortis-index scans 50 blocks per request and answers 503 until it finds the spend, and esplora-client retries 503 with doubling backoff, so the sync can pass 10 s (seen in 4 of 6 runs on Knots 29.5, before and after the router change). The index keeps its scan position, so the next sync completes (the same can hit a phone: see "Plan B / production follow-ups" below). Any other error, or a third timeout, still fails | gate |
 
 ## Running the tests
 
@@ -235,9 +234,17 @@ fetching a new one, so the user would need to request again.
   50-block `SCAN_BUDGET` while scanning for an outpoint's spender, and
   esplora-client backs off (0.25, 0.5, 1, 2 s...) past ldk-node's 10 s
   `LDK_WALLET_SYNC_TIMEOUT_SECS`. It heals on a later sync. Options: a larger
-  budget, a `Retry-After` header, Knots `-txospenderindex`.
+  budget, a `Retry-After` header, Knots `-txospenderindex`. **Resolved by
+  the spends index (Plan B Task 1–2):** with `--spends-from-height`, an output
+  funded at or above it is answered from the `spends` column family in one
+  lookup, and only blocks past its watermark (normally none) are scanned.
 - fortis-index gives up on mined spends more than `MAX_SCAN_BLOCKS` = 2016
   blocks after funding (`crates/fortis-index/src/spends.rs:16`, ~205-222), so a
   phone on the index may never see a confirmed counterparty close of a channel
   older than about 2 weeks. This is a funds-safety item to resolve in Plan B.
+  **Resolved by the spends index (Plan B Task 1–2):** an output funded at or
+  above `--spends-from-height` has no window (the column family covers every
+  block from that height; any blocks past its watermark are scanned without a
+  cap). Outputs funded below it keep the old 2016-block scan, so the start
+  height must be at or below the oldest live channel's funding.
 

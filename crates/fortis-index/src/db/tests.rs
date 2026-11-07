@@ -701,3 +701,43 @@ fn rollback_of_the_start_block_clears_the_mark() {
     assert_eq!(db.spends_watermark(), None);
     assert_eq!(db.spend_of(&op(2, 1)).unwrap(), None);
 }
+
+/// A backfill batch is written only when the watermark is still what it was
+/// planned from and every block is still the index's block at its height —
+/// so a block applied, or rolled back, while it was being fetched never
+/// leaves the mark claiming heights it doesn't cover.
+#[test]
+fn a_backfill_batch_is_refused_when_the_index_moved() {
+    let dir = tempfile::tempdir().unwrap();
+    {
+        let db = open_spends(&dir, None);
+        db.apply(&(10..=14).map(|h| blk(h, vec![])).collect::<Vec<_>>(), 0, Durability::Durable, true)
+            .unwrap();
+    }
+    let db = open_spends(&dir, Some(10));
+    let batch = |hs: std::ops::RangeInclusive<u32>| -> Vec<_> {
+        hs.map(|h| (h, hash(h), vec![spend(h as u8, 0, 0x40 + h as u8, 0)])).collect()
+    };
+    // Planned from another watermark: refused.
+    assert!(!db.write_backfill(Some(11), &batch(12..=13)).unwrap());
+    // A block that isn't the index's (reorged, or not yet indexed): refused.
+    let mut wrong = batch(10..=11);
+    wrong[1].1 = hash(99);
+    assert!(!db.write_backfill(None, &wrong).unwrap());
+    assert!(!db.write_backfill(None, &batch(10..=15)).unwrap(), "15 isn't indexed");
+    assert_eq!(db.spends_watermark(), None);
+    assert_eq!(db.spend_of(&op(10, 0)).unwrap(), None, "nothing written");
+    // As planned: written, mark moved.
+    assert!(db.write_backfill(None, &batch(10..=12)).unwrap());
+    assert_eq!(db.spends_watermark(), Some(12));
+    assert_eq!(db.spend_of(&op(11, 0)).unwrap(), Some(SpendRec { txid: txid(0x4b), vin: 0, height: 11 }));
+    // The same plan again (another writer got there first): refused.
+    assert!(!db.write_backfill(None, &batch(10..=12)).unwrap());
+    // Rolled back below the mark: the old plan is refused, the new one fits.
+    let tip = db.load_blocks().unwrap();
+    let (r13, r14) = (tip[3].1, tip[4].1);
+    db.rollback(14, &r14, Some((13, r13.hash))).unwrap();
+    db.rollback(13, &r13, Some((12, tip[2].1.hash))).unwrap();
+    assert!(!db.write_backfill(Some(12), &batch(13..=14)).unwrap());
+    assert_eq!(db.spends_watermark(), Some(12));
+}

@@ -14,6 +14,8 @@ use crate::db::{Db, Durability, NoUndo, OpenError, MAX_REORG_DEPTH};
 use crate::extract::ParsedBlock;
 use crate::fetch::{fetch_range, FetchConfig};
 use crate::source::BlockSource;
+use crate::spendcf;
+use crate::spends::SpendNode;
 
 const BULK_BATCH: usize = 64;
 
@@ -304,6 +306,89 @@ impl Syncer {
             self.bulk_dirty = false;
         }
         Ok(())
+    }
+}
+
+/// Blocks per spends backfill batch (one durable write, one watermark step).
+pub const BACKFILL_BATCH: u32 = 100;
+
+/// Fill the `spends` column family for heights `max(from, watermark + 1)..=to`
+/// from the node's blocks, in batches of [`BACKFILL_BATCH`], moving the
+/// watermark with each batch (so a restart resumes after the last one). Stops
+/// early, without error, if a batch no longer matches the index (a reorg, or
+/// a block applied meanwhile moved the mark): the caller plans again.
+/// (The backfill thread uses [`backfill_spends_until`], which can be stopped.)
+#[cfg_attr(not(test), allow(dead_code))]
+pub fn backfill_spends(db: &Db, node: &dyn SpendNode, from: u32, to: u32) -> Result<()> {
+    backfill_spends_until(db, node, from, to, &AtomicBool::new(false))
+}
+
+/// [`backfill_spends`], abandoning the batch in hand once `stop` is set.
+fn backfill_spends_until(db: &Db, node: &dyn SpendNode, from: u32, to: u32, stop: &AtomicBool) -> Result<()> {
+    loop {
+        let w = db.spends_watermark();
+        let first = w.map_or(from, |w| from.max(w + 1));
+        if first > to {
+            return Ok(());
+        }
+        let last = to.min(first + (BACKFILL_BATCH - 1));
+        let mut batch = Vec::with_capacity((last - first + 1) as usize);
+        for h in first..=last {
+            if stop.load(Ordering::SeqCst) {
+                return Ok(());
+            }
+            let (hash, txs) = node.block(h).with_context(|| format!("spends backfill: block {h}"))?;
+            let spends = txs
+                .iter()
+                .flat_map(|t| spendcf::tx_spends(t, t.compute_txid()).collect::<Vec<_>>())
+                .collect();
+            batch.push((h, hash, spends));
+        }
+        if !db.write_backfill(w, &batch)? {
+            return Ok(());
+        }
+        eprintln!("spends backfill: {last}/{to}");
+    }
+}
+
+/// The backfill thread: backfill up to the index tip until the watermark
+/// reaches it (blocks indexed meanwhile are taken in on the next round), then
+/// log `spends backfill: done` and return; from then on every indexed block
+/// moves the watermark itself. Node errors are retried; returns early if
+/// `stop` is set.
+pub fn run_spends_backfill(db: &Db, node: &dyn SpendNode, from: u32, stop: &AtomicBool) {
+    let mut delay = Duration::from_secs(1);
+    while !stop.load(Ordering::SeqCst) {
+        let tip = match db.reader().tip() {
+            Ok(t) => t.map(|(h, _)| h),
+            Err(e) => {
+                eprintln!("spends backfill: reading the index tip: {e:#}");
+                sleep_unless_stopped(delay, stop);
+                continue;
+            }
+        };
+        let w = db.spends_watermark();
+        let tip = match tip {
+            // Nothing indexed at or above the start yet: the first such block
+            // starts the watermark itself.
+            None => break,
+            Some(t) if t < from => break,
+            Some(t) if w.is_some_and(|w| w >= t) => break,
+            Some(t) => t,
+        };
+        match backfill_spends_until(db, node, from, tip, stop) {
+            Ok(()) if db.spends_watermark() != w => delay = Duration::from_secs(1),
+            // No progress (the index and node disagree, e.g. mid-reorg): wait.
+            Ok(()) => sleep_unless_stopped(Duration::from_secs(1), stop),
+            Err(e) => {
+                eprintln!("spends backfill: {e:#} — retrying in {delay:?}");
+                sleep_unless_stopped(delay, stop);
+                delay = (delay * 2).min(Duration::from_secs(30));
+            }
+        }
+    }
+    if !stop.load(Ordering::SeqCst) {
+        eprintln!("spends backfill: done");
     }
 }
 

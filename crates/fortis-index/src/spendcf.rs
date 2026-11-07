@@ -68,7 +68,6 @@ impl SpendRec {
         b
     }
 
-    #[allow(dead_code)] // read by the outspend lookup (Plan B Task 2)
     pub fn decode(b: &[u8]) -> Option<SpendRec> {
         let b: &[u8; 40] = b.try_into().ok()?;
         Some(SpendRec {

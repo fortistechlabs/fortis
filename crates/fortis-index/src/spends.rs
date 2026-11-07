@@ -2,7 +2,9 @@
 //! (`GET /tx/:txid`, `/tx/:txid/hex`, `/tx/:txid/outspend/:vout`). A swap's
 //! HTLC is P2WSH, which the address index never stores, so its spend is found
 //! from the node: the mempool (or the node's own spender index, when it has
-//! one), else by scanning blocks forward from the one that funded it.
+//! one), else from the index's `spends` column family when it covers the
+//! funding height (any age: no window), else by scanning blocks forward from
+//! the one that funded it.
 
 use std::collections::{HashMap, HashSet};
 use std::sync::Mutex;
@@ -104,8 +106,8 @@ enum Cached {
     Spender(Txid),
     /// A spend found in a block (rechecked against reorgs on every read).
     Found(Outspend),
-    /// Blocks up to and including `through` (hash `hash`) hold no spend.
-    Scanned { through: u32, hash: BlockHash },
+    /// Blocks `from..=through` (`through`'s hash `hash`) hold no spend.
+    Scanned { from: u32, through: u32, hash: BlockHash },
     /// Searched the whole window without finding it.
     Exhausted { last: u32 },
 }
@@ -113,6 +115,9 @@ enum Cached {
 /// Spend lookups over a [`SpendNode`], remembering what each search learned.
 pub struct Spends {
     node: Box<dyn SpendNode>,
+    /// The index whose `spends` column family answers first, when it covers
+    /// the output.
+    index: Option<crate::db::Db>,
     cache: Mutex<HashMap<OutPoint, Cached>>,
     /// Outputs being searched right now (one search per output at a time).
     scanning: Mutex<HashSet<OutPoint>>,
@@ -131,9 +136,19 @@ impl Drop for ScanSlot<'_> {
 }
 
 impl Spends {
+    /// Lookups that answer from `db`'s `spends` column family where it is
+    /// complete (see [`Spends::outspend`]).
+    pub fn with_index(node: Box<dyn SpendNode>, db: crate::db::Db) -> Self {
+        Spends {
+            index: Some(db),
+            ..Self::new(node)
+        }
+    }
+
     pub fn new(node: Box<dyn SpendNode>) -> Self {
         Spends {
             node,
+            index: None,
             cache: Mutex::new(HashMap::new()),
             scanning: Mutex::new(HashSet::new()),
         }
@@ -158,7 +173,16 @@ impl Spends {
         &*self.node
     }
 
-    /// Who spent `txid:vout`, if anyone.
+    /// Who spent `txid:vout`, if anyone. In order:
+    /// 1. unspent per the node, or a spender the node names (mempool, or its
+    ///    own spender index);
+    /// 2. a P2WSH output funded at or above the index's `spends` start
+    ///    height and at or below its watermark `w`: the column family's row
+    ///    (if its block is still on the main chain), else — spent per the
+    ///    node — a scan of blocks `w + 1..=` node tip, with no window;
+    /// 3. otherwise, a scan from the funding block, within [`MAX_SCAN_BLOCKS`].
+    ///
+    /// Never `Unspent` while the node says the output is spent.
     pub fn outspend(&self, txid: &Txid, vout: u32) -> Result<Outspend, OutspendError> {
         let funding = self.node.tx(txid)?.ok_or(OutspendError::UnknownOutput)?;
         let Some(out) = funding["vout"].as_array().and_then(|v| v.get(vout as usize)) else {
@@ -180,7 +204,8 @@ impl Spends {
 
         // Spent, and not in the mempool. What earlier lookups learned still
         // counts if its block is still on the main chain.
-        let mut from = None;
+        let mut scanned = None;
+        let mut exhausted = None;
         let cached = self.cache.lock().unwrap().get(&op).cloned();
         match cached {
             Some(Cached::Spender(spend)) => {
@@ -197,14 +222,10 @@ impl Spends {
                     }
                 }
             }
-            Some(Cached::Scanned { through, hash }) if self.node.height_of(&hash)? == Some(through) => {
-                from = Some(through + 1);
+            Some(Cached::Scanned { from, through, hash }) if self.node.height_of(&hash)? == Some(through) => {
+                scanned = Some((from, through));
             }
-            Some(Cached::Exhausted { last }) => {
-                return Err(OutspendError::OutOfRange(format!(
-                    "{op} is spent, but not within {MAX_SCAN_BLOCKS} blocks of its funding (searched to {last})"
-                )));
-            }
+            Some(Cached::Exhausted { last }) => exhausted = Some(last),
             Some(Cached::Scanned { .. }) | None => {}
         }
 
@@ -213,16 +234,72 @@ impl Spends {
             _ => None,
         }
         .ok_or_else(|| OutspendError::Pending(format!("{op} is spent but its funding isn't mined")))?;
+
+        // Only a P2WSH output (a channel, HTLC or swap script) is sure to have
+        // its spend recorded (`spendcf::recorded` skips single-key spends).
+        let p2wsh = out["scriptPubKey"]["type"] == "witness_v0_scripthash";
+        if let Some(w) = self.indexed_through(funded_at).filter(|_| p2wsh) {
+            if let Some(found) = self.indexed_spend(&op)? {
+                self.remember(op, Cached::Found(found.clone()));
+                return Ok(found);
+            }
+            // Spent, but in no block the index has recorded: above `w`.
+            let start = w + 1;
+            let from = match scanned {
+                Some((f, t)) if f <= start => start.max(t + 1),
+                _ => start,
+            };
+            return self.scan(op, start, from, self.node.tip()?, false);
+        }
+
+        if let Some(last) = exhausted {
+            return Err(OutspendError::OutOfRange(format!(
+                "{op} is spent, but not within {MAX_SCAN_BLOCKS} blocks of its funding (searched to {last})"
+            )));
+        }
         let tip = self.node.tip()?;
         let last = tip.min(funded_at + MAX_SCAN_BLOCKS);
-        let from = from.unwrap_or(funded_at);
+        let from = match scanned {
+            Some((f, t)) if f <= funded_at => t + 1,
+            _ => funded_at,
+        };
         // Older than any swap and never searched: refuse rather than scan.
         if from == funded_at && tip > funded_at + MAX_SCAN_BLOCKS {
             return Err(OutspendError::OutOfRange(format!(
                 "{op}'s funding is more than {MAX_SCAN_BLOCKS} blocks old; this index only searches newer outputs"
             )));
         }
+        self.scan(op, funded_at, from, last, true)
+    }
 
+    /// The index's spends watermark, if its `spends` column family is
+    /// complete for an output funded at `funded_at`.
+    fn indexed_through(&self, funded_at: u32) -> Option<u32> {
+        let db = self.index.as_ref()?;
+        let from = db.spends_from()?;
+        let w = db.spends_watermark()?;
+        (funded_at >= from && w >= funded_at).then_some(w)
+    }
+
+    /// `op`'s spend from the `spends` column family, if it has a row whose
+    /// spender the node places on its main chain at the recorded height. A
+    /// row that fails that (a reorg the row outlived) is no answer.
+    fn indexed_spend(&self, op: &OutPoint) -> Result<Option<Outspend>, OutspendError> {
+        let Some(rec) = self.index.as_ref().map(|db| db.spend_of(op)).transpose()?.flatten() else {
+            return Ok(None);
+        };
+        match self.spent_by(&rec.txid, op) {
+            Ok(found @ Outspend::Spent { block: Some((_, h)), .. }) if h == rec.height => Ok(Some(found)),
+            Ok(_) | Err(OutspendError::Pending(_)) => Ok(None),
+            Err(e) => Err(e),
+        }
+    }
+
+    /// Scan blocks `from..=last` for `op`'s spend, at most [`SCAN_BUDGET`] of
+    /// them per call; progress counts from `start` (the first block this
+    /// search needs). `capped`: `last` is the end of the funding's
+    /// [`MAX_SCAN_BLOCKS`] window, not just the tip.
+    fn scan(&self, op: OutPoint, start: u32, from: u32, last: u32, capped: bool) -> Result<Outspend, OutspendError> {
         let _slot = self.claim(op)?;
         let stop = last.min(from.saturating_add(SCAN_BUDGET - 1));
         for height in from..=stop {
@@ -238,21 +315,21 @@ impl Spends {
                     return Ok(found);
                 }
             }
-            self.remember(op, Cached::Scanned { through: height, hash });
+            self.remember(op, Cached::Scanned { from: start, through: height, hash });
         }
         if stop < last {
             return Err(OutspendError::Pending(format!(
-                "{op}: searched blocks {from}..={stop} of {funded_at}..={last}; ask again to continue"
+                "{op}: searched blocks {from}..={stop} of {start}..={last}; ask again to continue"
             )));
         }
-        if last == funded_at + MAX_SCAN_BLOCKS {
+        if capped && last == start + MAX_SCAN_BLOCKS {
             self.remember(op, Cached::Exhausted { last });
             return Err(OutspendError::OutOfRange(format!(
                 "{op} is spent, but not within {MAX_SCAN_BLOCKS} blocks of its funding"
             )));
         }
         // Up to the tip and not found: the spend is mined in a block not seen yet.
-        Err(OutspendError::Pending(format!("{op} is spent, but not in blocks {funded_at}..={last} yet")))
+        Err(OutspendError::Pending(format!("{op} is spent, but not in blocks {start}..={last} yet")))
     }
 
     /// [`Outspend::Spent`] for a spender the node named directly.
@@ -426,6 +503,10 @@ mod tests {
         utxos: Vec<OutPoint>,
         mempool_spends: HashMap<OutPoint, Txid>,
         stale: Vec<BlockHash>,
+        /// Heights `block()` was asked for, in order.
+        fetched: Vec<u32>,
+        /// `block()` fails at this height (a node error mid-backfill).
+        fail_at: Option<u32>,
     }
 
     struct Fake {
@@ -469,14 +550,18 @@ mod tests {
     }
 
     fn spends(c: Chain) -> (Spends, Arc<Fake>) {
-        let fake = Arc::new(Fake {
+        let fake = fake(c);
+        (Spends::new(Box::new(fake.clone())), fake)
+    }
+
+    fn fake(c: Chain) -> Arc<Fake> {
+        Arc::new(Fake {
             chain: Mutex::new(c),
             fetches: AtomicUsize::new(0),
             hold: Mutex::new(false),
             released: std::sync::Condvar::new(),
             inside: AtomicUsize::new(0),
-        });
-        (Spends::new(Box::new(fake.clone())), fake)
+        })
     }
 
     impl SpendNode for Fake {
@@ -490,7 +575,13 @@ mod tests {
                         "vout": i.previous_output.vout,
                     })).collect::<Vec<_>>(),
                     "vout": t.output.iter().map(|o| json!({ "scriptPubKey": {
-                        "type": if o.script_pubkey.is_op_return() { "nulldata" } else { "witness_v0_scripthash" },
+                        "type": if o.script_pubkey.is_op_return() {
+                            "nulldata"
+                        } else if o.script_pubkey.is_p2wpkh() {
+                            "witness_v0_keyhash"
+                        } else {
+                            "witness_v0_scripthash"
+                        },
                     }})).collect::<Vec<_>>(),
                     "blockhash": b.map(|h| h.to_string()),
                 })
@@ -530,8 +621,12 @@ mod tests {
                     }
                 }
             }
+            let mut c = self.chain.lock().unwrap();
+            if c.fail_at == Some(height) {
+                anyhow::bail!("node error at {height}");
+            }
             self.fetches.fetch_add(1, Ordering::SeqCst);
-            let c = self.chain.lock().unwrap();
+            c.fetched.push(height);
             Ok(c.blocks[(height - c.base) as usize].clone())
         }
     }
@@ -866,4 +961,298 @@ mod tests {
         );
     }
 
+    // --- the spends index (column family) ---
+
+    use crate::db::{Db, DbConfig, Durability};
+    use crate::extract::ParsedBlock;
+    use crate::spendcf::{BlockSpend, SpendRec};
+
+    /// A tx spending each of `ins` with a P2WSH-style witness (a recorded spend).
+    fn wsh_tx(ins: &[OutPoint], tag: u64) -> Transaction {
+        let mut t = tx(ins, tag);
+        for i in &mut t.input {
+            i.witness = Witness::from_slice(&[vec![], vec![1; 72], vec![2; 72], vec![0x52; 71]]);
+        }
+        t
+    }
+
+    /// Main-chain blocks `base..=tip` (hash `bh(h)`), `op` funded at `fh`.
+    fn chain_to(base: u32, tip: u32, fh: u32) -> (Chain, OutPoint) {
+        let funding = tx(&[OutPoint::new(Txid::from_byte_array([9; 32]), 0)], 1);
+        let op = OutPoint::new(funding.compute_txid(), 0);
+        let mut c = Chain { base, ..Default::default() };
+        for h in base..=tip {
+            let txs = if h == fh { vec![funding.clone()] } else { vec![tx(&[], h as u64)] };
+            c.blocks.push((bh(h), txs));
+        }
+        c.known.insert(op.txid, (funding, Some(bh(fh))));
+        (c, op)
+    }
+
+    fn pblock(h: u32, spends: Vec<BlockSpend>) -> ParsedBlock {
+        ParsedBlock { height: h, hash: bh(h), prev: bh(h.wrapping_sub(1)), time: 0, txs: vec![], spends }
+    }
+
+    fn open_db(dir: &tempfile::TempDir, from: Option<u32>) -> Db {
+        Db::open(dir.path(), &DbConfig { cache_mb: 8, spends_from: from }, "btc").unwrap()
+    }
+
+    /// An index with spends recorded from `from`, holding blocks
+    /// `from..=through` (hashes `bh(h)`) and the given spends as rows.
+    fn index(from: u32, through: u32, rows: &[(OutPoint, &Transaction, u32)]) -> (tempfile::TempDir, Db) {
+        let dir = tempfile::tempdir().unwrap();
+        let db = open_db(&dir, Some(from));
+        let blocks: Vec<ParsedBlock> = (from..=through)
+            .map(|h| {
+                let spends = rows
+                    .iter()
+                    .filter(|(_, _, at)| *at == h)
+                    .map(|(op, t, _)| BlockSpend { prevout: *op, txid: t.compute_txid(), vin: 0 })
+                    .collect();
+                pblock(h, spends)
+            })
+            .collect();
+        db.apply(&blocks, 0, Durability::Bulk, false).unwrap();
+        assert_eq!(db.spends_watermark(), Some(through));
+        (dir, db)
+    }
+
+    fn indexed(c: Chain, db: &Db) -> (Spends, Arc<Fake>) {
+        let fake = fake(c);
+        (Spends::with_index(Box::new(fake.clone()), db.clone()), fake)
+    }
+
+    #[test]
+    fn cf_hit_answers_without_scanning() {
+        let (mut c, op) = chain_to(100, 5_105, 100);
+        let spend = wsh_tx(&[op], 60);
+        mine(&mut c, 5_100, &spend);
+        let (_dir, db) = index(100, 5_105, &[(op, &spend, 5_100)]);
+        let (s, fake) = indexed(c, &db);
+        assert_eq!(
+            s.outspend(&op.txid, 0).unwrap(),
+            Outspend::Spent { txid: spend.compute_txid(), vin: 0, block: Some((bh(5_100), 5_100)) }
+        );
+        assert_eq!(fake.fetches(), 0);
+    }
+
+    #[test]
+    fn cf_miss_unspent() {
+        let (mut c, op) = chain_to(100, 300, 100);
+        c.utxos.push(op);
+        let (_dir, db) = index(100, 300, &[]);
+        let (s, fake) = indexed(c, &db);
+        assert_eq!(s.outspend(&op.txid, 0).unwrap(), Outspend::Unspent);
+        assert_eq!(fake.fetches(), 0);
+    }
+
+    /// Review Focus 2: the node has a block the index hasn't processed.
+    #[test]
+    fn spent_above_watermark_scans_only_new_blocks() {
+        let (mut c, op) = chain_to(100, 205, 100);
+        let spend = wsh_tx(&[op], 61);
+        mine(&mut c, 202, &spend);
+        let (_dir, db) = index(100, 200, &[]);
+        let (s, fake) = indexed(c, &db);
+        assert_eq!(
+            s.outspend(&op.txid, 0).unwrap(),
+            Outspend::Spent { txid: spend.compute_txid(), vin: 0, block: Some((bh(202), 202)) }
+        );
+        assert_eq!(fake.chain.lock().unwrap().fetched, vec![201, 202]);
+    }
+
+    /// Spent per the node, in no block yet seen: never `Unspent`, and no
+    /// 2016-block cap on the scan above the watermark.
+    #[test]
+    fn spent_but_not_found_above_the_watermark_is_pending_never_unspent() {
+        let (c, op) = chain_to(100, 2_300, 100);
+        let (_dir, db) = index(100, 2_250, &[]);
+        let (s, fake) = indexed(c, &db);
+        assert!(matches!(s.outspend(&op.txid, 0), Err(OutspendError::Pending(_))));
+        assert_eq!(fake.chain.lock().unwrap().fetched, (2_251..=2_300).collect::<Vec<_>>());
+        // Asked again: still pending (not final, not Unspent), nothing rescanned.
+        assert!(matches!(s.outspend(&op.txid, 0), Err(OutspendError::Pending(_))));
+        assert_eq!(fake.fetches(), 50);
+    }
+
+    /// Review Focus 1: funded below the start height, so the old scan.
+    #[test]
+    fn funded_below_start_uses_old_scan() {
+        let (mut c, op) = chain_to(900, 1_100, 900);
+        let spend = wsh_tx(&[op], 62);
+        mine(&mut c, 950, &spend);
+        let (_dir, db) = index(1_000, 1_100, &[]);
+        let (s, _) = indexed(c, &db);
+        assert_eq!(
+            settle(&s, &op).unwrap(),
+            Outspend::Spent { txid: spend.compute_txid(), vin: 0, block: Some((bh(950), 950)) }
+        );
+    }
+
+    /// A row whose spender's block left the main chain (a reorg the undo
+    /// record couldn't undo: a backfilled row under a pre-upgrade undo) is
+    /// not answered as Spent.
+    #[test]
+    fn a_stale_cf_row_is_not_answered_spent() {
+        let (mut c, op) = chain_to(100, 120, 100);
+        let gone = wsh_tx(&[op], 63);
+        mine(&mut c, 105, &gone);
+        let (_dir, db) = index(100, 110, &[(op, &gone, 105)]);
+        // Block 105 is replaced by 105' without the spend: unspent again.
+        c.stale.push(bh(105));
+        c.blocks[5] = (bh(1_105), vec![]);
+        c.utxos.push(op);
+        let (s, fake) = indexed(c, &db);
+        assert_eq!(s.outspend(&op.txid, 0).unwrap(), Outspend::Unspent);
+        // Now spent again, by another tx above the watermark: found by the scan.
+        let again = wsh_tx(&[op], 64);
+        {
+            let mut c = fake.chain.lock().unwrap();
+            c.utxos.clear();
+            c.blocks[12].1.push(again.clone());
+            c.known.insert(again.compute_txid(), (again.clone(), Some(bh(112))));
+        }
+        assert_eq!(
+            s.outspend(&op.txid, 0).unwrap(),
+            Outspend::Spent { txid: again.compute_txid(), vin: 0, block: Some((bh(112), 112)) }
+        );
+        assert_eq!(fake.chain.lock().unwrap().fetched, vec![111, 112]);
+    }
+
+    /// Blocks `from..=to` indexed while spends were off (no rows, no mark),
+    /// then the index reopened with spends from `from`.
+    fn gap_index(from: u32, to: u32) -> (tempfile::TempDir, Db) {
+        let dir = tempfile::tempdir().unwrap();
+        let db = open_db(&dir, None);
+        let blocks: Vec<ParsedBlock> = (from..=to).map(|h| pblock(h, vec![])).collect();
+        db.apply(&blocks, 0, Durability::Bulk, false).unwrap();
+        db.flush().unwrap();
+        drop(db);
+        let db = open_db(&dir, Some(from));
+        assert_eq!(db.spends_watermark(), None);
+        (dir, db)
+    }
+
+    /// Review Focus 4.
+    #[test]
+    fn backfill_resumes_from_watermark() {
+        let (from, to) = (100, 350);
+        let (mut c, op) = chain_to(from, to, from);
+        let at = [100, 150, 199, 200, 250, 350];
+        let mut want = Vec::new();
+        for (i, h) in at.iter().enumerate() {
+            let prev = OutPoint::new(op.txid, 10 + i as u32);
+            let t = wsh_tx(&[prev], 70 + i as u64);
+            mine(&mut c, *h, &t);
+            want.push((prev, SpendRec { txid: t.compute_txid(), vin: 0, height: *h }));
+        }
+        c.fail_at = Some(from + 100);
+        let (_dir, db) = gap_index(from, to);
+        let fake = fake(c);
+        assert!(crate::sync::backfill_spends(&db, &*fake, from, to).is_err());
+        assert_eq!(db.spends_watermark(), Some(from + 99), "the first batch only");
+        for (prev, rec) in &want {
+            let got = db.spend_of(prev).unwrap();
+            if rec.height < from + 100 {
+                assert_eq!(got, Some(*rec));
+            } else {
+                assert_eq!(got, None);
+            }
+        }
+        // Restart: resumes at from + 100, each block fetched once.
+        {
+            let mut c = fake.chain.lock().unwrap();
+            c.fail_at = None;
+            c.fetched.clear();
+        }
+        crate::sync::backfill_spends(&db, &*fake, from, to).unwrap();
+        assert_eq!(fake.chain.lock().unwrap().fetched, (from + 100..=to).collect::<Vec<_>>());
+        assert_eq!(db.spends_watermark(), Some(to));
+        for (prev, rec) in &want {
+            assert_eq!(db.spend_of(prev).unwrap(), Some(*rec));
+        }
+    }
+
+    /// Blocks the live indexer applied during the backfill (rows written, the
+    /// mark held back by the gap) are covered too: the mark reaches the tip.
+    #[test]
+    fn backfill_closes_the_gap_up_to_blocks_applied_live() {
+        let (from, to) = (100, 250);
+        let (mut c, op) = chain_to(from, to + 10, from);
+        let late = wsh_tx(&[op], 80);
+        mine(&mut c, to + 5, &late);
+        let (_dir, db) = gap_index(from, to);
+        // Live: blocks to+1..=to+10 with their spends; the gap holds the mark.
+        let live: Vec<ParsedBlock> = (to + 1..=to + 10)
+            .map(|h| {
+                let s = if h == to + 5 { vec![BlockSpend { prevout: op, txid: late.compute_txid(), vin: 0 }] } else { vec![] };
+                pblock(h, s)
+            })
+            .collect();
+        db.apply(&live, 0, Durability::Durable, true).unwrap();
+        assert_eq!(db.spends_watermark(), None);
+        let fake = fake(c);
+        let stop = std::sync::atomic::AtomicBool::new(false);
+        crate::sync::run_spends_backfill(&db, &*fake, from, &stop);
+        assert_eq!(db.spends_watermark(), Some(to + 10));
+        // And the next live block follows on.
+        db.apply(&[pblock(to + 11, vec![])], 0, Durability::Durable, true).unwrap();
+        assert_eq!(db.spends_watermark(), Some(to + 11));
+    }
+
+    #[test]
+    fn lookup_above_watermark_during_backfill() {
+        let (mut c, op) = chain_to(100, 301, 250);
+        let spend = wsh_tx(&[op], 81);
+        mine(&mut c, 255, &spend);
+        // A row for op at 301 the node agrees with: were the column family
+        // trusted above the watermark, it would be the answer.
+        let bogus = wsh_tx(&[op], 82);
+        mine(&mut c, 301, &bogus);
+        c.fail_at = Some(200);
+        let (_dir, db) = gap_index(100, 300);
+        let fake = fake(c);
+        // Backfill part-way: through 199, below the funding.
+        assert!(crate::sync::backfill_spends(&db, &*fake, 100, 300).is_err());
+        assert_eq!(db.spends_watermark(), Some(199));
+        db.apply(
+            &[pblock(301, vec![BlockSpend { prevout: op, txid: bogus.compute_txid(), vin: 0 }])],
+            0,
+            Durability::Durable,
+            true,
+        )
+        .unwrap();
+        assert!(db.spend_of(&op).unwrap().is_some());
+        {
+            let mut c = fake.chain.lock().unwrap();
+            c.fail_at = None;
+            c.fetched.clear();
+        }
+        let s = Spends::with_index(Box::new(fake.clone()), db.clone());
+        assert_eq!(
+            s.outspend(&op.txid, 0).unwrap(),
+            Outspend::Spent { txid: spend.compute_txid(), vin: 0, block: Some((bh(255), 255)) }
+        );
+        assert_eq!(fake.chain.lock().unwrap().fetched, (250..=255).collect::<Vec<_>>(), "path 3, from the funding block");
+    }
+
+    /// A P2WPKH output's spend is never recorded (`spendcf::recorded`): in
+    /// range of the index, it still takes the old scan and is found.
+    #[test]
+    fn an_unrecorded_output_type_uses_the_old_scan() {
+        let (mut c, _) = chain_to(100, 300, 100);
+        let mut funding = tx(&[OutPoint::new(Txid::from_byte_array([6; 32]), 0)], 2);
+        funding.output[0].script_pubkey = ScriptBuf::new_p2wpkh(&bitcoin::WPubkeyHash::from_byte_array([3; 20]));
+        let op = OutPoint::new(funding.compute_txid(), 0);
+        mine(&mut c, 120, &funding);
+        let mut spend = tx(&[op], 90);
+        spend.input[0].witness = Witness::from_slice(&[vec![1; 72], vec![2; 33]]);
+        mine(&mut c, 130, &spend);
+        let (_dir, db) = index(100, 300, &[]);
+        let (s, _) = indexed(c, &db);
+        assert_eq!(
+            s.outspend(&op.txid, 0).unwrap(),
+            Outspend::Spent { txid: spend.compute_txid(), vin: 0, block: Some((bh(130), 130)) }
+        );
+    }
 }

@@ -85,7 +85,7 @@ if ! running index; then
   }
   "$XR_REPO/target/debug/fortis-index" \
     --rpc-url "http://127.0.0.1:$XR_RPC_PORT" --rpc-auth lab:lab --network regtest \
-    --db "$XR/index-db" --bind "127.0.0.1:$XR_INDEX_PORT" \
+    --db "$XR/index-db" --bind "127.0.0.1:$XR_INDEX_PORT" --spends-from-height 0 \
     >"$XR/logs/index.log" 2>&1 &
   record index $!
 fi

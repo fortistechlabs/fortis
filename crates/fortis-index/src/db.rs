@@ -4,7 +4,7 @@
 
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, MutexGuard};
 
 use anyhow::{bail, Context, Result};
 use bitcoin::hashes::Hash;
@@ -16,7 +16,7 @@ use rocksdb::{
 };
 
 use crate::extract::ParsedBlock;
-use crate::spendcf::{self, SpendRec};
+use crate::spendcf::{self, BlockSpend, SpendRec};
 use crate::keys::{
     height_key, history_key, history_txnum, p2wpkh_scripthash, tip_from, tip_value, txnum_key,
     utxo_key, utxo_outpoint, BlockRec, Program, TxNum, UtxoVal, MAX_TXNUM,
@@ -111,6 +111,10 @@ pub struct Db {
     secondary: bool,
     render: Arc<RenderCap>,
     spends_from: Option<u32>,
+    /// Held by every write that reads the spends watermark and writes it
+    /// back (block apply, rollback, a backfill batch), so the mark one makes
+    /// is never based on a value another has since changed.
+    spends_lock: Arc<Mutex<()>>,
 }
 
 /// Rendered transactions cached at most: every one any client asks about
@@ -317,6 +321,7 @@ impl Db {
             secondary: false,
             render,
             spends_from: cfg.spends_from,
+            spends_lock: Arc::default(),
         };
         db.guard(chain_id, true)?;
         Ok(db)
@@ -342,6 +347,7 @@ impl Db {
             secondary: true,
             render,
             spends_from: cfg.spends_from,
+            spends_lock: Arc::default(),
         };
         db.guard(chain_id, false)?;
         Ok(db)
@@ -398,14 +404,12 @@ impl Db {
     }
 
     /// The height `spends` is recorded from, as configured.
-    #[allow(dead_code)] // read by the outspend lookup (Plan B Task 2)
     pub fn spends_from(&self) -> Option<u32> {
         self.spends_from
     }
 
     /// The highest height through which `spends` is complete (from
     /// [`Db::spends_from`]); `None` if no block is yet (or on a read error).
-    #[allow(dead_code)] // read by the outspend lookup (Plan B Task 2)
     pub fn spends_watermark(&self) -> Option<u32> {
         self.read_spends_watermark().ok().flatten()
     }
@@ -432,12 +436,60 @@ impl Db {
     }
 
     /// Who spent `op`, if a recorded input in an indexed block did.
-    #[allow(dead_code)] // read by the outspend lookup (Plan B Task 2)
     pub fn spend_of(&self, op: &OutPoint) -> Result<Option<SpendRec>> {
         self.db
             .get_cf(self.cf(CF_SPENDS), spendcf::key(op))?
             .map(|v| SpendRec::decode(&v).context("spends row length"))
             .transpose()
+    }
+
+    fn lock_spends(&self) -> MutexGuard<'_, ()> {
+        self.spends_lock.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    /// Write one backfill batch: `blocks` (consecutive heights, each with its
+    /// hash and recorded spends) as `spends` rows, and the watermark moved to
+    /// the last of them — all in one durable batch. Written only if the
+    /// watermark is still `expect` (what the backfill planned from, so the
+    /// first height is `expect + 1`, or the start height when `None`) and
+    /// every block is the index's own block at its height (none rolled back or
+    /// not yet indexed). `Ok(false)`, writing nothing, otherwise: plan again.
+    pub fn write_backfill(&self, expect: Option<u32>, blocks: &[(u32, BlockHash, Vec<BlockSpend>)]) -> Result<bool> {
+        let Some(from) = self.spends_from else {
+            bail!("spends backfill without a start height");
+        };
+        let Some(&(last, _, _)) = blocks.last() else {
+            return Ok(true);
+        };
+        let first = expect.map_or(from, |w| w + 1);
+        let _spends = self.lock_spends();
+        if self.read_spends_watermark()? != expect {
+            return Ok(false);
+        }
+        let cf_blocks = self.cf(CF_BLOCKS);
+        for (i, (h, hash, _)) in blocks.iter().enumerate() {
+            if *h != first + i as u32 {
+                bail!("spends backfill batch: height {h} where {} was due", first + i as u32);
+            }
+            let ours = self.db.get_cf(cf_blocks, height_key(*h))?;
+            if ours.map(|v| BlockRec::decode(&v)).transpose()?.map(|r| r.hash) != Some(*hash) {
+                return Ok(false);
+            }
+        }
+        // Bulk (WAL-less) block writes may not be flushed yet: a crash must
+        // not replay this batch's mark over blocks it lost.
+        self.flush()?;
+        let mut wb = WriteBatch::default();
+        let cf_spends = self.cf(CF_SPENDS);
+        for (h, _, spends) in blocks {
+            for s in spends {
+                let v = SpendRec { txid: s.txid, vin: s.vin, height: *h };
+                wb.put_cf(cf_spends, spendcf::key(&s.prevout), v.encode());
+            }
+        }
+        wb.put_cf(self.cf(CF_META), META_SPENDS_WATERMARK, spends_mark(from, last));
+        self.db.write_opt(wb, &durable()).context("writing spends backfill batch")?;
+        Ok(true)
     }
 
     /// Every `blocks` row, ascending by height.
@@ -469,6 +521,7 @@ impl Db {
             self.cf(CF_SCRIPTHASH),
             self.cf(CF_SPENDS),
         );
+        let _spends = self.lock_spends();
         let mut watermark = match self.spends_from {
             Some(_) => self.read_spends_watermark()?,
             None => None,
@@ -651,6 +704,7 @@ impl Db {
             );
         }
         let (cf_hist, cf_utxo) = (self.cf(CF_HISTORY), self.cf(CF_UTXO));
+        let _spends = self.lock_spends();
         let mut wb = WriteBatch::default();
         for k in &undo.added_history {
             wb.delete_cf(cf_hist, k);

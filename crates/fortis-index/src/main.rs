@@ -94,6 +94,12 @@ struct Args {
     /// Stop (and exit 0) once this height is indexed — for benchmarks and tests.
     #[arg(long)]
     stop_height: Option<u32>,
+    /// Record who spent each output (the Lightning-relevant inputs) for blocks
+    /// from this height, so `GET /tx/:txid/outspend/:vout` answers for outputs
+    /// funded at or above it however old they are. Blocks already indexed are
+    /// backfilled in the background. Leave out to record none.
+    #[arg(long, value_name = "HEIGHT")]
+    spends_from_height: Option<u32>,
 }
 
 #[derive(clap::Subcommand)]
@@ -205,7 +211,7 @@ fn run(args: Args) -> Result<()> {
         &args.db,
         &DbConfig {
             cache_mb: args.cache_mb,
-            spends_from: None,
+            spends_from: args.spends_from_height,
         },
         &chain_id,
     )?;
@@ -216,6 +222,17 @@ fn run(args: Args) -> Result<()> {
             "index {} is inconsistent: meta.tip does not match the blocks table",
             args.db.display()
         );
+    }
+    if let Some(f) = args.spends_from_height {
+        // The backfill checks each block against the index's own: it can't
+        // cover heights below the first indexed block.
+        if table.tip().is_some_and(|(h, _)| h >= f) && table.get(f).is_none() {
+            bail!("--spends-from-height {f} is below the first block this index holds");
+        }
+        if table.tip().is_none() && f < start_height {
+            bail!("--spends-from-height {f} is below --start-height {start_height}");
+        }
+        eprintln!("             recording spends from height {f}");
     }
     let chain: SharedChain = Arc::new(ArcSwap::from_pointee(table));
     let mempool: SharedMempool = Arc::new(ArcSwap::from_pointee(MempoolView::default()));
@@ -267,6 +284,20 @@ fn run(args: Args) -> Result<()> {
             .context("spawning sync thread")?
     };
 
+    let backfill_thread = match args.spends_from_height {
+        Some(from) => {
+            let (db, stop) = (db.clone(), stop.clone());
+            let node = spends::RpcSpendNode { rpc: rpc.clone(), fmt };
+            Some(
+                std::thread::Builder::new()
+                    .name("spends-backfill".into())
+                    .spawn(move || sync::run_spends_backfill(&db, &node, from, &stop))
+                    .context("spawning spends backfill thread")?,
+            )
+        }
+        None => None,
+    };
+
     let state = api::AppState {
         db: db.clone(),
         chain,
@@ -276,10 +307,13 @@ fn run(args: Args) -> Result<()> {
         network,
         status,
         chain_id,
-        spends: Arc::new(spends::Spends::new(Box::new(spends::RpcSpendNode {
-            rpc: api_rpc_spends,
-            fmt,
-        }))),
+        spends: Arc::new(spends::Spends::with_index(
+            Box::new(spends::RpcSpendNode {
+                rpc: api_rpc_spends,
+                fmt,
+            }),
+            db.clone(),
+        )),
     };
     let rt = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
@@ -289,6 +323,9 @@ fn run(args: Args) -> Result<()> {
     stop.store(true, Ordering::SeqCst);
     if sync_thread.join().is_err() && sync_result.is_ok() {
         bail!("sync thread panicked");
+    }
+    if backfill_thread.is_some_and(|t| t.join().is_err()) {
+        eprintln!("spends backfill thread panicked");
     }
     db.flush()?;
     eprintln!("fortis-index: stopped");
