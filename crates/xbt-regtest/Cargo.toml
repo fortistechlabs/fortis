@@ -6,5 +6,6 @@ publish = false
 description = "The XBT release gate: the patched LDK (ldk-node) against Knots with BLAKE2b active and the LND BLAKE2b fork, every transaction checked on chain."
 
 [dependencies]
+fortis-lightning = { path = "../fortis-lightning" }
 ldk-node = { workspace = true }
 serde_json = { workspace = true }

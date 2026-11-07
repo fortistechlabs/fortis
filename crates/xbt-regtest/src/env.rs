@@ -1,8 +1,9 @@
 //! The environment: Knots, fortis-index, LND (ports from
 //! `tools/xbt-regtest/env.sh`, exported by `run.sh`) and the two ldk-node
-//! nodes, P (the phone) and S (the LSP). The last scenario adds the real
+//! nodes, P (the phone) and S (the LSP). The last two scenarios add the real
 //! `fortis-lsp` binary (chain = "xbt", a child process: [`LspProcess`]) and
-//! a second phone, P2, its LSPS2 client.
+//! two clients of it: a second phone, P2 (ldk-node), and the app's own node
+//! (`fortis_lightning::Node`, chain Xbt) over a VSS ([`crate::vss`]).
 
 use std::cell::{Cell, OnceCell, RefCell};
 use std::collections::HashMap;
@@ -38,6 +39,9 @@ pub struct Cfg {
 	pub repo: String,
 	pub lsp_port: u16,
 	pub lsp_admin_port: u16,
+	/// The app node's VSS (vss-server, and its PostgreSQL), started by `app_node_xbt`.
+	pub vss_port: u16,
+	pub vss_pg_port: u16,
 }
 
 static CFG: OnceLock<Cfg> = OnceLock::new();
@@ -65,6 +69,8 @@ pub fn init_cfg() -> R<()> {
 		repo: var("XR_REPO")?,
 		lsp_port: port("XR_LSP_PORT")?,
 		lsp_admin_port: port("XR_LSP_ADMIN_PORT")?,
+		vss_port: port("XR_VSS_PORT")?,
+		vss_pg_port: port("XR_VSS_PG_PORT")?,
 	};
 	let _ = CFG.set(cfg);
 	Ok(())
@@ -399,6 +405,8 @@ pub struct Env {
 	/// fortis-lsp and its client P2, once `lsp_xbt_jit` has started them.
 	pub lsp: RefCell<Option<LspProcess>>,
 	pub p2: OnceCell<Ldk>,
+	/// The app node's VSS, once `app_node_xbt` has started it.
+	pub vss: RefCell<Option<crate::vss::VssProcess>>,
 }
 
 pub fn lsps2_service_config() -> LSPS2ServiceConfig {
@@ -428,7 +436,7 @@ fn base_config(dir: &str, splice_peers: Vec<PublicKey>) -> Config {
 	config
 }
 
-fn esplora_url() -> String {
+pub fn esplora_url() -> String {
 	format!("http://127.0.0.1:{}", cfg().index_port)
 }
 
@@ -530,6 +538,7 @@ impl Env {
 			must_sweep: RefCell::new(vec![]),
 			lsp: RefCell::new(None),
 			p2: OnceCell::new(),
+			vss: RefCell::new(None),
 		};
 		env.mine(6)?;
 		for n in [&env.p, &env.s] {

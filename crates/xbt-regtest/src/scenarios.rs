@@ -12,8 +12,10 @@ use ldk_node::payment::{PaymentDirection, PaymentKind};
 use ldk_node::{ChannelDetails, Event, LightningBalance, PendingSweepBalance, UserChannelId};
 
 use crate::check::{self, confirmed_all, confirmed_with, output_with_value, TxInfo};
+use fortis_lightning::LnEvent;
+
 use crate::env::{
-	btc, btc_amount, ln, ln_try, lnd_pay_retry, poll, send_retry, sleep_ms, Env, Ldk, LspProcess, Who,
+	self, btc, btc_amount, ln, ln_try, lnd_pay_retry, poll, send_retry, sleep_ms, Env, Ldk, LspProcess, Who,
 	JIT_FEE_PPM, JIT_MIN_FEE_MSAT, R,
 };
 
@@ -39,6 +41,7 @@ pub const ALL: &[(&str, Scenario)] = &[
 	("penalty", penalty),
 	("sweeps_settle", sweeps_settle),
 	("lsp_xbt_jit", lsp_xbt_jit),
+	("app_node_xbt", app_node_xbt),
 ];
 
 // ------------------------------------------------------------------ helpers
@@ -834,8 +837,8 @@ const P2_FUNDED_SAT: u64 = 500_000;
 /// LSP) gets a JIT invoice from it, which LND pays: the LSP opens the channel ([0x21]
 /// wallet inputs). P2 pays an LND invoice through it, splices 20,000 sat in (shared input
 /// [0x21, 0x21]) and closes cooperatively ([0x21, 0x21]). Then P2's and the LSP's on-chain
-/// wallets must hold what the payments and the recorded fees say. fortis-lsp is stopped at
-/// the end; on a failure main prints its last log lines first.
+/// wallets must hold what the payments and the recorded fees say. fortis-lsp is left
+/// running for `app_node_xbt`; on a failure main prints its last log lines, then stops it.
 fn lsp_xbt_jit(env: &Env) -> R<Outcome> {
 	let lsp = LspProcess::start()?;
 	let (lsp_id, lsp_addr, lsp_wallet) = (lsp.id, lsp.addr.clone(), lsp.onchain_address.clone());
@@ -968,9 +971,277 @@ fn lsp_xbt_jit(env: &Env) -> R<Outcome> {
 		env.fees_of(Who::Lsp)
 	);
 
+	// fortis-lsp stays up for `app_node_xbt`, which stops it.
 	p2.stop()?;
+	Ok(Outcome::Pass)
+}
+
+// ------------------------------------------------------------------ 12
+
+/// The app node's BIP-39 seed (fixed: the suite's own wallet, not a secret).
+const APP_SEED: [u8; 64] = [0x5a; 64];
+/// What LND pays the app node's JIT invoice, and what the app pays LND.
+const APP_JIT_MSAT: u64 = 200_000_000;
+const APP_PAY_SAT: u64 = 20_000;
+
+/// The app's node (`fortis_lightning::Node`), stopped when dropped.
+struct App(fortis_lightning::Node);
+
+impl Drop for App {
+	fn drop(&mut self) {
+		self.0.stop();
+	}
+}
+
+/// The node the phone runs: chain Xbt, the suite's Esplora (fortis-index), fortis-lsp as its
+/// LSP (limits as `lsp_config_toml`), state in the VSS; `dir` holds only its local files.
+fn app_node(lsp_id: &PublicKey, vss_url: &str, dir: &str) -> R<App> {
+	use fortis_lightning::{ChainSource, LnChain, LspInfo, LspLimits, NodeConfig, VssConfig};
+	let cfg = NodeConfig {
+		bip39_seed: APP_SEED.to_vec(),
+		network: ldk_node::bitcoin::Network::Regtest,
+		data_dir: dir.into(),
+		chain_source: ChainSource::Esplora { url: env::esplora_url(), auth_header: None },
+		lsp: LspInfo { node_id: lsp_id.to_string(), host: "127.0.0.1".into(), port: env::cfg().lsp_port, token: None },
+		vss: VssConfig { url: vss_url.to_string(), auth_header: String::new() },
+		limits: LspLimits {
+			min_payment_msat: 10_000_000,
+			max_payment_msat: 500_000_000,
+			channel_min_sat: 100_000,
+			channel_max_sat: 500_000,
+		},
+		chain: LnChain::Xbt,
+	};
+	let node = fortis_lightning::Node::new(cfg).map_err(|e| format!("app Node::new: {e}"))?;
+	println!("  app node {} (data {dir})", node.node_id());
+	Ok(App(node))
+}
+
+/// Takes the app node's events (printing them) until one `f` accepts.
+fn app_wait(app: &App, what: &str, secs: u64, f: impl Fn(&LnEvent) -> bool) -> R<LnEvent> {
+	let t = std::time::Instant::now();
+	while t.elapsed().as_secs() < secs {
+		if let Some(e) = app.0.next_event(std::time::Duration::from_millis(500)) {
+			println!("    app event: {e:?}");
+			if f(&e) {
+				return Ok(e);
+			}
+		}
+	}
+	Err(format!("app: timed out after {secs}s waiting for {what}"))
+}
+
+/// The app pays a new LND invoice of `sat` (retrying while the app learns the LSP-LND
+/// channel by gossip); (payment id, routing fee msat).
+fn app_pays_lnd(app: &App, sat: u64, secs: u64) -> R<(String, u64)> {
+	let t = std::time::Instant::now();
+	loop {
+		let inv = lnd_invoice(sat, "xr app->lnd")?;
+		let target = fortis_lightning::parse(&inv.to_string(), ldk_node::bitcoin::Network::Regtest)
+			.map_err(|e| format!("parse LND invoice: {e}"))?;
+		let res = match app.0.pay(&target, None) {
+			Ok(id) => match app_wait(app, &format!("payment {id} to settle"), 60, |e| {
+				matches!(e, LnEvent::PaymentSent { id: i, .. } | LnEvent::PaymentFailed { id: i, .. } if *i == id)
+			})? {
+				LnEvent::PaymentSent { fee_msat, .. } => Ok((id, fee_msat)),
+				other => Err(format!("{other:?}")),
+			},
+			Err(e) => Err(format!("pay: {e:?}")),
+		};
+		match res {
+			Ok(v) => {
+				println!("  app paid LND {sat} sat (routing fee {} msat) after {:?}", v.1, t.elapsed());
+				return Ok(v);
+			},
+			Err(e) if t.elapsed().as_secs() < secs => {
+				println!("  app pays LND: {e}, retrying with a new invoice");
+				sleep_ms(5000);
+			},
+			Err(e) => return Err(format!("app pays LND: {e}")),
+		}
+	}
+}
+
+/// A BOLT 11 invoice as a BTC node makes it: regtest, no `option_blake2b` (bit 512), signed by
+/// a key of its own (no node of this chain could be paid with it).
+fn btc_style_invoice(amount_msat: u64) -> R<Bolt11Invoice> {
+	use ldk_node::bitcoin::secp256k1::{Secp256k1, SecretKey};
+	use ldk_node::lightning_invoice::{Currency, InvoiceBuilder};
+	use ldk_node::lightning_types::payment::PaymentSecret;
+	let secp = Secp256k1::new();
+	let key = SecretKey::from_slice(&sha256::Hash::hash(&preimage(31)).to_byte_array()).map_err(|e| e.to_string())?;
+	let inv = InvoiceBuilder::new(Currency::Regtest)
+		.description("xr btc-style".into())
+		.payment_hash(sha256::Hash::hash(&preimage(32)))
+		.payment_secret(PaymentSecret(preimage(33)))
+		.amount_milli_satoshis(amount_msat)
+		.current_timestamp()
+		.min_final_cltv_expiry_delta(18)
+		.build_signed(|h| secp.sign_ecdsa_recoverable(h, &key))
+		.map_err(|e| format!("build BTC-style invoice: {e:?}"))?;
+	if inv.features().map_or(false, |f| f.supports_blake2b()) {
+		return Err("the BTC-style invoice carries option_blake2b".into());
+	}
+	Ok(inv)
+}
+
+/// The JIT channel's funding: the one new transaction in the mempool (not in `before`)
+/// with a P2WSH output; (txid, vout).
+fn new_funding_in_mempool(before: &[String]) -> R<Option<(String, u32)>> {
+	let mempool: Vec<String> = serde_json::from_value(env::btc_json(&["getrawmempool"])?).map_err(|e| e.to_string())?;
+	let mut found = vec![];
+	for t in mempool.iter().filter(|t| !before.contains(t)) {
+		let tx = env::btc_json(&["getrawtransaction", t, "true"])?;
+		for o in tx["vout"].as_array().into_iter().flatten() {
+			if o["scriptPubKey"]["type"] == "witness_v0_scripthash" {
+				found.push((t.clone(), o["n"].as_u64().unwrap_or(0) as u32));
+			}
+		}
+	}
+	match found.len() {
+		0 => Ok(None),
+		1 => Ok(found.pop()),
+		_ => Err(format!("more than one new P2WSH output in the mempool: {found:?}")),
+	}
+}
+
+/// The app's node layer on XBT: `fortis_lightning::Node` (chain Xbt, the code the phone runs)
+/// with its state in a VSS (LDK vss-server on its own PostgreSQL), against the running
+/// fortis-lsp (chain = "xbt") of `lsp_xbt_jit`.
+///
+/// 1. It starts (LSP reachable, device lock and state in VSS).
+/// 2. A JIT receive paid by LND: fortis-lsp opens the channel ([0x21] on its wallet inputs);
+///    the app gets the amount less the quoted fee.
+/// 3. It pays an LND invoice through fortis-lsp.
+/// 4. It refuses a BTC-style invoice (no bit 512) with `LnError::WrongChain`, and no
+///    payment is recorded.
+/// 5. Stopped and built again from the same seed on a new data dir (a new phone): from VSS,
+///    the balances and the payments are the same.
+/// 6. It closes cooperatively ([0x21, 0x21]; fortis-lsp opened the channel, so it pays the
+///    fee); its close output is what it received less what it sent, and its transit wallet
+///    holds it. Then fortis-lsp and the VSS are stopped.
+fn app_node_xbt(env: &Env) -> R<Outcome> {
+	let (lsp_id, lsp_addr) = {
+		let lsp = env.lsp.borrow();
+		let lsp = lsp.as_ref().ok_or("fortis-lsp is not running (lsp_xbt_jit)")?;
+		(lsp.id, lsp.addr.clone())
+	};
+	let vss = crate::vss::VssProcess::start()?;
+	let vss_url = vss.url.clone();
+	*env.vss.borrow_mut() = Some(vss);
+	let xr = env::cfg().xr.clone();
+
+	// 1. Start.
+	let app = app_node(&lsp_id, &vss_url, &format!("{xr}/app-a"))?;
+	app.0.start().map_err(|e| format!("app start: {e:?}"))?;
+	println!("  app node started, LSP {lsp_id} at {lsp_addr}");
+
+	// 2. JIT receive, paid by LND.
+	let quote = app.0.receive(APP_JIT_MSAT, "xr app jit").map_err(|e| format!("app receive: {e:?}"))?;
+	let jit_fee = JIT_MIN_FEE_MSAT.max(APP_JIT_MSAT * JIT_FEE_PPM as u64 / 1_000_000);
+	println!("  app JIT quote: fee {} msat, needs channel {}", quote.fee_msat, quote.needs_channel);
+	if !quote.needs_channel || quote.fee_msat != jit_fee {
+		return Err(format!("app JIT quote {quote:?}, expected a channel and fee {jit_fee} msat"));
+	}
+	let inv = Bolt11Invoice::from_str(&quote.invoice).map_err(|e| format!("app invoice: {e:?}"))?;
+	if !inv.features().map_or(false, |f| f.supports_blake2b()) {
+		return Err("the app's invoice lacks option_blake2b (bit 512)".into());
+	}
+	let mempool_before: Vec<String> =
+		serde_json::from_value(env::btc_json(&["getrawmempool"])?).map_err(|e| e.to_string())?;
+	lnd_pay_retry("app JIT invoice", &inv, 180)?;
+	let received_msat = match app_wait(&app, "the JIT payment", 60, |e| matches!(e, LnEvent::PaymentReceived { .. }))? {
+		LnEvent::PaymentReceived { amount_msat, .. } => amount_msat,
+		_ => unreachable!(),
+	};
+	println!("  app received {received_msat} msat of {APP_JIT_MSAT} (fortis-lsp fee {jit_fee} msat)");
+	if received_msat != APP_JIT_MSAT - jit_fee {
+		return Err(format!("app received {received_msat} msat, expected {}", APP_JIT_MSAT - jit_fee));
+	}
+	let (funding, funding_vout) =
+		poll("fortis-lsp to broadcast the app's JIT funding", 60, || new_funding_in_mempool(&mempool_before))?;
+	println!("  app JIT channel funding {funding}:{funding_vout}");
+	env.mine(6)?;
+	let info = confirmed_all(&funding, U)?;
+	record(env, "app JIT channel funding (LSP wallet inputs)", &info, Some(Who::Lsp));
+	let channel_sat = info.outputs[funding_vout as usize].0;
+
+	// 3. Pay an LND invoice.
+	let (paid_id, routing_fee_msat) = app_pays_lnd(&app, APP_PAY_SAT, 240)?;
+	let sent_msat = APP_PAY_SAT * 1000 + routing_fee_msat;
+
+	// 4. A BTC-style invoice is refused before any HTLC.
+	let payments_before = app.0.payments();
+	let btc_inv = btc_style_invoice(10_000_000)?;
+	let target = fortis_lightning::parse(&btc_inv.to_string(), ldk_node::bitcoin::Network::Regtest)
+		.map_err(|e| format!("parse BTC-style invoice: {e}"))?;
+	match app.0.pay(&target, None) {
+		Err(fortis_lightning::LnError::WrongChain) => println!("  BTC-style invoice: refused, WrongChain"),
+		other => return Err(format!("paying a BTC-style invoice: {other:?}, expected WrongChain")),
+	}
+	let btc_id = hex(&btc_inv.payment_hash().to_byte_array());
+	let payments_after = app.0.payments();
+	if payments_after.len() != payments_before.len() || payments_after.iter().any(|p| p.id == btc_id) {
+		return Err(format!("a payment was recorded for the BTC-style invoice: {payments_after:?}"));
+	}
+	if app.0.next_event(std::time::Duration::from_secs(2)).is_some_and(|e| matches!(e, LnEvent::PaymentFailed { .. } | LnEvent::PaymentSent { .. })) {
+		return Err("the BTC-style invoice produced a payment event".into());
+	}
+
+	// 5. Stop; a new node from the same seed and VSS, on a fresh data dir.
+	let before = app.0.balances();
+	println!("  app balances before stop: {before:?}");
+	if before.lightning_sat == 0 {
+		return Err(format!("app has no Lightning balance: {before:?}"));
+	}
+	drop(app);
+	let app = app_node(&lsp_id, &vss_url, &format!("{xr}/app-b"))?;
+	app.0.start().map_err(|e| format!("app restart from VSS: {e:?}"))?;
+	let after = poll("the restarted app's balances to match", 240, || {
+		let b = app.0.balances();
+		Ok((b.lightning_sat == before.lightning_sat && b.onchain_transit_sat == before.onchain_transit_sat).then_some(b))
+	})
+	.map_err(|e| format!("{e}: before {before:?}, after {:?}", app.0.balances()))?;
+	println!("  app balances after restart from VSS: {after:?}");
+	let ids: Vec<String> = app.0.payments().into_iter().map(|p| p.id).collect();
+	if !ids.contains(&paid_id) || ids.len() != payments_after.len() {
+		return Err(format!("payments after restart {ids:?}, expected {} including {paid_id}", payments_after.len()));
+	}
+
+	// 6. Cooperative close.
+	poll("the restarted app's channel to be ready", 120, || {
+		Ok((app.0.channel_state() == fortis_lightning::ChannelState::Ready).then_some(()))
+	})?;
+	poll("the app to close cooperatively", 60, || match app.0.close_channel() {
+		Ok(()) => Ok(Some(())),
+		Err(e) => {
+			println!("  app close: {e:?}, retrying");
+			Ok(None)
+		},
+	})?;
+	let closing = env.wait_spender("app-fortis-lsp cooperative close", &funding, funding_vout, 1, 3)?;
+	confirm(env, &closing)?;
+	let info = confirmed_with(&closing, &[UU])?;
+	record(env, "app-fortis-lsp cooperative close (LSP opened: LSP pays)", &info, Some(Who::Lsp));
+	env.mine(5)?;
+	app_wait(&app, "the app's channel closed", 120, |e| matches!(e, LnEvent::ChannelClosed { .. }))?;
+	let expected_sat = (received_msat - sent_msat) / 1000;
+	let out = check::output_with_value(&info, expected_sat)
+		.map_err(|e| format!("app close output (received {received_msat} - sent {sent_msat} msat): {e}"))?;
+	println!("  app close output {closing}:{out} = {expected_sat} sat (channel {channel_sat} sat)");
+	let transit = poll("the app's transit wallet to hold its close output", 240, || {
+		let b = app.0.balances();
+		Ok((b.onchain_transit_sat == expected_sat && b.lightning_sat == 0).then_some(b))
+	})
+	.map_err(|e| format!("{e}: app balances {:?}, expected {expected_sat} sat on chain", app.0.balances()))?;
+	println!("  app balances after close: {transit:?}");
+
+	drop(app);
 	if let Some(mut lsp) = env.lsp.borrow_mut().take() {
 		lsp.stop();
+	}
+	if let Some(mut vss) = env.vss.borrow_mut().take() {
+		vss.stop();
 	}
 	Ok(Outcome::Pass)
 }
