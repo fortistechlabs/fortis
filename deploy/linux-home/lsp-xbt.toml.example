@@ -8,7 +8,8 @@
 #  - Gossip comes from peers (P2P): rgs_url is refused (there is no XBT RGS server).
 #  - Channels have no anchors; on-chain spends use the XBT replay-protected sighash.
 #  - Its own data_dir and keys_seed, so its own node id.
-#  - custody_max_sat = 0: Fortis accounts stay off until the operator enables them.
+#  - Fortis accounts (custody) are on, with the same limits as the BTC LSP:
+#    copy custody_max_sat and account_max_sat from /etc/fortis/lsp.toml.
 
 chain = "xbt"
 network = "bitcoin"
@@ -59,6 +60,9 @@ announce_addresses = ["lsp.fortistechlabs.com:9835"]
 # [[outbound]] table.
 fcm_service_account = "/etc/fortis/fcm-service-account.json"
 
-# Fortis accounts: 0 = disabled (the default) until the operator has confirmed
-# holding customer funds is allowed. Set a limit in sat to enable them.
-custody_max_sat = 0
+# Fortis accounts: the same limits as the BTC LSP (/etc/fortis/lsp.toml;
+# fortistechlabs.com/lightning publishes 300,000 sat in total and 50,000 sat per
+# user). custody_max_sat: the most all accounts together hold (0 = accounts off).
+# account_max_sat: one user's account, above which it moves into their channel.
+custody_max_sat = 300000
+account_max_sat = 50000

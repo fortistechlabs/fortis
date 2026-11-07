@@ -285,7 +285,7 @@ Before offering the Lightning wallet to general users, run the mainnet canary wi
 
 ## 11. XBT LSP
 
-A second `fortis-lsp` instance for XBT (Bitcoin BLAKE2b chain): its own unit `fortis-lsp-xbt`, config `/etc/fortis/lsp-xbt.toml`, data `/var/lib/fortis/lsp-xbt` (its own `keys_seed`, so its own `node_id`), admin and metrics on `127.0.0.1:9746`, peers on `0.0.0.0:9835` (announced as `lsp.fortistechlabs.com:9835` through the relay). It reads the chain from the XBT index (`http://127.0.0.1:8094`), gossips peer to peer (never RGS), and starts with `custody_max_sat = 0`.
+A second `fortis-lsp` instance for XBT (Bitcoin BLAKE2b chain): its own unit `fortis-lsp-xbt`, config `/etc/fortis/lsp-xbt.toml`, data `/var/lib/fortis/lsp-xbt` (its own `keys_seed`, so its own `node_id`), admin and metrics on `127.0.0.1:9746`, peers on `0.0.0.0:9835` (announced as `lsp.fortistechlabs.com:9835` through the relay). It reads the chain from the XBT index (`http://127.0.0.1:8094`), gossips peer to peer (never RGS), and runs Fortis accounts (custody) with the same limits as the BTC LSP.
 
 New in this rollout:
 
@@ -369,7 +369,7 @@ Cautions:
    sudo install -d -o fortis -g fortis -m 0700 /var/lib/fortis/lsp-xbt
    sudo systemctl daemon-reload
    ```
-   Review `/etc/fortis/lsp-xbt.toml`: `chain = "xbt"`, `esplora_url = "http://127.0.0.1:8094"`, `xbt_gossip_floor_height = 961640`, `custody_max_sat = 0`. Set `fcm_service_account` to the same key file as in `/etc/fortis/lsp.toml` (`sudo grep fcm_service_account /etc/fortis/lsp.toml`): push notifications to phones need it, and without it held payments are not announced to a sleeping phone.
+   Review `/etc/fortis/lsp-xbt.toml`: `chain = "xbt"`, `esplora_url = "http://127.0.0.1:8094"`, `xbt_gossip_floor_height = 961640`, and `custody_max_sat` / `account_max_sat` equal to the BTC LSP's (`sudo grep -E 'custody_max_sat|account_max_sat' /etc/fortis/lsp.toml`; the example has the published 300000 / 50000). Set `fcm_service_account` to the same key file as in `/etc/fortis/lsp.toml` (`sudo grep fcm_service_account /etc/fortis/lsp.toml`): push notifications to phones need it, and without it held payments are not announced to a sleeping phone.
 4. **Start it:** `sudo systemctl enable --now fortis-lsp-xbt`, then `journalctl -u fortis-lsp-xbt -f`. It needs `fortis-xbt-index` running and synced.
 5. **Back up `/var/lib/fortis/lsp-xbt/keys_seed` off the host before funding** (the nightly script in §6 also copies `lsp-xbt`, but take this first copy by hand before funding).
 6. **Read the `node_id`:** `curl -s http://127.0.0.1:9746/info | jq .node_id`. You need it in 11.5.
@@ -405,7 +405,7 @@ and `sudo systemctl restart fortis-lsp-xbt`. Watch `journalctl -u fortis-lsp-xbt
 
 ### 11.7 Wait for the app
 
-Do not set `"enabled": true` in `ln-info-xbt.json` until the app that understands XBT Lightning (Plan C) is released and its real-phone canary has passed. Keep `custody_max_sat = 0` until you have decided to hold customer funds.
+Do not set `"enabled": true` in `ln-info-xbt.json` until the app that understands XBT Lightning (Plan C) is released and its real-phone canary has passed. Custody runs with the BTC LSP's limits from the start; the XBT custody total adds to the BTC one, so check the operator's combined exposure (`fortis_lsp_custody_sat` on 127.0.0.1:9736 and :9746).
 
 ---
 
@@ -427,7 +427,7 @@ Run this on a real phone against the production XBT LSP (§11) while `"enabled":
    - **Move all:** drag the slider to the maximum, or leave under 3,000 sat in the channel (the app then moves everything). The app shows *"Moving everything closes your Lightning channel."*; confirm, and the funds arrive in the XBT on-chain wallet when the close confirms.
 6. **Pay outside.** Pay an XBT invoice from the outside node, and an XBT BOLT 12 offer (the outside node's), from the Lightning (XBT) wallet. Check the confirm sheet (amount, fee cap), the biometric prompt, success, and the History entries.
 7. **Wrong chain.** In the Lightning (XBT) wallet paste a BTC invoice (and a BTC offer): it shows *"This is a BTC Lightning invoice"* (*"…offer"*) with a *"Pay from your Lightning wallet"* button. In the BTC Lightning wallet paste an XBT invoice: *"This is an XBT Lightning invoice"* with *"Pay from your Lightning (XBT) wallet"*. Neither may attempt a payment.
-8. **Offer receive with the app closed.** Only once custody is on: set `custody_max_sat` above 0 in `/etc/fortis/lsp-xbt.toml` and `sudo systemctl restart fortis-lsp-xbt` (do this only when you have decided to hold customer funds, §11.7). The Offer card on the Lightning (XBT) wallet shows only once the LSP has returned an offer: the app asks for it as soon as the node is up, and with `custody_max_sat = 0` the LSP refuses it (`custody_full`), so the card is correctly absent (the account's `max_msat`, the per-account cap, plays no part). After turning custody on, reopen the wallet so the app asks again; the card then shows the offer. With custody on, close the app, pay the offer from the outside node, and check the push and that the Fortis balance credits when the app is opened. Skip this step if custody stays off; the rest of the canary does not depend on it.
+8. **Offer receive with the app closed.** Custody is on (same limits as BTC), so the Offer card shows on the Lightning (XBT) wallet once the node is up and the LSP has returned the offer. Close the app, pay the offer from the outside node, and check the push ("XBT Lightning payment received" or "Incoming XBT Lightning payment") and that the Fortis balance credits when the app is opened. If the card is missing, check `custody_max_sat` in `/etc/fortis/lsp-xbt.toml` (above 0) and restart `fortis-lsp-xbt` after changing it.
 9. **Enable.** Once steps 3 to 7 pass, set `"enabled": true` in `/etc/fortis/ln-info-xbt.json`. `fortis-edge` polls the file every second and swaps in a valid change without a restart (`crates/fortis-edge/src/ln.rs`; the journal logs `ln info: reloaded ... (enabled=true ...)`; an invalid file is ignored and the last good one kept). Check `curl -s -H "Authorization: Bearer $TOKEN" https://<edge>/ln/info | jq .xbt.enabled`. The debug builds were already running XBT Lightning; release builds now offer *Lightning (XBT)* the next time the app reads `/ln/info`.
 
 **Before enabling, all must be true:**
@@ -437,7 +437,7 @@ Run this on a real phone against the production XBT LSP (§11) while `"enabled":
 - [ ] The XBT LSP has outbound channels open (§11.6), with enough capacity for the channels users will open.
 - [ ] `lsp.fortistechlabs.com:9835` is reachable from mobile data (§11.4).
 - [ ] `fcm_service_account` is set in `/etc/fortis/lsp-xbt.toml`.
-- [ ] `custody_max_sat` is still 0 unless step 8 was decided on.
+- [ ] `custody_max_sat` / `account_max_sat` in `lsp-xbt.toml` match `lsp.toml`, and step 8 passed.
 
 **Rollback:** set `"enabled": false` in `/etc/fortis/ln-info-xbt.json` (reloads within seconds, no restart). Release installs stop being offered XBT Lightning and existing release wallets go to exit-only mode on their next start; their channels are untouched. Debug builds are unaffected (see the debug override).
 

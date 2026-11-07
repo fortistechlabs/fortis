@@ -670,7 +670,8 @@ mod tests {
         assert_eq!(c.announce_addresses.len(), 1);
         assert_eq!(c.announce_addresses[0], SocketAddress::from_str("lsp.fortistechlabs.com:9835").unwrap());
         assert_eq!(c.alias.as_deref(), Some("Fortis XBT"));
-        assert_eq!(c.custody_max_sat, 0);
+        // Custody on, with the BTC LSP's published limits.
+        assert_eq!((c.custody_max_sat, c.account_max_sat), (300_000, 50_000));
         assert_eq!(c.rgs_url, None);
         assert_eq!(c.xbt_gossip_floor_height, 961_640);
         // The same fee and limit values as the BTC example.

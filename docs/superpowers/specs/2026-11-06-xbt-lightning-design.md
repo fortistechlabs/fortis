@@ -69,7 +69,7 @@ The LDK spike (2026-11-06, worktree `~/Work/fortis-spike-xbt`, branch
 | Chain switch | **Per node, not per process.** A BTC node and an XBT node can run in one process |
 | Counterparty | Fortis runs its own XBT LSP: a second `fortis-lsp` instance |
 | Receiving | JIT channels (LSPS2), as on BTC |
-| Small amounts | Fortis balance (custodial, capped), as on BTC; ships with custody 0 |
+| Small amounts | Fortis balance (custodial, capped), as on BTC, with the BTC LSP's limits (2026-11-07) |
 | Transfers | Splicing in and out, as on BTC. Splicing only between our own nodes |
 | BOLT12 | Yes: a reusable offer paid into the Fortis balance, and paying offers |
 | Anchors | **Off** on XBT in the first release: `static_remote_key` channels only |
@@ -163,7 +163,7 @@ our wallet) keep plain hash types, as the spec allows.
 **Limits:** every limit is its own setting in `lsp-xbt.toml`:
 
 - `channel_min_sat`
-- `custody_max_sat`, which starts at 0
+- `custody_max_sat` and `account_max_sat`, the same as the BTC LSP's (changed 2026-11-07; was 0)
 - the 50,000 sat move threshold
 - the beta caps
 
@@ -303,8 +303,8 @@ its own.
 2. Deploy `fortis-lsp-xbt`, fund it, and open its outbound channels.
 3. Ship the app with `xbt.enabled = false`.
 4. Pass the real-phone canary.
-5. Enable it, labelled beta, with low caps and custody 0. The operator turns
-   custody on separately, after the legal check in BTC spec §7.
+5. Enable it, labelled beta, with low caps and custody on with the BTC LSP's
+   limits (decided 2026-11-07).
 
 ## Risks
 
