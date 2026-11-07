@@ -643,3 +643,61 @@ fn undo_with_spends_round_trips_and_old_records_decode() {
     assert_eq!(Undo::decode(&new.encode()).unwrap(), new);
     assert!(Undo::decode(&new.encode()[..new.encode().len() - 1]).is_err());
 }
+
+/// The mark is tied to the start height it was counted from: lowering
+/// `spends_from` leaves the heights below the old start unrecorded, so the
+/// mark reads as none until the new start is reached again.
+#[test]
+fn a_changed_start_height_voids_the_watermark() {
+    let dir = tempfile::tempdir().unwrap();
+    {
+        let db = open_spends(&dir, Some(11));
+        db.apply(
+            &[
+                blk_spending(11, vec![spend(2, 1, 0x11, 0)]),
+                blk_spending(12, vec![spend(3, 0, 0x12, 0)]),
+            ],
+            0,
+            Durability::Durable,
+            true,
+        )
+        .unwrap();
+        assert_eq!(db.spends_watermark(), Some(12));
+    }
+    assert_eq!(open_spends(&dir, Some(5)).spends_watermark(), None);
+    assert_eq!(open_spends(&dir, None).spends_watermark(), None);
+    assert_eq!(open_spends(&dir, Some(11)).spends_watermark(), Some(12));
+}
+
+/// Rolling back a block recorded past a gap (the mark below it) deletes its
+/// rows and leaves the mark where it was.
+#[test]
+fn rollback_past_a_gap_deletes_rows_and_keeps_the_mark() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = open_spends(&dir, Some(11));
+    let r11 = db
+        .apply(&[blk_spending(11, vec![spend(2, 1, 0x11, 0)])], 0, Durability::Durable, true)
+        .unwrap();
+    let r13 = db
+        .apply(&[blk_spending(13, vec![spend(3, 0, 0x13, 0)])], 0, Durability::Durable, true)
+        .unwrap();
+    assert_eq!(db.spends_watermark(), Some(11));
+    assert!(db.spend_of(&op(3, 0)).unwrap().is_some());
+    db.rollback(13, &r13[0], Some((11, r11[0].hash))).unwrap();
+    assert_eq!(db.spend_of(&op(3, 0)).unwrap(), None);
+    assert!(db.spend_of(&op(2, 1)).unwrap().is_some());
+    assert_eq!(db.spends_watermark(), Some(11));
+}
+
+/// Rolling back the start block itself leaves no mark.
+#[test]
+fn rollback_of_the_start_block_clears_the_mark() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = open_spends(&dir, Some(11));
+    let r11 = db
+        .apply(&[blk_spending(11, vec![spend(2, 1, 0x11, 0)])], 0, Durability::Durable, true)
+        .unwrap();
+    db.rollback(11, &r11[0], None).unwrap();
+    assert_eq!(db.spends_watermark(), None);
+    assert_eq!(db.spend_of(&op(2, 1)).unwrap(), None);
+}

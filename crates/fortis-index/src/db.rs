@@ -52,8 +52,11 @@ const ALL_CFS: [&str; 9] = [
 const META_SCHEMA: &[u8] = b"schema";
 const META_CHAIN: &[u8] = b"chain";
 const META_TIP: &[u8] = b"tip";
-/// The highest height `h` such that every block from `spends_from` through
-/// `h` has its spends in `spends` (4 bytes, BE). Absent: none yet.
+/// The start height it was counted from, then the highest height `h` such
+/// that every block from that start through `h` has its spends in `spends`
+/// (4 + 4 bytes, BE). Absent: none yet. A mark counted from another start
+/// than the configured `spends_from` counts as none (a lowered start leaves
+/// the heights below the old one unrecorded).
 const META_SPENDS_WATERMARK: &[u8] = b"spends_watermark";
 
 const PROGRAM_LEN: usize = 20;
@@ -236,6 +239,14 @@ impl Undo {
     }
 }
 
+/// The `spends_watermark` meta value: start height, then watermark (BE).
+fn spends_mark(from: u32, watermark: u32) -> [u8; 8] {
+    let mut v = [0u8; 8];
+    v[..4].copy_from_slice(&from.to_be_bytes());
+    v[4..].copy_from_slice(&watermark.to_be_bytes());
+    v
+}
+
 fn db_options(cfg: &DbConfig) -> (Options, Vec<ColumnFamilyDescriptor>) {
     let cache = Cache::new_lru_cache(cfg.cache_mb.max(1) << 20);
     let mut opts = Options::default();
@@ -399,11 +410,22 @@ impl Db {
         self.read_spends_watermark().ok().flatten()
     }
 
+    /// The watermark, if it was counted from the configured `spends_from`.
     fn read_spends_watermark(&self) -> Result<Option<u32>> {
+        Ok(self
+            .read_spends_mark()?
+            .filter(|(from, _)| Some(*from) == self.spends_from)
+            .map(|(_, w)| w))
+    }
+
+    /// The stored (start height, watermark), whatever start is configured.
+    fn read_spends_mark(&self) -> Result<Option<(u32, u32)>> {
         let raw = self.db.get_cf(self.cf(CF_META), META_SPENDS_WATERMARK)?;
         raw.map(|b| {
-            Ok(u32::from_be_bytes(
-                b[..].try_into().context("spends_watermark length")?,
+            let b: [u8; 8] = b[..].try_into().context("spends_watermark length")?;
+            Ok((
+                u32::from_be_bytes(b[..4].try_into().unwrap()),
+                u32::from_be_bytes(b[4..].try_into().unwrap()),
             ))
         })
         .transpose()
@@ -535,7 +557,7 @@ impl Db {
                     wb.put_cf(
                         self.cf(CF_META),
                         META_SPENDS_WATERMARK,
-                        b.height.to_be_bytes(),
+                        spends_mark(from, b.height),
                     );
                 }
             }
@@ -643,10 +665,14 @@ impl Db {
         for k in &undo.added_spends {
             wb.delete_cf(cf_spends, k);
         }
-        if self.read_spends_watermark()? == Some(height) {
-            match height.checked_sub(1) {
-                Some(h) => wb.put_cf(self.cf(CF_META), META_SPENDS_WATERMARK, h.to_be_bytes()),
-                None => wb.delete_cf(self.cf(CF_META), META_SPENDS_WATERMARK),
+        // Whatever start is configured now: a stored mark must never outlive
+        // the block it covers.
+        if let Some((from, w)) = self.read_spends_mark()? {
+            if w == height {
+                match height.checked_sub(1).filter(|h| *h >= from) {
+                    Some(h) => wb.put_cf(self.cf(CF_META), META_SPENDS_WATERMARK, spends_mark(from, h)),
+                    None => wb.delete_cf(self.cf(CF_META), META_SPENDS_WATERMARK),
+                }
             }
         }
         let end = rec.first_txnum + rec.n_txs as TxNum;
