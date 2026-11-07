@@ -454,17 +454,11 @@ class LightningSession(
                     ?: false
                 if (pending) throw LnFfiException.PaymentStateUnknown()
             }
-            // Only this chain's invoice or offer is paid (BTC and XBT invoices look alike). An
-            // LNURL or Lightning address is paid by the invoice it returns, once that is checked.
-            val (payTarget, payAmount) = if (target is LnTarget.LnurlPay || target is LnTarget.LightningAddress) {
-                val amount = amountMsat?.takeIf { it > 0uL } ?: throw LnFfiException.Other("amount_required")
-                val invoice = node.lnurlInvoice(target, amount)
-                LnTarget.Bolt11(invoice = invoice, amountMsat = null, description = "", expirySecs = 0uL) to null
-            } else {
-                target to amountMsat
-            }
-            requireTargetChain(chain, payTarget)
-            val id = node.pay(payTarget, payAmount)
+            // Only this chain's invoice or offer is paid (BTC and XBT invoices look alike;
+            // UNKNOWN is refused). An LNURL / Lightning address is checked by the node, on the
+            // invoice it fetches, before it pays (Rust `Node::prepare`).
+            if (target !is LnTarget.LnurlPay && target !is LnTarget.LightningAddress) requireTargetChain(chain, target)
+            val id = node.pay(target, amountMsat)
             drainImmediateEvents(node, unlockedWalletId ?: "")
             if (!node.blocksOnNextEvent) {
                 val p = runCatching { node.payments().firstOrNull { it.id == id } }.getOrNull()

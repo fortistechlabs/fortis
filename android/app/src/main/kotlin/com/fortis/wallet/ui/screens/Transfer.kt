@@ -80,6 +80,8 @@ internal fun TransferToOnchainTab(vm: WalletViewModel) {
     val gateAct = com.fortis.wallet.ui.rememberFragmentActivity()
     val gateScope = androidx.compose.runtime.rememberCoroutineScope()
     com.fortis.wallet.ui.ConfirmIdentityDialog(gate, vm)
+    // The quote's network fee is the destination chain's (a Lightning tab has no feerates of its own).
+    androidx.compose.runtime.LaunchedEffect(vm.moveToWalletId) { vm.refreshMoveFeerate() }
     GlassCard {
         Column(verticalArrangement = Arrangement.spacedBy(Fx.s3)) {
             Text(stringResource(R.string.transfer_to_onchain_title), color = Fx.text, fontWeight = FontWeight.SemiBold)

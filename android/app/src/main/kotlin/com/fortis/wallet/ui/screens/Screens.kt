@@ -1210,14 +1210,16 @@ private fun SendTab(vm: WalletViewModel) {
     // is Lightning (XBT)); an address or LNURL, this wallet's chain's. This wallet only pays
     // on-chain (a BIP21 URI with a Lightning part still has its on-chain address).
     val isXbt = c?.chain == "xbt"
-    val lightningTarget = remember(to, isBtc, isXbt, network) { (isBtc || isXbt) && isLightningTarget(to, network) }
-    val lnChain = remember(to, lightningTarget, c?.chain) {
-        if (!lightningTarget) null
-        else com.fortis.wallet.lightning.lightningChainForTarget(lightningTargetChain(to, network), c?.chain ?: "btc")
+    // What this wallet offers: the Lightning wallet of the target's chain, and an on-chain send
+    // only when there is no Lightning part or it is this wallet's own chain's.
+    val offer = remember(to, c?.chain, network) {
+        if (!isBtc && !isXbt) OnchainSendOffer(null, onchain = true)
+        else onchainSendOffer(c?.chain ?: "btc", to, network)
     }
-    val unifiedTarget = remember(to, network) { runCatching { parseScan(to.trim(), network) }.getOrNull() is uniffi.wallet_ffi.LnTarget.Unified }
-    val sendPlan = remember(to, isBtc, network, onchainSat) {
-        if (!isBtc || to.isBlank()) null
+    val lightningTarget = offer.lightningChain != null
+    val lnChain = offer.lightningChain
+    val sendPlan = remember(to, isBtc, network, onchainSat, offer) {
+        if (!isBtc || to.isBlank() || (lightningTarget && !offer.onchain)) null
         else planSend(text = to, onchainSat = onchainSat, ln = LnState.Off, network = network)
     }
 
@@ -1245,6 +1247,14 @@ private fun SendTab(vm: WalletViewModel) {
         Field(to, { new -> to = new.filterNot(Char::isWhitespace) }, stringResource(R.string.field_to_address), mono = true)
         GhostButton(stringResource(R.string.action_scan_qr)) { scanning = true }
 
+        offer.wrongChain?.let { wc ->
+            // e.g. a BIP21 link whose invoice is BTC's, in an XBT wallet: its address is not this chain's.
+            val ctx = LocalContext.current
+            com.fortis.wallet.lightning.wrongChainMessage(
+                com.fortis.wallet.lightning.lightningChainForOnchain(c?.chain ?: "btc") ?: LN_CHAIN, wc,
+                isOffer = runCatching { parseScan(to.trim(), network) }.getOrNull()?.let { com.fortis.wallet.lightning.isOfferTarget(it) } == true,
+            ) { ctx.getString(it) }?.let { ErrorText(it) }
+        }
         if (lnChain != null) {
             val xbtLn = lnChain == LN_XBT_CHAIN
             if (lightningWalletOf(vm.wallets, lnChain) != null) {
@@ -1259,7 +1269,7 @@ private fun SendTab(vm: WalletViewModel) {
         }
         if (sendPlan is SendPlan.Invalid && !lightningTarget) ErrorText(sendPlan.reason)
         // Only Lightning can pay it (an invoice, offer or Lightning address): no on-chain form.
-        if (!lightningTarget || sendPlan is SendPlan.OnChain || (isXbt && unifiedTarget)) {
+        if (!lightningTarget || (offer.onchain && (isXbt || sendPlan is SendPlan.OnChain))) {
             val effectiveAddress = (sendPlan as? SendPlan.OnChain)?.address ?: addressFromScan(to)
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Checkbox(sweep, { sweep = it }); Text(stringResource(R.string.send_sweep), color = Fx.text)

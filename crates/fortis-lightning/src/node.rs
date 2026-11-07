@@ -843,6 +843,11 @@ impl Node {
         (self.lsp_id, self.lsp_addr.clone())
     }
 
+    /// The chain this node runs on (BTC or XBT).
+    pub(crate) fn ln_chain(&self) -> LnChain {
+        self.chain
+    }
+
     /// The chain source's kind, for the void rule (`channel.rs`).
     pub(crate) fn chain_kind(&self) -> crate::channel::ChainKind {
         match self.chain_source {

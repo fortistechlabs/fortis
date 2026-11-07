@@ -146,3 +146,38 @@ class LightningSessions(make: (walletChain: String, chain: LnChain) -> Lightning
     /** The session an on-chain wallet on [chain] moves funds into. */
     fun forOnchain(chain: String): LightningSession? = lightningChainForOnchain(chain)?.let(::of)
 }
+
+/** "Add a BTC wallet …" / "Add an XBT wallet …": the Lightning wallet on [lnWalletChain] has no
+ *  on-chain wallet of its chain to move funds to. */
+fun noOnchainWalletRes(lnWalletChain: String): Int =
+    if (lnWalletChain == LN_XBT_CHAIN) R.string.error_no_onchain_wallet_for_lightning_xbt
+    else R.string.error_no_onchain_wallet_for_lightning
+
+/**
+ * What a send from the Lightning wallet on [walletChain] that failed with
+ * [LnFfiException.WrongChain] says, for [target]:
+ * - an LNURL / Lightning address: the node refused the invoice it returned, which it only does
+ *   when that invoice is the other chain's: that chain's copy;
+ * - an invoice or offer: its own chain's copy;
+ * - anything that can't be classified: the generic wrong-chain copy, naming no chain.
+ */
+fun wrongChainPayMessage(walletChain: String, target: LnTarget, get: (Int) -> String): String {
+    val chain = when {
+        target is LnTarget.LnurlPay || target is LnTarget.LightningAddress ->
+            if (walletChain == LN_XBT_CHAIN) LnTargetChain.BTC else LnTargetChain.XBT
+        else -> targetChainRefusal(walletChain, target)
+    }
+    if (chain == null || chain == LnTargetChain.UNKNOWN) return get(R.string.ln_err_wrong_chain)
+    return wrongChainMessage(walletChain, chain, isOfferTarget(target), get) ?: get(R.string.ln_err_wrong_chain)
+}
+
+/** The feerate (sat/vB) for moving funds out to [dest]: its own chain's backend estimate
+ *  ([rateOf]), at least 1; 2 only when that estimate can't be had. */
+suspend fun moveOutFeerate(dest: WalletConfig, rateOf: suspend (WalletConfig) -> ULong): Long =
+    try {
+        rateOf(dest).toLong().coerceAtLeast(1L)
+    } catch (e: kotlinx.coroutines.CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        2L
+    }

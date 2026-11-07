@@ -186,6 +186,35 @@ fun lightningLinkRoute(
     return if (unified && canPayOnChain) LightningLinkRoute.OnChain else LightningLinkRoute.CreateLightningWallet(lnChain)
 }
 
+/**
+ * What an on-chain wallet's Send offers for [text]:
+ * - [lightningChain]: the Lightning wallet ("ln" / "ln-xbt") that pays its Lightning part,
+ *   null when it has none;
+ * - [onchain]: whether this wallet may also pay it on-chain (no Lightning part, or a BIP21
+ *   URI whose Lightning part is this wallet's own chain);
+ * - [wrongChain]: the Lightning part's chain when it is the other chain's (its copy is shown,
+ *   and the on-chain address, almost certainly that chain's, is not offered).
+ */
+data class OnchainSendOffer(
+    val lightningChain: String?,
+    val onchain: Boolean,
+    val wrongChain: uniffi.wallet_ffi.LnTargetChain? = null,
+)
+
+/** See [OnchainSendOffer]; [walletChain] is the on-chain wallet's ("btc" / "xbt"). */
+fun onchainSendOffer(walletChain: String, text: String, network: String, nowSecs: ULong? = null): OnchainSendOffer {
+    if (!isLightningTarget(text, network, nowSecs)) return OnchainSendOffer(null, onchain = true)
+    val targetChain = lightningTargetChain(text, network, nowSecs)
+    val lnChain = com.fortis.wallet.lightning.lightningChainForTarget(targetChain, walletChain)
+    val own = com.fortis.wallet.lightning.lightningChainForOnchain(walletChain) == lnChain
+    val unified = runCatching { parseScan(text.trim(), network, nowSecs) }.getOrNull() is LnTarget.Unified
+    return OnchainSendOffer(
+        lightningChain = lnChain,
+        onchain = unified && own,
+        wrongChain = targetChain.takeIf { !own && it != uniffi.wallet_ffi.LnTargetChain.UNKNOWN },
+    )
+}
+
 /** Where a link that opened the app goes, or null while the wallet list is not loaded yet
  *  (on a cold start the link arrives before the wallets do, and an empty list would wrongly
  *  ask to create a Lightning wallet). */

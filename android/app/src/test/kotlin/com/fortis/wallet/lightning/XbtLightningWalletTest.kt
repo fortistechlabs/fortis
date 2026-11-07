@@ -141,11 +141,14 @@ class XbtLightningWalletTest {
 
     // ---- paying: the session refuses before anything reaches the node ------------
 
+    /** A fake node. Like the Rust node, it pays an LNURL / address by the invoice that returns,
+     *  refusing it with WrongChain when that invoice is not [chain]'s. */
     private open class Node(
         var bal: LnBalances = balances(lightningSat = 50_000uL),
         var ch: LnChannelState = LnChannelState.READY,
         private val transit: String = "",
         private val lnurlInvoiceValue: String = "",
+        private val chain: String = LN_CHAIN,
     ) : LnNodeApi {
         val paid = mutableListOf<Pair<LnTarget, ULong?>>()
         var lnurlFetches = 0
@@ -160,6 +163,11 @@ class XbtLightningWalletTest {
             return lnurlInvoiceValue
         }
         override fun pay(target: LnTarget, amountMsat: ULong?): String {
+            if (target is LnTarget.LnurlPay || target is LnTarget.LightningAddress) {
+                val invoice = lnurlInvoice(target, amountMsat ?: 0uL)
+                val fetched = LnTarget.Bolt11(invoice = invoice, amountMsat = null, description = "", expirySecs = 0uL)
+                if (targetChainRefusal(chain, fetched) != null) throw LnFfiException.WrongChain()
+            }
             paid += target to amountMsat
             return "id-${paid.size}"
         }
@@ -204,28 +212,93 @@ class XbtLightningWalletTest {
     @Test
     fun lnurl_invoice_for_other_chain_refused() {
         for (t in listOf(LnTarget.LightningAddress("bob", "example.com"), LnTarget.LnurlPay("https://example.com/p"))) {
-            val node = Node(lnurlInvoiceValue = xbtInvoice)
+            val node = Node(lnurlInvoiceValue = xbtInvoice, chain = LN_CHAIN)
             val r = withSession(LnChain.BTC, node) { s -> runCatching { s.pay(t, 1_000_000uL) } }
             assertTrue("$t: $r", r.exceptionOrNull() is LnFfiException.WrongChain)
-            assertEquals("the invoice was fetched", 1, node.lnurlFetches)
-            assertTrue("pay must never be called: ${node.paid}", node.paid.isEmpty())
+            assertEquals("the invoice was fetched (by the node)", 1, node.lnurlFetches)
+            assertTrue("nothing may be paid: ${node.paid}", node.paid.isEmpty())
+            // What the confirm sheet then says: the fetched invoice is XBT's.
+            assertEquals("This is an XBT Lightning invoice", wrongChainPayMessage(LN_CHAIN, t, ::str))
         }
         // And the reverse: the XBT wallet refuses a BTC invoice an address returned.
-        val node = Node(lnurlInvoiceValue = btcInvoice)
-        val r = withSession(LnChain.XBT, node) { s -> runCatching { s.pay(LnTarget.LightningAddress("bob", "example.com"), 1_000_000uL) } }
+        val node = Node(lnurlInvoiceValue = btcInvoice, chain = LN_XBT_CHAIN)
+        val t = LnTarget.LightningAddress("bob", "example.com")
+        val r = withSession(LnChain.XBT, node) { s -> runCatching { s.pay(t, 1_000_000uL) } }
         assertTrue("$r", r.exceptionOrNull() is LnFfiException.WrongChain)
         assertTrue(node.paid.isEmpty())
+        assertEquals("This is a BTC Lightning invoice", wrongChainPayMessage(LN_XBT_CHAIN, t, ::str))
     }
 
     @Test
-    fun lnurl_invoice_for_own_chain_pays_that_invoice() {
+    fun lnurl_target_goes_to_the_node_whole() {
+        // One node call: the node resolves, checks the invoice's chain and pays it (keeping the
+        // LNURL description and its exit gate first), as before for BTC.
         val node = Node(lnurlInvoiceValue = btcInvoice)
-        val r = withSession(LnChain.BTC, node) { s -> runCatching { s.pay(LnTarget.LightningAddress("bob", "example.com"), 1_000_000uL) } }
+        val t = LnTarget.LightningAddress("bob", "example.com")
+        val r = withSession(LnChain.BTC, node) { s -> runCatching { s.pay(t, 1_000_000uL) } }
         assertTrue("$r", r.isSuccess)
-        val (paidTarget, paidAmount) = node.paid.single()
-        // The invoice that was checked is the one paid (its own amount).
-        assertEquals(btcInvoice, (paidTarget as LnTarget.Bolt11).invoice)
-        assertNull(paidAmount)
+        assertEquals(t to 1_000_000uL, node.paid.single())
+    }
+
+    @Test
+    fun confirm_send_wrong_chain_copy() {
+        val now = fixtureNow
+        val xbtTarget = uniffi.wallet_ffi.lnParseAt(xbtInvoice, "bitcoin", now)
+        val btcTarget = uniffi.wallet_ffi.lnParseAt(btcInvoice, "bitcoin", now)
+        assertEquals("This is an XBT Lightning invoice", wrongChainPayMessage(LN_CHAIN, xbtTarget, ::str))
+        assertEquals("This is a BTC Lightning invoice", wrongChainPayMessage(LN_XBT_CHAIN, btcTarget, ::str))
+        val btcOffer = LnTarget.Bolt12Offer(offer = BTC_OFFER, amountMsat = null, description = "")
+        val xbtOffer = LnTarget.Bolt12Offer(offer = XBT_OFFER, amountMsat = null, description = "")
+        assertEquals("This is a BTC Lightning offer", wrongChainPayMessage(LN_XBT_CHAIN, btcOffer, ::str))
+        assertEquals("This is an XBT Lightning offer", wrongChainPayMessage(LN_CHAIN, xbtOffer, ::str))
+        // An invoice that can't be classified names no chain.
+        val junk = LnTarget.Bolt11(invoice = "lnbc1", amountMsat = null, description = "", expirySecs = 0uL)
+        assertEquals(str(R.string.ln_err_wrong_chain), wrongChainPayMessage(LN_CHAIN, junk, ::str))
+        assertEquals(str(R.string.ln_err_wrong_chain), wrongChainPayMessage(LN_XBT_CHAIN, junk, ::str))
+    }
+
+    @Test
+    fun onchain_send_of_other_chain_unified_uri_not_offered() {
+        val addr = "bc1qar0srrr7xfkvy5l643lydnw9re59gtzzwf5mdq"
+        val now = fixtureNow
+        // XBT wallet, a BIP21 link whose invoice is BTC's: no on-chain send, the BTC Lightning wallet.
+        val a = com.fortis.wallet.ui.onchainSendOffer("xbt", "bitcoin:$addr?lightning=$btcInvoice", "mainnet", now)
+        assertFalse(a.onchain)
+        assertEquals(LN_CHAIN, a.lightningChain)
+        assertEquals(LnTargetChain.BTC, a.wrongChain)
+        // And the reverse: a BTC wallet, an XBT invoice's link.
+        val b = com.fortis.wallet.ui.onchainSendOffer("btc", "bitcoin:$addr?lightning=$xbtInvoice", "mainnet", now)
+        assertFalse(b.onchain)
+        assertEquals(LN_XBT_CHAIN, b.lightningChain)
+        assertEquals(LnTargetChain.XBT, b.wrongChain)
+        // Its own chain's link: on-chain still offered, as before.
+        val c = com.fortis.wallet.ui.onchainSendOffer("btc", "bitcoin:$addr?lightning=$btcInvoice", "mainnet", now)
+        assertTrue(c.onchain); assertEquals(LN_CHAIN, c.lightningChain); assertNull(c.wrongChain)
+        val d = com.fortis.wallet.ui.onchainSendOffer("xbt", "bitcoin:$addr?lightning=$xbtInvoice", "mainnet", now)
+        assertTrue(d.onchain); assertEquals(LN_XBT_CHAIN, d.lightningChain); assertNull(d.wrongChain)
+        // A plain address: on-chain only. A plain other-chain invoice: its wallet, never on-chain.
+        val e = com.fortis.wallet.ui.onchainSendOffer("xbt", addr, "mainnet", now)
+        assertTrue(e.onchain); assertNull(e.lightningChain)
+        val f = com.fortis.wallet.ui.onchainSendOffer("xbt", btcInvoice, "mainnet", now)
+        assertFalse(f.onchain); assertEquals(LN_CHAIN, f.lightningChain); assertEquals(LnTargetChain.BTC, f.wrongChain)
+    }
+
+    @Test
+    fun move_out_feerate_is_the_destination_chains() = runBlocking {
+        val rates = mapOf("btc" to 9uL, "xbt" to 3uL)
+        val rateOf: suspend (WalletConfig) -> ULong = { w -> rates.getValue(w.chain) }
+        // The XBT wallet's withdraw / splice-out to an XBT wallet: the XBT backend's rate.
+        assertEquals(3L, moveOutFeerate(moveTargetWallet(listOf(btc, xbt), LN_XBT_CHAIN, null)!!, rateOf))
+        assertEquals(9L, moveOutFeerate(moveTargetWallet(listOf(btc, xbt), LN_CHAIN, null)!!, rateOf))
+        // No estimate: 2; never below 1.
+        assertEquals(2L, moveOutFeerate(xbt) { error("offline") })
+        assertEquals(1L, moveOutFeerate(xbt) { 0uL })
+    }
+
+    @Test
+    fun leaving_funds_without_a_wallet_of_its_chain_say_what_to_add() {
+        assertEquals("Add an XBT wallet to move Lightning (XBT) funds on-chain.", str(noOnchainWalletRes(LN_XBT_CHAIN)))
+        assertEquals(str(R.string.error_no_onchain_wallet_for_lightning), str(noOnchainWalletRes(LN_CHAIN)))
     }
 
     @Test
@@ -415,6 +488,10 @@ class XbtLightningWalletTest {
     }
 
     private companion object {
+        /** Offers from crates/wallet-ffi/tests/lightning_ffi.rs: bit 512 set / not set. */
+        const val XBT_OFFER = "lno1pgphscn5p3qszqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqpvggrt0j7j3uzp9n549hxpu0sxlmpwe2ql5qplgwkg628wrzk5acfcskq"
+        const val BTC_OFFER = "lno1pgpkyarrzcssxkl9a9rcyzt8f2twvrclqdlkzaj5plgqr7sav355wux9dfmsn3pv"
+
         fun balances(lightningSat: ULong, transitSat: ULong = 0uL) = LnBalances(
             lightningSat = lightningSat, onchainTransitSat = transitSat, pendingCloseSat = 0uL,
             reservedSat = 0uL, pendingTransitSat = 0uL, inboundSat = 0uL,

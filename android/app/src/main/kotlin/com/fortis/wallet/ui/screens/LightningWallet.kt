@@ -204,8 +204,11 @@ fun LightningWalletTab(vm: WalletViewModel) {
                     // Part of it is still on-chain: a channel opening or closing.
                     // Leaving: a close (or its sweep) on its way to an on-chain wallet of its chain. Say how much and where.
                     val leavingSat = (lnState as? LnState.Ready)?.let { leavingLightningSat(it) } ?: 0L
+                    val leavingTo = vm.moveTargetWallet()
                     if (leavingSat > 0L) Text(
-                        stringResource(R.string.ln_moving_to_wallet, fmt(leavingSat), vm.moveTargetWallet()?.display ?: ""),
+                        // No wallet of its chain to sweep to: say what to add, not an empty name.
+                        if (leavingTo != null) stringResource(R.string.ln_moving_to_wallet, fmt(leavingSat), leavingTo.display)
+                        else stringResource(com.fortis.wallet.lightning.noOnchainWalletRes(c.chain)),
                         style = FxType.fiatSmall, color = Fx.warn,
                     ) else if (hb?.moving == true) Text(
                         stringResource(R.string.wallet_split_moving),

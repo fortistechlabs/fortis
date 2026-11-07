@@ -429,6 +429,8 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
         var lastMoveToOnchain by mutableStateOf<MoveToOnchainResult?>(null)
         /** The on-chain wallet chosen for this wallet's funds moved on-chain; null = the first. */
         var moveToWalletId by mutableStateOf<String?>(null)
+        /** The feerate (sat/vB) of the chain its funds move out to, as last read; null = not yet. */
+        var moveFeerate by mutableStateOf<Long?>(null)
 
         /** The app's Lightning wallet on this chain, if it has one. */
         val wallet: WalletConfig? get() = lightningWalletOf(wallets, walletChain)
@@ -536,10 +538,7 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
     val moveTargetChoices: List<WalletConfig> get() = com.fortis.wallet.lightning.lightningSweepWallets(wallets, ln.walletChain)
 
     /** "Add a BTC wallet …" / "Add an XBT wallet …": [side] has no on-chain wallet of its chain. */
-    private fun noOnchainWalletText(side: LnSide) = str(
-        if (side.walletChain == LN_XBT_CHAIN) R.string.error_no_onchain_wallet_for_lightning_xbt
-        else R.string.error_no_onchain_wallet_for_lightning,
-    )
+    private fun noOnchainWalletText(side: LnSide) = str(com.fortis.wallet.lightning.noOnchainWalletRes(side.walletChain))
 
     private val _accountReceived = kotlinx.coroutines.flow.MutableSharedFlow<Long>(extraBufferCapacity = 16)
     /** A payment reached the Fortis account (sat): announced like a channel receipt. */
@@ -2377,8 +2376,24 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
         )
     }
 
+    /** The quote for moving [amountSat] out of the Lightning wallet in view, at its destination
+     *  chain's feerate ([refreshMoveFeerate]; 2 sat/vB until that is known). */
     fun quoteMoveToOnchain(amountSat: Long): com.fortis.wallet.lightning.ToOnchainQuote? =
-        com.fortis.wallet.lightning.quoteToOnchain(amountSat, feerates[6] ?: 2L)
+        com.fortis.wallet.lightning.quoteToOnchain(amountSat, ln.moveFeerate ?: 2L)
+
+    /** Reads the feerate of the chain the wallet in view's funds move out to (its move target's). */
+    fun refreshMoveFeerate() = viewModelScope.launch { moveOutFeerate(ln) }
+
+    /** [side]'s move-out feerate from its move target wallet's own chain backend (2 when none). */
+    private suspend fun moveOutFeerate(side: LnSide): Long {
+        val dest = moveTargetWallet(side.walletChain) ?: return 2L
+        val rate = com.fortis.wallet.lightning.moveOutFeerate(dest) { w ->
+            val s = withContext(Dispatchers.Default) { ensureSession(w.id, quiet = true) } ?: error("wallet locked")
+            withContext(Dispatchers.IO) { overviewBackend(w, s).feerateSatVb(6) }
+        }
+        side.moveFeerate = rate
+        return rate
+    }
 
     /** Lightning → on-chain: splices [amountSat] (fees included) out of the channel of the
      *  Lightning wallet in view to an on-chain wallet of its own chain (none: refused with a
@@ -2390,8 +2405,10 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
         error = null
         side.lastMoveToOnchain = null
         if (!reauth.consume()) { error = str(R.string.reauth_needed); return@launch }
+        // The destination chain's own feerate (a Lightning tab has no on-chain feerates).
+        val feerate = moveOutFeerate(side)
         // Everything (a close) needs no quote: the close takes what is there, no transfer fee on crumbs.
-        val q = quoteMoveToOnchain(amountSat)
+        val q = com.fortis.wallet.lightning.quoteToOnchain(amountSat, feerate)
             ?: if (all) com.fortis.wallet.lightning.ToOnchainQuote(amountSat, 0L, 0L)
             else run { error = str(R.string.transfer_too_small); return@launch }
         val dest = moveTargetWallet(side.walletChain) ?: run {
@@ -2406,7 +2423,7 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
                 val signer = accountSigner(side) ?: throw Exception(str(R.string.transfer_needs_lightning))
                 val addr = s.receiveAddress(dest.nextReceive).address
                 withContext(Dispatchers.IO) {
-                    side.account.withdraw(signer, amountSat.toULong() * 1_000uL, addr, feerates[6] ?: 2L)
+                    side.account.withdraw(signer, amountSat.toULong() * 1_000uL, addr, feerate)
                 }
                 updateConfig(dest.id) { it.copy(nextReceive = it.nextReceive + 1) }
                 refreshAccount(side)
@@ -2699,14 +2716,8 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /** The Lightning wallet on [walletChain]'s refusal of [target] (the exact wrong-chain copy). */
-    private fun wrongChainText(walletChain: String, target: uniffi.wallet_ffi.LnTarget): String {
-        // A fetched LNURL / address invoice is the other chain's; an invoice or offer says which.
-        val chain = com.fortis.wallet.lightning.targetChainRefusal(walletChain, target)
-            ?.takeIf { it != uniffi.wallet_ffi.LnTargetChain.UNKNOWN }
-            ?: if (walletChain == LN_XBT_CHAIN) uniffi.wallet_ffi.LnTargetChain.BTC else uniffi.wallet_ffi.LnTargetChain.XBT
-        return com.fortis.wallet.lightning.wrongChainMessage(walletChain, chain, com.fortis.wallet.lightning.isOfferTarget(target)) { str(it) }
-            ?: str(R.string.ln_err_wrong_chain)
-    }
+    private fun wrongChainText(walletChain: String, target: uniffi.wallet_ffi.LnTarget): String =
+        com.fortis.wallet.lightning.wrongChainPayMessage(walletChain, target) { str(it) }
 
     /** User-facing text for a failure; Lightning errors get their localized copy. */
     /** The text shown for [t], which is also reported to the server (see [reportError]). */
