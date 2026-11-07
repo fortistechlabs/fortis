@@ -600,7 +600,7 @@ internal fun LightningSendTab(vm: WalletViewModel) {
                 }
             }
         } else if (onchainOnly) {
-            ErrorText(stringResource(R.string.ln_send_onchain_target))
+            ErrorText(stringResource(com.fortis.wallet.lightning.onchainTargetRes(walletChain)))
         } else if (resolvingLnurl) {
             Text(stringResource(R.string.send_ln_resolving), style = FxType.meta, color = Fx.textDim)
         } else if (sendPlan != null) {
@@ -772,7 +772,7 @@ internal fun LightningWalletSettingsCard(vm: WalletViewModel, walletChain: Strin
                 Text(c.display, style = FxType.meta, color = Fx.textDim)
             }
         }
-        Text(stringResource(R.string.settings_lightning_body), style = FxType.meta, color = Fx.textFaint)
+        Text(stringResource(com.fortis.wallet.lightning.lightningBodyRes(walletChain)), style = FxType.meta, color = Fx.textFaint)
         val statusText = lightningStatusText(lnState)
         val statusColor = when (lnState) {
             is LnState.Ready -> Fx.good
@@ -832,9 +832,9 @@ internal fun LightningWalletSettingsCard(vm: WalletViewModel, walletChain: Strin
         // the Move tab, else the first).
         val sweepTo = vm.moveTargetWallet(walletChain)
         val closeBody = if (sweepTo != null) {
-            stringResource(R.string.settings_lightning_close_body_to, sweepTo.display)
+            stringResource(com.fortis.wallet.lightning.closeBodyRes(walletChain, named = true), sweepTo.display)
         } else {
-            stringResource(R.string.settings_lightning_close_body)
+            stringResource(com.fortis.wallet.lightning.closeBodyRes(walletChain, named = false))
         }
         AlertDialog(
             onDismissRequest = { confirmClose = false },

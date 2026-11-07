@@ -123,6 +123,47 @@ class XbtLightningWalletTest {
     }
 
     @Test
+    fun xbt_wallet_copy_says_xbt_and_btc_is_unchanged() {
+        assertEquals("This is an on-chain address — send it from an XBT wallet.", str(onchainTargetRes(LN_XBT_CHAIN)))
+        assertEquals(
+            "This closes your Lightning channel and moves your funds back to your on-chain XBT wallet.",
+            str(closeBodyRes(LN_XBT_CHAIN, named = false)),
+        )
+        assertEquals(
+            "This closes your Lightning channel and moves your funds back to your on-chain XBT wallet “%1\$s”.",
+            str(closeBodyRes(LN_XBT_CHAIN, named = true)),
+        )
+        assertEquals("Send and receive instant XBT payments over the Lightning Network.", str(lightningBodyRes(LN_XBT_CHAIN)))
+        assertEquals("Moves XBT from your Lightning (XBT) wallet to your on-chain XBT wallet.", str(toOnchainHelpRes(LN_XBT_CHAIN)))
+        // BTC: the strings it always had.
+        assertEquals(R.string.ln_send_onchain_target, onchainTargetRes(LN_CHAIN))
+        assertEquals(R.string.settings_lightning_close_body, closeBodyRes(LN_CHAIN, named = false))
+        assertEquals(R.string.settings_lightning_close_body_to, closeBodyRes(LN_CHAIN, named = true))
+        assertEquals(R.string.settings_lightning_body, lightningBodyRes(LN_CHAIN))
+        assertEquals(R.string.transfer_to_onchain_help, toOnchainHelpRes(LN_CHAIN))
+        assertEquals("This is an on-chain address — send it from a BTC wallet.", str(onchainTargetRes(LN_CHAIN)))
+        // Every locale with the BTC sentence has its XBT one, naming XBT and keeping the argument.
+        val keys = listOf(
+            "ln_send_onchain_target_xbt", "settings_lightning_close_body_xbt", "settings_lightning_close_body_to_xbt",
+            "settings_lightning_body_xbt", "transfer_to_onchain_help_xbt", "error_lightning_seed_shared",
+        )
+        val locales = File("src/main/res").listFiles()!!.filter { d ->
+            File(d, "strings.xml").takeIf { it.exists() }?.readText()?.contains("name=\"ln_send_onchain_target\"") == true
+        }
+        assertEquals(9, locales.size)
+        for (d in locales) {
+            val text = File(d, "strings.xml").readText()
+            for (k in keys) {
+                val v = Regex("<string name=\"$k\">(.*)</string>").find(text)?.groupValues?.get(1)
+                assertTrue("${d.name} lacks $k", v != null)
+                if (k != "error_lightning_seed_shared") assertTrue("${d.name} $k: $v", v!!.contains("XBT") && !v.contains("BTC"))
+            }
+            val named = Regex("<string name=\"settings_lightning_close_body_to_xbt\">(.*)</string>").find(text)?.groupValues?.get(1)
+            assertTrue(d.name, named?.contains("%1\$s") == true)
+        }
+    }
+
+    @Test
     fun an_invoice_is_checked_against_the_wallet_chain() {
         val now = fixtureNow
         val xbtTarget = uniffi.wallet_ffi.lnParseAt(xbtInvoice, "bitcoin", now)

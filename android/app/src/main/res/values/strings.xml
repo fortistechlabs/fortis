@@ -550,6 +550,11 @@
     <string name="send_create_lightning_xbt_wallet">Create a Lightning (XBT) wallet to pay this</string>
     <string name="error_lightning_xbt_unavailable">Lightning (XBT) is not available yet.</string>
     <string name="error_lightning_seed_shared">This recovery phrase is already your other Lightning wallet’s. Use a different phrase for each Lightning wallet.</string>
+    <string name="ln_send_onchain_target_xbt">This is an on-chain address — send it from an XBT wallet.</string>
+    <string name="settings_lightning_close_body_xbt">This closes your Lightning channel and moves your funds back to your on-chain XBT wallet.</string>
+    <string name="settings_lightning_close_body_to_xbt">This closes your Lightning channel and moves your funds back to your on-chain XBT wallet “%1$s”.</string>
+    <string name="settings_lightning_body_xbt">Send and receive instant XBT payments over the Lightning Network.</string>
+    <string name="transfer_to_onchain_help_xbt">Moves XBT from your Lightning (XBT) wallet to your on-chain XBT wallet.</string>
     <string name="send_pay_with_lightning_wallet">Pay with your Lightning wallet</string>
     <string name="send_create_lightning_wallet">Create a Lightning wallet to pay this</string>
     <string name="ln_wallet_first_receive_hint">No channel yet. A payment of %1$s sat or more opens your own channel (the fee is shown before you share the invoice). Smaller payments are held by Fortis.</string>

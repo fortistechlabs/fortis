@@ -157,6 +157,28 @@ class LightningSessions(make: (walletChain: String, chain: LnChain) -> Lightning
     fun forOnchain(chain: String): LightningSession? = lightningChainForOnchain(chain)?.let(::of)
 }
 
+/** "… send it from a BTC wallet." / "… from an XBT wallet.": an on-chain address pasted into the
+ *  Lightning wallet on [lnWalletChain]. */
+fun onchainTargetRes(lnWalletChain: String): Int =
+    if (lnWalletChain == LN_XBT_CHAIN) R.string.ln_send_onchain_target_xbt else R.string.ln_send_onchain_target
+
+/** The close dialog's "… back to your on-chain BTC / XBT wallet" ([named]: with the wallet's
+ *  name as its argument). */
+fun closeBodyRes(lnWalletChain: String, named: Boolean): Int = when {
+    lnWalletChain == LN_XBT_CHAIN && named -> R.string.settings_lightning_close_body_to_xbt
+    lnWalletChain == LN_XBT_CHAIN -> R.string.settings_lightning_close_body_xbt
+    named -> R.string.settings_lightning_close_body_to
+    else -> R.string.settings_lightning_close_body
+}
+
+/** The Lightning settings card's one-line description: Bitcoin / XBT payments. */
+fun lightningBodyRes(lnWalletChain: String): Int =
+    if (lnWalletChain == LN_XBT_CHAIN) R.string.settings_lightning_body_xbt else R.string.settings_lightning_body
+
+/** The Move tab's help line: to the on-chain Bitcoin / XBT wallet. */
+fun toOnchainHelpRes(lnWalletChain: String): Int =
+    if (lnWalletChain == LN_XBT_CHAIN) R.string.transfer_to_onchain_help_xbt else R.string.transfer_to_onchain_help
+
 /** "Add a BTC wallet …" / "Add an XBT wallet …": the Lightning wallet on [lnWalletChain] has no
  *  on-chain wallet of its chain to move funds to. */
 fun noOnchainWalletRes(lnWalletChain: String): Int =

@@ -512,6 +512,11 @@
     <string name="send_create_lightning_xbt_wallet">创建闪电网络 (XBT) 钱包以支付此款项</string>
     <string name="error_lightning_xbt_unavailable">闪电网络 (XBT) 暂不可用。</string>
     <string name="error_lightning_seed_shared">此恢复助记词已用于你的另一个闪电网络钱包。每个闪电网络钱包请使用不同的助记词。</string>
+    <string name="ln_send_onchain_target_xbt">这是链上地址——请从 XBT 钱包发送。</string>
+    <string name="settings_lightning_close_body_xbt">这将关闭你的闪电网络通道，并把资金转回你的链上 XBT 钱包。</string>
+    <string name="settings_lightning_close_body_to_xbt">这将关闭你的闪电网络通道，并把资金转回你的链上 XBT 钱包“%1$s”。</string>
+    <string name="settings_lightning_body_xbt">通过闪电网络收发即时 XBT 支付。</string>
+    <string name="transfer_to_onchain_help_xbt">将 XBT 从你的闪电网络 (XBT) 钱包转到你的链上 XBT 钱包。</string>
     <string name="error_lightning_wallet_exists">此应用已有一个闪电网络钱包。</string>
     <string name="error_no_onchain_wallet_for_lightning">请添加一个 BTC 钱包，以便把闪电网络资金转回链上。</string>
     <string name="send_pay_with_lightning_wallet">用你的闪电网络钱包支付</string>

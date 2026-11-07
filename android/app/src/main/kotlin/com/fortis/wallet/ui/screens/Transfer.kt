@@ -85,7 +85,7 @@ internal fun TransferToOnchainTab(vm: WalletViewModel) {
     GlassCard {
         Column(verticalArrangement = Arrangement.spacedBy(Fx.s3)) {
             Text(stringResource(R.string.transfer_to_onchain_title), color = Fx.text, fontWeight = FontWeight.SemiBold)
-            Text(stringResource(R.string.transfer_to_onchain_help), style = FxType.meta, color = Fx.textDim)
+            Text(stringResource(com.fortis.wallet.lightning.toOnchainHelpRes(vm.config?.chain ?: "")), style = FxType.meta, color = Fx.textDim)
             MoveToWalletPicker(vm)
             vm.lastMoveToOnchain?.let { m ->
                 Text(
