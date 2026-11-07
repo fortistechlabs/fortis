@@ -199,6 +199,9 @@ class LightningSession(
     /** The chain this session's node runs on; it starts only that chain's Lightning wallet and
      *  pays only that chain's invoices. No default: a session must say which chain it is. */
     val chain: LnChain,
+    /** True only in debug builds (the app passes BuildConfig.DEBUG): the XBT canary override of
+     *  [effectiveLnEnabled]. Off by default so tests and release builds see `/ln/info` as is. */
+    private val debugCanary: Boolean = false,
 ) {
     private val mutex = Mutex()
 
@@ -215,6 +218,11 @@ class LightningSession(
     @Volatile
     var lastInfo: LnInfo? = null
         private set
+
+    /** Whether this session treats the LSP as enabled: `/ln/info`'s `enabled`, or in a debug
+     *  build the XBT canary override. True while the info has not been read yet. */
+    val remoteEnabled: Boolean
+        get() = lastInfo?.let { effectiveLnEnabled(chain, it.enabled, debugCanary) } != false
 
     /** Msat that can be sent now, as of the last balance refresh (the channels' outbound HTLC limit, which is below the balance). */
     @Volatile
@@ -611,9 +619,9 @@ class LightningSession(
                 }
                 createdNode = n
                 if (takeover) {
-                    if (lnInfo.enabled) n.takeover() else n.takeoverWith(LnStartMode.EXIT)
+                    if (effectiveLnEnabled(chain, lnInfo.enabled, debugCanary)) n.takeover() else n.takeoverWith(LnStartMode.EXIT)
                 } else {
-                    if (lnInfo.enabled) n.start() else n.startWith(LnStartMode.EXIT)
+                    if (effectiveLnEnabled(chain, lnInfo.enabled, debugCanary)) n.start() else n.startWith(LnStartMode.EXIT)
                 }
                 n
             }
@@ -711,3 +719,12 @@ class LightningSession(
         }
     }
 }
+
+/**
+ * Whether a node on [chain] runs normally given `/ln/info`'s [infoEnabled]. A debug build
+ * ([debug], the `.dev`/`.dev2` apps) runs XBT Lightning even while it is disabled, so the
+ * real-phone canary (deploy/lightning.md §12) can run before the operator enables it. Release
+ * builds and the BTC chain follow `/ln/info` exactly.
+ */
+fun effectiveLnEnabled(chain: LnChain, infoEnabled: Boolean, debug: Boolean): Boolean =
+    infoEnabled || (debug && chain == LnChain.XBT)

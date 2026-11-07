@@ -267,7 +267,7 @@ internal fun LightningReceiveTab(vm: WalletViewModel) {
     val lnState by vm.lightning.state.collectAsState()
     val minLnSat = vm.lightning.lastInfo?.minPaymentSat ?: 10_000L
     val maxLnSat = vm.lightning.lastInfo?.maxPaymentSat ?: (DEFAULT_LN_LIMITS.maxPaymentMsat / 1_000uL).toLong()
-    val remoteEnabled = vm.lightning.lastInfo?.enabled != false
+    val remoteEnabled = vm.lightning.remoteEnabled
     val remoteMessage = vm.lightning.lastInfo?.message?.takeIf { it.isNotBlank() }
 
     var amount by remember { mutableStateOf("") }
@@ -778,7 +778,7 @@ internal fun LightningWalletSettingsCard(vm: WalletViewModel, walletChain: Strin
         }
 
         val ready = lnState as? LnState.Ready
-        val remoteEnabled = session.lastInfo?.enabled != false
+        val remoteEnabled = session.remoteEnabled
         val remoteMessage = session.lastInfo?.message?.takeIf { it.isNotBlank() }
         if (!remoteEnabled && remoteMessage != null) {
             Text(remoteMessage, style = FxType.meta, color = Fx.warn)

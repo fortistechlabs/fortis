@@ -395,6 +395,7 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
                 if (tok.isNotBlank()) "Bearer $tok" else ""
             },
             chain = chain,
+            debugCanary = BuildConfig.DEBUG,
         )
     }
 
