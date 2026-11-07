@@ -191,13 +191,33 @@ pub fn wake(fcm: Option<&Fcm>, ledger: &Ledger, node: &PublicKey, amount_msat: u
     let sat = amount_msat / 1_000;
     let body = format!("{} sat is waiting for you. Open Fortis to receive it.", group(sat));
     let data = wake_data(chain, amount_msat);
-    match fcm.send(&token, "Incoming Lightning payment", &body, data) {
+    match fcm.send(&token, push_text(Push::Held, chain), &body, data) {
         Ok(()) => eprintln!("fortis-lsp: woke {node} by push for {amount_msat} msat"),
         Err(SendError::Unregistered) => {
             eprintln!("fortis-lsp: push token of {node} is no longer valid; dropped");
             let _ = ledger.drop_push_token(node, &token);
         }
         Err(SendError::Other(e)) => eprintln!("fortis-lsp: push to {node}: {e}"),
+    }
+}
+
+/// Which push a title belongs to.
+#[derive(Clone, Copy)]
+enum Push {
+    /// [`wake`]: a payment is held for an offline phone.
+    Held,
+    /// [`received`]: a payment landed on the balance.
+    Received,
+}
+
+/// The notification title of a push. XBT names its chain; BTC keeps the
+/// original wording.
+fn push_text(kind: Push, chain: &str) -> &'static str {
+    match (kind, chain) {
+        (Push::Held, "xbt") => "Incoming XBT Lightning payment",
+        (Push::Held, _) => "Incoming Lightning payment",
+        (Push::Received, "xbt") => "XBT Lightning payment received",
+        (Push::Received, _) => "Lightning payment received",
     }
 }
 
@@ -219,7 +239,7 @@ pub fn received(fcm: Option<&Fcm>, ledger: &Ledger, node: &PublicKey, amount_msa
         group(amount_msat / 1_000)
     );
     let data = received_data(chain, amount_msat);
-    send_to(fcm, ledger, node, "Lightning payment received", &body, data, "received");
+    send_to(fcm, ledger, node, push_text(Push::Received, chain), &body, data, "received");
 }
 
 /// Sends one notification to `node`'s phone; `what` names it in the log.
@@ -295,6 +315,18 @@ mod tests {
         assert_eq!(d["kind"], "ln_received");
         assert_eq!(d["amount_msat"], "5000");
         assert_eq!(received_data("btc", 1)["chain"], "btc");
+    }
+
+    #[test]
+    fn xbt_push_text() {
+        assert_eq!(push_text(Push::Held, "xbt"), "Incoming XBT Lightning payment");
+        assert_eq!(push_text(Push::Received, "xbt"), "XBT Lightning payment received");
+    }
+
+    #[test]
+    fn btc_push_text_unchanged() {
+        assert_eq!(push_text(Push::Held, "btc"), "Incoming Lightning payment");
+        assert_eq!(push_text(Push::Received, "btc"), "Lightning payment received");
     }
 
     #[test]
