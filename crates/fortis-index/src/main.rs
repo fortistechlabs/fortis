@@ -37,7 +37,7 @@ use fortis_node::Rpc;
 
 use crate::chain::HeaderFormat;
 use crate::chainstate::{BlockTable, SharedChain};
-use crate::db::{Db, DbConfig};
+use crate::db::{Db, DbConfig, OpenError};
 use crate::fetch::FetchConfig;
 use crate::mempool::{MempoolTracker, MempoolView, SharedMempool};
 use crate::render::{Renderer, TxSource};
@@ -186,6 +186,20 @@ fn connect(args: &Args) -> Result<(Rpc, String)> {
     Ok((rpc, url))
 }
 
+/// `--spends-from-height f` must be within what this index can backfill:
+/// the backfill checks each block against the index's own, so it can't cover
+/// heights below the first indexed block (or below `--start-height` for an
+/// empty index). Fatal (exit 2): a restart can't fix it.
+fn check_spends_from(table: &BlockTable, f: u32, start_height: u32) -> Result<()> {
+    if table.tip().is_some_and(|(h, _)| h >= f) && table.get(f).is_none() {
+        return Err(OpenError::SpendsFromBelowIndex { from: f }.into());
+    }
+    if table.tip().is_none() && f < start_height {
+        return Err(OpenError::SpendsFromBelowStart { from: f, start: start_height }.into());
+    }
+    Ok(())
+}
+
 fn run(args: Args) -> Result<()> {
     let (rpc, url) = connect(&args)?;
     let network = network(&args.network);
@@ -224,14 +238,7 @@ fn run(args: Args) -> Result<()> {
         );
     }
     if let Some(f) = args.spends_from_height {
-        // The backfill checks each block against the index's own: it can't
-        // cover heights below the first indexed block.
-        if table.tip().is_some_and(|(h, _)| h >= f) && table.get(f).is_none() {
-            bail!("--spends-from-height {f} is below the first block this index holds");
-        }
-        if table.tip().is_none() && f < start_height {
-            bail!("--spends-from-height {f} is below --start-height {start_height}");
-        }
+        check_spends_from(&table, f, start_height)?;
         eprintln!("             recording spends from height {f}");
     }
     let chain: SharedChain = Arc::new(ArcSwap::from_pointee(table));
@@ -402,6 +409,23 @@ fn default_bitcoin_datadir() -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A `--spends-from-height` the index can't backfill is a configuration
+    /// error: fatal (exit 2), so systemd doesn't restart into it again.
+    #[test]
+    fn a_spends_from_height_below_the_index_is_fatal() {
+        use bitcoin::hashes::Hash;
+        let rec = |n| crate::keys::BlockRec { hash: bitcoin::BlockHash::all_zeros(), time: 0, first_txnum: n, n_txs: 1 };
+        let table = BlockTable::from_db((100..=110).map(|h| (h, rec(h as u64))).collect()).unwrap();
+        let e = check_spends_from(&table, 50, 0).unwrap_err();
+        assert!(is_fatal(&e), "{e:#}");
+        assert!(check_spends_from(&table, 100, 0).is_ok());
+        assert!(check_spends_from(&table, 200, 0).is_ok(), "above the tip: recorded as blocks arrive");
+        let empty = BlockTable::default();
+        let e = check_spends_from(&empty, 5, 10).unwrap_err();
+        assert!(is_fatal(&e), "{e:#}");
+        assert!(check_spends_from(&empty, 10, 10).is_ok());
+    }
 
     #[test]
     fn a_sync_thread_that_died_without_a_result_is_an_error() {

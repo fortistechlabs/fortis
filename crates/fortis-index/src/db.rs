@@ -84,6 +84,11 @@ pub enum OpenError {
         "database schema {found} is not {SCHEMA_VERSION} (v1 index? use a new --db directory)"
     )]
     Schema { found: String },
+    /// `--spends-from-height` below what this index can backfill.
+    #[error("--spends-from-height {from} is below the first block this index holds")]
+    SpendsFromBelowIndex { from: u32 },
+    #[error("--spends-from-height {from} is below --start-height {start}")]
+    SpendsFromBelowStart { from: u32, start: u32 },
 }
 
 #[derive(Debug, thiserror::Error)]
