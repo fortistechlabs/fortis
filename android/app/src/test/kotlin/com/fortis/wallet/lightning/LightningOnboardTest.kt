@@ -3,6 +3,8 @@ package com.fortis.wallet.lightning
 import com.fortis.wallet.data.WalletConfig
 import com.fortis.wallet.wallet.LightningWalletKeys
 import com.fortis.wallet.wallet.LightningWalletExists
+import com.fortis.wallet.wallet.LightningSeedShared
+import com.fortis.wallet.wallet.checkLightningSeedNotShared
 import com.fortis.wallet.wallet.SealedSeed
 import com.fortis.wallet.wallet.checkCanAddLightning
 import com.fortis.wallet.wallet.newLightningConfig
@@ -52,5 +54,23 @@ class LightningOnboardTest {
         LightningWalletKeys.fromMnemonic(m, p).use { keys ->
             assertArrayEquals(lnBip39Seed(phrase, ""), keys.copySeed())
         }
+    }
+
+    /** The two Lightning wallets never share a BIP-39 seed (same phrase and passphrase). */
+    @Test
+    fun aSeedSharedWithTheOtherLightningWalletIsRefused() {
+        val seed = lnBip39Seed(phrase, "")
+        try {
+            checkLightningSeedNotShared(seed, lnBip39Seed(phrase, ""))
+            fail("expected LightningSeedShared")
+        } catch (_: LightningSeedShared) {
+        }
+        // No other Lightning wallet, or another phrase / passphrase: allowed.
+        checkLightningSeedNotShared(seed, null)
+        checkLightningSeedNotShared(seed, lnBip39Seed(phrase, "other"))
+        checkLightningSeedNotShared(
+            seed,
+            lnBip39Seed("legal winner thank year wave sausage worth useful legal winner thank yellow", ""),
+        )
     }
 }

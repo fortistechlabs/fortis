@@ -753,32 +753,36 @@ pub fn ln_vss_state_exists(
     vss: LnVssConfig,
     bip39_seed: Vec<u8>,
     network: String,
+    chain: LnChain,
 ) -> Result<bool, LnFfiError> {
     let net = parse_network(&network)?;
     let seed = Zeroizing::new(bip39_seed);
-    Ok(vss_state_exists(&vss.into(), &seed, net)?)
+    Ok(vss_state_exists(&vss.into(), &seed, net, chain.into())?)
 }
 
-fn derive_node_seed(bip39_seed: Vec<u8>, network: Network) -> Result<Zeroizing<[u8; 64]>, LnFfiError> {
+/// `chain`'s Lightning node seed for this BIP-39 seed (`fortis_lightning::derive_node_seed`).
+fn derive_node_seed(
+    bip39_seed: Vec<u8>,
+    network: Network,
+    chain: LnChain,
+) -> Result<Zeroizing<[u8; 64]>, LnFfiError> {
     let seed = Zeroizing::new(bip39_seed);
     let arr: &[u8; 64] = seed.as_slice().try_into().map_err(|_| LnFfiError::Other {
         reason: "bip39_seed must be 64 bytes".into(),
     })?;
-    let raw = wallet_core::bip85_hex(arr, network, 64, 0);
-    let mut out = Zeroizing::new([0u8; 64]);
-    out.copy_from_slice(&raw);
-    Ok(out)
+    Ok(fortis_lightning::derive_node_seed(arr, network, chain.into()))
 }
 
 #[uniffi::export]
 pub fn ln_recover_scan(
     bip39_seed: Vec<u8>,
     network: String,
+    chain: LnChain,
     esplora_url: String,
     esplora_auth_header: String,
 ) -> Result<Vec<LnStaticUtxo>, LnFfiError> {
     let net = parse_network(&network)?;
-    let node_seed = derive_node_seed(bip39_seed, net)?;
+    let node_seed = derive_node_seed(bip39_seed, net, chain)?;
     let source = EsploraScan::with_auth(&esplora_url, Some(esplora_auth_header));
     let utxos = recover::scan_static_outputs(&node_seed, net, &source, &mut |_, _| {})?;
     Ok(utxos.into_iter().map(Into::into).collect())
@@ -788,6 +792,7 @@ pub fn ln_recover_scan(
 pub fn ln_recover_sweep(
     bip39_seed: Vec<u8>,
     network: String,
+    chain: LnChain,
     utxos: Vec<LnStaticUtxo>,
     to_address: String,
     feerate_sat_per_vb: u64,
@@ -795,7 +800,7 @@ pub fn ln_recover_sweep(
     esplora_auth_header: String,
 ) -> Result<Option<String>, LnFfiError> {
     let net = parse_network(&network)?;
-    let node_seed = derive_node_seed(bip39_seed, net)?;
+    let node_seed = derive_node_seed(bip39_seed, net, chain)?;
     let core_utxos: Vec<StaticUtxo> = utxos
         .into_iter()
         .map(StaticUtxo::try_from)
@@ -974,5 +979,21 @@ impl LnNode {
 
     pub fn channel_state(&self) -> LnChannelState {
         self.inner.channel_state().into()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The sweeper's node seed is the running node's: BTC's is today's
+    /// (pinned, as in `fortis_lightning`), XBT's is its own.
+    #[test]
+    fn recover_node_seed_is_per_chain_and_btc_is_pinned() {
+        let btc = derive_node_seed(vec![9u8; 64], Network::Bitcoin, LnChain::Btc).unwrap();
+        assert_eq!(hex::encode(&btc[..8]), "d55d89dc8372a057");
+        let xbt = derive_node_seed(vec![9u8; 64], Network::Bitcoin, LnChain::Xbt).unwrap();
+        assert_ne!(&xbt[..], &btc[..]);
+        assert!(derive_node_seed(vec![9u8; 32], Network::Bitcoin, LnChain::Btc).is_err());
     }
 }

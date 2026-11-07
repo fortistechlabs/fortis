@@ -23,7 +23,7 @@ pub use error::{LnError, ParseError};
 #[doc(hidden)]
 pub use node::test_hooks;
 pub use node::{
-    vss_state_exists, Balances, ChainSource, LnChain, LnEvent, LspInfo, LspLimits, Node,
+    derive_node_seed, vss_state_exists, Balances, ChainSource, LnChain, LnEvent, LspInfo, LspLimits, Node,
     NodeConfig, StartMode, VssConfig,
 };
 pub use parse::{parse, parse_at, PaymentTarget};

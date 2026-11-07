@@ -1,12 +1,15 @@
 //! [`Node`]: the fortis Lightning node — ldk-node with a VSS store, keys
 //! derived from the BTC wallet's BIP-39 seed, and one LSP peer.
 //!
-//! **Keys.** The node seed is BIP-85 HEX, 64 bytes, index 0
-//! (`m/83696968'/128169'/64'/0'`) of the wallet's BIP-39 seed
-//! ([`wallet_core::bip85_hex`]); those 64 bytes are ldk-node's entropy seed
-//! as they are. The VSS store id is
-//! `hex(HMAC-SHA256(key = node seed, "fortis/ln/vss/v1"))`: stable per seed,
-//! unlinkable to the wallet.
+//! **Keys.** The node seed is BIP-85 HEX, 64 bytes, of the wallet's BIP-39
+//! seed ([`wallet_core::bip85_hex`]): index 0 (`m/83696968'/128169'/64'/0'`)
+//! for BTC, index 1 (`…/64'/1'`) for XBT; those 64 bytes are ldk-node's
+//! entropy seed as they are. The VSS store id is
+//! `hex(HMAC-SHA256(key = node seed, tag))`, tag `"fortis/ln/vss/v1"` for
+//! BTC and `"fortis/ln/vss/xbt/v1"` for XBT: stable per seed, unlinkable to
+//! the wallet. So one phrase used for both Lightning wallets still gives
+//! two nodes and two VSS stores. BTC's derivation is the original one and
+//! must never change (`btc_node_key_and_store_id_are_pinned`).
 //!
 //! **Start.** [`Node::new`] only derives keys and validates the config; no
 //! I/O. [`Node::start_with`] runs on a worker thread under one 14 s deadline
@@ -94,7 +97,13 @@ const PROBE_TIMEOUT: Duration = Duration::from_secs(5);
 /// Exit mode's best-effort LSP probe: a host that is gone (packets dropped)
 /// costs at most this.
 const EXIT_PROBE_TIMEOUT: Duration = Duration::from_secs(2);
+/// BTC's VSS store-id tag and BIP-85 index: existing wallets' keys, never change.
 const VSS_STORE_TAG: &[u8] = b"fortis/ln/vss/v1";
+const BTC_NODE_SEED_INDEX: u32 = 0;
+/// XBT's: a separate domain, so a phrase shared with a BTC Lightning wallet
+/// never shares its node key or VSS store.
+const XBT_VSS_STORE_TAG: &[u8] = b"fortis/ln/vss/xbt/v1";
+const XBT_NODE_SEED_INDEX: u32 = 1;
 /// The running node's background device-lock check: every this long
 /// (tests shorten it, [`test_hooks::set_lock_check_interval`]).
 pub(crate) const LOCK_CHECK_INTERVAL: Duration = Duration::from_secs(60);
@@ -521,7 +530,7 @@ impl Node {
     /// The seed is moved out of `cfg` into a zeroizing buffer.
     pub fn new(mut cfg: NodeConfig) -> Result<Node, LnError> {
         let taken = Zeroizing::new(std::mem::take(&mut cfg.bip39_seed));
-        let (ldk_seed, store_id) = derive_keys(&taken, cfg.network)?;
+        let (ldk_seed, store_id) = derive_keys(&taken, cfg.network, cfg.chain)?;
         drop(taken);
 
         let node_id = ldk_node_id(&ldk_seed, cfg.network)?.to_string();
@@ -1034,21 +1043,44 @@ fn spawn_lock_checker(shared: &Arc<Shared>, generation: u64) {
     }
 }
 
+/// The node seed (ldk-node's entropy) of `chain`'s Lightning wallet with
+/// this BIP-39 seed (module docs) — what the seed-only sweeper
+/// ([`crate::recover`]) takes.
+pub fn derive_node_seed(
+    bip39_seed: &[u8; 64],
+    network: Network,
+    chain: LnChain,
+) -> Zeroizing<[u8; 64]> {
+    let index = match chain {
+        LnChain::Btc => BTC_NODE_SEED_INDEX,
+        LnChain::Xbt => XBT_NODE_SEED_INDEX,
+    };
+    let node_seed = wallet_core::bip85_hex(bip39_seed, network, 64, index);
+    let mut out = Zeroizing::new([0u8; 64]);
+    out.copy_from_slice(&node_seed);
+    out
+}
+
 /// The node seed (ldk-node's entropy) and VSS store id for a BIP-39 seed
 /// (module docs).
-fn derive_keys(bip39: &[u8], network: Network) -> Result<(Zeroizing<[u8; 64]>, String), LnError> {
+fn derive_keys(
+    bip39: &[u8],
+    network: Network,
+    chain: LnChain,
+) -> Result<(Zeroizing<[u8; 64]>, String), LnError> {
     if bip39.len() != 64 {
         return Err(LnError::Other("bip39_seed must be 64 bytes".into()));
     }
     let mut bip39_seed = Zeroizing::new([0u8; 64]);
     bip39_seed.copy_from_slice(bip39);
-    let node_seed = wallet_core::bip85_hex(&bip39_seed, network, 64, 0);
+    let ldk_seed = derive_node_seed(&bip39_seed, network, chain);
     drop(bip39_seed);
-    let mut ldk_seed = Zeroizing::new([0u8; 64]);
-    ldk_seed.copy_from_slice(&node_seed);
-    drop(node_seed);
+    let tag = match chain {
+        LnChain::Btc => VSS_STORE_TAG,
+        LnChain::Xbt => XBT_VSS_STORE_TAG,
+    };
     let mut e = hmac::HmacEngine::<sha256::Hash>::new(&ldk_seed[..]);
-    e.input(VSS_STORE_TAG);
+    e.input(tag);
     let store_id = hex::encode(hmac::Hmac::<sha256::Hash>::from_engine(e).to_byte_array());
     Ok((ldk_seed, store_id))
 }
@@ -1059,9 +1091,15 @@ fn derive_keys(bip39: &[u8], network: Network) -> Result<(Zeroizing<[u8; 64]>, S
 /// the channels) and "scan for force-closed funds" (`false` on a wallet
 /// that had Lightning: its VSS data is lost, use the seed-only sweeper,
 /// [`crate::recover`]). One VSS round trip, ≤ 5 s; `BackupUnavailable`
-/// when VSS does not answer — never a guess.
-pub fn vss_state_exists(vss: &VssConfig, bip39_seed: &[u8], network: Network) -> Result<bool, LnError> {
-    let (ldk_seed, store_id) = derive_keys(bip39_seed, network)?;
+/// when VSS does not answer — never a guess. `chain` picks the wallet
+/// (BTC and XBT keep separate stores).
+pub fn vss_state_exists(
+    vss: &VssConfig,
+    bip39_seed: &[u8],
+    network: Network,
+    chain: LnChain,
+) -> Result<bool, LnError> {
+    let (ldk_seed, store_id) = derive_keys(bip39_seed, network, chain)?;
     drop(ldk_seed);
     let client = VssLockClient::new(vss, &store_id)?;
     let store = client.with_timeout(PROBE_TIMEOUT);
@@ -1690,6 +1728,49 @@ mod tests {
         assert_ne!(
             node.node_id(),
             Node::new(cfg(vec![8u8; 64])).unwrap().node_id()
+        );
+    }
+
+    /// Funds safety: a BTC Lightning wallet's node key and VSS store id are
+    /// what existing users' channels and backups live under. These are the
+    /// values the code derived before XBT got its own domain (pinned at
+    /// commit 325832c); they must never change.
+    #[test]
+    fn btc_node_key_and_store_id_are_pinned() {
+        let mut c = cfg(vec![9u8; 64]);
+        c.network = Network::Bitcoin;
+        let node = Node::new(c).unwrap();
+        assert_eq!(node.store_id, "ab8289f238b58838955cc3d65b27f67d25ac0f565ffca6535129e6f7d55ed505");
+        assert_eq!(node.node_id, "0365f6bb653eff7c1c6dd8cbe10ef466cbd981f045a82d073e06a02274e2d1819f");
+        assert_eq!(hex::encode(&node.ldk_seed[..8]), "d55d89dc8372a057");
+        let r = Node::new(cfg(vec![9u8; 64])).unwrap();
+        assert_eq!(r.store_id, "ab8289f238b58838955cc3d65b27f67d25ac0f565ffca6535129e6f7d55ed505");
+        assert_eq!(r.node_id, "0365f6bb653eff7c1c6dd8cbe10ef466cbd981f045a82d073e06a02274e2d1819f");
+    }
+
+    /// One phrase restored as both Lightning wallets must not share a node
+    /// key or a VSS store: XBT has its own BIP-85 index and store-id tag.
+    #[test]
+    fn xbt_node_key_and_store_id_are_their_own_domain() {
+        let seed = [9u8; 64];
+        let btc = Node::new(cfg(seed.to_vec())).unwrap();
+        let mut c = cfg(seed.to_vec());
+        c.chain = LnChain::Xbt;
+        let xbt = Node::new(c).unwrap();
+        assert_ne!(xbt.store_id, btc.store_id);
+        assert_ne!(xbt.node_id, btc.node_id);
+        assert_ne!(&xbt.ldk_seed[..], &btc.ldk_seed[..]);
+
+        let expect = wallet_core::bip85_hex(&seed, Network::Regtest, 64, 1);
+        assert_eq!(&xbt.ldk_seed[..], &expect[..]);
+        let mut e = hmac::HmacEngine::<sha256::Hash>::new(&expect);
+        e.input(b"fortis/ln/vss/xbt/v1");
+        let id = hmac::Hmac::<sha256::Hash>::from_engine(e).to_byte_array();
+        assert_eq!(xbt.store_id, hex::encode(id));
+        assert_eq!(&derive_node_seed(&seed, Network::Regtest, LnChain::Xbt)[..], &expect[..]);
+        assert_eq!(
+            &derive_node_seed(&seed, Network::Regtest, LnChain::Btc)[..],
+            &btc.ldk_seed[..]
         );
     }
 

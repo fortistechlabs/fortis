@@ -197,7 +197,12 @@ its own.
   **Lightning (XBT)** while none exists; there is at most one per app,
   alongside the BTC Lightning wallet.
 - It has its own phrase, sealed like the others. The node seed is derived from
-  that phrase in the same way as for BTC Lightning.
+  that phrase in the same way as for BTC Lightning, in its own domain: BIP-85
+  HEX index 1 (BTC: index 0) and VSS store id
+  `HMAC-SHA256(node seed, "fortis/ln/vss/xbt/v1")` (BTC: `"fortis/ln/vss/v1"`),
+  so one phrase never gives both wallets the same node or VSS store. The app
+  also refuses a Lightning wallet whose phrase (and passphrase) is the other
+  Lightning wallet's.
 - It has its own VSS store, its own "one device at a time" takeover, and its
   own copy of the seed in the Keystore for background claims.
 - Amounts are in sat, with the XBT label and colours, as XBT on-chain wallets

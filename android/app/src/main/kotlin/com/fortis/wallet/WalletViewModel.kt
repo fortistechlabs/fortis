@@ -24,10 +24,12 @@ import com.fortis.wallet.ui.pendingLinkRoute
 import com.fortis.wallet.ui.screens.amountError
 import com.fortis.wallet.ui.screens.amountLimit
 import com.fortis.wallet.ui.screens.btcLeg
+import com.fortis.wallet.wallet.LightningSeedShared
 import com.fortis.wallet.wallet.LightningWalletExists
 import com.fortis.wallet.wallet.LightningWalletKeys
 import com.fortis.wallet.wallet.WalletSession
 import com.fortis.wallet.wallet.checkCanAddLightning
+import com.fortis.wallet.wallet.checkLightningSeedNotShared
 import com.fortis.wallet.wallet.newLightningConfig
 import com.fortis.wallet.wallet.newMnemonic
 import com.fortis.wallet.wallet.sealSeed
@@ -1774,6 +1776,7 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
         // Validate the phrase before sealing or saving anything.
         val s = if (isLn) null else WalletSession.signing(chain, network, mnemonic, passphrase)
         val keys = if (isLn) LightningWalletKeys.fromMnemonic(mnemonic, passphrase) else null
+        if (keys != null) refuseSeedOfOtherLightningWallet(keys, chain, secret)
         val sealed = sealSeed(mnemonic, passphrase, secret)
         val id = UUID.randomUUID().toString()
         val c = if (isLn) {
@@ -1795,6 +1798,23 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
         // Only a Lightning wallet's own creation or restore starts its node; a new on-chain
         // wallet leaves a running node alone.
         if (isLn) syncLightning(lnSide(chain))
+    }
+
+    /** Throws (closing [keys]) when [keys] are the app's other Lightning wallet's: one phrase
+     *  (and passphrase) is never both the BTC and the XBT Lightning wallet. */
+    private fun refuseSeedOfOtherLightningWallet(keys: LightningWalletKeys, chain: String, secret: String) {
+        val other = wallets.firstOrNull { isLightningChain(it.chain) && it.chain != chain } ?: return
+        val otherSeed = lightningSeedCopy(other, secret, lockGeneration)
+        val seed = keys.copySeed()
+        try {
+            checkLightningSeedNotShared(seed, otherSeed)
+        } catch (e: LightningSeedShared) {
+            keys.close()
+            throw Exception(str(R.string.error_lightning_seed_shared))
+        } finally {
+            seed.fill(0)
+            otherSeed?.fill(0)
+        }
     }
 
     /** Import an account-level xpub with no seed at all — nothing to sign

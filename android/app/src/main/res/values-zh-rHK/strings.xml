@@ -511,6 +511,7 @@
     <string name="error_no_onchain_wallet_for_lightning_xbt">請新增一個 XBT 錢包，以便將閃電網絡 (XBT) 資金轉回鏈上。</string>
     <string name="send_create_lightning_xbt_wallet">建立閃電網絡 (XBT) 錢包以支付這筆款項</string>
     <string name="error_lightning_xbt_unavailable">閃電網絡 (XBT) 暫未提供。</string>
+    <string name="error_lightning_seed_shared">此復原助記詞已用於你的另一個閃電網絡錢包。每個閃電網絡錢包請使用不同的助記詞。</string>
     <string name="error_lightning_wallet_exists">此應用程式已有一個閃電網絡錢包。</string>
     <string name="error_no_onchain_wallet_for_lightning">請新增一個 BTC 錢包，以便將閃電網絡資金轉回鏈上。</string>
     <string name="send_pay_with_lightning_wallet">用你的閃電網絡錢包付款</string>
