@@ -204,6 +204,14 @@ cp -a /var/lib/fortis/lsp/keys_seed "$DEST/keys_seed"
 sqlite3 /var/lib/fortis/lsp/ldk_node_data.sqlite ".backup '$DEST/ldk_node_data.sqlite'"
 cp -a /etc/fortis/lsp.toml /etc/fortis/ln-info.json "$DEST/"
 
+# 2b. XBT LSP (if /var/lib/fortis/lsp-xbt exists): its own seed and store
+if [ -d /var/lib/fortis/lsp-xbt ]; then
+  mkdir -p "$DEST/lsp-xbt"
+  cp -a /var/lib/fortis/lsp-xbt/keys_seed "$DEST/lsp-xbt/keys_seed"
+  sqlite3 /var/lib/fortis/lsp-xbt/ldk_node_data.sqlite ".backup '$DEST/lsp-xbt/ldk_node_data.sqlite'"
+  cp -a /etc/fortis/lsp-xbt.toml /etc/fortis/ln-info-xbt.json "$DEST/lsp-xbt/" 2>/dev/null || true
+fi
+
 # 3. Sync off-host and prune local snapshots older than 14 days
 find /var/backups/fortis-ln -maxdepth 1 -mindepth 1 -type d -mtime +14 -exec rm -rf {} +
 ```
@@ -291,27 +299,27 @@ Build first, as your user: `cargo build --release -p fortis-index -p fortis-edge
 
 ### 11.1 Check the BTC spends height (before touching an index)
 
-The unit files in this repo carry `--spends-from-height 973000` for BTC. Every live BTC LSP channel must have been funded at or above that height, or its close would not be indexed. The LSP has no channel listing, so look up each funding transaction:
+The unit file in this repo carries `--spends-from-height 973000` for BTC. Every live BTC LSP channel must have been funded at or above that height, or its close would not be indexed. Every Fortis channel (LSP to phone, LSP outbound) was funded after the BTC LSP node was created, so it is enough that block 973000 is older than the node:
 
 ```sh
-# funding txids: the channel-ready lines in the journal and ldk_node.log
-sudo journalctl -u fortis-lsp --no-pager | grep -i 'channel .* ready'
-sudo grep -i funding /var/lib/fortis/lsp/ldk_node.log | tail -n 20
-# for each funding txid (core-cli = bitcoin-cli for Bitcoin Core):
-core-cli getrawtransaction <funding_txid> true      # note "blockhash"
-core-cli getblockheader <blockhash>                  # "height"
+# (a) when the node was created (keys_seed is written once, at creation); '-' = no birth time, use the mtime
+sudo stat -c '%w  %y' /var/lib/fortis/lsp/keys_seed
+# (b) the time of block 973000 (core-cli = bitcoin-cli for Bitcoin Core)
+core-cli getblockheader $(core-cli getblockhash 973000)     # "time"
+date -d @<time>
 ```
 
-The oldest funding height must be >= 973000. If it is lower, edit `deploy/linux-home/fortis-btc-index.service` and set `--spends-from-height` below that height (any lower value is safe; it only makes the backfill longer). If there are no channels yet, keep 973000. `sudo curl -s http://127.0.0.1:9736/metrics | grep fortis_lsp_channels` gives the channel count to compare against what you found.
+Proceed only if the block time from (b) is earlier than the keys_seed time from (a). Otherwise pick a lower height whose block time is earlier (repeat (b) with that height), and put it in `--spends-from-height` in `deploy/linux-home/fortis-btc-index.service` before 11.2. A lower value is always safe; it only makes the backfill longer.
 
 ### 11.2 Deploy the indexes
 
 1. **Both index nodes need `-txindex`** (the spends lookups fetch the spending transactions). Confirm for each node before going on; `txindex` must report `"synced": true`:
    ```sh
-   bitcoin-cli -rpcport=8432 -rpccookiefile=/var/lib/bitcoin-knots/.cookie getindexinfo    # XBT (Knots)
-   core-cli getindexinfo                                                                 # BTC (Core)
+   # the cookies are readable by root and the bitcoin-knots / bitcoin-core groups, hence sudo
+   sudo bitcoin-cli -rpcport=8432 -rpccookiefile=/var/lib/bitcoin-knots/.cookie getindexinfo   # XBT (Knots)
+   sudo bitcoin-cli -rpcport=8332 -rpccookiefile=/var/lib/bitcoin-core/.cookie getindexinfo    # BTC (Core)
    ```
-   If either lacks `txindex` or is still syncing, stop here and fix the node first.
+   On both nodes the output must list `txindex` with `"synced": true`. If either lacks it or is still syncing, stop here and fix the node first.
 2. **Dry run (recommended).** Copy a small index DB, or run the new `fortis-index` against regtest (`tools/xbt-regtest`), and watch it backfill before running it on the live DBs. At the least, watch the first batches in step 4 and run the spot check in step 5.
 3. **Install and restart:**
    ```sh
@@ -336,9 +344,12 @@ Cautions:
    ```
 2. **Restart the BTC LSP**, since it shares the binary, and check it came up as before: the same `node_id` and channels.
    ```sh
-   curl -s http://127.0.0.1:9736/info | jq .node_id        # note it BEFORE the restart
+   # note both BEFORE the restart
+   curl -s http://127.0.0.1:9736/info | jq .node_id
+   curl -s http://127.0.0.1:9736/metrics | grep fortis_lsp_channels
    sudo systemctl restart fortis-lsp
-   curl -s http://127.0.0.1:9736/info | jq .node_id        # must be identical
+   # AFTER: node_id identical, fortis_lsp_channels the same count
+   curl -s http://127.0.0.1:9736/info | jq .node_id
    curl -s http://127.0.0.1:9736/metrics | grep fortis_lsp_channels
    ```
    The BTC config must not contain `esplora_url`, and the XBT config is rejected if it contains `bitcoind_rpc`, `rpc_user`, `rpc_password_file` or `rgs_url`. Do not copy `lsp.toml` to make the XBT one.
@@ -351,20 +362,20 @@ Cautions:
    ```
    Review `/etc/fortis/lsp-xbt.toml`: `chain = "xbt"`, `esplora_url = "http://127.0.0.1:8094"`, `xbt_gossip_floor_height = 961640`, `custody_max_sat = 0`.
 4. **Start it:** `sudo systemctl enable --now fortis-lsp-xbt`, then `journalctl -u fortis-lsp-xbt -f`. It needs `fortis-xbt-index` running and synced.
-5. **Back up `/var/lib/fortis/lsp-xbt/keys_seed` off the host before funding** (§6's script covers `lsp`, not `lsp-xbt`: add it there).
+5. **Back up `/var/lib/fortis/lsp-xbt/keys_seed` off the host before funding** (the nightly script in §6 also copies `lsp-xbt`, but take this first copy by hand before funding).
 6. **Read the `node_id`:** `curl -s http://127.0.0.1:9746/info | jq .node_id`. You need it in 11.5.
 
 Lightning on XBT uses only P2WSH channels (no taproot channels). If taproot channels are ever enabled, the spends index's skip rule must be revisited first.
 
 ### 11.4 Open the relay port
 
-1. On the VPS, install the updated `deploy/relay/lnrelay.nft` as `/etc/wireguard/lnrelay.nft` (it now also forwards 9835) and reload it (`sudo nft -f /etc/wireguard/lnrelay.nft`, or restart `wg-quick@wg0` as in `deploy/relay/README.md`).
+1. On the VPS, install the updated `deploy/relay/lnrelay.nft` as `/etc/wireguard/lnrelay.nft` (it now also forwards 9835) and reload it with `sudo nft delete table ip lnrelay && sudo nft -f /etc/wireguard/lnrelay.nft` (the same as `vps-wg0.conf`'s PostDown/PostUp; loading the file without deleting the table first appends duplicate rules). Do not restart `wg-quick@wg0` for this: it briefly drops the live BTC tunnel.
 2. In the GCP console, add a VPC firewall rule, ingress, source 0.0.0.0/0, `tcp:9835`. nftables alone is not enough.
 3. From mobile data (not the home network): `nc -vz lsp.fortistechlabs.com 9835` must succeed.
 
 ### 11.5 Turn on the edge (still disabled)
 
-1. Create `/etc/fortis/ln-info-xbt.json` from [`linux-home/ln-info-xbt.json.example`](linux-home/ln-info-xbt.json.example): fill in `node_id` from 11.3, keep `"enabled": false`.
+1. Create `/etc/fortis/ln-info-xbt.json` from [`linux-home/ln-info-xbt.json.example`](linux-home/ln-info-xbt.json.example): `sudo install -m 0644 deploy/linux-home/ln-info-xbt.json.example /etc/fortis/ln-info-xbt.json` (same mode as the BTC file), then edit it: fill in `node_id` from 11.3, keep `"enabled": false`.
 2. In `/etc/fortis/edge.env`, append to `EXTRA_ARGS`: `--ln-info-xbt-file /etc/fortis/ln-info-xbt.json --lsp-xbt-admin-url http://127.0.0.1:9746`.
 3. `sudo systemctl restart fortis-edge`.
 4. Check that the object appears: `curl -s https://<edge>/ln/info | jq .xbt` (with an install token, as for the BTC document). Old apps ignore the unknown field.
