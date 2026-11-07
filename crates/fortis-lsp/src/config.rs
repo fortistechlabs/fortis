@@ -182,7 +182,13 @@ impl LspConfig {
         };
         // Keys that only make sense for the other chain are errors, not ignored.
         let (not_here, other): (&[(&str, bool)], &str) = match chain {
-            Chain::Btc => (&[("esplora_url", raw.esplora_url.is_some())], "btc"),
+            Chain::Btc => (
+                &[
+                    ("esplora_url", raw.esplora_url.is_some()),
+                    ("xbt_gossip_floor_height", raw.xbt_gossip_floor_height.is_some()),
+                ],
+                "btc",
+            ),
             Chain::Xbt => (
                 &[
                     ("bitcoind_rpc", raw.bitcoind_rpc.is_some()),
@@ -621,6 +627,8 @@ mod tests {
     fn keys_of_the_other_chain_rejected() {
         let e = with("esplora_url = \"http://x:1\"").unwrap_err();
         assert!(e.contains("esplora_url") && e.contains("btc"), "{e}");
+        let e = with("xbt_gossip_floor_height = 961640").unwrap_err();
+        assert!(e.contains("xbt_gossip_floor_height") && e.contains("btc"), "{e}");
         for k in ["bitcoind_rpc = \"127.0.0.1:1\"", "rpc_user = \"u\"", "rpc_password_file = \"/p\""] {
             let e = with(&format!("chain = \"xbt\"\nesplora_url = \"http://x:1\"\n{k}")).unwrap_err();
             assert!(e.contains(k.split(' ').next().unwrap()) && e.contains("xbt"), "{e}");
