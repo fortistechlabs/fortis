@@ -173,6 +173,7 @@ mod tests {
             hash: BlockHash::from_byte_array(h),
             prev: BlockHash::all_zeros(),
             time: 0,
+            spends: vec![],
             txs: vec![TxRows {
                 txid: Txid::from_byte_array([height as u8; 32]),
                 funded: vec![Funded {
@@ -188,7 +189,7 @@ mod tests {
     #[test]
     fn view_never_pairs_a_table_with_a_newer_snapshot() {
         let dir = tempfile::tempdir().unwrap();
-        let db = Db::open(dir.path(), &DbConfig { cache_mb: 8 }, "btc").unwrap();
+        let db = Db::open(dir.path(), &DbConfig { cache_mb: 8, spends_from: None }, "btc").unwrap();
         let recs = db
             .apply(&[blk(100), blk(101)], 0, Durability::Durable, false)
             .unwrap();

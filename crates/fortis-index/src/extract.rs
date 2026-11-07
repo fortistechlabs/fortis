@@ -9,6 +9,7 @@ use bitcoin::{BlockHash, OutPoint, Transaction, TxIn, Txid};
 
 use crate::chain::{parse_block, HeaderFormat};
 use crate::keys::Program;
+use crate::spendcf::{self, BlockSpend};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Funded {
@@ -36,6 +37,8 @@ pub struct ParsedBlock {
     pub prev: BlockHash,
     pub time: u32,
     pub txs: Vec<TxRows>,
+    /// Every recorded input of the block ([`spendcf::recorded`]), in order.
+    pub spends: Vec<BlockSpend>,
 }
 
 /// The program a P2WPKH input spends: an empty scriptSig and exactly two
@@ -98,12 +101,23 @@ pub fn parse_and_extract(
     fmt: &HeaderFormat,
 ) -> Result<ParsedBlock> {
     let body = parse_block(bytes, fmt.header_len(height))?;
+    let mut txs = Vec::new();
+    let mut spends = Vec::new();
+    for tx in &body.txs {
+        let rows = tx_rows(tx);
+        if !tx.is_coinbase() && tx.input.iter().any(spendcf::recorded) {
+            let txid = rows.as_ref().map_or_else(|| tx.compute_txid(), |r| r.txid);
+            spends.extend(spendcf::tx_spends(tx, txid));
+        }
+        txs.extend(rows);
+    }
     Ok(ParsedBlock {
         height,
         hash,
         prev: body.prev,
         time: body.time,
-        txs: body.txs.iter().filter_map(tx_rows).collect(),
+        txs,
+        spends,
     })
 }
 

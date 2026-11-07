@@ -42,6 +42,7 @@ fn blk(height: u32, txs: Vec<TxRows>) -> ParsedBlock {
         hash: bhash(height),
         prev: bhash(height - 1),
         time: 1000 + height,
+        spends: vec![],
         txs,
     }
 }
@@ -85,7 +86,7 @@ struct Rig {
 
 fn rig_with(blocks: Vec<ParsedBlock>, mp: MempoolView, tx_delay: Duration) -> Rig {
     let dir = tempfile::tempdir().unwrap();
-    let db = Db::open(dir.path(), &DbConfig { cache_mb: 8 }, "btc").unwrap();
+    let db = Db::open(dir.path(), &DbConfig { cache_mb: 8, spends_from: None }, "btc").unwrap();
     db.apply(&blocks, 0, Durability::Durable, false).unwrap();
     let chain: SharedChain = Arc::new(ArcSwap::from_pointee(
         BlockTable::from_db(db.load_blocks().unwrap()).unwrap(),

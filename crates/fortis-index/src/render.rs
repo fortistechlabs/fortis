@@ -395,7 +395,7 @@ mod tests {
     /// Block 100 (time 7100) holds `n` txs, each funding program [1;20].
     fn rig(n: u8) -> Rig {
         let dir = tempfile::tempdir().unwrap();
-        let db = Db::open(dir.path(), &DbConfig { cache_mb: 8 }, "btc").unwrap();
+        let db = Db::open(dir.path(), &DbConfig { cache_mb: 8, spends_from: None }, "btc").unwrap();
         let txs = (0..n)
             .map(|i| TxRows {
                 txid: txid(i + 1),
@@ -413,6 +413,7 @@ mod tests {
                 hash: BlockHash::all_zeros(),
                 prev: BlockHash::all_zeros(),
                 time: 7100,
+                spends: vec![],
                 txs,
             }],
             0,
@@ -522,13 +523,14 @@ mod tests {
         let pubkey = [3u8; 33];
         let program: Program = hash160::Hash::hash(&pubkey).to_byte_array();
         let dir = tempfile::tempdir().unwrap();
-        let db = Db::open(dir.path(), &DbConfig { cache_mb: 8 }, "btc").unwrap();
+        let db = Db::open(dir.path(), &DbConfig { cache_mb: 8, spends_from: None }, "btc").unwrap();
         db.apply(
             &[ParsedBlock {
                 height: 100,
                 hash: BlockHash::all_zeros(),
                 prev: BlockHash::all_zeros(),
                 time: 0,
+                spends: vec![],
                 txs: vec![TxRows {
                     txid: txid(0xaa),
                     funded: vec![Funded {
@@ -612,7 +614,7 @@ mod tests {
         assert_eq!(src.calls.load(Ordering::SeqCst), 1);
         let Rig { _dir, db, chain } = r;
         drop(db);
-        let db = Db::open(&path, &DbConfig { cache_mb: 8 }, "btc").unwrap();
+        let db = Db::open(&path, &DbConfig { cache_mb: 8, spends_from: None }, "btc").unwrap();
         let renderer = Renderer::new(src.clone(), db.clone(), Network::Bitcoin);
         let v = view(&db, &chain).unwrap();
         assert_eq!(renderer.confirmed(&v, &[0]).unwrap(), first);

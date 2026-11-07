@@ -336,7 +336,7 @@ mod tests {
 
     fn rig(src: Arc<MemSource>, start: u32, stop_height: Option<u32>) -> Rig {
         let dir = tempfile::tempdir().unwrap();
-        let db = Db::open(dir.path(), &DbConfig { cache_mb: 8 }, "btc").unwrap();
+        let db = Db::open(dir.path(), &DbConfig { cache_mb: 8, spends_from: None }, "btc").unwrap();
         let chain: SharedChain = Arc::new(ArcSwap::from_pointee(BlockTable::default()));
         let syncer = Syncer::new(
             db,
@@ -510,7 +510,7 @@ mod tests {
         // Bulk data was flushed: a reopen sees it.
         let path = r._dir.path().to_path_buf();
         drop(r.syncer);
-        let db = Db::open(&path, &DbConfig { cache_mb: 8 }, "btc").unwrap();
+        let db = Db::open(&path, &DbConfig { cache_mb: 8, spends_from: None }, "btc").unwrap();
         assert_eq!(db.load_blocks().unwrap().len(), 501);
     }
 
@@ -521,7 +521,7 @@ mod tests {
     fn a_crash_mid_bulk_resumes_from_the_last_flush() {
         const CHILD: &str = "FORTIS_INDEX_CRASH_CHILD_DB";
         if let Ok(path) = std::env::var(CHILD) {
-            let db = Db::open(Path::new(&path), &DbConfig { cache_mb: 8 }, "btc").unwrap();
+            let db = Db::open(Path::new(&path), &DbConfig { cache_mb: 8, spends_from: None }, "btc").unwrap();
             let src: Arc<dyn BlockSource> = Arc::new(MemSource::new(1000));
             let rx = fetch_range(
                 src,
@@ -557,7 +557,7 @@ mod tests {
             .unwrap();
         assert!(!status.success(), "the child must have aborted");
 
-        let db = Db::open(dir.path(), &DbConfig { cache_mb: 8 }, "btc").unwrap();
+        let db = Db::open(dir.path(), &DbConfig { cache_mb: 8, spends_from: None }, "btc").unwrap();
         assert_eq!(
             db.reader().tip().unwrap().map(|t| t.0),
             Some(191),
@@ -569,7 +569,7 @@ mod tests {
 
         let src = Arc::new(MemSource::new(1000));
         let mut resumed = rig(src.clone(), 0, None);
-        resumed.syncer.db = Db::open(dir.path(), &DbConfig { cache_mb: 8 }, "btc").unwrap();
+        resumed.syncer.db = Db::open(dir.path(), &DbConfig { cache_mb: 8, spends_from: None }, "btc").unwrap();
         resumed.syncer.chain.store(Arc::new(table));
         resumed.syncer.step(&AtomicBool::new(false)).unwrap();
         assert_eq!(tip(&resumed.syncer), 1000);

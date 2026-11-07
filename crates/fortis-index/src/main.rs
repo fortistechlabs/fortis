@@ -19,6 +19,7 @@ mod keys;
 mod mempool;
 mod render;
 mod source;
+mod spendcf;
 mod spends;
 mod sync;
 mod verify;
@@ -204,6 +205,7 @@ fn run(args: Args) -> Result<()> {
         &args.db,
         &DbConfig {
             cache_mb: args.cache_mb,
+            spends_from: None,
         },
         &chain_id,
     )?;
