@@ -413,6 +413,18 @@ class XbtLightningWalletTest {
         assertEquals(LN_XBT_CHAIN, pushTargetChain(mapOf("kind" to "ln_received", "chain" to "XBT")))
     }
 
+    @Test
+    fun push_extras_replayed_from_recents_open_nothing() {
+        val xbtPush = mapOf("kind" to "ln_received", "chain" to "xbt")
+        assertEquals(LN_XBT_CHAIN, pushedWalletChain(xbtPush, launchedFromHistory = false))
+        assertEquals(LN_CHAIN, pushedWalletChain(mapOf("kind" to "ln_held"), launchedFromHistory = false))
+        // Reopened from Recents, the activity gets the push's old extras again: not a new tap.
+        assertNull(pushedWalletChain(xbtPush, launchedFromHistory = true))
+        assertNull(pushedWalletChain(mapOf("kind" to "ln_held"), launchedFromHistory = true))
+        // Not a Lightning push at all.
+        assertNull(pushedWalletChain(mapOf("crash" to "true"), launchedFromHistory = false))
+    }
+
     // ---- two nodes, one process ----------------------------------------------
 
     @Test

@@ -130,3 +130,10 @@ fun isLightningPush(data: Map<String, String>): Boolean = data["kind"] in LIGHTN
  *  (an older LSP sends no `chain`: those are all BTC). */
 fun pushTargetChain(data: Map<String, String>): String =
     if (data["chain"]?.trim()?.lowercase() == "xbt") com.fortis.wallet.data.LN_XBT_CHAIN else com.fortis.wallet.data.LN_CHAIN
+
+/** The Lightning wallet a tap on a push opens, from the intent's extras ([data]); null when they
+ *  are not a Lightning push, or when the activity was reopened from Recents
+ *  ([launchedFromHistory], `FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY`): Android hands it the old
+ *  push's extras again, which are not a new tap. */
+fun pushedWalletChain(data: Map<String, String>, launchedFromHistory: Boolean): String? =
+    if (launchedFromHistory || !isLightningPush(data)) null else pushTargetChain(data)
