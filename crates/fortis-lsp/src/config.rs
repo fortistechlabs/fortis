@@ -180,6 +180,21 @@ impl LspConfig {
                 return Err(format!("chain {other:?} must be \"btc\" or \"xbt\""));
             }
         };
+        // Keys that only make sense for the other chain are errors, not ignored.
+        let (not_here, other): (&[(&str, bool)], &str) = match chain {
+            Chain::Btc => (&[("esplora_url", raw.esplora_url.is_some())], "btc"),
+            Chain::Xbt => (
+                &[
+                    ("bitcoind_rpc", raw.bitcoind_rpc.is_some()),
+                    ("rpc_user", raw.rpc_user.is_some()),
+                    ("rpc_password_file", raw.rpc_password_file.is_some()),
+                ],
+                "xbt",
+            ),
+        };
+        if let Some((key, _)) = not_here.iter().find(|(_, set)| *set) {
+            return Err(format!("{key} does not apply to chain = \"{other}\"; remove it"));
+        }
         let channel_max_sat = raw.channel_max_sat.unwrap_or(500_000);
         let announce_addresses = raw
             .announce_addresses
@@ -600,6 +615,16 @@ mod tests {
         let e = with("chain = \"xbt\"\nesplora_url = \"http://x:1\"\nrgs_url = \"https://r\"")
             .unwrap_err();
         assert!(e.contains("rgs_url"), "{e}");
+    }
+
+    #[test]
+    fn keys_of_the_other_chain_rejected() {
+        let e = with("esplora_url = \"http://x:1\"").unwrap_err();
+        assert!(e.contains("esplora_url") && e.contains("btc"), "{e}");
+        for k in ["bitcoind_rpc = \"127.0.0.1:1\"", "rpc_user = \"u\"", "rpc_password_file = \"/p\""] {
+            let e = with(&format!("chain = \"xbt\"\nesplora_url = \"http://x:1\"\n{k}")).unwrap_err();
+            assert!(e.contains(k.split(' ').next().unwrap()) && e.contains("xbt"), "{e}");
+        }
     }
 
     #[test]

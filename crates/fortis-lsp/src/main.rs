@@ -323,8 +323,8 @@ fn serve(
         cfg.account_max_sat,
         cfg.custody_max_sat,
         cfg.payment_bounds().0.div_ceil(1_000),
+        cfg.chain,
     )
-    .with_chain(cfg.chain)
     .with_push(match &cfg.fcm_service_account {
         None => None,
         Some(path) => match push::Fcm::load(path) {

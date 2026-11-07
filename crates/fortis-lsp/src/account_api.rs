@@ -130,6 +130,7 @@ impl AccountService {
         account_max_sat: u64,
         custody_max_sat: u64,
         min_channel_receive_sat: u64,
+        chain: crate::config::Chain,
     ) -> AccountService {
         AccountService {
             ledger,
@@ -138,18 +139,13 @@ impl AccountService {
             custody_max_msat: custody_max_sat.saturating_mul(1_000),
             min_channel_receive_sat,
             fcm: None,
-            chain: "btc",
+            chain: chain.as_str(),
             notices: std::sync::atomic::AtomicU64::new(0),
         }
     }
 
     pub fn with_push(mut self, fcm: Option<crate::push::Fcm>) -> AccountService {
         self.fcm = fcm;
-        self
-    }
-
-    pub fn with_chain(mut self, chain: crate::config::Chain) -> AccountService {
-        self.chain = chain.as_str();
         self
     }
 
@@ -456,7 +452,7 @@ impl AccountService {
     fn notify_received(&self, node: &PublicKey, amount_msat: u64) {
         self.notices.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         if !self.node.is_connected(node) {
-            crate::push::received(self.fcm.as_ref(), &self.ledger, node, amount_msat);
+            crate::push::received(self.fcm.as_ref(), &self.ledger, node, amount_msat, self.chain);
         }
     }
 
@@ -743,7 +739,7 @@ mod tests {
         let ledger = Arc::new(Ledger::open(&dir.join("a.sqlite")).unwrap());
         let node = Arc::new(node);
         (
-            AccountService::new(ledger, node.clone(), 50_000, custody_max_sat, 11_000),
+            AccountService::new(ledger, node.clone(), 50_000, custody_max_sat, 11_000, crate::config::Chain::Btc),
             node,
         )
     }

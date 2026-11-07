@@ -206,14 +206,19 @@ fn wake_data(chain: &str, amount_msat: u64) -> Value {
     json!({ "kind": "ln_held", "amount_msat": amount_msat.to_string(), "chain": chain })
 }
 
+/// The data of a [`received`] push.
+fn received_data(chain: &str, amount_msat: u64) -> Value {
+    json!({ "kind": "ln_received", "amount_msat": amount_msat.to_string(), "chain": chain })
+}
+
 /// A payment landed on `node`'s Fortis balance while its phone was away:
 /// "Lightning payment received: N sat". Only logs without push or a token.
-pub fn received(fcm: Option<&Fcm>, ledger: &Ledger, node: &PublicKey, amount_msat: u64) {
+pub fn received(fcm: Option<&Fcm>, ledger: &Ledger, node: &PublicKey, amount_msat: u64, chain: &str) {
     let body = format!(
         "{} sat received. It's on your Fortis balance and moves into your wallet when you open Fortis.",
         group(amount_msat / 1_000)
     );
-    let data = json!({ "kind": "ln_received", "amount_msat": amount_msat.to_string() });
+    let data = received_data(chain, amount_msat);
     send_to(fcm, ledger, node, "Lightning payment received", &body, data, "received");
 }
 
@@ -281,6 +286,15 @@ mod tests {
         assert_eq!(d["amount_msat"], "21000");
         let btc = crate::config::LspConfig::from_toml("").unwrap();
         assert_eq!(wake_data(btc.chain.as_str(), 1)["chain"], "btc");
+    }
+
+    #[test]
+    fn received_payload_names_chain() {
+        let d = received_data("xbt", 5_000);
+        assert_eq!(d["chain"], "xbt");
+        assert_eq!(d["kind"], "ln_received");
+        assert_eq!(d["amount_msat"], "5000");
+        assert_eq!(received_data("btc", 1)["chain"], "btc");
     }
 
     #[test]
