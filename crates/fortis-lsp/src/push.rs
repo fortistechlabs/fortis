@@ -172,7 +172,7 @@ fn pem_to_der(pem: &str) -> Result<Vec<u8>, String> {
 
 /// Wakes `node`'s phone: "Incoming Lightning payment: N sat". Only logs when
 /// push is not configured or the phone has no token.
-pub fn wake(fcm: Option<&Fcm>, ledger: &Ledger, node: &PublicKey, amount_msat: u64) {
+pub fn wake(fcm: Option<&Fcm>, ledger: &Ledger, node: &PublicKey, amount_msat: u64, chain: &str) {
     let Some(fcm) = fcm else {
         eprintln!("fortis-lsp: {node} is offline with {amount_msat} msat held for it (push not configured)");
         return;
@@ -190,7 +190,7 @@ pub fn wake(fcm: Option<&Fcm>, ledger: &Ledger, node: &PublicKey, amount_msat: u
     };
     let sat = amount_msat / 1_000;
     let body = format!("{} sat is waiting for you. Open Fortis to receive it.", group(sat));
-    let data = json!({ "kind": "ln_held", "amount_msat": amount_msat.to_string() });
+    let data = wake_data(chain, amount_msat);
     match fcm.send(&token, "Incoming Lightning payment", &body, data) {
         Ok(()) => eprintln!("fortis-lsp: woke {node} by push for {amount_msat} msat"),
         Err(SendError::Unregistered) => {
@@ -199,6 +199,11 @@ pub fn wake(fcm: Option<&Fcm>, ledger: &Ledger, node: &PublicKey, amount_msat: u
         }
         Err(SendError::Other(e)) => eprintln!("fortis-lsp: push to {node}: {e}"),
     }
+}
+
+/// The data of a [`wake`] push; `chain` (`btc`/`xbt`) tells the app which wallet's LSP woke it.
+fn wake_data(chain: &str, amount_msat: u64) -> Value {
+    json!({ "kind": "ln_held", "amount_msat": amount_msat.to_string(), "chain": chain })
 }
 
 /// A payment landed on `node`'s Fortis balance while its phone was away:
@@ -262,6 +267,20 @@ mod tests {
         assert_eq!(group(999), "999");
         assert_eq!(group(1_000), "1,000");
         assert_eq!(group(1_234_567), "1,234,567");
+    }
+
+    #[test]
+    fn wake_payload_names_chain() {
+        let xbt = crate::config::LspConfig::from_toml(
+            "chain = \"xbt\"\nesplora_url = \"http://127.0.0.1:8094\"",
+        )
+        .unwrap();
+        let d = wake_data(xbt.chain.as_str(), 21_000);
+        assert_eq!(d["chain"], "xbt");
+        assert_eq!(d["kind"], "ln_held");
+        assert_eq!(d["amount_msat"], "21000");
+        let btc = crate::config::LspConfig::from_toml("").unwrap();
+        assert_eq!(wake_data(btc.chain.as_str(), 1)["chain"], "btc");
     }
 
     #[test]

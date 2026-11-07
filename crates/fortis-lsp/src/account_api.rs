@@ -106,6 +106,8 @@ pub struct AccountService {
     pub min_channel_receive_sat: u64,
     /// Push notifications for payments held while a phone is offline.
     pub fcm: Option<crate::push::Fcm>,
+    /// `btc` or `xbt`: named in push data.
+    pub chain: &'static str,
     /// Receipt notices decided on (sent, or only logged without push), for tests and logs.
     notices: std::sync::atomic::AtomicU64,
 }
@@ -136,12 +138,18 @@ impl AccountService {
             custody_max_msat: custody_max_sat.saturating_mul(1_000),
             min_channel_receive_sat,
             fcm: None,
+            chain: "btc",
             notices: std::sync::atomic::AtomicU64::new(0),
         }
     }
 
     pub fn with_push(mut self, fcm: Option<crate::push::Fcm>) -> AccountService {
         self.fcm = fcm;
+        self
+    }
+
+    pub fn with_chain(mut self, chain: crate::config::Chain) -> AccountService {
+        self.chain = chain.as_str();
         self
     }
 

@@ -23,16 +23,55 @@ pub const MIN_CHANNEL_LIFETIME_BLOCKS: u32 = 4_320;
 /// recommended upper bound).
 pub const MAX_CLIENT_TO_SELF_DELAY: u32 = 2_016;
 
+/// Which chain this instance serves.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Chain {
+    Btc,
+    Xbt,
+}
+
+impl Chain {
+    /// The name used in `lsp.toml`, push data and logs.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Chain::Btc => "btc",
+            Chain::Xbt => "xbt",
+        }
+    }
+}
+
+/// Where the node reads the chain from.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum ChainSource {
+    Bitcoind {
+        host: String,
+        port: u16,
+        user: String,
+        password_file: PathBuf,
+    },
+    /// Esplora API base URL (the XBT index).
+    Esplora(String),
+}
+
+/// First XBT block: gossip below it belongs to Bitcoin.
+pub const DEFAULT_XBT_GOSSIP_FLOOR_HEIGHT: u32 = 961_640;
+
 /// The service configuration. Built only by [`LspConfig::from_toml`], which
 /// validates it. `Debug` redacts `token`; the bitcoind RPC password is never
 /// part of it (read on demand from `rpc_password_file`).
 #[derive(Clone, PartialEq)]
 pub struct LspConfig {
+    /// `btc` (default) or `xbt`.
+    pub chain: Chain,
+    /// Esplora API URL: the chain source for `chain = "xbt"` (required there).
+    pub esplora_url: Option<String>,
+    /// `chain = "xbt"`: gossip below this block height is ignored.
+    pub xbt_gossip_floor_height: u32,
     /// `bitcoin` (mainnet), `testnet`, `signet` or `regtest`.
     pub network: Network,
     /// Lightning P2P listen address.
     pub listen: SocketAddr,
-    /// bitcoind RPC `host:port`.
+    /// bitcoind RPC `host:port` (`chain = "btc"` only).
     pub bitcoind_rpc: String,
     pub rpc_user: String,
     pub rpc_password_file: PathBuf,
@@ -91,6 +130,9 @@ pub struct LspConfig {
 #[derive(serde::Deserialize, Default)]
 #[serde(deny_unknown_fields)]
 struct Raw {
+    chain: Option<String>,
+    esplora_url: Option<String>,
+    xbt_gossip_floor_height: Option<u32>,
     network: Option<String>,
     listen: Option<SocketAddr>,
     bitcoind_rpc: Option<String>,
@@ -131,6 +173,13 @@ impl LspConfig {
                 .parse::<Network>()
                 .map_err(|e| format!("network {n:?}: {e}"))?,
         };
+        let chain = match raw.chain.as_deref() {
+            None | Some("btc") => Chain::Btc,
+            Some("xbt") => Chain::Xbt,
+            Some(other) => {
+                return Err(format!("chain {other:?} must be \"btc\" or \"xbt\""));
+            }
+        };
         let channel_max_sat = raw.channel_max_sat.unwrap_or(500_000);
         let announce_addresses = raw
             .announce_addresses
@@ -146,6 +195,14 @@ impl LspConfig {
             .checked_mul(1_000)
             .ok_or("channel_max_sat is too large")?;
         let c = LspConfig {
+            chain,
+            esplora_url: raw
+                .esplora_url
+                .map(|u| u.trim().to_string())
+                .filter(|u| !u.is_empty()),
+            xbt_gossip_floor_height: raw
+                .xbt_gossip_floor_height
+                .unwrap_or(DEFAULT_XBT_GOSSIP_FLOOR_HEIGHT),
             network,
             listen: raw
                 .listen
@@ -233,7 +290,21 @@ impl LspConfig {
                 self.metrics_listen
             ));
         }
-        self.rpc_host_port()?;
+        match self.chain {
+            Chain::Btc => {
+                self.rpc_host_port()?;
+            }
+            Chain::Xbt => {
+                if self.esplora_url.is_none() {
+                    return Err("chain = \"xbt\" needs esplora_url (the XBT index)".into());
+                }
+                if self.rgs_url.is_some() {
+                    return Err(
+                        "chain = \"xbt\" gossips peer to peer: remove rgs_url".into()
+                    );
+                }
+            }
+        }
         effective_payment_bounds(self)?;
         if self.token.as_deref() == Some("") {
             return Err("token must not be empty (omit it for no token)".into());
@@ -272,6 +343,22 @@ impl LspConfig {
             );
         }
         Ok(())
+    }
+
+    /// The chain source this (validated) config selects.
+    pub fn chain_source(&self) -> ChainSource {
+        match self.chain {
+            Chain::Xbt => ChainSource::Esplora(self.esplora_url.clone().expect("validated")),
+            Chain::Btc => {
+                let (host, port) = self.rpc_host_port().expect("validated");
+                ChainSource::Bitcoind {
+                    host,
+                    port,
+                    user: self.rpc_user.clone(),
+                    password_file: self.rpc_password_file.clone(),
+                }
+            }
+        }
     }
 
     /// `bitcoind_rpc` split into host and port.
@@ -427,6 +514,9 @@ fn over_provisioning_ppm(factor: f64) -> Option<u32> {
 impl std::fmt::Debug for LspConfig {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("LspConfig")
+            .field("chain", &self.chain)
+            .field("esplora_url", &self.esplora_url)
+            .field("xbt_gossip_floor_height", &self.xbt_gossip_floor_height)
             .field("network", &self.network)
             .field("listen", &self.listen)
             .field("bitcoind_rpc", &self.bitcoind_rpc)
@@ -485,6 +575,80 @@ mod tests {
     fn example_config_is_the_defaults() {
         let example = LspConfig::from_toml(include_str!("../lsp.toml.example")).unwrap();
         assert_eq!(example, with("").unwrap());
+    }
+
+    #[test]
+    fn chain_defaults_to_btc() {
+        let c = with("").unwrap();
+        assert_eq!(c.chain, Chain::Btc);
+        assert_eq!(c.chain.as_str(), "btc");
+        assert!(matches!(c.chain_source(), ChainSource::Bitcoind { .. }));
+        assert_eq!(with("chain = \"btc\"").unwrap().chain, Chain::Btc);
+    }
+
+    #[test]
+    fn xbt_requires_esplora_url() {
+        let e = with("chain = \"xbt\"").unwrap_err();
+        assert!(e.contains("esplora_url"), "{e}");
+        let c = with("chain = \"xbt\"\nesplora_url = \"http://127.0.0.1:8094\"").unwrap();
+        assert_eq!(c.chain, Chain::Xbt);
+        assert_eq!(c.chain_source(), ChainSource::Esplora("http://127.0.0.1:8094".into()));
+    }
+
+    #[test]
+    fn xbt_rejects_rgs_url() {
+        let e = with("chain = \"xbt\"\nesplora_url = \"http://x:1\"\nrgs_url = \"https://r\"")
+            .unwrap_err();
+        assert!(e.contains("rgs_url"), "{e}");
+    }
+
+    #[test]
+    fn xbt_allows_missing_bitcoind_keys() {
+        // None of bitcoind_rpc, rpc_user, rpc_password_file is set.
+        assert!(with("chain = \"xbt\"\nesplora_url = \"http://x:1\"").is_ok());
+    }
+
+    #[test]
+    fn unknown_chain_rejected() {
+        let e = with("chain = \"ltc\"").unwrap_err();
+        assert!(e.contains("\"btc\"") && e.contains("\"xbt\""), "{e}");
+    }
+
+    #[test]
+    fn xbt_gossip_floor_default_961640() {
+        let c = with("chain = \"xbt\"\nesplora_url = \"http://x:1\"").unwrap();
+        assert_eq!(c.xbt_gossip_floor_height, 961_640);
+        let c = with("chain = \"xbt\"\nesplora_url = \"http://x:1\"\nxbt_gossip_floor_height = 7")
+            .unwrap();
+        assert_eq!(c.xbt_gossip_floor_height, 7);
+    }
+
+    #[test]
+    fn example_xbt_config_parses() {
+        let c = LspConfig::from_toml(include_str!("../../../deploy/linux-home/lsp-xbt.toml.example"))
+            .unwrap();
+        let btc = LspConfig::from_toml(include_str!("../../../deploy/linux-home/lsp.toml.example"))
+            .unwrap();
+        assert_eq!(c.chain, Chain::Xbt);
+        assert_eq!(c.listen, "0.0.0.0:9835".parse().unwrap());
+        assert_eq!(c.metrics_listen, "127.0.0.1:9746".parse().unwrap());
+        assert_eq!(c.chain_source(), ChainSource::Esplora("http://127.0.0.1:8094".into()));
+        assert_eq!(c.data_dir, PathBuf::from("/var/lib/fortis/lsp-xbt"));
+        assert_eq!(c.announce_addresses.len(), 1);
+        assert_eq!(c.announce_addresses[0], SocketAddress::from_str("lsp.fortistechlabs.com:9835").unwrap());
+        assert_eq!(c.alias.as_deref(), Some("Fortis XBT"));
+        assert_eq!(c.custody_max_sat, 0);
+        assert_eq!(c.rgs_url, None);
+        assert_eq!(c.xbt_gossip_floor_height, 961_640);
+        // The same fee and limit values as the BTC example.
+        assert_eq!(c.open_fee_ppm, btc.open_fee_ppm);
+        assert_eq!(c.open_fee_min_sat, btc.open_fee_min_sat);
+        assert_eq!(c.min_payment_size_msat, btc.min_payment_size_msat);
+        assert_eq!(c.max_payment_size_msat, btc.max_payment_size_msat);
+        assert_eq!(c.channel_size_factor, btc.channel_size_factor);
+        assert_eq!(c.channel_min_sat, btc.channel_min_sat);
+        assert_eq!(c.channel_max_sat, btc.channel_max_sat);
+        assert_eq!(c.low_liquidity_sat, btc.low_liquidity_sat);
     }
 
     #[test]

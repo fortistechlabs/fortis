@@ -1,0 +1,56 @@
+# /etc/fortis/lsp-xbt.toml — fortis-lsp for XBT (Bitcoin BLAKE2b chain) on the Linux home host.
+# The same binary as the BTC LSP (lsp.toml.example), as a second instance:
+# unit fortis-lsp-xbt.service. Every key is optional unless noted; unknown keys are an error.
+#
+# Differences from the BTC LSP:
+#  - chain = "xbt"; the chain source is the XBT index's Esplora API (esplora_url),
+#    not bitcoind: bitcoind_rpc, rpc_user and rpc_password_file are not used here.
+#  - Gossip comes from peers (P2P): rgs_url is refused (there is no XBT RGS server).
+#  - Channels have no anchors; on-chain spends use the XBT replay-protected sighash.
+#  - Its own data_dir and keys_seed, so its own node id.
+#  - custody_max_sat = 0: Fortis accounts stay off until the operator enables them.
+
+chain = "xbt"
+network = "bitcoin"
+
+# Lightning P2P listen address (TCP 9835, forwarded from the public relay).
+listen = "0.0.0.0:9835"
+
+# Chain source: the XBT index (Esplora API). Required for chain = "xbt".
+esplora_url = "http://127.0.0.1:8094"
+
+# Gossip older than this block height is ignored (the first XBT block).
+xbt_gossip_floor_height = 961640
+
+# Holds keys_seed (mode 0400 — back this up!), SQLite store and logs.
+data_dir = "/var/lib/fortis/lsp-xbt"
+
+# JIT channel-open fee: 1% (10 000 ppm), minimum 1 000 sat.
+open_fee_ppm = 10000
+open_fee_min_sat = 1000
+
+# Payment bounds narrowed so every JIT channel lands in channel_min_sat..channel_max_sat
+# (51 000..250 000 sat with these defaults).
+min_payment_size_msat = 10000000
+max_payment_size_msat = 500000000
+channel_size_factor = 2.0
+channel_min_sat = 100000
+channel_max_sat = 500000
+
+# Optional LSPS2 token clients must present (matches lsps2_token in /ln/info).
+# token = "..."
+
+# Log a warning on stderr while on-chain liquidity is below 2 000 000 sat.
+low_liquidity_sat = 2000000
+
+# Prometheus GET /metrics and GET /info, and the admin endpoints (loopback only).
+metrics_listen = "127.0.0.1:9746"
+allow_public_metrics = false
+
+# Public identity: where other nodes reach this LSP (the public relay, DNAT 9835).
+alias = "Fortis XBT"
+announce_addresses = ["lsp.fortistechlabs.com:9835"]
+
+# Fortis accounts: 0 = disabled (the default) until the operator has confirmed
+# holding customer funds is allowed. Set a limit in sat to enable them.
+custody_max_sat = 0
