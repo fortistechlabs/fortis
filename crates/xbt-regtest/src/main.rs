@@ -57,11 +57,18 @@ fn main() -> ExitCode {
 			println!("== {name}: {r}");
 			results.push((name.to_string(), r));
 		}
-		for n in env.nodes() {
+		if failed {
+			if let Some(lsp) = env.lsp.borrow().as_ref() {
+				println!("\nfortis-lsp's last log lines:\n{}", lsp.log_tail(30));
+			}
+		}
+		for n in env.nodes().into_iter().chain(env.p2.get()) {
 			if n.running() {
 				let _ = n.stop();
 			}
 		}
+		// Stops fortis-lsp (if a failure left it running).
+		drop(env.lsp.borrow_mut().take());
 	}
 
 	println!("\n================ XBT regtest summary ================");
