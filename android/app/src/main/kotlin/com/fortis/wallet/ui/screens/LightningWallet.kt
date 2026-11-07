@@ -985,10 +985,15 @@ fun shouldShowTakeoverBanner(state: LnState): Boolean =
 
 /** The node of [session] stopped because another device holds its lock: offer the takeover. */
 @Composable
-internal fun LightningTakeoverBanner(session: com.fortis.wallet.lightning.LightningSession) {
+internal fun LightningTakeoverBanner(
+    session: com.fortis.wallet.lightning.LightningSession,
+    /** Whose banner it is, where both Lightning wallets' can show (Home); null inside a wallet. */
+    walletName: String? = null,
+) {
     val lnState by session.state.collectAsState()
     if (!shouldShowTakeoverBanner(lnState)) return
     GlassCard {
+        walletName?.let { Text(it, color = Fx.text, fontWeight = FontWeight.SemiBold) }
         Text(
             stringResource(R.string.ln_err_active_on_another_device),
             style = FxType.meta,

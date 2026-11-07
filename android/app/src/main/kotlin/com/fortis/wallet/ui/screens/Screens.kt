@@ -682,8 +682,13 @@ private fun HomeTab(vm: WalletViewModel) = Column(
 ) {
     // Running swaps first, while there are any.
     ActiveSwapsSection(vm.swaps, vm::openSwap)
-    LightningTakeoverBanner(vm.lnSide(LN_CHAIN).session)
-    LightningTakeoverBanner(vm.lnSide(LN_XBT_CHAIN).session)
+    // Both Lightning wallets can be held elsewhere: each banner names its wallet.
+    for (lnChain in listOf(LN_CHAIN, LN_XBT_CHAIN)) {
+        LightningTakeoverBanner(
+            vm.lnSide(lnChain).session,
+            walletName = com.fortis.wallet.lightning.lightningWalletOf(vm.wallets, lnChain)?.display,
+        )
+    }
     Text(stringResource(R.string.home_title), style = MaterialTheme.typography.titleMedium, color = Fx.text)
     // Each wallet is its own key — pressable like a button, not a line in a list.
     Column(verticalArrangement = Arrangement.spacedBy(Fx.s2)) {
