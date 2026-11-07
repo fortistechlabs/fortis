@@ -25,6 +25,11 @@ pub const SCAN_BUDGET: u32 = 50;
 /// Searches running at once, across all outputs: each fetches whole blocks
 /// from the node, so a burst of requests must not starve it.
 pub const MAX_CONCURRENT_SCANS: usize = 2;
+/// Most transactions after a P2WPKH output's funding that its address
+/// history is searched through for the spend. A more reused address takes the
+/// old, windowed scan instead: one heavily reused address must not cost the
+/// node thousands of lookups.
+pub const MAX_HISTORY_TXS: usize = 1000;
 /// Outputs remembered (spenders, found spends, scan progress). When full, scan
 /// progress goes first: found spenders are what live swaps keep asking for.
 const CACHE_MAX: usize = 10_000;
@@ -179,10 +184,11 @@ impl Spends {
     /// Who spent `txid:vout`, if anyone. In order:
     /// 1. unspent per the node, or a spender the node names (mempool, or its
     ///    own spender index);
-    /// 2. a P2WPKH output whose funding the address history holds: the
-    ///    history's first later transaction that spends it (in a main-chain
-    ///    block), else — spent per the node — a scan of the blocks above the
-    ///    index tip, with no window;
+    /// 2. a P2WPKH output whose funding the address history holds, at most
+    ///    [`MAX_HISTORY_TXS`] transactions back: the history's first later
+    ///    transaction that spends it (in a main-chain block), else — spent
+    ///    per the node — a scan of the blocks above the index tip, with no
+    ///    window;
     /// 3. a P2WSH output funded at or above the index's `spends` start
     ///    height and at or below its watermark `w`: the column family's row
     ///    (if its block is still on the main chain), else — spent per the
@@ -297,22 +303,26 @@ impl Spends {
 
     /// `op`'s spend from the address history of its P2WPKH program `p`, with
     /// the index tip it is complete through. `None` if the history can't
-    /// answer: no index, or it doesn't hold `op`'s funding (funded below the
-    /// index's start). The spend found is `None` if no transaction after the
+    /// answer: no index, it doesn't hold `op`'s funding (funded below the
+    /// index's start), or more than [`MAX_HISTORY_TXS`] transactions follow
+    /// the funding. The spend found is `None` if no transaction after the
     /// funding spends `op` in a main-chain block (a candidate whose block
-    /// left the main chain is no answer).
+    /// left the main chain is no answer). Holds `op`'s search slot: the walk
+    /// costs a node lookup per candidate.
     fn address_spend(&self, op: &OutPoint, p: &Program) -> Result<Option<(Option<Outspend>, u32)>, OutspendError> {
         let Some(db) = &self.index else {
             return Ok(None);
         };
+        let _slot = self.claim(*op)?;
         let r = db.reader();
         let Some((indexed_tip, _)) = r.tip()? else {
             return Ok(None);
         };
-        // Newest first, down to the funding: what touched `p` after it.
+        // Newest first, down to the funding: what touched `p` after it. Not
+        // reached within the cap (or not held at all): no answer from here.
         let mut after = Vec::new();
         let mut funded = false;
-        for n in r.history(p, usize::MAX)? {
+        for n in r.history(p, MAX_HISTORY_TXS + 1)? {
             let Some(txid) = r.txid(n)? else { continue };
             if txid == op.txid {
                 funded = true;
@@ -323,8 +333,20 @@ impl Spends {
         if !funded {
             return Ok(None);
         }
-        // Oldest first: a spend usually soon follows its funding.
+        // Oldest first: a spend usually soon follows its funding. Each
+        // candidate is fetched raw and checked locally; only the one that
+        // spends `op` costs the verbose lookup and its block's height.
         for txid in after.iter().rev() {
+            let Some(raw) = self.node.raw_tx(txid)? else { continue };
+            let Ok(t) = hex::decode(&raw)
+                .map_err(anyhow::Error::from)
+                .and_then(|b| Ok(bitcoin::consensus::deserialize::<Transaction>(&b)?))
+            else {
+                continue;
+            };
+            if !t.input.iter().any(|i| i.previous_output == *op) {
+                continue;
+            }
             match self.spent_by(txid, op) {
                 Ok(found @ Outspend::Spent { block: Some(_), .. }) => return Ok(Some((Some(found), indexed_tip))),
                 Ok(_) | Err(OutspendError::Pending(_)) => {}
@@ -587,6 +609,8 @@ mod tests {
     struct Fake {
         chain: Mutex<Chain>,
         fetches: AtomicUsize,
+        /// `tx()` and `raw_tx()` calls (transaction lookups).
+        tx_calls: AtomicUsize,
         /// While true, `block()` waits (a scan held mid-way); `inside` counts waiters.
         hold: Mutex<bool>,
         released: std::sync::Condvar,
@@ -633,6 +657,7 @@ mod tests {
         Arc::new(Fake {
             chain: Mutex::new(c),
             fetches: AtomicUsize::new(0),
+            tx_calls: AtomicUsize::new(0),
             hold: Mutex::new(false),
             released: std::sync::Condvar::new(),
             inside: AtomicUsize::new(0),
@@ -641,6 +666,7 @@ mod tests {
 
     impl SpendNode for Fake {
         fn tx(&self, txid: &Txid) -> Result<Option<Value>> {
+            self.tx_calls.fetch_add(1, Ordering::SeqCst);
             let c = self.chain.lock().unwrap();
             Ok(c.known.get(txid).map(|(t, b)| {
                 json!({
@@ -664,6 +690,7 @@ mod tests {
             }))
         }
         fn raw_tx(&self, txid: &Txid) -> Result<Option<String>> {
+            self.tx_calls.fetch_add(1, Ordering::SeqCst);
             let c = self.chain.lock().unwrap();
             Ok(c.known.get(txid).map(|(t, _)| bitcoin::consensus::encode::serialize_hex(t)))
         }
@@ -1435,5 +1462,53 @@ mod tests {
         let (s, fake) = indexed(c, &db);
         assert!(matches!(s.outspend(&op.txid, 0), Err(OutspendError::Pending(_))));
         assert_eq!(fake.fetches(), 0, "the index is at the node tip: nothing above it to scan");
+    }
+
+    /// An address reused past [`MAX_HISTORY_TXS`] after the funding: the
+    /// history isn't walked (a bounded number of node calls) and the old,
+    /// windowed scan answers instead — never Unspent.
+    #[test]
+    fn p2wpkh_history_past_the_cap_falls_back_to_the_old_scan() {
+        let (mut c, op) = p2wpkh_chain(100, 300, 100);
+        let spend = pkh_spend(op, 94);
+        mine(&mut c, 130, &spend);
+        let mut rows = vec![(100, funds(op)), (130, spends_row(&spend, op))];
+        for i in 0..=MAX_HISTORY_TXS as u32 {
+            let reuse = OutPoint::new(Txid::from_byte_array([0xee; 32]), i);
+            let mut row = funds(reuse);
+            let mut id = [0u8; 32];
+            id[..4].copy_from_slice(&i.to_be_bytes());
+            row.txid = Txid::from_byte_array(id);
+            rows.push((101 + i % 150, row));
+        }
+        let (_dir, db) = history_index(100, 300, &rows);
+        let (s, fake) = indexed(c, &db);
+        assert_eq!(
+            s.outspend(&op.txid, 0).unwrap(),
+            Outspend::Spent { txid: spend.compute_txid(), vin: 0, block: Some((bh(130), 130)) }
+        );
+        assert!(fake.tx_calls.load(Ordering::SeqCst) <= 3, "{} tx lookups", fake.tx_calls.load(Ordering::SeqCst));
+        assert_eq!(fake.chain.lock().unwrap().fetched, (100..=130).collect::<Vec<_>>(), "the old scan, from the funding block");
+    }
+
+    /// The history walk takes a search slot like a scan: with every slot
+    /// taken it is refused at once (pending), before any candidate lookup.
+    #[test]
+    fn p2wpkh_history_walk_waits_for_a_search_slot() {
+        let (mut c, op) = p2wpkh_chain(100, 2_505, 100);
+        let spend = pkh_spend(op, 95);
+        mine(&mut c, 2_400, &spend);
+        let (_dir, db) = history_index(100, 2_505, &[(100, funds(op)), (2_400, spends_row(&spend, op))]);
+        let (s, fake) = indexed(c, &db);
+        for v in 0..MAX_CONCURRENT_SCANS as u32 {
+            s.scanning.lock().unwrap().insert(OutPoint::new(Txid::from_byte_array([0xdd; 32]), v));
+        }
+        assert!(matches!(s.outspend(&op.txid, 0), Err(OutspendError::Pending(_))));
+        assert_eq!(fake.tx_calls.load(Ordering::SeqCst), 1, "only the funding lookup");
+        s.scanning.lock().unwrap().clear();
+        assert_eq!(
+            s.outspend(&op.txid, 0).unwrap(),
+            Outspend::Spent { txid: spend.compute_txid(), vin: 0, block: Some((bh(2_400), 2_400)) }
+        );
     }
 }
