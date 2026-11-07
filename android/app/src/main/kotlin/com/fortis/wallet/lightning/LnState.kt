@@ -1,5 +1,7 @@
 package com.fortis.wallet.lightning
 
+import com.fortis.wallet.data.LN_CHAIN
+import com.fortis.wallet.data.LN_XBT_CHAIN
 import com.fortis.wallet.data.WalletConfig
 import uniffi.wallet_ffi.LnBalances
 import uniffi.wallet_ffi.LnChannelState
@@ -38,24 +40,39 @@ sealed interface LnState {
     ) : LnState
 }
 
+/** A Lightning wallet of either chain ("ln" or "ln-xbt"). */
 fun isLightningWallet(w: WalletConfig?): Boolean = w != null && w.isLightning
 
-/** One Lightning wallet per app. */
-fun canAddLightningWallet(wallets: List<WalletConfig>): Boolean = wallets.none { it.isLightning }
+/**
+ * Whether "Add wallet" offers the Lightning wallet on [chain] ([LN_CHAIN] or [LN_XBT_CHAIN]):
+ * one of each per app. Lightning (XBT) only while `/ln/info`'s `xbt` object is enabled
+ * ([xbtEnabled]) or in a debug build ([debug]).
+ */
+fun canAddLightningWallet(wallets: List<WalletConfig>, chain: String, xbtEnabled: Boolean, debug: Boolean): Boolean = when (chain) {
+    LN_CHAIN -> wallets.none { it.chain == LN_CHAIN }
+    LN_XBT_CHAIN -> (xbtEnabled || debug) && wallets.none { it.chain == LN_XBT_CHAIN }
+    else -> false
+}
 
-fun lightningWalletOf(wallets: List<WalletConfig>): WalletConfig? = wallets.firstOrNull { it.isLightning }
+/** The app's Lightning wallet on [chain] ([LN_CHAIN] or [LN_XBT_CHAIN]), if it has one. */
+fun lightningWalletOf(wallets: List<WalletConfig>, chain: String): WalletConfig? = wallets.firstOrNull { it.chain == chain }
 
-/** The wallet a Lightning exit sweeps to: the first software mainnet BTC wallet. */
-fun lightningSweepWallet(wallets: List<WalletConfig>): WalletConfig? = lightningSweepWallets(wallets).firstOrNull()
+/** The wallet [lnWalletChain]'s exit sweeps to: the first eligible on-chain wallet of its chain. */
+fun lightningSweepWallet(wallets: List<WalletConfig>, lnWalletChain: String): WalletConfig? =
+    lightningSweepWallets(wallets, lnWalletChain).firstOrNull()
 
-/** The wallets Lightning funds can be moved to: software mainnet BTC wallets (they can
- *  derive a fresh address without a device). */
-fun lightningSweepWallets(wallets: List<WalletConfig>): List<WalletConfig> = wallets.filter {
-    it.chain == "btc" &&
-        (it.network == "mainnet" || it.network == "bitcoin") &&
-        !it.watchOnly &&
-        !it.hardware &&
-        it.sealed != null
+/** The wallets the Lightning wallet on [lnWalletChain] can move funds to: software mainnet
+ *  wallets of its own chain only (BTC for "ln", XBT for "ln-xbt"; they can derive a fresh
+ *  address without a device). Never another chain's: its addresses look the same. */
+fun lightningSweepWallets(wallets: List<WalletConfig>, lnWalletChain: String): List<WalletConfig> {
+    val onchain = onchainChainForLightning(lnWalletChain) ?: return emptyList()
+    return wallets.filter {
+        it.chain == onchain &&
+            (it.network == "mainnet" || it.network == "bitcoin") &&
+            !it.watchOnly &&
+            !it.hardware &&
+            it.sealed != null
+    }
 }
 
 fun deleteWalletLightningWarningSat(lightningSat: Long): Long? =

@@ -279,7 +279,7 @@ class SendRoutingTest {
     @Test
     fun lightningLinkWithoutLightningWalletAsksToCreateOne() {
         assertEquals(
-            LightningLinkRoute.CreateLightningWallet,
+            LightningLinkRoute.CreateLightningWallet("ln"),
             lightningLinkRoute(listOf(btc), bolt11, "bitcoin", nowValid),
         )
         assertEquals(
@@ -294,7 +294,7 @@ class SendRoutingTest {
         val unified = "bitcoin:$addr?amount=0.025&lightning=$bolt11"
         assertEquals(LightningLinkRoute.OnChain, lightningLinkRoute(listOf(btc), unified, "bitcoin", nowValid))
         assertEquals(LightningLinkRoute.OpenLightningWallet(ln.id), lightningLinkRoute(listOf(btc, ln), unified, "bitcoin", nowValid))
-        assertEquals(LightningLinkRoute.CreateLightningWallet, lightningLinkRoute(emptyList(), unified, "bitcoin", nowValid))
+        assertEquals(LightningLinkRoute.CreateLightningWallet("ln"), lightningLinkRoute(emptyList(), unified, "bitcoin", nowValid))
     }
 
     @Test
@@ -306,7 +306,7 @@ class SendRoutingTest {
         assertNull(pendingLinkRoute(emptyList(), addr, "bitcoin", nowValid))
         // Once loaded, the link is routed.
         assertEquals(LightningLinkRoute.OpenLightningWallet(ln.id), pendingLinkRoute(listOf(btc, ln), bolt11, "bitcoin", nowValid))
-        assertEquals(LightningLinkRoute.CreateLightningWallet, pendingLinkRoute(listOf(btc), bolt11, "bitcoin", nowValid))
+        assertEquals(LightningLinkRoute.CreateLightningWallet("ln"), pendingLinkRoute(listOf(btc), bolt11, "bitcoin", nowValid))
         assertEquals(LightningLinkRoute.OnChain, pendingLinkRoute(listOf(btc), addr, "bitcoin", nowValid))
         // A unified URI with only a BTC wallet still goes on-chain, as on main.
         assertEquals(LightningLinkRoute.OnChain, pendingLinkRoute(listOf(btc), unified, "bitcoin", nowValid))

@@ -503,6 +503,17 @@
     <string name="wallet_own_server_unreachable">Dein Server (%1$s) ist nicht erreichbar · neuer Versuch folgt</string>
     <string name="wallet_split_moving">Wird verschoben …</string>
     <string name="wallet_chain_lightning">Lightning</string>
+    <string name="wallet_chain_lightning_xbt">Lightning (XBT)</string>
+    <string name="ln_wrong_chain_btc_invoice">Das ist eine BTC-Lightning-Rechnung</string>
+    <string name="ln_wrong_chain_btc_offer">Das ist ein BTC-Lightning-Angebot</string>
+    <string name="ln_wrong_chain_xbt_invoice">Das ist eine XBT-Lightning-Rechnung</string>
+    <string name="ln_wrong_chain_xbt_offer">Das ist ein XBT-Lightning-Angebot</string>
+    <string name="ln_pay_from_btc_wallet">Mit deiner Lightning-Wallet bezahlen</string>
+    <string name="ln_pay_from_xbt_wallet">Mit deiner Lightning-(XBT)-Wallet bezahlen</string>
+    <string name="ln_qr_caption_xbt">XBT Lightning</string>
+    <string name="error_no_onchain_wallet_for_lightning_xbt">Füge eine XBT-Wallet hinzu, um Lightning-(XBT)-Guthaben On-Chain zu verschieben.</string>
+    <string name="send_create_lightning_xbt_wallet">Erstelle eine Lightning-(XBT)-Wallet, um das zu bezahlen</string>
+    <string name="error_lightning_xbt_unavailable">Lightning (XBT) ist noch nicht verfügbar.</string>
     <string name="error_lightning_wallet_exists">Diese App hat bereits eine Lightning-Wallet.</string>
     <string name="error_no_onchain_wallet_for_lightning">Füge eine BTC-Wallet hinzu, um Lightning-Guthaben On-Chain zu verschieben.</string>
     <string name="send_pay_with_lightning_wallet">Mit deiner Lightning-Wallet bezahlen</string>

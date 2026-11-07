@@ -152,6 +152,7 @@ class LnErrorCopyTest {
                     channelMaxSat = 500_000L,
                 )
             },
+            chain = uniffi.wallet_ffi.LnChain.BTC,
         )
 
         session.onUnlocked(w.id, ByteArray(64) { 1 }).join()

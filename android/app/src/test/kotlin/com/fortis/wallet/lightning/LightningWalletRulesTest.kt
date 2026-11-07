@@ -16,9 +16,9 @@ class LightningWalletRulesTest {
     fun onlyOneLightningWalletPerApp() {
         val btc = w("btc")
         val ln = w("ln", chain = "ln", network = "bitcoin")
-        assertTrue(canAddLightningWallet(listOf(btc)))
-        assertFalse(canAddLightningWallet(listOf(btc, ln)))
-        assertEquals(ln, lightningWalletOf(listOf(btc, ln)))
+        assertTrue(canAddLightningWallet(listOf(btc), "ln", xbtEnabled = false, debug = false))
+        assertFalse(canAddLightningWallet(listOf(btc, ln), "ln", xbtEnabled = false, debug = false))
+        assertEquals(ln, lightningWalletOf(listOf(btc, ln), "ln"))
         assertTrue(isLightningWallet(ln))
         assertFalse(isLightningWallet(btc))
         assertFalse(isLightningWallet(null))
@@ -32,7 +32,7 @@ class LightningWalletRulesTest {
         val regtest = w("reg", network = "regtest")
         val a = w("a")
         val b = w("b")
-        assertEquals(a, lightningSweepWallet(listOf(xbt, watch, hw, regtest, a, b)))
-        assertNull(lightningSweepWallet(listOf(xbt, w("ln", chain = "ln", network = "bitcoin"))))
+        assertEquals(a, lightningSweepWallet(listOf(xbt, watch, hw, regtest, a, b), "ln"))
+        assertNull(lightningSweepWallet(listOf(xbt, w("ln", chain = "ln", network = "bitcoin")), "ln"))
     }
 }

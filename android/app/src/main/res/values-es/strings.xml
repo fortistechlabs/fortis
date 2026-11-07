@@ -503,6 +503,17 @@
     <string name="wallet_own_server_unreachable">no se puede conectar con tu servidor (%1$s) · se reintentará</string>
     <string name="wallet_split_moving">Moviendo…</string>
     <string name="wallet_chain_lightning">Lightning</string>
+    <string name="wallet_chain_lightning_xbt">Lightning (XBT)</string>
+    <string name="ln_wrong_chain_btc_invoice">Esta es una factura Lightning de BTC</string>
+    <string name="ln_wrong_chain_btc_offer">Esta es una oferta Lightning de BTC</string>
+    <string name="ln_wrong_chain_xbt_invoice">Esta es una factura Lightning de XBT</string>
+    <string name="ln_wrong_chain_xbt_offer">Esta es una oferta Lightning de XBT</string>
+    <string name="ln_pay_from_btc_wallet">Pagar con tu monedero Lightning</string>
+    <string name="ln_pay_from_xbt_wallet">Pagar con tu monedero Lightning (XBT)</string>
+    <string name="ln_qr_caption_xbt">Lightning XBT</string>
+    <string name="error_no_onchain_wallet_for_lightning_xbt">Añade un monedero XBT para pasar los fondos de Lightning (XBT) a on-chain.</string>
+    <string name="send_create_lightning_xbt_wallet">Crea un monedero Lightning (XBT) para pagar esto</string>
+    <string name="error_lightning_xbt_unavailable">Lightning (XBT) aún no está disponible.</string>
     <string name="error_lightning_wallet_exists">Esta app ya tiene un monedero Lightning.</string>
     <string name="error_no_onchain_wallet_for_lightning">Añade un monedero BTC para pasar los fondos de Lightning a on-chain.</string>
     <string name="send_pay_with_lightning_wallet">Pagar con tu monedero Lightning</string>

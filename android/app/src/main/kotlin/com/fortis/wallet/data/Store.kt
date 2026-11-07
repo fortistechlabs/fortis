@@ -69,18 +69,23 @@ data class WalletConfig(
     val masterFingerprint: String? = null,
 ) {
     /** e.g. `XBT · Savings` — the label the picker shows. */
-    val display: String get() = (if (isLightning) "Lightning" else chain.uppercase()) + " · $name" + when {
+    val display: String get() = when (chain) {
+        LN_CHAIN -> "Lightning"
+        LN_XBT_CHAIN -> "Lightning (XBT)"
+        else -> chain.uppercase()
+    } + " · $name" + when {
         hardware -> " · hardware"
         watchOnly -> " · watch-only"
         else -> ""
     }
-    /** The other on-chain chain this seed can be added on; null for the Lightning wallet. */
+    /** The other on-chain chain this seed can be added on; null for a Lightning wallet. */
     val otherChain: String? get() = when (chain) {
         "btc" -> "xbt"
         "xbt" -> "btc"
         else -> null
     }
-    val isLightning: Boolean get() = chain == LN_CHAIN
+    /** A Lightning wallet of either chain: no on-chain session, addresses or xpub. */
+    val isLightning: Boolean get() = isLightningChain(chain)
 
     fun toJson(): JSONObject = JSONObject().apply {
         put("id", id); put("name", name); put("chain", chain); put("network", network)

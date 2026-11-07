@@ -31,6 +31,7 @@ class MainActivity : FragmentActivity() {
         }
         if (savedInstanceState == null) {
             textFromIntent(intent?.dataString)?.let { vm.openSendWithUri(it) }
+            intent?.let { openPushedWallet(it) }
         }
         setContent { FortisApp(vm) }
     }
@@ -39,6 +40,17 @@ class MainActivity : FragmentActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         textFromIntent(intent.dataString)?.let { vm.openSendWithUri(it) }
+        openPushedWallet(intent)
+    }
+
+    /** A tapped Lightning push (its data arrives as extras): open the Lightning wallet its
+     *  `chain` names ("xbt" → Lightning (XBT); none → the BTC one, as older LSPs send). */
+    private fun openPushedWallet(intent: Intent) {
+        val extras = intent.extras ?: return
+        val data = extras.keySet().mapNotNull { k -> extras.getString(k)?.let { k to it } }.toMap()
+        if (com.fortis.wallet.lightning.isLightningPush(data)) {
+            vm.openLightningFromPush(com.fortis.wallet.lightning.pushTargetChain(data))
+        }
     }
 
     override fun onStop() {

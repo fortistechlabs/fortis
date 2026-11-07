@@ -196,8 +196,9 @@ class LightningSession(
      *  was broadcast, so the caller can move on to a fresh receive address. */
     private val onSweepBroadcast: (suspend (walletId: String) -> Unit)? = null,
     private val ensureAuthHeader: (suspend (walletId: String) -> String)? = null,
-    /** The chain this session's node runs on; it starts only that chain's Lightning wallet. */
-    private val chain: LnChain = LnChain.BTC,
+    /** The chain this session's node runs on; it starts only that chain's Lightning wallet and
+     *  pays only that chain's invoices. No default: a session must say which chain it is. */
+    val chain: LnChain,
 ) {
     private val mutex = Mutex()
 
@@ -320,8 +321,9 @@ class LightningSession(
     }
 
     /**
-     * Sends the transit balance back to the BTC wallet when it is an orphan: a closed channel's
-     * funds, or a deposit nobody is waiting for. Returns the new balances and channel state.
+     * Sends the transit balance back to an on-chain wallet of this chain (the one
+     * [sweepAddressProvider] gives) when it is an orphan: a closed channel's funds, or a
+     * deposit nobody is waiting for. Returns the new balances and channel state.
      */
     private suspend fun sweepOrphanTransit(
         node: LnNodeApi,
@@ -452,7 +454,17 @@ class LightningSession(
                     ?: false
                 if (pending) throw LnFfiException.PaymentStateUnknown()
             }
-            val id = node.pay(target, amountMsat)
+            // Only this chain's invoice or offer is paid (BTC and XBT invoices look alike). An
+            // LNURL or Lightning address is paid by the invoice it returns, once that is checked.
+            val (payTarget, payAmount) = if (target is LnTarget.LnurlPay || target is LnTarget.LightningAddress) {
+                val amount = amountMsat?.takeIf { it > 0uL } ?: throw LnFfiException.Other("amount_required")
+                val invoice = node.lnurlInvoice(target, amount)
+                LnTarget.Bolt11(invoice = invoice, amountMsat = null, description = "", expirySecs = 0uL) to null
+            } else {
+                target to amountMsat
+            }
+            requireTargetChain(chain, payTarget)
+            val id = node.pay(payTarget, payAmount)
             drainImmediateEvents(node, unlockedWalletId ?: "")
             if (!node.blocksOnNextEvent) {
                 val p = runCatching { node.payments().firstOrNull { it.id == id } }.getOrNull()

@@ -138,6 +138,7 @@ class LightningSessionTest {
                     FakeNode()
                 },
                 info = LnInfoApi { sampleInfo() },
+                chain = uniffi.wallet_ffi.LnChain.BTC,
             )
             session.onUnlocked(btcMainnetWallet.id, sampleSeed).join()
             val st = session.state.value
@@ -175,6 +176,7 @@ class LightningSessionTest {
                     ).also { node = it }
                 },
                 info = LnInfoApi { sampleInfo() },
+                chain = uniffi.wallet_ffi.LnChain.BTC,
             )
             session.onUnlocked(btcMainnetWallet.id, sampleSeed).join()
             assertTrue(session.state.value is LnState.Ready)
@@ -215,6 +217,7 @@ class LightningSessionTest {
                     )
                 },
                 info = LnInfoApi { sampleInfo() },
+                chain = uniffi.wallet_ffi.LnChain.BTC,
             )
             // onUnlocked returns a Job immediately without blocking the caller thread.
             val job = session.onUnlocked(btcMainnetWallet.id, sampleSeed)
@@ -243,6 +246,7 @@ class LightningSessionTest {
                     FakeNode(onStart = { if (attempts.incrementAndGet() == 1) throw LnFfiException.Other("start_in_progress") })
                 },
                 info = LnInfoApi { sampleInfo() },
+                chain = uniffi.wallet_ffi.LnChain.BTC,
             )
             session.onUnlocked(btcMainnetWallet.id, sampleSeed).join()
             assertTrue(session.state.value is LnState.Error)
@@ -274,6 +278,7 @@ class LightningSessionTest {
                     )
                 },
                 info = LnInfoApi { sampleInfo() },
+                chain = uniffi.wallet_ffi.LnChain.BTC,
             )
             session.onUnlocked(btcMainnetWallet.id, sampleSeed).join()
             assertTrue(session.state.value is LnState.Error)
@@ -302,6 +307,7 @@ class LightningSessionTest {
                     FakeNode(onStart = { starts.incrementAndGet() }, onStop = { stops.incrementAndGet() })
                 },
                 info = LnInfoApi { sampleInfo() },
+                chain = uniffi.wallet_ffi.LnChain.BTC,
             )
             session.onUnlocked(btcMainnetWallet.id, sampleSeed).join()
             assertTrue(session.state.value is LnState.Ready)
@@ -331,6 +337,7 @@ class LightningSessionTest {
                     if (attempts.incrementAndGet() == 1) throw LnFfiException.LspUnreachable()
                     sampleInfo()
                 },
+                chain = uniffi.wallet_ffi.LnChain.BTC,
             )
             session.onUnlocked(btcMainnetWallet.id, sampleSeed).join()
             assertTrue(session.state.value is LnState.Error)
@@ -361,6 +368,7 @@ class LightningSessionTest {
                     fetchCount++
                     sampleInfo(nodeIdSuffix = if (fetchCount == 1) "11" else "22")
                 },
+                chain = uniffi.wallet_ffi.LnChain.BTC,
             )
             session.onUnlocked(btcMainnetWallet.id, sampleSeed).join()
             session.onRelocked().join()
@@ -397,6 +405,7 @@ class LightningSessionTest {
                 },
                 info = LnInfoApi { sampleInfo() },
                 sweepAddressProvider = { "bc1qar0srrr7xfkvy5l643lydnw9re59gtzzwf5mdq" },
+                chain = uniffi.wallet_ffi.LnChain.BTC,
             )
             session.onUnlocked(btcMainnetWallet.id, sampleSeed).join()
             val st = session.state.value
@@ -426,6 +435,7 @@ class LightningSessionTest {
                 store = store,
                 nodeFactory = { factoryCalls++; FakeNode() },
                 info = LnInfoApi { sampleInfo() },
+                chain = uniffi.wallet_ffi.LnChain.BTC,
             )
             for (w in ineligible) {
                 assertFalse("toggle must be hidden for ${w.id}", isLightningWallet(w))
@@ -465,6 +475,7 @@ class LightningSessionTest {
                 info = LnInfoApi {
                     sampleInfo(enabled = false, message = "Lightning maintenance in progress.")
                 },
+                chain = uniffi.wallet_ffi.LnChain.BTC,
             )
             session.onUnlocked(btcMainnetWallet.id, sampleSeed).join()
             assertEquals(uniffi.wallet_ffi.LnStartMode.EXIT, node.startMode)
@@ -509,6 +520,7 @@ class LightningSessionTest {
                 store = store,
                 nodeFactory = { FakeNode(channelValue = LnChannelState.READY).also { node = it } },
                 info = LnInfoApi { sampleInfo() },
+                chain = uniffi.wallet_ffi.LnChain.BTC,
             )
             session.onUnlocked(btcMainnetWallet.id, sampleSeed).join()
             assertTrue(session.state.value is LnState.Ready)
@@ -544,6 +556,7 @@ class LightningSessionTest {
                 nodeFactory = { node },
                 info = LnInfoApi { sampleInfo() },
                 sweepAddressProvider = { null },
+                chain = uniffi.wallet_ffi.LnChain.BTC,
             )
             session.onUnlocked(btcMainnetWallet.id, sampleSeed).join()
             events.add(uniffi.wallet_ffi.LnEventRecord.ChannelClosed("done"))

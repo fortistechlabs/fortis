@@ -75,6 +75,7 @@ class LightningReviewFixesTest {
         nodeFactory = { node },
         info = LnInfoApi { info },
         sweepAddressProvider = sweepTo?.let { a -> { _: String -> a } },
+        chain = uniffi.wallet_ffi.LnChain.BTC,
     )
 
     private fun newStore() = InMemoryLightningStore(mapOf(wallet.id to wallet))
@@ -245,6 +246,7 @@ class LightningReviewFixesTest {
                     store = store,
                     nodeFactory = { cfg -> seen += cfg.esploraUrl to cfg.esploraAuthHeader; Node() },
                     info = LnInfoApi { info },
+                    chain = uniffi.wallet_ffi.LnChain.BTC,
                 )
                 runBlocking { s.onUnlocked(wallet.id, seed).join() }
             }

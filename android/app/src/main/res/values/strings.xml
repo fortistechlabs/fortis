@@ -538,6 +538,17 @@
     <string name="ln_takeover_body">The other device will stop using Lightning for this wallet. Only continue if you no longer use it there; running both can put your channel funds at risk.</string>
     <string name="error_no_onchain_wallet_for_lightning">Add a BTC wallet to move Lightning funds on-chain.</string>
     <string name="wallet_chain_lightning">Lightning</string>
+    <string name="wallet_chain_lightning_xbt">Lightning (XBT)</string>
+    <string name="ln_wrong_chain_btc_invoice">This is a BTC Lightning invoice</string>
+    <string name="ln_wrong_chain_btc_offer">This is a BTC Lightning offer</string>
+    <string name="ln_wrong_chain_xbt_invoice">This is an XBT Lightning invoice</string>
+    <string name="ln_wrong_chain_xbt_offer">This is an XBT Lightning offer</string>
+    <string name="ln_pay_from_btc_wallet">Pay from your Lightning wallet</string>
+    <string name="ln_pay_from_xbt_wallet">Pay from your Lightning (XBT) wallet</string>
+    <string name="ln_qr_caption_xbt">XBT Lightning</string>
+    <string name="error_no_onchain_wallet_for_lightning_xbt">Add an XBT wallet to move Lightning (XBT) funds on-chain.</string>
+    <string name="send_create_lightning_xbt_wallet">Create a Lightning (XBT) wallet to pay this</string>
+    <string name="error_lightning_xbt_unavailable">Lightning (XBT) is not available yet.</string>
     <string name="send_pay_with_lightning_wallet">Pay with your Lightning wallet</string>
     <string name="send_create_lightning_wallet">Create a Lightning wallet to pay this</string>
     <string name="ln_wallet_first_receive_hint">No channel yet. A payment of %1$s sat or more opens your own channel (the fee is shown before you share the invoice). Smaller payments are held by Fortis.</string>

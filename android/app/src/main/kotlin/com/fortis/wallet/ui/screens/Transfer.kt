@@ -24,10 +24,12 @@ import com.fortis.wallet.ui.theme.FxType
 
 private fun fmt(sat: Long) = "%,d sat".format(sat)
 
-/** On-chain wallet → Lightning wallet (spec §2). The deposit is reviewed and signed in the
- *  usual confirm sheet. */
+/** On-chain wallet → the Lightning wallet of its chain (spec §2; XBT → Lightning (XBT)). The
+ *  deposit is reviewed and signed in the usual confirm sheet. */
 @Composable
 internal fun TransferToLightningTab(vm: WalletViewModel) {
+    val chain = vm.config?.chain ?: "btc"
+    // The wallet in view is on-chain: its Lightning side is its own chain's.
     val lnState by vm.lightning.state.collectAsState()
     val maxSat = vm.balances?.confirmedSat ?: 0L
     var amount by rememberSaveable { mutableStateOf("") }
@@ -38,7 +40,7 @@ internal fun TransferToLightningTab(vm: WalletViewModel) {
             Text(stringResource(R.string.transfer_to_lightning_title), color = Fx.text, fontWeight = FontWeight.SemiBold)
             Text(stringResource(R.string.transfer_to_lightning_help), style = FxType.meta, color = Fx.textDim)
             if (maxSat <= 0L) Text(stringResource(R.string.transfer_nothing_to_move), style = FxType.meta, color = Fx.warn)
-            SwapAmount(amount, { amount = it }, "btc", maxSat, hint = R.string.transfer_help_slider, inSat = inSat, onUnit = { inSat = it })
+            SwapAmount(amount, { amount = it }, chain, maxSat, hint = R.string.transfer_help_slider, inSat = inSat, onUnit = { inSat = it })
             val feerate = vm.feerates[6] ?: 2L
             val q = com.fortis.wallet.lightning.quoteToLightning(amountSat, 150 * feerate, feerate, 0L)
             if (amountSat > maxSat) ErrorText(stringResource(R.string.transfer_more_than_balance))
@@ -60,10 +62,11 @@ internal fun TransferToLightningTab(vm: WalletViewModel) {
     }
 }
 
-/** Lightning wallet → the first on-chain BTC wallet (spec §2): a splice-out, or a close for
- *  everything. */
+/** Lightning wallet → an on-chain wallet of its own chain (spec §2): a splice-out, or a close
+ *  for everything. */
 @Composable
 internal fun TransferToOnchainTab(vm: WalletViewModel) {
+    val chain = com.fortis.wallet.lightning.onchainChainForLightning(vm.config?.chain ?: "") ?: "btc"
     val lnState by vm.lightning.state.collectAsState()
     val ready = lnState as? LnState.Ready
     val channelSat = ready?.balances?.lightningSat?.toLong() ?: 0L
@@ -92,7 +95,7 @@ internal fun TransferToOnchainTab(vm: WalletViewModel) {
             if (maxSat <= 0L && vm.lastMoveToOnchain == null) {
                 Text(stringResource(R.string.transfer_nothing_to_move_ln), style = FxType.meta, color = Fx.textDim)
             }
-            SwapAmount(amount, { amount = it }, "btc", maxSat, hint = R.string.transfer_help_slider, inSat = inSat, onUnit = { inSat = it })
+            SwapAmount(amount, { amount = it }, chain, maxSat, hint = R.string.transfer_help_slider, inSat = inSat, onUnit = { inSat = it })
             val fromAccount = amountSat > channelSat
             // Leaving only crumbs behind is moving everything: a splice can't take the last few
             // thousand sat (its fees come out of what stays), a close takes it all.
@@ -123,10 +126,11 @@ internal fun TransferToOnchainTab(vm: WalletViewModel) {
 /** A move leaving less than this in the channel moves everything (closes it). */
 private const val MOVE_ALL_SLACK_SAT = 3_000L
 
-/** "To wallet": which BTC wallet the moved funds go to; a menu when there are several. */
+/** "To wallet": which on-chain wallet (of the Lightning wallet's own chain) the moved funds go
+ *  to; a menu when there are several. */
 @androidx.compose.runtime.Composable
 private fun MoveToWalletPicker(vm: WalletViewModel) {
-    val choices = com.fortis.wallet.lightning.lightningSweepWallets(vm.wallets)
+    val choices = vm.moveTargetChoices
     val current = vm.moveTargetWallet() ?: return
     var open by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
     androidx.compose.foundation.layout.Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {

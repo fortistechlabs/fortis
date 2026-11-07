@@ -24,21 +24,25 @@ class LightningOnboardTest {
         val ln = WalletConfig("a", "Spend", "ln", "bitcoin")
         val btc = WalletConfig("b", "Main", "btc", "bitcoin")
         try {
-            checkCanAddLightning(listOf(ln))
+            checkCanAddLightning(listOf(ln), "ln", xbtEnabled = false, debug = false)
             fail("expected LightningWalletExists")
         } catch (_: LightningWalletExists) {
         }
-        checkCanAddLightning(listOf(btc))
+        checkCanAddLightning(listOf(btc), "ln", xbtEnabled = false, debug = false)
     }
 
     @Test
     fun newLightningConfigIsLnOnMainnet() {
-        val c = newLightningConfig("id", "Spend", SealedSeed("blob", "salt"))
+        val c = newLightningConfig("id", "Spend", SealedSeed("blob", "salt"), "ln")
         assertEquals("ln", c.chain)
         assertEquals("bitcoin", c.network)
         assertEquals("blob", c.sealed)
         assertEquals("salt", c.salt)
         assertFalse(c.watchOnly)
+        // The XBT one is stored the same way, on its own chain.
+        val x = newLightningConfig("id2", "Spend", SealedSeed("blob", "salt"), "ln-xbt")
+        assertEquals("ln-xbt", x.chain)
+        assertEquals("bitcoin", x.network)
     }
 
     @Test
