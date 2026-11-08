@@ -7,6 +7,7 @@ import com.fortis.wallet.wallet.LightningSeedShared
 import com.fortis.wallet.wallet.checkLightningSeedNotShared
 import com.fortis.wallet.wallet.SealedSeed
 import com.fortis.wallet.wallet.checkCanAddLightning
+import com.fortis.wallet.wallet.LightningSeedUnverified
 import com.fortis.wallet.wallet.newLightningConfig
 import com.fortis.wallet.wallet.sealSeed
 import com.fortis.wallet.wallet.unsealSeed
@@ -72,5 +73,24 @@ class LightningOnboardTest {
             seed,
             lnBip39Seed("legal winner thank year wave sausage worth useful legal winner thank yellow", ""),
         )
+    }
+
+    /** The other Lightning wallet exists but its seed can't be read (unseal failed, or the app
+     *  locked meanwhile): refused with a retry, never let through unchecked. */
+    @Test
+    fun anUnreadableOtherLightningSeedRefusesTheNewOne() {
+        val seed = lnBip39Seed(phrase, "")
+        try {
+            checkLightningSeedNotShared(seed, otherExists = true, otherSeed = null)
+            fail("expected LightningSeedUnverified")
+        } catch (_: LightningSeedUnverified) {
+        }
+        try {
+            checkLightningSeedNotShared(seed, otherExists = true, otherSeed = lnBip39Seed(phrase, ""))
+            fail("expected LightningSeedShared")
+        } catch (_: LightningSeedShared) {
+        }
+        checkLightningSeedNotShared(seed, otherExists = false, otherSeed = null)
+        checkLightningSeedNotShared(seed, otherExists = true, otherSeed = lnBip39Seed(phrase, "other"))
     }
 }

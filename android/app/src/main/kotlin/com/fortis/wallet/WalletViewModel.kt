@@ -1802,16 +1802,21 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /** Throws (closing [keys]) when [keys] are the app's other Lightning wallet's: one phrase
-     *  (and passphrase) is never both the BTC and the XBT Lightning wallet. */
+     *  (and passphrase) is never both the BTC and the XBT Lightning wallet. Fails closed: when
+     *  the other wallet's seed can't be read to compare (unseal failed, or the app locked
+     *  meanwhile), refused with "unlock and try again". */
     private fun refuseSeedOfOtherLightningWallet(keys: LightningWalletKeys, chain: String, secret: String) {
         val other = wallets.firstOrNull { isLightningChain(it.chain) && it.chain != chain } ?: return
         val otherSeed = lightningSeedCopy(other, secret, lockGeneration)
         val seed = keys.copySeed()
         try {
-            checkLightningSeedNotShared(seed, otherSeed)
+            checkLightningSeedNotShared(seed, otherExists = true, otherSeed = otherSeed)
         } catch (e: LightningSeedShared) {
             keys.close()
             throw Exception(str(R.string.error_lightning_seed_shared))
+        } catch (e: com.fortis.wallet.wallet.LightningSeedUnverified) {
+            keys.close()
+            throw Exception(str(R.string.error_lightning_seed_unverified))
         } finally {
             seed.fill(0)
             otherSeed?.fill(0)

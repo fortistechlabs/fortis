@@ -515,6 +515,7 @@
     <string name="send_create_lightning_xbt_wallet">Crie uma carteira Lightning (XBT) para pagar isto</string>
     <string name="error_lightning_xbt_unavailable">O Lightning (XBT) ainda não está disponível.</string>
     <string name="error_lightning_seed_shared">Esta frase de recuperação já é a da sua outra carteira Lightning. Use uma frase diferente para cada carteira Lightning.</string>
+    <string name="error_lightning_seed_unverified">Não foi possível verificar esta frase face à sua outra carteira Lightning. Desbloqueie a app e tente novamente.</string>
     <string name="ln_send_onchain_target_xbt">Este é um endereço on-chain — envie a partir de uma carteira XBT.</string>
     <string name="settings_lightning_close_body_xbt">Isto fecha o seu canal Lightning e devolve os seus fundos à sua carteira XBT on-chain.</string>
     <string name="settings_lightning_close_body_to_xbt">Isto fecha o seu canal Lightning e devolve os seus fundos à sua carteira XBT on-chain “%1$s”.</string>
