@@ -54,6 +54,18 @@ fun canAddLightningWallet(wallets: List<WalletConfig>, chain: String, xbtEnabled
     else -> false
 }
 
+/** Can a Lightning wallet on [chain] be restored now: one per chain, never gated on the edge's
+ *  `xbt.enabled` — a restore is how a user who lost their phone gets their funds back. */
+fun canRestoreLightningWallet(wallets: List<WalletConfig>, chain: String): Boolean =
+    (chain == LN_CHAIN || chain == LN_XBT_CHAIN) && wallets.none { it.chain == chain }
+
+/** The Lightning wallets "Add wallet" offers: to restore, each until the app has it; to create,
+ *  as [canAddLightningWallet] says (Lightning (XBT) only while offered, or in a debug build). */
+fun lightningOnboardChoices(wallets: List<WalletConfig>, restoring: Boolean, xbtEnabled: Boolean, debug: Boolean): List<String> =
+    listOf(LN_CHAIN, LN_XBT_CHAIN).filter {
+        if (restoring) canRestoreLightningWallet(wallets, it) else canAddLightningWallet(wallets, it, xbtEnabled, debug)
+    }
+
 /** The app's Lightning wallet on [chain] ([LN_CHAIN] or [LN_XBT_CHAIN]), if it has one. */
 fun lightningWalletOf(wallets: List<WalletConfig>, chain: String): WalletConfig? = wallets.firstOrNull { it.chain == chain }
 

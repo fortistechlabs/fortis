@@ -7,7 +7,11 @@ import com.fortis.wallet.wallet.LightningSeedShared
 import com.fortis.wallet.wallet.checkLightningSeedNotShared
 import com.fortis.wallet.wallet.SealedSeed
 import com.fortis.wallet.wallet.checkCanAddLightning
+import com.fortis.wallet.wallet.checkCanOnboardLightning
 import com.fortis.wallet.wallet.LightningSeedUnverified
+import com.fortis.wallet.wallet.LightningWalletUnavailable
+import com.fortis.wallet.data.LN_CHAIN
+import com.fortis.wallet.data.LN_XBT_CHAIN
 import com.fortis.wallet.wallet.newLightningConfig
 import com.fortis.wallet.wallet.sealSeed
 import com.fortis.wallet.wallet.unsealSeed
@@ -73,6 +77,48 @@ class LightningOnboardTest {
             seed,
             lnBip39Seed("legal winner thank year wave sausage worth useful legal winner thank yellow", ""),
         )
+    }
+
+    /** Restoring a Lightning (XBT) wallet never waits on the edge's `xbt.enabled`: a user who
+     *  lost their phone must get to their funds (the node starts in exit mode). One per app
+     *  still holds; only creating a new one is gated. */
+    @Test
+    fun restoringXbtLightningIsNotGatedOnTheEdgeSwitch() {
+        val btc = WalletConfig("b", "Main", "btc", "mainnet")
+        val ln = WalletConfig("l", "Spend", LN_CHAIN, "bitcoin")
+        val lnXbt = WalletConfig("lx", "Spend", LN_XBT_CHAIN, "bitcoin")
+        checkCanOnboardLightning(listOf(btc), LN_XBT_CHAIN, restoring = true, xbtEnabled = false, debug = false)
+        checkCanOnboardLightning(listOf(btc, ln), LN_XBT_CHAIN, restoring = true, xbtEnabled = false, debug = false)
+        try {
+            checkCanOnboardLightning(listOf(btc), LN_XBT_CHAIN, restoring = false, xbtEnabled = false, debug = false)
+            fail("a new Lightning (XBT) wallet was created while it is off")
+        } catch (_: LightningWalletUnavailable) {
+        }
+        checkCanOnboardLightning(listOf(btc), LN_XBT_CHAIN, restoring = false, xbtEnabled = true, debug = false)
+        try {
+            checkCanOnboardLightning(listOf(lnXbt), LN_XBT_CHAIN, restoring = true, xbtEnabled = false, debug = false)
+            fail("a second Lightning (XBT) wallet was restored")
+        } catch (_: LightningWalletExists) {
+        }
+        try {
+            checkCanOnboardLightning(listOf(ln), LN_CHAIN, restoring = true, xbtEnabled = true, debug = true)
+            fail("a second Lightning wallet was restored")
+        } catch (_: LightningWalletExists) {
+        }
+    }
+
+    /** "Add wallet" → Restore offers Lightning (XBT) whatever the edge says (like the BTC one);
+     *  Create offers it only while it is on (or in a debug build). */
+    @Test
+    fun restoreOffersLightningXbtWhileCreateWaitsForTheSwitch() {
+        val btc = WalletConfig("b", "Main", "btc", "mainnet")
+        val ln = WalletConfig("l", "Spend", LN_CHAIN, "bitcoin")
+        val lnXbt = WalletConfig("lx", "Spend", LN_XBT_CHAIN, "bitcoin")
+        assertEquals(listOf(LN_CHAIN, LN_XBT_CHAIN), lightningOnboardChoices(listOf(btc), restoring = true, xbtEnabled = false, debug = false))
+        assertEquals(listOf(LN_CHAIN), lightningOnboardChoices(listOf(btc), restoring = false, xbtEnabled = false, debug = false))
+        assertEquals(listOf(LN_CHAIN, LN_XBT_CHAIN), lightningOnboardChoices(listOf(btc), restoring = false, xbtEnabled = true, debug = false))
+        assertEquals(listOf(LN_XBT_CHAIN), lightningOnboardChoices(listOf(ln), restoring = true, xbtEnabled = false, debug = false))
+        assertEquals(emptyList<String>(), lightningOnboardChoices(listOf(ln, lnXbt), restoring = true, xbtEnabled = true, debug = true))
     }
 
     /** The other Lightning wallet exists but its seed can't be read (unseal failed, or the app

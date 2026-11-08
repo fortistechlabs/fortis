@@ -42,6 +42,15 @@ fun checkCanAddLightning(wallets: List<WalletConfig>, chain: String, xbtEnabled:
     throw LightningWalletUnavailable()
 }
 
+/** Throws unless a Lightning wallet on [chain] may be created ([restoring] false) or restored
+ *  now. A restore is one per chain like a creation, but never waits on the edge's switch. */
+fun checkCanOnboardLightning(wallets: List<WalletConfig>, chain: String, restoring: Boolean, xbtEnabled: Boolean, debug: Boolean) {
+    if (!restoring) return checkCanAddLightning(wallets, chain, xbtEnabled, debug)
+    if (com.fortis.wallet.lightning.canRestoreLightningWallet(wallets, chain)) return
+    if (wallets.any { it.chain == chain }) throw LightningWalletExists()
+    throw LightningWalletUnavailable()
+}
+
 /** A Lightning wallet's stored config on [chain] ([LN_CHAIN] or "ln-xbt"): always network
  *  "bitcoin" (the node's), sealed like any signing wallet. */
 fun newLightningConfig(id: String, name: String, sealed: SealedSeed, chain: String): WalletConfig {

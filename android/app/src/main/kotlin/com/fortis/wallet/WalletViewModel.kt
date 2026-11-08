@@ -29,7 +29,7 @@ import com.fortis.wallet.wallet.LightningSeedShared
 import com.fortis.wallet.wallet.LightningWalletExists
 import com.fortis.wallet.wallet.LightningWalletKeys
 import com.fortis.wallet.wallet.WalletSession
-import com.fortis.wallet.wallet.checkCanAddLightning
+import com.fortis.wallet.wallet.checkCanOnboardLightning
 import com.fortis.wallet.wallet.checkLightningSeedNotShared
 import com.fortis.wallet.wallet.newLightningConfig
 import com.fortis.wallet.wallet.newMnemonic
@@ -737,6 +737,11 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
     /** Can a Lightning wallet on [chain] be added now (one per chain; XBT only while offered). */
     fun canAddLightning(chain: String): Boolean =
         canAddLightningWallet(wallets, chain, xbtLightningEnabled, lightningDebug)
+
+    /** The Lightning wallets the create ([restoring] false) or restore screen offers: a restore
+     *  is never gated on the edge's switch. */
+    fun lightningOnboardChoices(restoring: Boolean): List<String> =
+        com.fortis.wallet.lightning.lightningOnboardChoices(wallets, restoring, xbtLightningEnabled, lightningDebug)
 
     /** Re-reads whether the edge offers Lightning (XBT) (an old edge has no `xbt`: not offered). */
     fun refreshXbtLightningOffered() = viewModelScope.launch {
@@ -1742,18 +1747,18 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
     // --- create / restore ---
 
     fun createWallet(name: String, chain: String, network: String, passphrase: String, lock: LockSetup? = null) = wrap {
-        finishOnboard(name, chain, network, draftMnemonic!!, passphrase, lock)
+        finishOnboard(name, chain, network, draftMnemonic!!, passphrase, lock, restoring = false)
     }
 
     fun restoreWallet(name: String, phrase: String, passphrase: String, chain: String, network: String, lock: LockSetup? = null) = wrap {
         val words = phrase.trim().split(Regex("\\s+")).joinToString(" ")
-        finishOnboard(name, chain, network, words, passphrase, lock)
+        finishOnboard(name, chain, network, words, passphrase, lock, restoring = true)
         if (!isLightningChain(chain)) recoverSwaps(quiet = true)
     }
 
     private suspend fun finishOnboard(
         name: String, chain: String, network: String,
-        mnemonic: String, passphrase: String, lock: LockSetup?,
+        mnemonic: String, passphrase: String, lock: LockSetup?, restoring: Boolean,
     ) {
         if (settingUp) {
             requireNotNull(lock) { "the first wallet sets up the app lock" }
@@ -1764,8 +1769,10 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
         }
         val isLn = isLightningChain(chain)
         if (isLn) {
+            // Creating a Lightning (XBT) wallet waits for the edge to offer it; restoring one never
+            // does (its funds must be reachable — the node starts in exit mode when it is off).
             try {
-                checkCanAddLightning(wallets, chain, xbtLightningEnabled, lightningDebug)
+                checkCanOnboardLightning(wallets, chain, restoring, xbtLightningEnabled, lightningDebug)
             } catch (e: LightningWalletExists) {
                 throw Exception(str(R.string.error_lightning_wallet_exists))
             } catch (e: com.fortis.wallet.wallet.LightningWalletUnavailable) {

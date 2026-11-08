@@ -309,7 +309,7 @@ fun GenScreen(vm: WalletViewModel) {
 fun CreateScreen(vm: WalletViewModel) {
     val ctx = LocalContext.current
     var name by remember { mutableStateOf("") }
-    var chain by remember { mutableStateOf(startChain(vm)) }
+    var chain by remember { mutableStateOf(startChain(vm, restoring = false)) }
     var passphrase by remember { mutableStateOf("") }
     var ack by remember { mutableStateOf(false) }
     val words = (vm.draftMnemonic ?: "").split(" ")
@@ -324,7 +324,7 @@ fun CreateScreen(vm: WalletViewModel) {
         Text(stringResource(R.string.create_phrase_body, words.size), color = Fx.textDim)
         GlassCard { PhraseGrid(words) }
         Field(name, { name = it }, stringResource(R.string.field_wallet_name), maxLen = MAX_WALLET_NAME)
-        ChainRow(chain, lightningChoices(vm)) { chain = it }
+        ChainRow(chain, vm.lightningOnboardChoices(restoring = false)) { chain = it }
         Field(passphrase, { passphrase = it }, stringResource(R.string.field_passphrase), password = true)
         Text(stringResource(R.string.create_passphrase_hint), style = FxType.meta, color = Fx.textFaint)
         if (settingUp) LockChoiceFields(choice)
@@ -366,7 +366,7 @@ fun RestoreScreen(vm: WalletViewModel) {
     var name by remember { mutableStateOf("") }
     var phrase by remember { mutableStateOf("") }
     var passphrase by remember { mutableStateOf("") }
-    var chain by remember { mutableStateOf(startChain(vm)) }
+    var chain by remember { mutableStateOf(startChain(vm, restoring = true)) }
     val settingUp = vm.settingUp
     val choice = rememberLockChoice()
     val act = rememberFragmentActivity()
@@ -378,7 +378,8 @@ fun RestoreScreen(vm: WalletViewModel) {
         Field(name, { name = it }, stringResource(R.string.field_wallet_name), maxLen = MAX_WALLET_NAME)
         MnemonicField(phrase, { phrase = it })
         Field(passphrase, { passphrase = it }, stringResource(R.string.field_passphrase), password = true)
-        ChainRow(chain, lightningChoices(vm)) { chain = it }
+        // Lightning (XBT) is restorable whatever the edge says: its funds must be reachable.
+        ChainRow(chain, vm.lightningOnboardChoices(restoring = true)) { chain = it }
         // Only an on-chain wallet can also be listed on the other chain.
         if (!isLightningChain(chain)) Text(
             stringResource(R.string.restore_clone_hint, if (chain == "btc") "XBT" else "BTC"),
@@ -446,14 +447,9 @@ private fun ChainRow(chain: String, lightning: List<String>, onChain: (String) -
     Segmented(options, chain, onChain)
 }
 
-/** The Lightning wallets "Add wallet" can create now: each until the app has it, Lightning
- *  (XBT) only while the edge offers it (or in a debug build). */
-private fun lightningChoices(vm: WalletViewModel): List<String> =
-    listOf(LN_CHAIN, LN_XBT_CHAIN).filter { vm.canAddLightning(it) }
-
 /** The chain the create / restore screens open on: Lightning when that flow was asked for. */
-private fun startChain(vm: WalletViewModel): String =
-    vm.onboardChain?.takeIf { !isLightningChain(it) || vm.canAddLightning(it) } ?: "xbt"
+private fun startChain(vm: WalletViewModel, restoring: Boolean): String =
+    vm.onboardChain?.takeIf { !isLightningChain(it) || it in vm.lightningOnboardChoices(restoring) } ?: "xbt"
 
 /** A Lightning wallet's network is the node's ("bitcoin"); on-chain wallets use "mainnet". */
 private fun networkFor(chain: String): String = if (isLightningChain(chain)) "bitcoin" else "mainnet"
