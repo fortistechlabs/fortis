@@ -753,3 +753,46 @@ fn a_backfill_batch_is_refused_when_the_index_moved() {
     ));
     assert_eq!(db.spends_watermark(), Some(12));
 }
+
+/// Entries in `blocks`' active memtable (0 right after a flush).
+fn unflushed_blocks(db: &Db) -> u64 {
+    db.db
+        .property_int_value_cf(db.cf(CF_BLOCKS), "rocksdb.num-entries-active-mem-table")
+        .unwrap()
+        .unwrap()
+}
+
+/// Bulk (WAL-less) writes mark the database dirty until a flush; durable
+/// writes don't. A backfill batch flushes first only when that flag is set:
+/// in follow mode (every block written durably) it doesn't flush at all.
+#[test]
+fn backfill_flushes_only_over_unflushed_bulk_writes() {
+    let dir = tempfile::tempdir().unwrap();
+    {
+        let db = open_spends(&dir, None);
+        assert!(!db.bulk_pending(), "fresh");
+        db.apply(&(10..=11).map(|h| blk(h, vec![])).collect::<Vec<_>>(), 0, Durability::Bulk, false)
+            .unwrap();
+        assert!(db.bulk_pending(), "after a bulk write");
+        db.flush().unwrap();
+        assert!(!db.bulk_pending(), "flushed");
+        db.apply(&[blk(12, vec![])], 0, Durability::Durable, true).unwrap();
+        assert!(!db.bulk_pending(), "a durable write is in the WAL");
+    }
+    let db = open_spends(&dir, Some(10));
+    let batch = |hs: std::ops::RangeInclusive<u32>| -> Vec<_> {
+        hs.map(|h| (h, hash(h), vec![spend(h as u8, 0, 0x40 + h as u8, 0)])).collect()
+    };
+    // Live: the durable block 13 stays in the memtable through the batch.
+    db.apply(&[blk(13, vec![])], 0, Durability::Durable, true).unwrap();
+    assert!(unflushed_blocks(&db) > 0);
+    assert_eq!(db.write_backfill(None, &batch(10..=11)).unwrap(), Ok(()));
+    assert!(unflushed_blocks(&db) > 0, "no flush in live mode");
+    // A bulk block not yet flushed: the batch flushes it first.
+    db.apply(&[blk(14, vec![])], 0, Durability::Bulk, false).unwrap();
+    assert!(db.bulk_pending());
+    assert_eq!(db.write_backfill(Some(11), &batch(12..=13)).unwrap(), Ok(()));
+    assert!(!db.bulk_pending());
+    assert_eq!(unflushed_blocks(&db), 0, "flushed before the batch");
+    assert_eq!(db.spends_watermark(), Some(13));
+}

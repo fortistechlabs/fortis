@@ -4,6 +4,7 @@
 
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
 
 use anyhow::{bail, Context, Result};
@@ -133,6 +134,9 @@ pub struct Db {
     /// back (block apply, rollback, a backfill batch), so the mark one makes
     /// is never based on a value another has since changed.
     spends_lock: Arc<Mutex<()>>,
+    /// A bulk (WAL-less) [`Db::apply`] has written since the last flush:
+    /// set after each, cleared by [`Db::flush`].
+    bulk_dirty: Arc<AtomicBool>,
 }
 
 /// Rendered transactions cached at most: every one any client asks about
@@ -340,6 +344,7 @@ impl Db {
             render,
             spends_from: cfg.spends_from,
             spends_lock: Arc::default(),
+            bulk_dirty: Arc::default(),
         };
         db.guard(chain_id, true)?;
         Ok(db)
@@ -366,6 +371,7 @@ impl Db {
             render,
             spends_from: cfg.spends_from,
             spends_lock: Arc::default(),
+            bulk_dirty: Arc::default(),
         };
         db.guard(chain_id, false)?;
         Ok(db)
@@ -501,9 +507,15 @@ impl Db {
                 return Ok(Err(BackfillRefused::NotIndexed { height: *h, node: *hash, index: ours }));
             }
         }
-        // Bulk (WAL-less) block writes may not be flushed yet: a crash must
-        // not replay this batch's mark over blocks it lost.
-        self.flush()?;
+        // Bulk (WAL-less) block writes may not be flushed yet: this batch
+        // goes to the WAL, so after a crash it would replay — mark and all —
+        // over blocks the crash lost. Flush them first. Durable block writes
+        // are in the WAL ahead of this batch and replay with it, so with no
+        // bulk write pending (follow mode) there is nothing to flush. Checked
+        // under `spends_lock`, which every `apply` holds while it writes.
+        if self.bulk_pending() {
+            self.flush()?;
+        }
         let mut wb = WriteBatch::default();
         let cf_spends = self.cf(CF_SPENDS);
         for (h, _, spends) in blocks {
@@ -668,6 +680,9 @@ impl Db {
             Durability::Durable => durable(),
         };
         self.db.write_opt(wb, &wo).context("writing block batch")?;
+        if d == Durability::Bulk {
+            self.bulk_dirty.store(true, Ordering::SeqCst);
+        }
         Ok(recs)
     }
 
@@ -785,9 +800,19 @@ impl Db {
         let cfs: Vec<&ColumnFamily> = ALL_CFS.iter().map(|n| self.cf(n)).collect();
         let mut fo = FlushOptions::default();
         fo.set_wait(true);
-        self.db
-            .flush_cfs_opt(&cfs, &fo)
-            .context("flushing index database")
+        // Cleared before flushing: a bulk write racing this flush sets it
+        // again, so it is never left clear over an unflushed write.
+        let was = self.bulk_dirty.swap(false, Ordering::SeqCst);
+        let r = self.db.flush_cfs_opt(&cfs, &fo).context("flushing index database");
+        if r.is_err() && was {
+            self.bulk_dirty.store(true, Ordering::SeqCst);
+        }
+        r
+    }
+
+    /// A bulk (WAL-less) write has not been flushed yet.
+    pub fn bulk_pending(&self) -> bool {
+        self.bulk_dirty.load(Ordering::SeqCst)
     }
 
     /// Full compaction of `history` and `utxo` on a background thread (after
