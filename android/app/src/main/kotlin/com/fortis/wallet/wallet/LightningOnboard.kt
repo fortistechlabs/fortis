@@ -16,23 +16,47 @@ class LightningWalletUnavailable : Exception("Lightning (XBT) is not available y
  *  but one phrase for both is refused so the two wallets stay independent backups. */
 class LightningSeedShared : Exception("This recovery phrase is already your other Lightning wallet's.")
 
-/** The other Lightning wallet's seed could not be read to compare (its unseal failed, or the
- *  app locked meanwhile): the new one is refused until it can be. */
+/** The other Lightning wallet's seed could not be compared because the app locked meanwhile:
+ *  a restore is refused until the user unlocks and tries again. */
 class LightningSeedUnverified : Exception("Couldn't check this phrase against the other Lightning wallet.")
+
+/** The app's Lightning wallet on the other chain, as read for the shared-phrase check. */
+sealed interface OtherLightningSeed {
+    /** There is no other Lightning wallet. */
+    data object None : OtherLightningSeed
+    /** Its BIP-39 seed (the caller wipes it). */
+    class Seed(val bytes: ByteArray) : OtherLightningSeed
+    /** The app locked while it was being read (lock generation changed): try again unlocked. */
+    data object LockRace : OtherLightningSeed
+    /** It can't be read under the current, valid app secret (unseal or key derivation failed:
+     *  a corrupt stored seed). */
+    class Unreadable(val cause: Throwable) : OtherLightningSeed
+}
+
+/** Whether the shared-phrase check compared the seeds, or let the new wallet through unchecked. */
+enum class SeedCheck { Checked, Unchecked }
+
+/** The shared-phrase check of a new Lightning wallet's [seed] against [other]. Throws
+ *  [LightningSeedShared] when they are the same. A [OtherLightningSeed.LockRace] refuses a restore
+ *  ([restoring]) with [LightningSeedUnverified]. An unreadable other seed, or a lock race while
+ *  creating, never blocks: [SeedCheck.Unchecked]. The check is hygiene: each chain derives its
+ *  own node key and VSS store, so a corrupt wallet must never stop another (which may hold
+ *  funds) being restored. */
+fun checkLightningSeedNotShared(seed: ByteArray, other: OtherLightningSeed, restoring: Boolean): SeedCheck =
+    when (other) {
+        OtherLightningSeed.None -> SeedCheck.Checked
+        is OtherLightningSeed.Seed -> {
+            if (java.security.MessageDigest.isEqual(seed, other.bytes)) throw LightningSeedShared()
+            SeedCheck.Checked
+        }
+        OtherLightningSeed.LockRace -> if (restoring) throw LightningSeedUnverified() else SeedCheck.Unchecked
+        is OtherLightningSeed.Unreadable -> SeedCheck.Unchecked
+    }
 
 /** Throws [LightningSeedShared] when [seed] equals [otherSeed], the BIP-39 seed of the app's
  *  Lightning wallet on the other chain (null: there is none). */
-fun checkLightningSeedNotShared(seed: ByteArray, otherSeed: ByteArray?) =
-    checkLightningSeedNotShared(seed, otherExists = otherSeed != null, otherSeed = otherSeed)
-
-/** [checkLightningSeedNotShared] failing closed: when the other Lightning wallet exists
- *  ([otherExists]) but its seed couldn't be read ([otherSeed] null), throws
- *  [LightningSeedUnverified] rather than letting an unchecked phrase through. */
-fun checkLightningSeedNotShared(seed: ByteArray, otherExists: Boolean, otherSeed: ByteArray?) {
-    if (otherExists && otherSeed == null) throw LightningSeedUnverified()
-    if (otherSeed != null && java.security.MessageDigest.isEqual(seed, otherSeed)) {
-        throw LightningSeedShared()
-    }
+fun checkLightningSeedNotShared(seed: ByteArray, otherSeed: ByteArray?) {
+    checkLightningSeedNotShared(seed, otherSeed?.let { OtherLightningSeed.Seed(it) } ?: OtherLightningSeed.None, restoring = true)
 }
 
 /** Throws unless a Lightning wallet on [chain] ([LN_CHAIN] or "ln-xbt") may be added now. */

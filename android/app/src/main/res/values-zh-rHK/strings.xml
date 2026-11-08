@@ -513,6 +513,7 @@
     <string name="error_lightning_xbt_unavailable">閃電網絡 (XBT) 暫未提供。</string>
     <string name="error_lightning_seed_shared">此復原助記詞已用於你的另一個閃電網絡錢包。每個閃電網絡錢包請使用不同的助記詞。</string>
     <string name="error_lightning_seed_unverified">無法將此助記詞與你的另一個閃電網絡錢包核對。請解鎖應用程式後重試。</string>
+    <string name="warn_lightning_seed_unchecked">無法將此助記詞與你的另一個閃電網絡錢包核對。請確保每個閃電網絡錢包使用各自的助記詞。</string>
     <string name="ln_send_onchain_target_xbt">這是鏈上地址——請從 XBT 錢包傳送。</string>
     <string name="settings_lightning_close_body_xbt">這會關閉你的閃電網絡通道，並將資金轉回你的鏈上 XBT 錢包。</string>
     <string name="settings_lightning_close_body_to_xbt">這會關閉你的閃電網絡通道，並將資金轉回你的鏈上 XBT 錢包「%1$s」。</string>

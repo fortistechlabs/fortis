@@ -26,6 +26,7 @@ import com.fortis.wallet.ui.screens.amountError
 import com.fortis.wallet.ui.screens.amountLimit
 import com.fortis.wallet.ui.screens.btcLeg
 import com.fortis.wallet.wallet.LightningSeedShared
+import com.fortis.wallet.wallet.OtherLightningSeed
 import com.fortis.wallet.wallet.LightningWalletExists
 import com.fortis.wallet.wallet.LightningWalletKeys
 import com.fortis.wallet.wallet.WalletSession
@@ -856,22 +857,30 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
      *  [secret] when they are not cached. The unseal (Argon2) runs outside the [lnKeys] monitor,
      *  so [lock] never waits on it; the seed is copied inside it, so [lock] cannot close the keys
      *  in between. Null when the app was locked meanwhile ([gen] is stale) or the unseal failed. */
-    private fun lightningSeedCopy(c: WalletConfig, secret: String, gen: Long): ByteArray? {
+    private fun lightningSeedCopy(c: WalletConfig, secret: String, gen: Long): ByteArray? =
+        (lightningSeedRead(c, secret, gen) as? OtherLightningSeed.Seed)?.bytes
+
+    /** [lightningSeedCopy] as a typed result, so a lock race ([OtherLightningSeed.LockRace]: [gen]
+     *  is stale) is never confused with a seed that can't be read under the valid [secret]
+     *  ([OtherLightningSeed.Unreadable]). */
+    private fun lightningSeedRead(c: WalletConfig, secret: String, gen: Long): OtherLightningSeed {
         synchronized(lnKeys) {
-            if (lockGeneration != gen) return null
-            lnKeys[c.id]?.let { return it.copySeed() }
+            if (lockGeneration != gen) return OtherLightningSeed.LockRace
+            lnKeys[c.id]?.let { return OtherLightningSeed.Seed(it.copySeed()) }
         }
         val keys = try {
             val (mnemonic, passphrase) = unsealSeed(c.sealed!!, c.salt!!, secret)
             LightningWalletKeys.fromMnemonic(mnemonic, passphrase)
         } catch (e: Exception) {
-            return null
+            // Locked meanwhile (the secret may be gone with it): a race, not a corrupt seed.
+            synchronized(lnKeys) { if (lockGeneration != gen) return OtherLightningSeed.LockRace }
+            return OtherLightningSeed.Unreadable(e)
         }
         synchronized(lnKeys) {
-            if (lockGeneration != gen) { keys.close(); return null }
-            lnKeys[c.id]?.let { cached -> keys.close(); return cached.copySeed() }
+            if (lockGeneration != gen) { keys.close(); return OtherLightningSeed.LockRace }
+            lnKeys[c.id]?.let { cached -> keys.close(); return OtherLightningSeed.Seed(cached.copySeed()) }
             lnKeys[c.id] = keys
-            return keys.copySeed()
+            return OtherLightningSeed.Seed(keys.copySeed())
         }
     }
 
@@ -1784,7 +1793,7 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
         // Validate the phrase before sealing or saving anything.
         val s = if (isLn) null else WalletSession.signing(chain, network, mnemonic, passphrase)
         val keys = if (isLn) LightningWalletKeys.fromMnemonic(mnemonic, passphrase) else null
-        if (keys != null) refuseSeedOfOtherLightningWallet(keys, chain, secret)
+        if (keys != null) refuseSeedOfOtherLightningWallet(keys, chain, secret, restoring)
         val sealed = sealSeed(mnemonic, passphrase, secret)
         val id = UUID.randomUUID().toString()
         val c = if (isLn) {
@@ -1809,15 +1818,24 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /** Throws (closing [keys]) when [keys] are the app's other Lightning wallet's: one phrase
-     *  (and passphrase) is never both the BTC and the XBT Lightning wallet. Fails closed: when
-     *  the other wallet's seed can't be read to compare (unseal failed, or the app locked
-     *  meanwhile), refused with "unlock and try again". */
-    private fun refuseSeedOfOtherLightningWallet(keys: LightningWalletKeys, chain: String, secret: String) {
-        val other = wallets.firstOrNull { isLightningChain(it.chain) && it.chain != chain } ?: return
-        val otherSeed = lightningSeedCopy(other, secret, lockGeneration)
+     *  (and passphrase) is never both the BTC and the XBT Lightning wallet. When the other
+     *  wallet's seed can't be read: a lock race refuses a restore ("unlock and try again"); a
+     *  corrupt seed (or any failure while creating) never blocks — the new wallet goes ahead with
+     *  a warning, and a corrupt seed is reported. */
+    private fun refuseSeedOfOtherLightningWallet(keys: LightningWalletKeys, chain: String, secret: String, restoring: Boolean) {
+        val other = wallets.firstOrNull { isLightningChain(it.chain) && it.chain != chain }
+        val read = other?.let { lightningSeedRead(it, secret, lockGeneration) } ?: OtherLightningSeed.None
         val seed = keys.copySeed()
         try {
-            checkLightningSeedNotShared(seed, otherExists = true, otherSeed = otherSeed)
+            val check = checkLightningSeedNotShared(seed, read, restoring)
+            if (read is OtherLightningSeed.Unreadable) reportError("ln_seed_check", read.cause)
+            if (check == com.fortis.wallet.wallet.SeedCheck.Unchecked) {
+                runCatching {
+                    android.widget.Toast.makeText(
+                        getApplication(), str(R.string.warn_lightning_seed_unchecked), android.widget.Toast.LENGTH_LONG,
+                    ).show()
+                }
+            }
         } catch (e: LightningSeedShared) {
             keys.close()
             throw Exception(str(R.string.error_lightning_seed_shared))
@@ -1826,7 +1844,7 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
             throw Exception(str(R.string.error_lightning_seed_unverified))
         } finally {
             seed.fill(0)
-            otherSeed?.fill(0)
+            (read as? OtherLightningSeed.Seed)?.bytes?.fill(0)
         }
     }
 

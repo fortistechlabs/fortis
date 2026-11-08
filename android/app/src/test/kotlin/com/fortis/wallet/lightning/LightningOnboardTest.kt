@@ -9,6 +9,8 @@ import com.fortis.wallet.wallet.SealedSeed
 import com.fortis.wallet.wallet.checkCanAddLightning
 import com.fortis.wallet.wallet.checkCanOnboardLightning
 import com.fortis.wallet.wallet.LightningSeedUnverified
+import com.fortis.wallet.wallet.OtherLightningSeed
+import com.fortis.wallet.wallet.SeedCheck
 import com.fortis.wallet.wallet.LightningWalletUnavailable
 import com.fortis.wallet.data.LN_CHAIN
 import com.fortis.wallet.data.LN_XBT_CHAIN
@@ -121,22 +123,33 @@ class LightningOnboardTest {
         assertEquals(emptyList<String>(), lightningOnboardChoices(listOf(ln, lnXbt), restoring = true, xbtEnabled = true, debug = true))
     }
 
-    /** The other Lightning wallet exists but its seed can't be read (unseal failed, or the app
-     *  locked meanwhile): refused with a retry, never let through unchecked. */
+    /** The other Lightning wallet's seed, read as a typed result: compared when read; a lock
+     *  race (the app locked meanwhile) refuses a restore with "unlock and try again"; a seed that
+     *  can't be read under the valid app secret (corrupt) never blocks — the new wallet goes
+     *  ahead unchecked (with a warning). Creating never blocks on a read failure either. */
     @Test
-    fun anUnreadableOtherLightningSeedRefusesTheNewOne() {
+    fun theOtherLightningSeedIsComparedOrSkippedButOnlyALockRaceBlocksARestore() {
         val seed = lnBip39Seed(phrase, "")
+        val same = OtherLightningSeed.Seed(lnBip39Seed(phrase, ""))
+        val other = OtherLightningSeed.Seed(lnBip39Seed(phrase, "other"))
+        val corrupt = OtherLightningSeed.Unreadable(IllegalStateException("bad blob"))
+        for (restoring in listOf(true, false)) {
+            assertEquals(SeedCheck.Checked, checkLightningSeedNotShared(seed, OtherLightningSeed.None, restoring))
+            assertEquals(SeedCheck.Checked, checkLightningSeedNotShared(seed, other, restoring))
+            try {
+                checkLightningSeedNotShared(seed, same, restoring)
+                fail("expected LightningSeedShared")
+            } catch (_: LightningSeedShared) {
+            }
+            // Corrupt: fail open, whatever the flow.
+            assertEquals(SeedCheck.Unchecked, checkLightningSeedNotShared(seed, corrupt, restoring))
+        }
+        // Lock race: a restore is refused with a retry; a create goes ahead unchecked.
         try {
-            checkLightningSeedNotShared(seed, otherExists = true, otherSeed = null)
+            checkLightningSeedNotShared(seed, OtherLightningSeed.LockRace, restoring = true)
             fail("expected LightningSeedUnverified")
         } catch (_: LightningSeedUnverified) {
         }
-        try {
-            checkLightningSeedNotShared(seed, otherExists = true, otherSeed = lnBip39Seed(phrase, ""))
-            fail("expected LightningSeedShared")
-        } catch (_: LightningSeedShared) {
-        }
-        checkLightningSeedNotShared(seed, otherExists = false, otherSeed = null)
-        checkLightningSeedNotShared(seed, otherExists = true, otherSeed = lnBip39Seed(phrase, "other"))
+        assertEquals(SeedCheck.Unchecked, checkLightningSeedNotShared(seed, OtherLightningSeed.LockRace, restoring = false))
     }
 }

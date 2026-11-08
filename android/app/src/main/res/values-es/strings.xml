@@ -516,6 +516,7 @@
     <string name="error_lightning_xbt_unavailable">Lightning (XBT) aún no está disponible.</string>
     <string name="error_lightning_seed_shared">Esta frase de recuperación ya es la de tu otro monedero Lightning. Usa una frase distinta para cada monedero Lightning.</string>
     <string name="error_lightning_seed_unverified">No se pudo comprobar esta frase con tu otro monedero Lightning. Desbloquea la app y vuelve a intentarlo.</string>
+    <string name="warn_lightning_seed_unchecked">No se pudo comprobar esta frase con tu otro monedero Lightning. Asegúrate de que cada monedero Lightning tenga su propia frase.</string>
     <string name="ln_send_onchain_target_xbt">Es una dirección on-chain; envía desde un monedero XBT.</string>
     <string name="settings_lightning_close_body_xbt">Esto cierra tu canal de Lightning y devuelve tus fondos a tu monedero XBT on-chain.</string>
     <string name="settings_lightning_close_body_to_xbt">Esto cierra tu canal de Lightning y devuelve tus fondos a tu monedero XBT on-chain «%1$s».</string>
