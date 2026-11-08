@@ -37,7 +37,8 @@ pub struct ParsedBlock {
     pub prev: BlockHash,
     pub time: u32,
     pub txs: Vec<TxRows>,
-    /// Every recorded input of the block ([`spendcf::recorded`]), in order.
+    /// Every recorded input of the block ([`spendcf::recorded`]), in order;
+    /// empty below the index's `spends_from` (or with spends disabled).
     pub spends: Vec<BlockSpend>,
 }
 
@@ -94,18 +95,24 @@ pub fn tx_rows(tx: &Transaction) -> Option<TxRows> {
     })
 }
 
+/// Parse block `height` and extract its rows. Its recorded spends
+/// ([`ParsedBlock::spends`]) are extracted only if the index records spends
+/// at this height (`spends_from` set and at or below it): elsewhere they'd be
+/// thrown away, and finding them costs a txid per spending transaction.
 pub fn parse_and_extract(
     height: u32,
     hash: BlockHash,
     bytes: &[u8],
     fmt: &HeaderFormat,
+    spends_from: Option<u32>,
 ) -> Result<ParsedBlock> {
     let body = parse_block(bytes, fmt.header_len(height))?;
+    let want_spends = spends_from.is_some_and(|f| height >= f);
     let mut txs = Vec::new();
     let mut spends = Vec::new();
     for tx in &body.txs {
         let rows = tx_rows(tx);
-        if !tx.is_coinbase() && tx.input.iter().any(spendcf::recorded) {
+        if want_spends && !tx.is_coinbase() && tx.input.iter().any(spendcf::recorded) {
             let txid = rows.as_ref().map_or_else(|| tx.compute_txid(), |r| r.txid);
             spends.extend(spendcf::tx_spends(tx, txid));
         }
@@ -252,11 +259,63 @@ mod tests {
         let fmt = HeaderFormat {
             v2_from: Some(961640),
         };
-        let b = parse_and_extract(976000, hash, &bytes, &fmt).unwrap();
+        let b = parse_and_extract(976000, hash, &bytes, &fmt, Some(976000)).unwrap();
         assert_eq!(b.height, 976000);
         assert_eq!(b.hash, hash);
         for t in &b.txs {
             assert!(!t.funded.is_empty() || !t.spent.is_empty());
         }
+    }
+
+    /// Spends are extracted only where the index records them: from
+    /// `spends_from` on. Disabled, or below it, none are built (no txid is
+    /// computed for a tx that only spends).
+    #[test]
+    fn spends_are_extracted_only_from_spends_from() {
+        let bytes = hex::decode(include_str!("../tests/fixtures/xbt-976000.hex").trim()).unwrap();
+        let hash: BlockHash = "000000000000000098441aee029573795681eb1602c75271e809b136e9217373"
+            .parse()
+            .unwrap();
+        let fmt = HeaderFormat {
+            v2_from: Some(961640),
+        };
+        let at = parse_and_extract(976000, hash, &bytes, &fmt, Some(976000)).unwrap();
+        let below = parse_and_extract(976000, hash, &bytes, &fmt, Some(976001)).unwrap();
+        let off = parse_and_extract(976000, hash, &bytes, &fmt, None).unwrap();
+        let above = parse_and_extract(976000, hash, &bytes, &fmt, Some(1)).unwrap();
+        assert!(below.spends.is_empty(), "below spends_from");
+        assert!(off.spends.is_empty(), "spends disabled");
+        assert_eq!(above.spends, at.spends);
+        // The address rows don't depend on it.
+        assert_eq!(off.txs, at.txs);
+        assert_eq!(below.txs, at.txs);
+    }
+
+    #[test]
+    fn a_block_from_spends_from_yields_its_recorded_spends() {
+        let p2wsh_spend = input(
+            ScriptBuf::new(),
+            Witness::from_slice(&[vec![], vec![0; 72], vec![0; 71], vec![0x52; 71]]),
+        );
+        let t = tx(vec![p2wsh_spend], vec![]);
+        let block = bitcoin::Block {
+            header: bitcoin::block::Header {
+                version: bitcoin::block::Version::ONE,
+                prev_blockhash: BlockHash::all_zeros(),
+                merkle_root: bitcoin::TxMerkleNode::all_zeros(),
+                time: 0,
+                bits: bitcoin::CompactTarget::from_consensus(0),
+                nonce: 0,
+            },
+            txdata: vec![t.clone()],
+        };
+        let bytes = bitcoin::consensus::serialize(&block);
+        let fmt = HeaderFormat::BTC;
+        let h = BlockHash::all_zeros();
+        let on = parse_and_extract(5, h, &bytes, &fmt, Some(5)).unwrap();
+        assert_eq!(on.spends.len(), 1);
+        assert_eq!(on.spends[0].txid, t.compute_txid());
+        assert!(parse_and_extract(5, h, &bytes, &fmt, Some(6)).unwrap().spends.is_empty());
+        assert!(parse_and_extract(5, h, &bytes, &fmt, None).unwrap().spends.is_empty());
     }
 }

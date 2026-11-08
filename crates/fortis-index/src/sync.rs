@@ -213,6 +213,7 @@ impl Syncer {
         let rx = fetch_range(
             self.src.clone(),
             self.fmt,
+            self.db.spends_from(),
             from,
             to,
             &self.fetch,
@@ -633,6 +634,7 @@ mod tests {
             let rx = fetch_range(
                 src,
                 HeaderFormat::BTC,
+                None,
                 0,
                 383,
                 &FetchConfig { workers: 4 },
