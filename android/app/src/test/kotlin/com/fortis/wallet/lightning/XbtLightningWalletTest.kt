@@ -454,17 +454,54 @@ class XbtLightningWalletTest {
         assertEquals(LN_XBT_CHAIN, pushTargetChain(mapOf("kind" to "ln_received", "chain" to "XBT")))
     }
 
+    /** A tap on a notification the system posted from an FCM message: its extras carry FCM's
+     *  `google.message_id`. */
+    private fun fcm(vararg kv: Pair<String, String>) = mapOf(*kv) + ("google.message_id" to "0:1700000000000%abc")
+
     @Test
     fun push_extras_replayed_from_recents_open_nothing() {
-        val xbtPush = mapOf("kind" to "ln_received", "chain" to "xbt")
-        assertEquals(LN_XBT_CHAIN, pushedWalletChain(xbtPush, launchedFromHistory = false))
-        assertEquals(LN_CHAIN, pushedWalletChain(mapOf("kind" to "ln_held"), launchedFromHistory = false))
+        val xbtPush = fcm("kind" to "ln_received", "chain" to "xbt")
+        val noNonce: (String, String?) -> Boolean = { _, _ -> false }
+        assertEquals(LN_XBT_CHAIN, pushedWalletChain(xbtPush, null, launchedFromHistory = false, noNonce))
+        assertEquals(LN_CHAIN, pushedWalletChain(fcm("kind" to "ln_held"), Intent_MAIN, launchedFromHistory = false, noNonce))
         // Reopened from Recents, the activity gets the push's old extras again: not a new tap.
-        assertNull(pushedWalletChain(xbtPush, launchedFromHistory = true))
-        assertNull(pushedWalletChain(mapOf("kind" to "ln_held"), launchedFromHistory = true))
+        assertNull(pushedWalletChain(xbtPush, null, launchedFromHistory = true, noNonce))
+        assertNull(pushedWalletChain(fcm("kind" to "ln_held"), null, launchedFromHistory = true, noNonce))
         // Not a Lightning push at all.
-        assertNull(pushedWalletChain(mapOf("crash" to "true"), launchedFromHistory = false))
+        assertNull(pushedWalletChain(fcm("crash" to "true"), null, launchedFromHistory = false, noNonce))
     }
+
+    /** MainActivity is exported: any app can start it with push-looking extras. A notification
+     *  the app posted itself opens only with its private action and the one nonce it stored
+     *  for that chain (used once); a system-posted FCM one needs FCM's message id and a
+     *  Lightning `kind`. Spoofed extras could at most switch the wallet in view — they never
+     *  pay or move funds. */
+    @Test
+    fun push_taps_need_the_apps_own_nonce_or_fcm_extras() {
+        val stored = mutableMapOf(LN_XBT_CHAIN to "n-xbt", LN_CHAIN to "n-btc")
+        val consume: (String, String?) -> Boolean = { chain, nonce ->
+            nonce != null && stored[chain] == nonce && stored.remove(chain) != null
+        }
+        val own = mapOf("kind" to "ln_received", "chain" to "xbt", LIGHTNING_PUSH_NONCE to "n-xbt")
+        // Another chain's nonce, or none, or a wrong one: nothing.
+        assertNull(pushedWalletChain(own - "chain", LIGHTNING_PUSH_ACTION, launchedFromHistory = false, consume))
+        assertNull(pushedWalletChain(own - LIGHTNING_PUSH_NONCE, LIGHTNING_PUSH_ACTION, launchedFromHistory = false, consume))
+        assertNull(pushedWalletChain(own + (LIGHTNING_PUSH_NONCE to "guess"), LIGHTNING_PUSH_ACTION, launchedFromHistory = false, consume))
+        assertEquals(LN_XBT_CHAIN, pushedWalletChain(own, LIGHTNING_PUSH_ACTION, launchedFromHistory = false, consume))
+        // Used once: the same tap delivered again opens nothing.
+        assertNull(pushedWalletChain(own, LIGHTNING_PUSH_ACTION, launchedFromHistory = false, consume))
+        // The app's own action is never satisfied by FCM-looking extras instead of the nonce.
+        assertNull(pushedWalletChain(fcm("kind" to "ln_held"), LIGHTNING_PUSH_ACTION, launchedFromHistory = false, consume))
+        // Without the action: only a system-posted FCM notification (its message id), of a Lightning kind.
+        assertNull(pushedWalletChain(mapOf("kind" to "ln_held", "chain" to "xbt"), null, launchedFromHistory = false, consume))
+        assertNull(pushedWalletChain(mapOf("kind" to "ln_held", "google.message_id" to " "), null, launchedFromHistory = false, consume))
+        assertNull(pushedWalletChain(fcm("kind" to "swap_done", "chain" to "xbt"), null, launchedFromHistory = false, consume))
+        assertEquals(LN_XBT_CHAIN, pushedWalletChain(fcm("kind" to "ln_held", "chain" to "xbt"), null, launchedFromHistory = false, consume))
+        // The BTC nonce was never used.
+        assertEquals("n-btc", stored[LN_CHAIN])
+    }
+
+    private val Intent_MAIN = "android.intent.action.MAIN"
 
     // ---- two nodes, one process ----------------------------------------------
 

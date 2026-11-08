@@ -45,12 +45,15 @@ class MainActivity : FragmentActivity() {
 
     /** A tapped Lightning push (its data arrives as extras): open the Lightning wallet its
      *  `chain` names ("xbt" → Lightning (XBT); none → the BTC one, as older LSPs send). Not when
-     *  reopened from Recents, which replays the old push's extras. */
+     *  reopened from Recents, which replays the old push's extras, nor for extras another app
+     *  made up (this activity is exported): see [com.fortis.wallet.lightning.pushedWalletChain]. */
     private fun openPushedWallet(intent: Intent) {
         val extras = intent.extras ?: return
         val data = extras.keySet().mapNotNull { k -> extras.getString(k)?.let { k to it } }.toMap()
         val fromHistory = (intent.flags and Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY) != 0
-        com.fortis.wallet.lightning.pushedWalletChain(data, fromHistory)?.let { vm.openLightningFromPush(it) }
+        com.fortis.wallet.lightning.pushedWalletChain(data, intent.action, fromHistory) { chain, nonce ->
+            com.fortis.wallet.lightning.LightningPush.consumeNonce(applicationContext, chain, nonce)
+        }?.let { vm.openLightningFromPush(it) }
     }
 
     override fun onStop() {
