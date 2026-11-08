@@ -589,6 +589,7 @@
     <string name="transfer_review">Review</string>
     <string name="transfer_move">Move</string>
     <string name="transfer_too_small">Too small to move: after fees, at least 5,000 sat must arrive.</string>
+    <string name="transfer_fees_changed">Network fees went up since this was shown. Check the new amounts and move again.</string>
     <string name="transfer_needs_lightning">Your Lightning wallet isn\'t running yet. Open it once, then try again.</string>
     <string name="transfer_splice_busy">Your channel is still settling an earlier change. Try again in a few minutes.</string>
     <string name="transfer_pending">Moving to Lightning: waiting for 1 confirmation</string>

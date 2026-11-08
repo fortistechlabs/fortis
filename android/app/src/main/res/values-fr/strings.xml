@@ -556,6 +556,7 @@
     <string name="transfer_review">Vérifier</string>
     <string name="transfer_move">Transférer</string>
     <string name="transfer_too_small">Montant trop faible : après les frais, au moins 5 000 sat doivent arriver.</string>
+    <string name="transfer_fees_changed">Les frais de réseau ont augmenté depuis cet affichage. Vérifiez les nouveaux montants et relancez le transfert.</string>
     <string name="transfer_needs_lightning">Votre portefeuille Lightning n\'est pas encore actif. Ouvrez-le une fois, puis réessayez.</string>
     <string name="transfer_splice_busy">Votre canal termine encore une modification précédente. Réessayez dans quelques minutes.</string>
     <string name="transfer_pending">Transfert vers Lightning : en attente d\'une confirmation</string>

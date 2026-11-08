@@ -206,10 +206,14 @@ fun wrongChainPayMessage(walletChain: String, target: LnTarget, get: (Int) -> St
 /** The feerate (sat/vB) for moving funds out to [dest]: its own chain's backend estimate
  *  ([rateOf]), at least 1; 2 only when that estimate can't be had. */
 suspend fun moveOutFeerate(dest: WalletConfig, rateOf: suspend (WalletConfig) -> ULong): Long =
+    moveOutFeerateOrNull(dest, rateOf) ?: 2L
+
+/** [moveOutFeerate], null when the estimate can't be had. */
+suspend fun moveOutFeerateOrNull(dest: WalletConfig, rateOf: suspend (WalletConfig) -> ULong): Long? =
     try {
         rateOf(dest).toLong().coerceAtLeast(1L)
     } catch (e: kotlinx.coroutines.CancellationException) {
         throw e
     } catch (e: Exception) {
-        2L
+        null
     }

@@ -556,6 +556,7 @@
     <string name="transfer_review">Revisar</string>
     <string name="transfer_move">Mover</string>
     <string name="transfer_too_small">Demasiado poco: tras las comisiones deben llegar al menos 5.000 sat.</string>
+    <string name="transfer_fees_changed">Las comisiones de red han subido desde que se mostró. Revisa los nuevos importes y vuelve a mover.</string>
     <string name="transfer_needs_lightning">Tu cartera Lightning aún no está activa. Ábrela una vez y vuelve a intentarlo.</string>
     <string name="transfer_splice_busy">Tu canal aún está completando un cambio anterior. Inténtalo de nuevo en unos minutos.</string>
     <string name="transfer_pending">Moviendo a Lightning: esperando 1 confirmación</string>

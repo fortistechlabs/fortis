@@ -119,7 +119,8 @@ internal fun TransferToOnchainTab(vm: WalletViewModel) {
                 enabled = (q != null || all) && amountSat <= maxSat && ready != null && !vm.movingToOnchain,
                 working = vm.movingToOnchain,
             ) {
-                gate.require(vm, gateAct, gateScope) { vm.moveToOnchain(amountSat, all, fromAccount) }
+                // The quote shown is the one confirmed: it runs at its own feerate.
+                gate.require(vm, gateAct, gateScope) { vm.moveToOnchain(q, amountSat, all, fromAccount) }
             }
         }
     }

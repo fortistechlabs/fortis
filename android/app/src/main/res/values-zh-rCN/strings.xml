@@ -553,6 +553,7 @@
     <string name="transfer_review">检查</string>
     <string name="transfer_move">转移</string>
     <string name="transfer_too_small">金额太小：扣除手续费后至少要到账 5,000 聪。</string>
+    <string name="transfer_fees_changed">网络手续费自显示后已上涨。请查看新的金额后再次转移。</string>
     <string name="transfer_needs_lightning">你的闪电钱包尚未运行。请先打开一次，然后重试。</string>
     <string name="transfer_splice_busy">你的通道仍在完成之前的更改。请几分钟后重试。</string>
     <string name="transfer_pending">正在转到闪电网络：等待 1 次确认</string>

@@ -556,6 +556,7 @@
     <string name="transfer_review">Prüfen</string>
     <string name="transfer_move">Übertragen</string>
     <string name="transfer_too_small">Zu wenig: Nach Gebühren müssen mindestens 5.000 sat ankommen.</string>
+    <string name="transfer_fees_changed">Die Netzwerkgebühren sind seit der Anzeige gestiegen. Prüfe die neuen Beträge und verschiebe erneut.</string>
     <string name="transfer_needs_lightning">Deine Lightning-Wallet läuft noch nicht. Öffne sie einmal und versuche es erneut.</string>
     <string name="transfer_splice_busy">Dein Kanal schließt noch eine frühere Änderung ab. Versuche es in ein paar Minuten erneut.</string>
     <string name="transfer_pending">Übertragung zu Lightning: wartet auf 1 Bestätigung</string>

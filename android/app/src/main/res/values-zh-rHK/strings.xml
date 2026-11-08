@@ -553,6 +553,7 @@
     <string name="transfer_review">檢查</string>
     <string name="transfer_move">轉移</string>
     <string name="transfer_too_small">金額太小：扣除手續費後至少要到帳 5,000 聰。</string>
+    <string name="transfer_fees_changed">網絡手續費自顯示後已上漲。請查看新的金額後再次轉移。</string>
     <string name="transfer_needs_lightning">你的閃電錢包尚未運行。請先開啟一次，然後重試。</string>
     <string name="transfer_splice_busy">你的通道仍在完成之前的變更。請幾分鐘後重試。</string>
     <string name="transfer_pending">正在轉到閃電網路：等待 1 次確認</string>

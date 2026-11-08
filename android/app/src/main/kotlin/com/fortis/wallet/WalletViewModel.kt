@@ -2404,40 +2404,54 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /** The quote for moving [amountSat] out of the Lightning wallet in view, at its destination
-     *  chain's feerate ([refreshMoveFeerate]; 2 sat/vB until that is known). */
-    fun quoteMoveToOnchain(amountSat: Long): com.fortis.wallet.lightning.ToOnchainQuote? =
-        com.fortis.wallet.lightning.quoteToOnchain(amountSat, ln.moveFeerate ?: 2L)
+     *  chain's feerate ([refreshMoveFeerate]; 2 sat/vB, marked as a stand-in, until that is
+     *  known). It carries its feerate: confirming it runs it at that rate ([moveToOnchain]). */
+    fun quoteMoveToOnchain(amountSat: Long): com.fortis.wallet.lightning.ToOnchainQuote? {
+        val rate = ln.moveFeerate
+        return com.fortis.wallet.lightning.quoteToOnchain(amountSat, rate ?: 2L, fallbackFeerate = rate == null)
+    }
 
     /** Reads the feerate of the chain the wallet in view's funds move out to (its move target's). */
     fun refreshMoveFeerate() = viewModelScope.launch { moveOutFeerate(ln) }
 
-    /** [side]'s move-out feerate from its move target wallet's own chain backend (2 when none). */
-    private suspend fun moveOutFeerate(side: LnSide): Long {
-        val dest = moveTargetWallet(side.walletChain) ?: return 2L
-        val rate = com.fortis.wallet.lightning.moveOutFeerate(dest) { w ->
+    /** [side]'s move-out feerate from its move target wallet's own chain backend; null (and the
+     *  quotes' 2 sat/vB stand-in) when there is no target or it can't be read. */
+    private suspend fun moveOutFeerate(side: LnSide): Long? {
+        val dest = moveTargetWallet(side.walletChain) ?: return null
+        val rate = com.fortis.wallet.lightning.moveOutFeerateOrNull(dest) { w ->
             val s = withContext(Dispatchers.Default) { ensureSession(w.id, quiet = true) } ?: error("wallet locked")
             withContext(Dispatchers.IO) { overviewBackend(w, s).feerateSatVb(6) }
         }
-        side.moveFeerate = rate
+        if (rate != null) side.moveFeerate = rate
         return rate
     }
 
     /** Lightning → on-chain: splices [amountSat] (fees included) out of the channel of the
      *  Lightning wallet in view to an on-chain wallet of its own chain (none: refused with a
      *  message), then pays the operator's share over Lightning. Moving everything closes the
-     *  channel instead. Call after the identity check. */
-    fun moveToOnchain(amountSat: Long, all: Boolean, fromAccount: Boolean = false) = viewModelScope.launch {
+     *  channel instead. [approved] is the quote the user confirmed (null: none was shown);
+     *  it runs as shown, at its own feerate. When fees rose well past it meanwhile, nothing
+     *  moves: the new amounts are shown to confirm again. Call after the identity check. */
+    fun moveToOnchain(
+        approved: com.fortis.wallet.lightning.ToOnchainQuote?, amountSat: Long, all: Boolean, fromAccount: Boolean = false,
+    ) = viewModelScope.launch {
         val side = ln
         if (side.movingToOnchain) return@launch
         error = null
         side.lastMoveToOnchain = null
         if (!reauth.consume()) { error = str(R.string.reauth_needed); return@launch }
-        // The destination chain's own feerate (a Lightning tab has no on-chain feerates).
-        val feerate = moveOutFeerate(side)
-        // Everything (a close) needs no quote: the close takes what is there, no transfer fee on crumbs.
-        val q = com.fortis.wallet.lightning.quoteToOnchain(amountSat, feerate)
-            ?: if (all) com.fortis.wallet.lightning.ToOnchainQuote(amountSat, 0L, 0L)
-            else run { error = str(R.string.transfer_too_small); return@launch }
+        // The destination chain's own feerate now (a Lightning tab has no on-chain feerates):
+        // only a check on the confirmed quote, never a silent re-quote.
+        val step = com.fortis.wallet.lightning.moveOutStep(approved, amountSat, all, moveOutFeerate(side))
+        val (q, feerate) = when (step) {
+            is com.fortis.wallet.lightning.MoveOutStep.Execute -> step.quote to step.feerateSatVb
+            is com.fortis.wallet.lightning.MoveOutStep.Requote -> {
+                side.moveFeerate = step.feerateSatVb // the summary shows the new amounts
+                error = str(R.string.transfer_fees_changed)
+                return@launch
+            }
+            com.fortis.wallet.lightning.MoveOutStep.TooSmall -> { error = str(R.string.transfer_too_small); return@launch }
+        }
         val dest = moveTargetWallet(side.walletChain) ?: run {
             error = noOnchainWalletText(side); return@launch
         }

@@ -556,6 +556,7 @@
     <string name="transfer_review">Revisar</string>
     <string name="transfer_move">Mover</string>
     <string name="transfer_too_small">Muito pouco: após as taxas, devem chegar pelo menos 5.000 sat.</string>
+    <string name="transfer_fees_changed">As taxas de rede subiram desde que isto foi mostrado. Confira os novos valores e mova novamente.</string>
     <string name="transfer_needs_lightning">Sua carteira Lightning ainda não está ativa. Abra-a uma vez e tente de novo.</string>
     <string name="transfer_splice_busy">Seu canal ainda está concluindo uma alteração anterior. Tente de novo em alguns minutos.</string>
     <string name="transfer_pending">Movendo para Lightning: aguardando 1 confirmação</string>
