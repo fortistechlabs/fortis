@@ -5,23 +5,39 @@
 //! forward block scan.
 //!
 //! Only inputs that can spend such an output are recorded: a single-key spend
-//! (legacy, P2WPKH, Taproot key path) never spends a 2-of-2 or a script, so
-//! those are left out — most of the chain's inputs.
+//! (legacy, P2WPKH, Taproot key path) never spends a 2-of-2 or a script, and a
+//! Taproot script-path spend never spends a P2WSH output (the only kind this
+//! answers for), so those are left out — most of the chain's inputs.
 
 use bitcoin::hashes::Hash;
 use bitcoin::{OutPoint, Transaction, TxIn, Txid};
 
 /// Whether `input`'s spend is recorded. True unless the witness is empty
 /// (legacy), exactly two items with a 33-byte second (P2WPKH, bare or
-/// P2SH-wrapped), or exactly one item of 64 or 65 bytes (Taproot key path).
+/// P2SH-wrapped), or — once a Taproot annex (a last item starting 0x50, of
+/// two or more) is set aside — exactly one item of 64 or 65 bytes (Taproot
+/// key path) or a last item that is a Taproot control block (script path).
+/// The column family only answers for P2WSH outputs, which are none of these.
 pub fn recorded(input: &TxIn) -> bool {
     let w = &input.witness;
     match w.len() {
-        0 => false,
-        1 => !matches!(w.nth(0).map(<[u8]>::len), Some(64 | 65)),
-        2 => w.nth(1).map(<[u8]>::len) != Some(33),
-        _ => true,
+        0 => return false,
+        2 if w.nth(1).map(<[u8]>::len) == Some(33) => return false,
+        _ => {}
     }
+    let annexed = w.len() >= 2 && w.last().is_some_and(|a| a.first() == Some(&0x50));
+    let n = w.len() - usize::from(annexed);
+    if n == 1 && matches!(w.nth(0).map(<[u8]>::len), Some(64 | 65)) {
+        return false;
+    }
+    !(n >= 2 && w.nth(n - 1).is_some_and(control_block))
+}
+
+/// A Taproot control block: a leaf-version byte (0xc0 or 0xc1, the
+/// tapscript leaf with either parity), the 32-byte internal key, then zero or
+/// more 32-byte Merkle path steps.
+fn control_block(c: &[u8]) -> bool {
+    c.len() >= 33 && (c.len() - 33) % 32 == 0 && c[0] & 0xfe == 0xc0
 }
 
 /// One recorded spend in a block: input `vin` of `txid` spends `prevout`.
@@ -122,6 +138,63 @@ mod tests {
             "2 items, script"
         );
         assert!(recorded(&input(&[vec![0; 63]])), "1 item, not a signature");
+    }
+
+    /// A Taproot script-path spend ends in its control block (33 + 32k bytes,
+    /// leaf version byte 0xc0/0xc1), or — with an annex (last item starting
+    /// 0x50) — has it second to last. The spends column family only answers
+    /// for P2WSH outputs, so those are skipped; the P2WSH shapes Lightning
+    /// spends (2-of-2, HTLC, to_local, anchor) stay recorded.
+    #[test]
+    fn recorded_skips_taproot_script_path_and_keeps_p2wsh_shapes() {
+        let control = |k: usize, leaf: u8| {
+            let mut c = vec![0x02; 33 + 32 * k];
+            c[0] = leaf;
+            c
+        };
+        let script = vec![0x20; 34];
+        for k in [0, 1, 2, 5] {
+            for leaf in [0xc0, 0xc1] {
+                assert!(
+                    !recorded(&input(&[vec![0; 64], script.clone(), control(k, leaf)])),
+                    "script path, k={k}, leaf {leaf:#x}"
+                );
+                let annex = vec![0x50, 1, 2];
+                assert!(
+                    !recorded(&input(&[vec![0; 64], script.clone(), control(k, leaf), annex])),
+                    "script path with annex, k={k}"
+                );
+            }
+        }
+        // Two items: a script and its control block (no signature needed).
+        assert!(!recorded(&input(&[script.clone(), control(0, 0xc0)])), "2-item script path");
+        // Key path with an annex: a single-key spend.
+        assert!(!recorded(&input(&[vec![0; 64], vec![0x50]])), "key path, annex");
+        assert!(!recorded(&input(&[vec![0; 65], vec![0x50, 9]])), "key path, sighash, annex");
+
+        // Not a control block: wrong length or leaf byte.
+        assert!(recorded(&input(&[vec![0; 64], script.clone(), vec![0xc0; 34]])), "length 34");
+        assert!(recorded(&input(&[vec![0; 64], script.clone(), control(1, 0xc2)])), "leaf 0xc2");
+        assert!(recorded(&input(&[vec![0; 64], script.clone(), control(1, 0xa0)])), "leaf 0xa0");
+
+        // P2WSH 2-of-2 (funding): empty, sig, sig, 71-byte script (OP_2 ...).
+        let funding = vec![0x52; 71];
+        assert!(recorded(&input(&[vec![], vec![0; 72], vec![0; 71], funding.clone()])), "2-of-2");
+        // A 2-of-2 whose script happens to start 0x50 is still a P2WSH.
+        assert!(recorded(&input(&[vec![], vec![0; 72], vec![0; 71], vec![0x52; 71], vec![0x50; 71]])));
+        // to_local: sig, empty (or 1), script starting OP_IF.
+        let to_local = vec![0x63; 79];
+        assert!(recorded(&input(&[vec![0; 72], vec![], to_local.clone()])), "to_local delayed");
+        assert!(recorded(&input(&[vec![0; 72], vec![1], to_local])), "to_local revoked");
+        // Offered / received HTLC: scripts starting OP_DUP.
+        let htlc = vec![0x76; 133];
+        assert!(recorded(&input(&[vec![], vec![0; 72], vec![0; 72], vec![], htlc.clone()])), "HTLC timeout");
+        assert!(recorded(&input(&[vec![], vec![0; 72], vec![0; 72], vec![7; 32], htlc.clone()])), "HTLC success");
+        assert!(recorded(&input(&[vec![0; 72], vec![2; 33], htlc])), "HTLC revoked");
+        // Anchor: sig (or empty after 16 blocks) and the 40-byte script.
+        let anchor = vec![0x21; 40];
+        assert!(recorded(&input(&[vec![0; 72], anchor.clone()])), "anchor");
+        assert!(recorded(&input(&[vec![], anchor])), "anchor, anyone after 16 blocks");
     }
 
     #[test]
