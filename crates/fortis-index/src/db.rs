@@ -1050,6 +1050,13 @@ impl<'a> Reader<'a> {
             .transpose()
     }
 
+    /// The hash of the indexed block at `height`, if there is one.
+    pub fn block_hash(&self, height: u32) -> Result<Option<BlockHash>> {
+        self.get(CF_BLOCKS, &height_key(height))?
+            .map(|v| BlockRec::decode(&v).map(|r| r.hash))
+            .transpose()
+    }
+
     pub fn txid(&self, n: TxNum) -> Result<Option<Txid>> {
         match self.get(CF_TXIDS, &txnum_key(n))? {
             None => Ok(None),
