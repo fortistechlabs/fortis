@@ -306,8 +306,8 @@ The unit file in this repo carries `--spends-from-height 973000` for BTC. Every 
 #     birth time (%w; '-' if the filesystem has none) and modification time (%y)
 sudo stat -c '%w  %y' /var/lib/fortis/lsp/keys_seed
 # (b) the time of block 973000 on Bitcoin Core (the "time" field)
-sudo bitcoin-cli -rpcport=8332 -rpccookiefile=/var/lib/bitcoin-core/.cookie getblockheader \
-  $(sudo bitcoin-cli -rpcport=8332 -rpccookiefile=/var/lib/bitcoin-core/.cookie getblockhash 973000)
+core-cli getblockheader \
+  $(core-cli getblockhash 973000)
 date -d @<time>
 ```
 
@@ -319,9 +319,9 @@ Proceed only if the block time from (b) is at least **2 hours** earlier than tha
 
 1. **Both index nodes need `-txindex`** (the spends lookups fetch the spending transactions). Confirm for each node before going on; `txindex` must report `"synced": true`:
    ```sh
-   # the cookies are readable by root and the bitcoin-knots / bitcoin-core groups, hence sudo
-   sudo bitcoin-cli -rpcport=8432 -rpccookiefile=/var/lib/bitcoin-knots/.cookie getindexinfo   # XBT (Knots)
-   sudo bitcoin-cli -rpcport=8332 -rpccookiefile=/var/lib/bitcoin-core/.cookie getindexinfo    # BTC (Core)
+   # core-cli / knots-cli wrap bitcoin-cli for each node (no sudo needed once your account is in the node group)
+   knots-cli getindexinfo   # XBT (Knots)
+   core-cli getindexinfo    # BTC (Core)
    ```
    On both nodes the output must list `txindex` with `"synced": true`. If either lacks it or is still syncing, stop here and fix the node first.
 2. **Dry run (recommended).** Run the new `fortis-index` against a copy of the XBT index DB (with its own ports and data directory) and watch it backfill before running it on the live DBs. A fresh DB, such as the one `tools/xbt-regtest` builds, starts its spends index at height 0 and never backfills, so it does not exercise this. At the least, watch the first batches in step 4 and run the spot check in step 5.
