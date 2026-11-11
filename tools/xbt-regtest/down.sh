@@ -31,6 +31,8 @@ for line in "${lines[@]}"; do
   fi
   if [ "$name" = knots ]; then
     xr_cli stop >/dev/null 2>&1 || true
+  elif [ "$name" = vss-pg ]; then
+    kill -INT "$pid" 2>/dev/null || true # PostgreSQL's fast shutdown
   else
     kill -TERM "$pid" 2>/dev/null || true
   fi

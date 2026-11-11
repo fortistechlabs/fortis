@@ -77,17 +77,60 @@ data class ToOnchainQuote(
     val networkFeeSat: Long,
     /** Paid over Lightning to the LSP after the splice. */
     val shareSat: Long,
+    /** The feerate (sat/vB) [networkFeeSat] was estimated at: what the move runs at once the
+     *  user confirms it. */
+    val feerateSatVb: Long = 0L,
+    /** [feerateSatVb] is the 2 sat/vB stand-in (the destination's rate was not known yet). */
+    val fallbackFeerate: Boolean = false,
 ) {
     val feeSat: Long get() = networkFeeSat + shareSat
     /** What the on-chain wallet receives. */
     val payoutSat: Long get() = amountSat - feeSat
 }
 
-/** `null` when nothing worth sending would arrive. */
-fun quoteToOnchain(amountSat: Long, feerateSatVb: Long): ToOnchainQuote? {
-    val net = CHANNEL_TX_VBYTES * feerateSatVb.coerceAtLeast(1)
-    val q = ToOnchainQuote(amountSat, net, operatorShareSat(amountSat, net))
+/** `null` when nothing worth sending would arrive. [fallbackFeerate]: [feerateSatVb] is a
+ *  stand-in, not the destination's estimate. */
+fun quoteToOnchain(amountSat: Long, feerateSatVb: Long, fallbackFeerate: Boolean = false): ToOnchainQuote? {
+    val rate = feerateSatVb.coerceAtLeast(1)
+    val net = CHANNEL_TX_VBYTES * rate
+    val q = ToOnchainQuote(amountSat, net, operatorShareSat(amountSat, net), rate, fallbackFeerate)
     return q.takeIf { it.payoutSat >= DUST_SAT }
+}
+
+/** What a confirmed move out does next. */
+sealed interface MoveOutStep {
+    /** Run [quote] (the one the user confirmed) at [feerateSatVb]. */
+    data class Execute(val quote: ToOnchainQuote, val feerateSatVb: Long) : MoveOutStep
+    /** Fees moved since the quote: show the amounts at [feerateSatVb] and ask again. */
+    data class Requote(val feerateSatVb: Long) : MoveOutStep
+    /** No quote and not everything: too little would arrive. */
+    data object TooSmall : MoveOutStep
+}
+
+/** A fresh feerate more than this many times the confirmed one stops the move (as 3 / 2). */
+private const val REQUOTE_RISE_NUM = 3L
+private const val REQUOTE_RISE_DEN = 2L
+
+/** The step for a move of [amountSat] the user confirmed with [approved] (null: no quote was
+ *  shown — only a move of everything, a close, goes ahead then), given the destination's
+ *  feerate read just before ([freshFeerate], null when it can't be had). The confirmed quote
+ *  runs as shown, at its own feerate — never re-quoted unseen. It stops for a new
+ *  confirmation instead when the fresh rate is more than 1.5× the quote's, or the quote used
+ *  the 2 sat/vB stand-in and the real rate differs, or it was for another amount. */
+fun moveOutStep(approved: ToOnchainQuote?, amountSat: Long, all: Boolean, freshFeerate: Long?): MoveOutStep {
+    val fresh = freshFeerate?.coerceAtLeast(1)
+    if (approved == null) {
+        val rate = fresh ?: 2L
+        return if (all) MoveOutStep.Execute(ToOnchainQuote(amountSat, 0L, 0L, feerateSatVb = rate), rate) else MoveOutStep.TooSmall
+    }
+    val rate = approved.feerateSatVb.coerceAtLeast(1)
+    val requote = when {
+        approved.amountSat != amountSat -> true
+        fresh == null -> false
+        approved.fallbackFeerate -> fresh != rate
+        else -> fresh * REQUOTE_RISE_DEN > rate * REQUOTE_RISE_NUM
+    }
+    return if (requote) MoveOutStep.Requote(fresh ?: rate) else MoveOutStep.Execute(approved, rate)
 }
 
 /** A deposit to the transit address was broadcast at [atMs] and should become channel funds. */

@@ -1239,6 +1239,29 @@ fn xbt_splice_refused_for_unlisted_peer() {
 	send_payment(&nodes[1], &[&nodes[0]], 1_000_000);
 }
 
+/// An LSP lists none of its phones: with `splice_all_peers` set, a splice between two unlisted
+/// peers runs to the end, started from either side (outbound `splice_channel` and inbound
+/// `splice_init` both pass the check).
+#[test]
+fn xbt_splice_all_peers_accepts_unlisted() {
+	let chanmon_cfgs = create_chanmon_cfgs(2);
+	let node_cfgs = create_node_cfgs(2, &chanmon_cfgs);
+	let mut cfg = xbt_splice_cfg(vec![]);
+	cfg.xbt.as_mut().unwrap().splice_all_peers = true;
+	let node_chanmgrs = create_node_chanmgrs(2, &node_cfgs, &[Some(cfg.clone()), Some(cfg)]);
+	let nodes = create_network(2, &node_cfgs, &node_chanmgrs);
+	let chan = create_announced_chan_between_nodes_with_value(&nodes, 0, 1, 100_000, 0);
+	let key = wallet_key(0);
+	let (input, _) = wallet_coin(&key, 200_000, 1);
+	let contribution = SpliceContribution::SpliceIn {
+		value: Amount::from_sat(50_000),
+		inputs: vec![input],
+		change_script: Some(wallet_spk(&key)),
+	};
+	let (tx, _) = xbt_splice(&nodes[0], &nodes[1], chan.2, contribution, &key);
+	assert_eq!(tx.input.len(), 2);
+}
+
 #[test]
 fn xbt_splice_rejects_bad_shared_input_signature() {
 	// The counterparty's shared input signature is checked against the digest over all prevouts.

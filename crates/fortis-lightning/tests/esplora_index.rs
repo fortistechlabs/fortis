@@ -123,6 +123,7 @@ fn a_channel_lives_and_closes_over_the_esplora_index() {
     let index = Index::start(&rt);
     let dirs = TempDir::new("esplora-client");
     let client = Node::new(NodeConfig {
+        chain: fortis_lightning::LnChain::Btc,
         bip39_seed: test_seed(0x3E).to_vec(),
         network: Network::Regtest,
         data_dir: dirs.path("client"),

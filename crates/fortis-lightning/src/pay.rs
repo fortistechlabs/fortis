@@ -330,6 +330,12 @@ impl Node {
                 let params = lnurl::resolve(target, http)?;
                 let pr = lnurl::request_invoice(&params, amount, http)?;
                 let inv = parse_invoice(&pr)?;
+                // The returned invoice must be this node's chain (bit 512 = XBT): BTC and
+                // XBT invoices look alike, and only the fetch says which one this is.
+                let xbt_invoice = inv.features().is_some_and(|f| f.supports_blake2b());
+                if xbt_invoice != (self.ln_chain() == crate::LnChain::Xbt) {
+                    return Err(LnError::WrongChain);
+                }
                 self.check_bolt11(inv, Some(amount), Some(params.description))
             }
             PaymentTarget::Unified { lightning, .. } => match lightning.as_ref() {
@@ -489,7 +495,7 @@ fn map_send_error(e: NodeError) -> LnError {
         NodeError::PersistenceFailed => LnError::PaymentStateUnknown,
         NodeError::DuplicatePayment => LnError::Other("duplicate_payment".into()),
         NodeError::UnsupportedCurrency => LnError::Other("unsupported_currency".into()),
-        NodeError::WrongChain => LnError::Other(NodeError::WrongChain.to_string()),
+        NodeError::WrongChain => LnError::WrongChain,
         other => LnError::Other(format!("pay: {other}")),
     }
 }
@@ -815,8 +821,14 @@ mod tests {
         Node::new(node_cfg(dir)).unwrap()
     }
 
+    #[test]
+    fn wrong_chain_maps_to_ln_error() {
+        assert_eq!(map_send_error(NodeError::WrongChain), LnError::WrongChain);
+    }
+
     fn node_cfg(dir: &str) -> NodeConfig {
         NodeConfig {
+            chain: crate::LnChain::Btc,
             bip39_seed: vec![3; 64],
             network: Network::Regtest,
             data_dir: std::env::temp_dir().join(dir),
@@ -885,6 +897,56 @@ mod tests {
         );
     }
 
+    /// [`signed_invoice`] for [`META`] with feature bit 512 (an XBT invoice).
+    fn signed_xbt_invoice(amount_msat: u64) -> String {
+        use ldk_node::bitcoin::hashes::{sha256, Hash};
+        use ldk_node::bitcoin::secp256k1::{Secp256k1, SecretKey};
+        use ldk_node::lightning::types::payment::PaymentSecret;
+        use ldk_node::lightning_invoice::{Currency, InvoiceBuilder};
+        let secp = Secp256k1::new();
+        let key = SecretKey::from_slice(&[0x42; 32]).unwrap();
+        InvoiceBuilder::new(Currency::Regtest)
+            .description_hash(sha256::Hash::hash(META.as_bytes()))
+            .payment_hash(sha256::Hash::hash(&amount_msat.to_be_bytes()))
+            .payment_secret(PaymentSecret([2; 32]))
+            .current_timestamp()
+            .min_final_cltv_expiry_delta(144)
+            .amount_milli_satoshis(amount_msat)
+            .require_blake2b()
+            .build_signed(|m| secp.sign_ecdsa_recoverable(m, &key))
+            .unwrap()
+            .to_string()
+    }
+
+    #[test]
+    fn lnurl_invoice_of_the_other_chain_is_refused() {
+        // A BTC node: an address whose callback returns an XBT invoice is refused
+        // before anything is paid (the node not running is checked later).
+        let btc = node("fortis-pay-unit-lnurl-wrong-chain-btc");
+        assert_eq!(
+            btc.pay_with_http(&bob(), Some(5_000), &fake(Some(signed_xbt_invoice(5_000)))),
+            Err(LnError::WrongChain)
+        );
+        // An XBT node: a BTC invoice is refused, its own chain's passes the target checks.
+        let xbt = Node::new(NodeConfig {
+            chain: crate::LnChain::Xbt,
+            ..node_cfg("fortis-pay-unit-lnurl-wrong-chain-xbt")
+        })
+        .unwrap();
+        assert_eq!(
+            xbt.pay_with_http(
+                &bob(),
+                Some(5_000),
+                &fake(Some(signed_invoice(5_000, META, false)))
+            ),
+            Err(LnError::WrongChain)
+        );
+        assert_eq!(
+            xbt.pay_with_http(&bob(), Some(5_000), &fake(Some(signed_xbt_invoice(5_000)))),
+            Err(LnError::Other("not_started".into()))
+        );
+    }
+
     fn tmp_dir(tag: &str) -> std::path::PathBuf {
         let d = std::env::temp_dir().join(format!("fortis-pay-unit-{tag}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&d);
@@ -912,6 +974,7 @@ mod tests {
     fn gate_failure_is_backup_unavailable() {
         // Port 1 on loopback: refused at once.
         let n = Node::new(NodeConfig {
+            chain: crate::LnChain::Btc,
             vss: VssConfig {
                 url: "http://127.0.0.1:1/vss".into(),
                 auth_header: String::new(),

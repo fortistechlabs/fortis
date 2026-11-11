@@ -197,8 +197,12 @@ fn run() -> Result<(), String> {
     if REVENUE.load(std::sync::atomic::Ordering::SeqCst) {
         return print_revenue(&cfg, SINCE.lock().unwrap().unwrap_or(0));
     }
-    let rpc_password = cfg.rpc_password()?;
-    let (rpc_host, rpc_port) = cfg.rpc_host_port()?;
+    let chain_source = cfg.chain_source();
+    // Read before the data dir is touched, so a bad password file fails early.
+    let rpc_password = match &chain_source {
+        config::ChainSource::Bitcoind { .. } => Some(cfg.rpc_password()?),
+        config::ChainSource::Esplora(_) => None,
+    };
 
     prepare_data_dir(&cfg)?;
     // Bind before starting the node so a taken port fails fast.
@@ -219,9 +223,28 @@ fn run() -> Result<(), String> {
     // Phones are persisted peers we can't dial (NAT, relay address): retry
     // them with back-off instead of every second; they reconnect to us.
     ldk_node::config::set_peer_reconnection_backoff(true);
-    let mut b = Builder::new();
+    let mut b = match cfg.chain {
+        config::Chain::Btc => Builder::new(),
+        // XBT mode: no anchor channels, replay-protected sighash, gossip floor.
+        config::Chain::Xbt => {
+            let mut ldk = ldk_node::config::Config::default();
+            ldk.xbt = Some(ldk_node::config::XbtConfig {
+                gossip_floor_height: cfg.xbt_gossip_floor_height,
+                splice_peers: vec![],
+                splice_all_peers: true,
+            });
+            Builder::from_config(ldk)
+        }
+    };
     b.set_network(cfg.network);
-    b.set_chain_source_bitcoind_rpc(rpc_host, rpc_port, cfg.rpc_user.clone(), rpc_password);
+    match chain_source {
+        config::ChainSource::Bitcoind { host, port, user, .. } => {
+            b.set_chain_source_bitcoind_rpc(host, port, user, rpc_password.expect("read above"));
+        }
+        config::ChainSource::Esplora(url) => {
+            b.set_chain_source_esplora(url, None);
+        }
+    }
     let data_dir = cfg.data_dir.to_string_lossy().into_owned();
     b.set_storage_dir_path(data_dir.clone());
     // Generated (random, mode 0400) on first start, reused after: same node id.
@@ -239,6 +262,8 @@ fn run() -> Result<(), String> {
     }
     if let Some(url) = &cfg.rgs_url {
         b.set_gossip_source_rgs(url.clone());
+    } else if cfg.chain == config::Chain::Xbt {
+        b.set_gossip_source_p2p();
     }
     b.set_liquidity_provider_lsps2(cfg.lsps2_service_config());
     let node = Arc::new(b.build().map_err(|e| format!("build node: {e}"))?);
@@ -298,6 +323,7 @@ fn serve(
         cfg.account_max_sat,
         cfg.custody_max_sat,
         cfg.payment_bounds().0.div_ceil(1_000),
+        cfg.chain,
     )
     .with_push(match &cfg.fcm_service_account {
         None => None,

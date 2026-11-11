@@ -110,7 +110,7 @@ fn deliver(node: &ldk_node::Node, accounts: &AccountService, h: &Held) -> Result
     } else if !connected {
         let mut woken = WOKEN.lock().unwrap_or_else(|e| e.into_inner());
         if woken.get_or_insert_with(HashSet::new).insert(h.payment_hash) {
-            crate::push::wake(accounts.fcm.as_ref(), &accounts.ledger, &h.node, amount);
+            crate::push::wake(accounts.fcm.as_ref(), &accounts.ledger, &h.node, amount, accounts.chain);
         }
     }
     Ok(())

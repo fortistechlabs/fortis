@@ -131,6 +131,7 @@ fn client_config(
     dirs: &TempDir,
 ) -> NodeConfig {
     NodeConfig {
+        chain: fortis_lightning::LnChain::Btc,
         bip39_seed: seed.to_vec(),
         network: Network::Regtest,
         data_dir: dirs.path("client"),
@@ -228,6 +229,7 @@ fn foreign_invoice(currency: Currency, amount_msat: Option<u64>) -> Bolt11Invoic
 /// A `Node` that is never started (target checks come first).
 fn unstarted_node(dirs: &TempDir) -> Node {
     Node::new(NodeConfig {
+        chain: fortis_lightning::LnChain::Btc,
         bip39_seed: test_seed(CLIENT_SEED).to_vec(),
         network: Network::Regtest,
         data_dir: dirs.path("client"),

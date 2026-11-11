@@ -23,8 +23,8 @@ pub use error::{LnError, ParseError};
 #[doc(hidden)]
 pub use node::test_hooks;
 pub use node::{
-    vss_state_exists, Balances, ChainSource, LnEvent, LspInfo, LspLimits, Node, NodeConfig,
-    StartMode, VssConfig,
+    derive_node_seed, vss_state_exists, Balances, ChainSource, LnChain, LnEvent, LspInfo, LspLimits, Node,
+    NodeConfig, StartMode, VssConfig,
 };
 pub use parse::{parse, parse_at, PaymentTarget};
 pub use pay::{estimate_routing_fee_msat, Direction, Payment, Status, ACCOUNT_SIG_PREFIX};

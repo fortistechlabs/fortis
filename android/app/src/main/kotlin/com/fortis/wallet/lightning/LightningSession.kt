@@ -2,6 +2,7 @@ package com.fortis.wallet.lightning
 
 import com.fortis.wallet.HOSTED_EDGE
 import com.fortis.wallet.data.WalletConfig
+import com.fortis.wallet.data.lnChainOf
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -18,6 +19,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import uniffi.wallet_ffi.LnBalances
+import uniffi.wallet_ffi.LnChain
 import uniffi.wallet_ffi.LnChannelState
 import uniffi.wallet_ffi.LnDirection
 import uniffi.wallet_ffi.LnEventRecord
@@ -32,9 +34,16 @@ import uniffi.wallet_ffi.LnStartMode
 import uniffi.wallet_ffi.LnTarget
 import uniffi.wallet_ffi.LnVssConfig
 
+/** The Esplora a Lightning node on [chain] reads. BTC uses the user's own BTC
+ *  server when one is on ([ownBtcServer]); XBT Lightning always reads the hosted edge. */
+fun lightningEsploraUrl(chain: LnChain, ownBtcServer: String?): String = when (chain) {
+    LnChain.BTC -> ownBtcServer ?: "$HOSTED_EDGE/btc"
+    LnChain.XBT -> "$HOSTED_EDGE/xbt"
+}
+
 interface LightningStore {
     suspend fun walletConfig(walletId: String): WalletConfig? = null
-    suspend fun esploraUrl(walletId: String): String = "$HOSTED_EDGE/btc"
+    suspend fun esploraUrl(walletId: String, chain: LnChain): String = lightningEsploraUrl(chain, ownBtcServer = null)
     suspend fun vssUrl(walletId: String): String = "$HOSTED_EDGE/ln/vss"
     suspend fun vssAuthHeader(walletId: String): String = ""
     fun dataDir(walletId: String): String = "/tmp/fortis-ln/$walletId"
@@ -46,13 +55,15 @@ interface LightningStore {
 
 class InMemoryLightningStore(
     private val wallets: Map<String, WalletConfig> = emptyMap(),
+    /** The BTC node's Esplora (the XBT node's is always the hosted edge's). */
     private val esplora: String = "$HOSTED_EDGE/btc",
     private val vss: String = "$HOSTED_EDGE/ln/vss",
 ) : LightningStore {
 
     override suspend fun walletConfig(walletId: String): WalletConfig? = wallets[walletId]
 
-    override suspend fun esploraUrl(walletId: String): String = esplora
+    override suspend fun esploraUrl(walletId: String, chain: LnChain): String =
+        lightningEsploraUrl(chain, ownBtcServer = esplora)
 
     override suspend fun vssUrl(walletId: String): String = vss
 
@@ -185,6 +196,12 @@ class LightningSession(
      *  was broadcast, so the caller can move on to a fresh receive address. */
     private val onSweepBroadcast: (suspend (walletId: String) -> Unit)? = null,
     private val ensureAuthHeader: (suspend (walletId: String) -> String)? = null,
+    /** The chain this session's node runs on; it starts only that chain's Lightning wallet and
+     *  pays only that chain's invoices. No default: a session must say which chain it is. */
+    val chain: LnChain,
+    /** True only in debug builds (the app passes BuildConfig.DEBUG): the XBT canary override of
+     *  [effectiveLnEnabled]. Off by default so tests and release builds see `/ln/info` as is. */
+    private val debugCanary: Boolean = false,
 ) {
     private val mutex = Mutex()
 
@@ -201,6 +218,11 @@ class LightningSession(
     @Volatile
     var lastInfo: LnInfo? = null
         private set
+
+    /** Whether this session treats the LSP as enabled: `/ln/info`'s `enabled`, or in a debug
+     *  build the XBT canary override. True while the info has not been read yet. */
+    val remoteEnabled: Boolean
+        get() = lastInfo?.let { effectiveLnEnabled(chain, it.enabled, debugCanary) } != false
 
     /** Msat that can be sent now, as of the last balance refresh (the channels' outbound HTLC limit, which is below the balance). */
     @Volatile
@@ -239,7 +261,7 @@ class LightningSession(
         return scope.launch {
             mutex.withLock {
                 val w = store.walletConfig(walletId)
-                if (w != null && !isLightningWallet(w)) {
+                if (w != null && lnChainOf(w.chain) != chain) {
                     seedCopy.fill(0)
                     stopCurrentNodeLocked()
                     unlockedSeed?.fill(0)
@@ -307,8 +329,9 @@ class LightningSession(
     }
 
     /**
-     * Sends the transit balance back to the BTC wallet when it is an orphan: a closed channel's
-     * funds, or a deposit nobody is waiting for. Returns the new balances and channel state.
+     * Sends the transit balance back to an on-chain wallet of this chain (the one
+     * [sweepAddressProvider] gives) when it is an orphan: a closed channel's funds, or a
+     * deposit nobody is waiting for. Returns the new balances and channel state.
      */
     private suspend fun sweepOrphanTransit(
         node: LnNodeApi,
@@ -439,6 +462,10 @@ class LightningSession(
                     ?: false
                 if (pending) throw LnFfiException.PaymentStateUnknown()
             }
+            // Only this chain's invoice or offer is paid (BTC and XBT invoices look alike;
+            // UNKNOWN is refused). An LNURL / Lightning address is checked by the node, on the
+            // invoice it fetches, before it pays (Rust `Node::prepare`).
+            if (target !is LnTarget.LnurlPay && target !is LnTarget.LightningAddress) requireTargetChain(chain, target)
             val id = node.pay(target, amountMsat)
             drainImmediateEvents(node, unlockedWalletId ?: "")
             if (!node.blocksOnNextEvent) {
@@ -563,8 +590,9 @@ class LightningSession(
         val authHeader = ensureAuthHeader?.invoke(walletId)
             ?.takeIf { it.isNotBlank() }
             ?: store.vssAuthHeader(walletId)
-        val esploraUrl = store.esploraUrl(walletId)
+        val esploraUrl = store.esploraUrl(walletId, chain)
         val cfg = LnNodeConfig(
+            chain = chain,
             bip39Seed = seed.copyOf(),
             network = w?.network ?: lnInfo.network,
             dataDir = store.dataDir(walletId),
@@ -591,9 +619,9 @@ class LightningSession(
                 }
                 createdNode = n
                 if (takeover) {
-                    if (lnInfo.enabled) n.takeover() else n.takeoverWith(LnStartMode.EXIT)
+                    if (effectiveLnEnabled(chain, lnInfo.enabled, debugCanary)) n.takeover() else n.takeoverWith(LnStartMode.EXIT)
                 } else {
-                    if (lnInfo.enabled) n.start() else n.startWith(LnStartMode.EXIT)
+                    if (effectiveLnEnabled(chain, lnInfo.enabled, debugCanary)) n.start() else n.startWith(LnStartMode.EXIT)
                 }
                 n
             }
@@ -691,3 +719,12 @@ class LightningSession(
         }
     }
 }
+
+/**
+ * Whether a node on [chain] runs normally given `/ln/info`'s [infoEnabled]. A debug build
+ * ([debug], the `.dev`/`.dev2` apps) runs XBT Lightning even while it is disabled, so the
+ * real-phone canary (deploy/lightning.md §12) can run before the operator enables it. Release
+ * builds and the BTC chain follow `/ln/info` exactly.
+ */
+fun effectiveLnEnabled(chain: LnChain, infoEnabled: Boolean, debug: Boolean): Boolean =
+    infoEnabled || (debug && chain == LnChain.XBT)

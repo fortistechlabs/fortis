@@ -994,11 +994,16 @@ pub struct XbtConfig {
 	///
 	/// Default value: empty
 	pub splice_peers: Vec<PublicKey>,
+	/// FORTIS XBT: splice with any peer, ignoring `splice_peers`. For an LSP, whose splice
+	/// peers are its phones and not known in advance.
+	///
+	/// Default value: `false`
+	pub splice_all_peers: bool,
 }
 
 impl Default for XbtConfig {
 	fn default() -> Self {
-		XbtConfig { gossip_floor_height: 961640, splice_peers: Vec::new() }
+		XbtConfig { gossip_floor_height: 961640, splice_peers: Vec::new(), splice_all_peers: false }
 	}
 }
 

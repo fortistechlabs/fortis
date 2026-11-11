@@ -618,3 +618,188 @@ fn vss_works_when_ln_disabled() {
     assert_eq!(out, body.iter().rev().copied().collect::<Vec<u8>>());
     assert_eq!(edge.vss(&tok, "putObjects", b"x").0, 409);
 }
+
+// --------------------------------------------------------------------------
+// the XBT chain: `xbt` in /ln/info, `/ln/account?chain=xbt`
+// --------------------------------------------------------------------------
+
+fn xbt_info_json() -> Value {
+    json!({
+        "node_id": "02c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5",
+        "host": "lsp.example.org",
+        "port": 9835,
+        "lsps2_token": null,
+        "fee": { "ppm": 10000, "min_sat": 1000 },
+        "min_payment_sat": 51000,
+        "max_payment_sat": 250000,
+        "channel_min_sat": 100000,
+        "channel_max_sat": 500000,
+        "enabled": false,
+        "message": "XBT Lightning is coming soon",
+        "network": "bitcoin",
+    })
+}
+
+#[test]
+fn ln_info_includes_xbt_object() {
+    let dir = TempDir::new("ln-info-xbt");
+    let (btc, xbt) = (dir.path("ln-info.json"), dir.path("ln-info-xbt.json"));
+    write_info(&btc, &info_json(true, None));
+    write_info(&xbt, &xbt_info_json());
+    let edge = Edge::start(&dir, &["--ln-info-file", btc.to_str().unwrap(), "--ln-info-xbt-file", xbt.to_str().unwrap()]);
+    let tok = edge.token();
+    let (s, _, v) = edge.get_info(&tok);
+    assert_eq!(s, 200);
+    assert_eq!(v["port"], 9735, "the BTC fields are untouched");
+    assert_eq!(v["enabled"], true);
+    assert!(v.get("chain").is_none());
+    let x = &v["xbt"];
+    assert_eq!(x["chain"], "xbt");
+    assert_eq!(x["port"], 9835);
+    assert_eq!(x["enabled"], false);
+    assert_eq!(x["message"], "XBT Lightning is coming soon");
+    assert_eq!(x["network"], "bitcoin");
+    assert_eq!(x["node_id"], xbt_info_json()["node_id"]);
+    assert_eq!(x["fee"]["ppm"], 10000);
+
+    // The XBT file is hot-reloaded like the BTC one.
+    let mut on = xbt_info_json();
+    on["enabled"] = json!(true);
+    write_info(&xbt, &on);
+    poll("xbt enabled", 6, || Some(edge.get_info(&tok).2).filter(|v| v["xbt"]["enabled"] == true));
+}
+
+#[test]
+fn ln_info_without_xbt_file_unchanged() {
+    let dir = TempDir::new("ln-info-no-xbt");
+    let btc = dir.path("ln-info.json");
+    write_info(&btc, &info_json(true, None));
+    let plain = Edge::start(&dir, &["--ln-info-file", btc.to_str().unwrap()]);
+    let tok = plain.token();
+    let url = format!("{}/ln/info", plain.url);
+    let auth = format!("Bearer {tok}");
+    let (_, _, plain_body) = http(&url, "GET", &[("Authorization", &auth)], None);
+    assert!(serde_json::from_slice::<Value>(&plain_body).unwrap().get("xbt").is_none());
+
+    // With an XBT file the BTC document is the same bytes, plus the object.
+    let xbt = dir.path("ln-info-xbt.json");
+    write_info(&xbt, &xbt_info_json());
+    let both = Edge::start(&dir, &["--ln-info-file", btc.to_str().unwrap(), "--ln-info-xbt-file", xbt.to_str().unwrap()]);
+    let tok2 = both.token();
+    let (_, _, both_body) = http(
+        &format!("{}/ln/info", both.url),
+        "GET",
+        &[("Authorization", &format!("Bearer {tok2}"))],
+        None,
+    );
+    let prefix = &plain_body[..plain_body.len() - 1];
+    assert!(both_body.starts_with(prefix), "BTC bytes are a prefix of the combined document");
+    assert!(both_body.ends_with(b"}"));
+}
+
+#[test]
+fn ln_info_bad_xbt_file_keeps_btc() {
+    let dir = TempDir::new("ln-info-bad-xbt");
+    let (btc, xbt) = (dir.path("ln-info.json"), dir.path("ln-info-xbt.json"));
+    write_info(&btc, &info_json(true, None));
+    // Missing at startup, then garbage: BTC is served either way.
+    let edge = Edge::start(&dir, &["--ln-info-file", btc.to_str().unwrap(), "--ln-info-xbt-file", xbt.to_str().unwrap()]);
+    let tok = edge.token();
+    let (s, _, v) = edge.get_info(&tok);
+    assert_eq!(s, 200);
+    assert_eq!(v["port"], 9735);
+    assert!(v.get("xbt").is_none());
+
+    std::fs::write(&xbt, b"{ not json").unwrap();
+    poll("xbt ignored in the log", 6, || {
+        std::fs::read_to_string(&edge.log).ok().filter(|l| l.contains("ln info") && l.contains("ln-info-xbt.json"))
+    });
+    let (s, _, v) = edge.get_info(&tok);
+    assert_eq!((s, v["port"].clone()), (200, json!(9735)));
+    assert!(v.get("xbt").is_none());
+
+    // Once valid it appears; a later bad edit keeps the last good one.
+    write_info(&xbt, &xbt_info_json());
+    poll("xbt appears", 6, || Some(edge.get_info(&tok).2).filter(|v| v["xbt"]["chain"] == "xbt"));
+    std::fs::write(&xbt, b"{ not json").unwrap();
+    std::thread::sleep(Duration::from_millis(2500));
+    assert_eq!(edge.get_info(&tok).2["xbt"]["port"], 9835);
+}
+
+fn account_stub(url: &str, body: &[u8]) -> Reply {
+    let echo = json!({ "path": url, "len": body.len() });
+    (200, "application/json", echo.to_string().into_bytes())
+}
+
+fn account(edge: &Edge, tok: &str, query: &str, body: &[u8]) -> (u16, Vec<u8>) {
+    let (s, _, b) = http(
+        &format!("{}/ln/account{query}", edge.url),
+        "POST",
+        &[("Authorization", &format!("Bearer {tok}")), ("X-Fortis-Sig", "sig123abc"), ("Content-Type", "application/json")],
+        Some(body),
+    );
+    (s, b)
+}
+
+#[test]
+fn account_chain_xbt_forwards_to_xbt_admin() {
+    let dir = TempDir::new("ln-account-xbt");
+    let (btc, xbt) = (Stub::start(Duration::ZERO, account_stub), Stub::start(Duration::ZERO, account_stub));
+    let edge = Edge::start(&dir, &["--lsp-admin-url", &btc.url, "--lsp-xbt-admin-url", &xbt.url]);
+    let tok = edge.token();
+    let body = br#"{"op":"balance","n":1}"#;
+    let (s, out) = account(&edge, &tok, "?chain=xbt", body);
+    assert_eq!(s, 200, "{}", String::from_utf8_lossy(&out));
+    assert!(btc.seen().is_empty(), "the BTC LSP is not called");
+    let seen = xbt.seen();
+    assert_eq!(seen.len(), 1);
+    assert_eq!(seen[0].method, "POST");
+    assert_eq!(seen[0].url, "/vss/account", "no query string goes upstream");
+    assert_eq!(seen[0].body, body);
+    assert_eq!(header(&seen[0].headers, "x-fortis-sig"), Some("sig123abc"));
+
+    // No query and chain=btc go to the BTC LSP, as before.
+    for q in ["", "?chain=btc"] {
+        let (s, _) = account(&edge, &tok, q, body);
+        assert_eq!(s, 200);
+    }
+    assert_eq!(btc.seen().len(), 2);
+    assert_eq!(xbt.seen().len(), 1);
+    assert_eq!(btc.seen()[1].body, body);
+}
+
+#[test]
+fn account_chain_xbt_404_when_unset() {
+    let dir = TempDir::new("ln-account-xbt-unset");
+    let btc = Stub::start(Duration::ZERO, account_stub);
+    let edge = Edge::start(&dir, &["--lsp-admin-url", &btc.url]);
+    let tok = edge.token();
+    let (s, _) = account(&edge, &tok, "?chain=xbt", b"{}");
+    assert_eq!(s, 404);
+    assert!(btc.seen().is_empty());
+}
+
+#[test]
+fn account_unknown_chain_400() {
+    let dir = TempDir::new("ln-account-chain");
+    let (btc, xbt) = (Stub::start(Duration::ZERO, account_stub), Stub::start(Duration::ZERO, account_stub));
+    let edge = Edge::start(&dir, &["--lsp-admin-url", &btc.url, "--lsp-xbt-admin-url", &xbt.url]);
+    let tok = edge.token();
+    for q in ["?chain=ltc", "?chain=", "?chain=XBT", "?chain=xbt&chain=btc"] {
+        let (s, out) = account(&edge, &tok, q, b"{}");
+        assert_eq!(s, 400, "{q}");
+        assert!(String::from_utf8_lossy(&out).contains("unknown chain"), "{q}");
+    }
+    assert!(btc.seen().is_empty() && xbt.seen().is_empty());
+}
+
+#[test]
+fn account_chain_xbt_upstream_down_502() {
+    let dir = TempDir::new("ln-account-xbt-down");
+    let btc = Stub::start(Duration::ZERO, account_stub);
+    let edge = Edge::start(&dir, &["--lsp-admin-url", &btc.url, "--lsp-xbt-admin-url", "http://127.0.0.1:9"]);
+    let tok = edge.token();
+    let (s, _) = account(&edge, &tok, "?chain=xbt", b"{}");
+    assert_eq!(s, 502);
+    assert!(btc.seen().is_empty());
+}

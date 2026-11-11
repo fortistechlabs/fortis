@@ -14,7 +14,9 @@ import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import com.fortis.wallet.HOSTED_EDGE
 import uniffi.wallet_ffi.LnBalances
+import uniffi.wallet_ffi.LnChain
 import uniffi.wallet_ffi.LnChannelState
 import uniffi.wallet_ffi.LnFfiException
 import uniffi.wallet_ffi.LnNodeConfig
@@ -136,6 +138,7 @@ class LightningSessionTest {
                     FakeNode()
                 },
                 info = LnInfoApi { sampleInfo() },
+                chain = uniffi.wallet_ffi.LnChain.BTC,
             )
             session.onUnlocked(btcMainnetWallet.id, sampleSeed).join()
             val st = session.state.value
@@ -173,6 +176,7 @@ class LightningSessionTest {
                     ).also { node = it }
                 },
                 info = LnInfoApi { sampleInfo() },
+                chain = uniffi.wallet_ffi.LnChain.BTC,
             )
             session.onUnlocked(btcMainnetWallet.id, sampleSeed).join()
             assertTrue(session.state.value is LnState.Ready)
@@ -213,6 +217,7 @@ class LightningSessionTest {
                     )
                 },
                 info = LnInfoApi { sampleInfo() },
+                chain = uniffi.wallet_ffi.LnChain.BTC,
             )
             // onUnlocked returns a Job immediately without blocking the caller thread.
             val job = session.onUnlocked(btcMainnetWallet.id, sampleSeed)
@@ -241,6 +246,7 @@ class LightningSessionTest {
                     FakeNode(onStart = { if (attempts.incrementAndGet() == 1) throw LnFfiException.Other("start_in_progress") })
                 },
                 info = LnInfoApi { sampleInfo() },
+                chain = uniffi.wallet_ffi.LnChain.BTC,
             )
             session.onUnlocked(btcMainnetWallet.id, sampleSeed).join()
             assertTrue(session.state.value is LnState.Error)
@@ -272,6 +278,7 @@ class LightningSessionTest {
                     )
                 },
                 info = LnInfoApi { sampleInfo() },
+                chain = uniffi.wallet_ffi.LnChain.BTC,
             )
             session.onUnlocked(btcMainnetWallet.id, sampleSeed).join()
             assertTrue(session.state.value is LnState.Error)
@@ -300,6 +307,7 @@ class LightningSessionTest {
                     FakeNode(onStart = { starts.incrementAndGet() }, onStop = { stops.incrementAndGet() })
                 },
                 info = LnInfoApi { sampleInfo() },
+                chain = uniffi.wallet_ffi.LnChain.BTC,
             )
             session.onUnlocked(btcMainnetWallet.id, sampleSeed).join()
             assertTrue(session.state.value is LnState.Ready)
@@ -329,6 +337,7 @@ class LightningSessionTest {
                     if (attempts.incrementAndGet() == 1) throw LnFfiException.LspUnreachable()
                     sampleInfo()
                 },
+                chain = uniffi.wallet_ffi.LnChain.BTC,
             )
             session.onUnlocked(btcMainnetWallet.id, sampleSeed).join()
             assertTrue(session.state.value is LnState.Error)
@@ -359,6 +368,7 @@ class LightningSessionTest {
                     fetchCount++
                     sampleInfo(nodeIdSuffix = if (fetchCount == 1) "11" else "22")
                 },
+                chain = uniffi.wallet_ffi.LnChain.BTC,
             )
             session.onUnlocked(btcMainnetWallet.id, sampleSeed).join()
             session.onRelocked().join()
@@ -395,6 +405,7 @@ class LightningSessionTest {
                 },
                 info = LnInfoApi { sampleInfo() },
                 sweepAddressProvider = { "bc1qar0srrr7xfkvy5l643lydnw9re59gtzzwf5mdq" },
+                chain = uniffi.wallet_ffi.LnChain.BTC,
             )
             session.onUnlocked(btcMainnetWallet.id, sampleSeed).join()
             val st = session.state.value
@@ -424,6 +435,7 @@ class LightningSessionTest {
                 store = store,
                 nodeFactory = { factoryCalls++; FakeNode() },
                 info = LnInfoApi { sampleInfo() },
+                chain = uniffi.wallet_ffi.LnChain.BTC,
             )
             for (w in ineligible) {
                 assertFalse("toggle must be hidden for ${w.id}", isLightningWallet(w))
@@ -463,6 +475,7 @@ class LightningSessionTest {
                 info = LnInfoApi {
                     sampleInfo(enabled = false, message = "Lightning maintenance in progress.")
                 },
+                chain = uniffi.wallet_ffi.LnChain.BTC,
             )
             session.onUnlocked(btcMainnetWallet.id, sampleSeed).join()
             assertEquals(uniffi.wallet_ffi.LnStartMode.EXIT, node.startMode)
@@ -507,6 +520,7 @@ class LightningSessionTest {
                 store = store,
                 nodeFactory = { FakeNode(channelValue = LnChannelState.READY).also { node = it } },
                 info = LnInfoApi { sampleInfo() },
+                chain = uniffi.wallet_ffi.LnChain.BTC,
             )
             session.onUnlocked(btcMainnetWallet.id, sampleSeed).join()
             assertTrue(session.state.value is LnState.Ready)
@@ -542,6 +556,7 @@ class LightningSessionTest {
                 nodeFactory = { node },
                 info = LnInfoApi { sampleInfo() },
                 sweepAddressProvider = { null },
+                chain = uniffi.wallet_ffi.LnChain.BTC,
             )
             session.onUnlocked(btcMainnetWallet.id, sampleSeed).join()
             events.add(uniffi.wallet_ffi.LnEventRecord.ChannelClosed("done"))
@@ -552,5 +567,75 @@ class LightningSessionTest {
         } finally {
             scope.cancel()
         }
+    }
+
+    private val xbtLnWallet = btcMainnetWallet.copy(id = "w-ln-xbt", name = "Lightning (XBT)", chain = "ln-xbt")
+
+    /** Starts [walletId] on a [chain] session; the config the node got, or null if no node was made. */
+    private fun startAndCapture(store: LightningStore, walletId: String, chain: LnChain): Pair<LnNodeConfig?, LnState> = runBlocking {
+        var captured: LnNodeConfig? = null
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        try {
+            val session = LightningSession(
+                scope = scope,
+                store = store,
+                nodeFactory = { cfg -> captured = cfg; FakeNode() },
+                info = LnInfoApi { sampleInfo(nodeIdSuffix = if (chain == LnChain.XBT) "22" else "11") },
+                chain = chain,
+            )
+            session.onUnlocked(walletId, sampleSeed).join()
+            captured to session.state.value
+        } finally {
+            scope.cancel()
+        }
+    }
+
+    @Test
+    fun session_xbt_uses_xbt_esplora_and_config() {
+        val store = InMemoryLightningStore(mapOf(xbtLnWallet.id to xbtLnWallet))
+        val (cfg, st) = startAndCapture(store, xbtLnWallet.id, LnChain.XBT)
+        assertTrue("expected Ready, got $st", st is LnState.Ready)
+        assertNotNull(cfg)
+        assertEquals(LnChain.XBT, cfg!!.chain)
+        assertEquals("$HOSTED_EDGE/xbt", cfg.esploraUrl)
+        assertEquals("Bearer tok-123", cfg.esploraAuthHeader)
+        assertEquals("02" + "22".repeat(32), cfg.lsp.nodeId)
+        assertEquals("$HOSTED_EDGE/ln/vss", cfg.vss.url)
+    }
+
+    @Test
+    fun session_btc_config_unchanged() {
+        val store = InMemoryLightningStore(mapOf(btcMainnetWallet.id to btcMainnetWallet))
+        val (cfg, _) = startAndCapture(store, btcMainnetWallet.id, LnChain.BTC)
+        assertEquals(LnChain.BTC, cfg!!.chain)
+        assertEquals("$HOSTED_EDGE/btc", cfg.esploraUrl)
+    }
+
+    @Test
+    fun session_starts_only_its_own_chain_wallet() {
+        val store = InMemoryLightningStore(listOf(btcMainnetWallet, xbtLnWallet).associateBy { it.id })
+        val (xOnBtc, s1) = startAndCapture(store, xbtLnWallet.id, LnChain.BTC)
+        assertNull(xOnBtc)
+        assertEquals(LnState.Off, s1)
+        val (bOnXbt, s2) = startAndCapture(store, btcMainnetWallet.id, LnChain.XBT)
+        assertNull(bOnXbt)
+        assertEquals(LnState.Off, s2)
+    }
+
+    @Test
+    fun ln_and_ln_xbt_sessions_never_share_a_data_dir() {
+        val store = InMemoryLightningStore(listOf(btcMainnetWallet, xbtLnWallet).associateBy { it.id })
+        val btc = startAndCapture(store, btcMainnetWallet.id, LnChain.BTC).first!!
+        val xbt = startAndCapture(store, xbtLnWallet.id, LnChain.XBT).first!!
+        assertTrue(btc.dataDir != xbt.dataDir)
+    }
+
+    @Test
+    fun lightning_esplora_url_per_chain() {
+        assertEquals("$HOSTED_EDGE/btc", lightningEsploraUrl(LnChain.BTC, ownBtcServer = null))
+        assertEquals("https://mine.example/api", lightningEsploraUrl(LnChain.BTC, ownBtcServer = "https://mine.example/api"))
+        // XBT Lightning always reads the hosted edge.
+        assertEquals("$HOSTED_EDGE/xbt", lightningEsploraUrl(LnChain.XBT, ownBtcServer = null))
+        assertEquals("$HOSTED_EDGE/xbt", lightningEsploraUrl(LnChain.XBT, ownBtcServer = "https://mine.example/api"))
     }
 }

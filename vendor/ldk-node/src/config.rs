@@ -266,6 +266,7 @@ impl Default for Config {
 /// |-----------------------|--------|
 /// | `gossip_floor_height` | 961640 |
 /// | `splice_peers`        | []     |
+/// | `splice_all_peers`    | false  |
 #[derive(Debug, Clone, PartialEq)]
 pub struct XbtConfig {
 	/// Channel announcements whose short channel id is in a block below this height are ignored
@@ -273,12 +274,18 @@ pub struct XbtConfig {
 	pub gossip_floor_height: u32,
 	/// Peers we are willing to splice with.
 	pub splice_peers: Vec<PublicKey>,
+	/// FORTIS XBT: splice with any peer, ignoring `splice_peers` (for an LSP).
+	pub splice_all_peers: bool,
 }
 
 impl Default for XbtConfig {
 	fn default() -> Self {
 		let ldk = LdkXbtConfig::default();
-		Self { gossip_floor_height: ldk.gossip_floor_height, splice_peers: ldk.splice_peers }
+		Self {
+			gossip_floor_height: ldk.gossip_floor_height,
+			splice_peers: ldk.splice_peers,
+			splice_all_peers: ldk.splice_all_peers,
+		}
 	}
 }
 
@@ -287,6 +294,7 @@ impl From<&XbtConfig> for LdkXbtConfig {
 		LdkXbtConfig {
 			gossip_floor_height: c.gossip_floor_height,
 			splice_peers: c.splice_peers.clone(),
+			splice_all_peers: c.splice_all_peers,
 		}
 	}
 }

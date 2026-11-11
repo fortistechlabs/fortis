@@ -56,10 +56,12 @@ impl Shared {
 /// delivered after the good prefix before it and ends the stream; setting
 /// `stop` (or dropping the receiver) ends it within ~10 ms. At most
 /// `2 * workers` blocks are fetched ahead of the channel, which holds
-/// `4 * workers`.
+/// `4 * workers`. Spends are extracted from `spends_from` on (none if `None`;
+/// see [`parse_and_extract`]).
 pub fn fetch_range(
     src: Arc<dyn BlockSource>,
     fmt: HeaderFormat,
+    spends_from: Option<u32>,
     from: u32,
     to: u32,
     cfg: &FetchConfig,
@@ -85,7 +87,7 @@ pub fn fetch_range(
     }
     for _ in 0..workers {
         let (shared, src, job_rx) = (shared.clone(), src.clone(), job_rx.clone());
-        std::thread::spawn(move || worker(&*src, fmt, &shared, window, job_rx));
+        std::thread::spawn(move || worker(&*src, fmt, spends_from, &shared, window, job_rx));
     }
     std::thread::spawn(move || deliver(&shared, to, out_tx));
     out_rx
@@ -127,6 +129,7 @@ fn hash_stage(
 fn worker(
     src: &dyn BlockSource,
     fmt: HeaderFormat,
+    spends_from: Option<u32>,
     shared: &Shared,
     window: u32,
     jobs: Receiver<(u32, BlockHash)>,
@@ -153,7 +156,7 @@ fn worker(
         drop(st);
         let r = src
             .raw_block(&hash)
-            .and_then(|bytes| parse_and_extract(h, hash, &bytes, &fmt))
+            .and_then(|bytes| parse_and_extract(h, hash, &bytes, &fmt, spends_from))
             .map_err(|e| e.context(format!("block {h} ({hash})")));
         shared.put(h, r);
     }
@@ -213,6 +216,7 @@ mod tests {
         let rx = fetch_range(
             src,
             HeaderFormat::BTC,
+            None,
             from,
             to,
             &FetchConfig { workers },

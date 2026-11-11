@@ -22,7 +22,8 @@ ExecStart=/usr/local/bin/fortis-index \
   --rpc-url http://127.0.0.1:8332 \
   --cookie-file /var/lib/bitcoin-core/.cookie \
   --db /var/lib/fortis/btc-index-v2 \
-  --bind 127.0.0.1:8095
+  --bind 127.0.0.1:8095 \
+  --spends-from-height 973000
 Restart=on-failure
 RestartSec=10
 # Exit 2 = fatal (wrong chain or schema in --db, reorg deeper than the undo

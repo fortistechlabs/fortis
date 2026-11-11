@@ -172,7 +172,7 @@ fn pem_to_der(pem: &str) -> Result<Vec<u8>, String> {
 
 /// Wakes `node`'s phone: "Incoming Lightning payment: N sat". Only logs when
 /// push is not configured or the phone has no token.
-pub fn wake(fcm: Option<&Fcm>, ledger: &Ledger, node: &PublicKey, amount_msat: u64) {
+pub fn wake(fcm: Option<&Fcm>, ledger: &Ledger, node: &PublicKey, amount_msat: u64, chain: &str) {
     let Some(fcm) = fcm else {
         eprintln!("fortis-lsp: {node} is offline with {amount_msat} msat held for it (push not configured)");
         return;
@@ -190,8 +190,8 @@ pub fn wake(fcm: Option<&Fcm>, ledger: &Ledger, node: &PublicKey, amount_msat: u
     };
     let sat = amount_msat / 1_000;
     let body = format!("{} sat is waiting for you. Open Fortis to receive it.", group(sat));
-    let data = json!({ "kind": "ln_held", "amount_msat": amount_msat.to_string() });
-    match fcm.send(&token, "Incoming Lightning payment", &body, data) {
+    let data = wake_data(chain, amount_msat);
+    match fcm.send(&token, push_text(Push::Held, chain), &body, data) {
         Ok(()) => eprintln!("fortis-lsp: woke {node} by push for {amount_msat} msat"),
         Err(SendError::Unregistered) => {
             eprintln!("fortis-lsp: push token of {node} is no longer valid; dropped");
@@ -201,15 +201,45 @@ pub fn wake(fcm: Option<&Fcm>, ledger: &Ledger, node: &PublicKey, amount_msat: u
     }
 }
 
+/// Which push a title belongs to.
+#[derive(Clone, Copy)]
+enum Push {
+    /// [`wake`]: a payment is held for an offline phone.
+    Held,
+    /// [`received`]: a payment landed on the balance.
+    Received,
+}
+
+/// The notification title of a push. XBT names its chain; BTC keeps the
+/// original wording.
+fn push_text(kind: Push, chain: &str) -> &'static str {
+    match (kind, chain) {
+        (Push::Held, "xbt") => "Incoming XBT Lightning payment",
+        (Push::Held, _) => "Incoming Lightning payment",
+        (Push::Received, "xbt") => "XBT Lightning payment received",
+        (Push::Received, _) => "Lightning payment received",
+    }
+}
+
+/// The data of a [`wake`] push; `chain` (`btc`/`xbt`) tells the app which wallet's LSP woke it.
+fn wake_data(chain: &str, amount_msat: u64) -> Value {
+    json!({ "kind": "ln_held", "amount_msat": amount_msat.to_string(), "chain": chain })
+}
+
+/// The data of a [`received`] push.
+fn received_data(chain: &str, amount_msat: u64) -> Value {
+    json!({ "kind": "ln_received", "amount_msat": amount_msat.to_string(), "chain": chain })
+}
+
 /// A payment landed on `node`'s Fortis balance while its phone was away:
 /// "Lightning payment received: N sat". Only logs without push or a token.
-pub fn received(fcm: Option<&Fcm>, ledger: &Ledger, node: &PublicKey, amount_msat: u64) {
+pub fn received(fcm: Option<&Fcm>, ledger: &Ledger, node: &PublicKey, amount_msat: u64, chain: &str) {
     let body = format!(
         "{} sat received. It's on your Fortis balance and moves into your wallet when you open Fortis.",
         group(amount_msat / 1_000)
     );
-    let data = json!({ "kind": "ln_received", "amount_msat": amount_msat.to_string() });
-    send_to(fcm, ledger, node, "Lightning payment received", &body, data, "received");
+    let data = received_data(chain, amount_msat);
+    send_to(fcm, ledger, node, push_text(Push::Received, chain), &body, data, "received");
 }
 
 /// Sends one notification to `node`'s phone; `what` names it in the log.
@@ -262,6 +292,41 @@ mod tests {
         assert_eq!(group(999), "999");
         assert_eq!(group(1_000), "1,000");
         assert_eq!(group(1_234_567), "1,234,567");
+    }
+
+    #[test]
+    fn wake_payload_names_chain() {
+        let xbt = crate::config::LspConfig::from_toml(
+            "chain = \"xbt\"\nesplora_url = \"http://127.0.0.1:8094\"",
+        )
+        .unwrap();
+        let d = wake_data(xbt.chain.as_str(), 21_000);
+        assert_eq!(d["chain"], "xbt");
+        assert_eq!(d["kind"], "ln_held");
+        assert_eq!(d["amount_msat"], "21000");
+        let btc = crate::config::LspConfig::from_toml("").unwrap();
+        assert_eq!(wake_data(btc.chain.as_str(), 1)["chain"], "btc");
+    }
+
+    #[test]
+    fn received_payload_names_chain() {
+        let d = received_data("xbt", 5_000);
+        assert_eq!(d["chain"], "xbt");
+        assert_eq!(d["kind"], "ln_received");
+        assert_eq!(d["amount_msat"], "5000");
+        assert_eq!(received_data("btc", 1)["chain"], "btc");
+    }
+
+    #[test]
+    fn xbt_push_text() {
+        assert_eq!(push_text(Push::Held, "xbt"), "Incoming XBT Lightning payment");
+        assert_eq!(push_text(Push::Received, "xbt"), "XBT Lightning payment received");
+    }
+
+    #[test]
+    fn btc_push_text_unchanged() {
+        assert_eq!(push_text(Push::Held, "btc"), "Incoming Lightning payment");
+        assert_eq!(push_text(Push::Received, "btc"), "Lightning payment received");
     }
 
     #[test]

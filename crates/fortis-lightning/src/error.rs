@@ -43,6 +43,12 @@ pub enum LnError {
     PaymentStateUnknown,
     #[error("amount_out_of_range")]
     AmountOutOfRange { min_msat: u64, max_msat: u64 },
+    /// An invoice or offer for the other chain (BTC vs XBT).
+    #[error("wrong_chain")]
+    WrongChain,
+    /// An invalid node configuration (e.g. XBT with a bitcoind-RPC source).
+    #[error("config: {0}")]
+    Config(String),
     #[error("other: {0}")]
     Other(String),
 }

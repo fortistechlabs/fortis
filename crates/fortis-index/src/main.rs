@@ -19,6 +19,7 @@ mod keys;
 mod mempool;
 mod render;
 mod source;
+mod spendcf;
 mod spends;
 mod sync;
 mod verify;
@@ -36,7 +37,7 @@ use fortis_node::Rpc;
 
 use crate::chain::HeaderFormat;
 use crate::chainstate::{BlockTable, SharedChain};
-use crate::db::{Db, DbConfig};
+use crate::db::{Db, DbConfig, OpenError};
 use crate::fetch::FetchConfig;
 use crate::mempool::{MempoolTracker, MempoolView, SharedMempool};
 use crate::render::{Renderer, TxSource};
@@ -93,6 +94,12 @@ struct Args {
     /// Stop (and exit 0) once this height is indexed — for benchmarks and tests.
     #[arg(long)]
     stop_height: Option<u32>,
+    /// Record who spent each output (the Lightning-relevant inputs) for blocks
+    /// from this height, so `GET /tx/:txid/outspend/:vout` answers for outputs
+    /// funded at or above it however old they are. Blocks already indexed are
+    /// backfilled in the background. Leave out to record none.
+    #[arg(long, value_name = "HEIGHT")]
+    spends_from_height: Option<u32>,
 }
 
 #[derive(clap::Subcommand)]
@@ -179,6 +186,20 @@ fn connect(args: &Args) -> Result<(Rpc, String)> {
     Ok((rpc, url))
 }
 
+/// `--spends-from-height f` must be within what this index can backfill:
+/// the backfill checks each block against the index's own, so it can't cover
+/// heights below the first indexed block (or below `--start-height` for an
+/// empty index). Fatal (exit 2): a restart can't fix it.
+fn check_spends_from(table: &BlockTable, f: u32, start_height: u32) -> Result<()> {
+    if table.tip().is_some_and(|(h, _)| h >= f) && table.get(f).is_none() {
+        return Err(OpenError::SpendsFromBelowIndex { from: f }.into());
+    }
+    if table.tip().is_none() && f < start_height {
+        return Err(OpenError::SpendsFromBelowStart { from: f, start: start_height }.into());
+    }
+    Ok(())
+}
+
 fn run(args: Args) -> Result<()> {
     let (rpc, url) = connect(&args)?;
     let network = network(&args.network);
@@ -204,6 +225,7 @@ fn run(args: Args) -> Result<()> {
         &args.db,
         &DbConfig {
             cache_mb: args.cache_mb,
+            spends_from: args.spends_from_height,
         },
         &chain_id,
     )?;
@@ -214,6 +236,10 @@ fn run(args: Args) -> Result<()> {
             "index {} is inconsistent: meta.tip does not match the blocks table",
             args.db.display()
         );
+    }
+    if let Some(f) = args.spends_from_height {
+        check_spends_from(&table, f, start_height)?;
+        eprintln!("             recording spends from height {f}");
     }
     let chain: SharedChain = Arc::new(ArcSwap::from_pointee(table));
     let mempool: SharedMempool = Arc::new(ArcSwap::from_pointee(MempoolView::default()));
@@ -265,6 +291,20 @@ fn run(args: Args) -> Result<()> {
             .context("spawning sync thread")?
     };
 
+    let backfill_thread = match args.spends_from_height {
+        Some(from) => {
+            let (db, stop) = (db.clone(), stop.clone());
+            let node = spends::RpcSpendNode { rpc: rpc.clone(), fmt };
+            Some(
+                std::thread::Builder::new()
+                    .name("spends-backfill".into())
+                    .spawn(move || sync::run_spends_backfill(&db, &node, from, &stop))
+                    .context("spawning spends backfill thread")?,
+            )
+        }
+        None => None,
+    };
+
     let state = api::AppState {
         db: db.clone(),
         chain,
@@ -274,10 +314,13 @@ fn run(args: Args) -> Result<()> {
         network,
         status,
         chain_id,
-        spends: Arc::new(spends::Spends::new(Box::new(spends::RpcSpendNode {
-            rpc: api_rpc_spends,
-            fmt,
-        }))),
+        spends: Arc::new(spends::Spends::with_index(
+            Box::new(spends::RpcSpendNode {
+                rpc: api_rpc_spends,
+                fmt,
+            }),
+            db.clone(),
+        )),
     };
     let rt = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
@@ -287,6 +330,9 @@ fn run(args: Args) -> Result<()> {
     stop.store(true, Ordering::SeqCst);
     if sync_thread.join().is_err() && sync_result.is_ok() {
         bail!("sync thread panicked");
+    }
+    if backfill_thread.is_some_and(|t| t.join().is_err()) {
+        eprintln!("spends backfill thread panicked");
     }
     db.flush()?;
     eprintln!("fortis-index: stopped");
@@ -363,6 +409,23 @@ fn default_bitcoin_datadir() -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A `--spends-from-height` the index can't backfill is a configuration
+    /// error: fatal (exit 2), so systemd doesn't restart into it again.
+    #[test]
+    fn a_spends_from_height_below_the_index_is_fatal() {
+        use bitcoin::hashes::Hash;
+        let rec = |n| crate::keys::BlockRec { hash: bitcoin::BlockHash::all_zeros(), time: 0, first_txnum: n, n_txs: 1 };
+        let table = BlockTable::from_db((100..=110).map(|h| (h, rec(h as u64))).collect()).unwrap();
+        let e = check_spends_from(&table, 50, 0).unwrap_err();
+        assert!(is_fatal(&e), "{e:#}");
+        assert!(check_spends_from(&table, 100, 0).is_ok());
+        assert!(check_spends_from(&table, 200, 0).is_ok(), "above the tip: recorded as blocks arrive");
+        let empty = BlockTable::default();
+        let e = check_spends_from(&empty, 5, 10).unwrap_err();
+        assert!(is_fatal(&e), "{e:#}");
+        assert!(check_spends_from(&empty, 10, 10).is_ok());
+    }
 
     #[test]
     fn a_sync_thread_that_died_without_a_result_is_an_error() {

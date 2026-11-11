@@ -94,6 +94,7 @@ fn config(
     vss_url: &str,
 ) -> NodeConfig {
     NodeConfig {
+        chain: fortis_lightning::LnChain::Btc,
         bip39_seed: seed.to_vec(),
         network: Network::Regtest,
         data_dir: data_dir.path(name),

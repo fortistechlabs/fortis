@@ -30,7 +30,8 @@ use fortis_lightning::vss_client::error::VssError;
 use fortis_lightning::vss_client::types::GetObjectRequest;
 use fortis_lightning::vss_client::util::retry::{ExponentialBackoffRetryPolicy, RetryPolicy};
 use fortis_lightning::{
-    test_hooks, vss_state_exists, ChainSource, ChannelState, LnError, LnEvent, Node, NodeConfig,
+    test_hooks, vss_state_exists, ChainSource, ChannelState, LnChain, LnError, LnEvent, Node,
+    NodeConfig,
     PaymentTarget, StartMode, VssConfig,
 };
 use ldk_node::bitcoin::hashes::{sha256, Hash};
@@ -76,6 +77,7 @@ impl Env {
     /// A `NodeConfig` for this wallet with data dir `dir` against `vss`.
     fn config_via(&self, dir: &str, vss: VssConfig) -> NodeConfig {
         NodeConfig {
+            chain: fortis_lightning::LnChain::Btc,
             bip39_seed: self.seed.to_vec(),
             network: Network::Regtest,
             data_dir: self.dirs.path(dir),
@@ -340,21 +342,21 @@ fn restore_after_crash_needs_takeover_then_recovers() {
 fn vss_state_exists_reports_false_then_true() {
     let env = Env::start("restore-exists");
     let vss = env.vss_direct();
-    assert_eq!(vss_state_exists(&vss, &env.seed, Network::Regtest), Ok(false));
+    assert_eq!(vss_state_exists(&vss, &env.seed, Network::Regtest, LnChain::Btc), Ok(false));
 
     let a = env.node("a");
     a.start().unwrap();
-    assert_eq!(vss_state_exists(&vss, &env.seed, Network::Regtest), Ok(true));
+    assert_eq!(vss_state_exists(&vss, &env.seed, Network::Regtest, LnChain::Btc), Ok(true));
     a.stop();
     // The lock is gone after a clean stop; the node's state is not.
-    assert_eq!(vss_state_exists(&vss, &env.seed, Network::Regtest), Ok(true));
+    assert_eq!(vss_state_exists(&vss, &env.seed, Network::Regtest, LnChain::Btc), Ok(true));
     // Another wallet's store is still empty.
     let other = test_seed(0x77);
-    assert_eq!(vss_state_exists(&vss, &other, Network::Regtest), Ok(false));
+    assert_eq!(vss_state_exists(&vss, &other, Network::Regtest, LnChain::Btc), Ok(false));
     // VSS down: an error, never a guess.
     env.vss.pause();
     let t = Instant::now();
-    let res = vss_state_exists(&vss, &env.seed, Network::Regtest);
+    let res = vss_state_exists(&vss, &env.seed, Network::Regtest, LnChain::Btc);
     env.vss.resume();
     assert_eq!(res, Err(LnError::BackupUnavailable));
     assert!(t.elapsed() < Duration::from_secs(10), "{:?}", t.elapsed());
@@ -760,7 +762,7 @@ fn restore_through_the_edge_proxy() {
         url: format!("{}/ln/vss", edge.url),
         auth_header: format!("Bearer {}", edge.token()),
     };
-    assert_eq!(vss_state_exists(&via_edge, &env.seed, Network::Regtest), Ok(false));
+    assert_eq!(vss_state_exists(&via_edge, &env.seed, Network::Regtest, LnChain::Btc), Ok(false));
 
     let a = Node::new(env.config_via("a", via_edge.clone())).unwrap();
     timed("start via the edge", || a.start()).expect("start through the edge");
@@ -773,7 +775,7 @@ fn restore_through_the_edge_proxy() {
     a.stop();
     drop(a);
     std::fs::remove_dir_all(env.dirs.path("a")).unwrap();
-    assert_eq!(vss_state_exists(&via_edge, &env.seed, Network::Regtest), Ok(true));
+    assert_eq!(vss_state_exists(&via_edge, &env.seed, Network::Regtest, LnChain::Btc), Ok(true));
 
     // Restore on a new phone through the edge (a fresh install token).
     let restored_vss = VssConfig {

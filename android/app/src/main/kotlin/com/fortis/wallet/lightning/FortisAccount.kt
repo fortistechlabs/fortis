@@ -8,6 +8,7 @@ import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONArray
 import org.json.JSONObject
+import uniffi.wallet_ffi.LnChain
 import java.security.SecureRandom
 
 /**
@@ -55,9 +56,14 @@ fun interface AccountTransport {
 class EdgeAccountTransport(
     private val http: OkHttpClient,
     base: String = HOSTED_EDGE,
+    /** Whose LSP holds the account: no query is BTC, `?chain=xbt` the XBT LSP. */
+    chain: LnChain,
     private val token: suspend () -> String,
 ) : AccountTransport {
-    private val url = base.trimEnd('/') + "/ln/account"
+    private val url = base.trimEnd('/') + when (chain) {
+        LnChain.BTC -> "/ln/account"
+        LnChain.XBT -> "/ln/account?chain=xbt"
+    }
 
     override suspend fun post(body: String, sig: String): Pair<Int, String> {
         val req = Request.Builder()

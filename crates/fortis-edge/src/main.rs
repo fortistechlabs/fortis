@@ -374,6 +374,12 @@ struct Args {
     /// good file stays served. Unset → `/ln/info` 404s.
     #[arg(long, value_name = "FILE")]
     ln_info_file: Option<PathBuf>,
+    /// Lightning on XBT: a second info file (same shape as `--ln-info-file`),
+    /// served as `"xbt": {..., "chain": "xbt"}` inside `GET /ln/info`. An
+    /// invalid or missing file only leaves `xbt` out (logged); it never
+    /// stops the edge or the BTC document. Re-read on change like the BTC one.
+    #[arg(long, value_name = "FILE")]
+    ln_info_xbt_file: Option<PathBuf>,
     /// Lightning: the vss-server base URL `/ln/vss/<call>` forwards to, e.g.
     /// http://127.0.0.1:8080/vss. Only `getObject`, `putObjects`,
     /// `deleteObject` and `listKeyVersions` (POST) pass. Unset → `/ln/vss/*`
@@ -405,6 +411,11 @@ struct Args {
     /// forwards to. Unset → `/ln/account` 404s.
     #[arg(long)]
     lsp_admin_url: Option<String>,
+    /// Lightning on XBT: the XBT fortis-lsp's admin listener (e.g.
+    /// http://127.0.0.1:9746) that `POST /ln/account?chain=xbt` forwards to.
+    /// Unset → that 404s.
+    #[arg(long)]
+    lsp_xbt_admin_url: Option<String>,
     /// Test only: the VSS upstream read timeout, seconds (default 30).
     #[arg(long, default_value_t = ln::VSS_READ_TIMEOUT_SECS, hide = true)]
     vss_read_timeout_secs: u64,
@@ -451,10 +462,14 @@ struct State {
     swap: Option<swap::Swap>,
     /// `GET /ln/info`; `None` unless `--ln-info-file`.
     ln_info: Option<Arc<ln::LnInfoSource>>,
+    /// The `xbt` object of `/ln/info`; `None` unless `--ln-info-xbt-file`.
+    ln_info_xbt: Option<Arc<ln::LnInfoSource>>,
     /// `/ln/vss/*`; `None` unless `--vss-upstream`.
     vss: Option<ln::VssProxy>,
     /// `POST /ln/account` → `<url>/account`; `None` unless `--lsp-admin-url`.
     lsp_admin: Option<LspAdmin>,
+    /// `POST /ln/account?chain=xbt`; `None` unless `--lsp-xbt-admin-url`.
+    lsp_xbt_admin: Option<LspAdmin>,
     /// `limiter`'s settings, but VSS's own buckets: a node's write bursts
     /// must not starve the same install's swaps or chain reads, nor they VSS.
     vss_limiter: RateLimiter,
@@ -527,6 +542,7 @@ fn run() -> Result<()> {
         )),
         None => None,
     };
+    let ln_info_xbt = args.ln_info_xbt_file.as_deref().map(|p| Arc::new(ln::LnInfoSource::open_optional(p, "xbt")));
     let vss = match &args.vss_upstream {
         Some(url) => Some(ln::VssProxy::new(
             url,
@@ -730,8 +746,10 @@ fn run() -> Result<()> {
         metrics: Metrics::default(),
         swap,
         ln_info,
+        ln_info_xbt,
         vss,
         lsp_admin: args.lsp_admin_url.as_deref().map(LspAdmin::new),
+        lsp_xbt_admin: args.lsp_xbt_admin_url.as_deref().map(LspAdmin::new),
         vss_limiter: RateLimiter::new(args.rate_per_min, args.rate_burst),
     });
 
@@ -832,9 +850,23 @@ fn run() -> Result<()> {
         "  ln info        {}",
         match (&state.ln_info, &args.ln_info_file) {
             (Some(src), Some(path)) => {
-                let i = src.info();
+                let i = src.info().expect("the BTC info file was validated at startup");
                 format!("{} ({}, {}, reloaded on change)", path.display(), i.network, if i.enabled { "enabled" } else { "disabled" })
             }
+            _ => "(disabled)".into(),
+        },
+    );
+    eprintln!(
+        "  ln info xbt    {}",
+        match (&state.ln_info_xbt, &args.ln_info_xbt_file) {
+            (Some(src), Some(path)) => format!(
+                "{} ({}, reloaded on change)",
+                path.display(),
+                match src.info() {
+                    Some(i) => format!("{}, {}", i.network, if i.enabled { "enabled" } else { "disabled" }),
+                    None => "not valid yet: xbt left out".into(),
+                }
+            ),
             _ => "(disabled)".into(),
         },
     );
@@ -846,6 +878,9 @@ fn run() -> Result<()> {
         },
     );
     if let Some(src) = &state.ln_info {
+        src.watch(ln::INFO_POLL);
+    }
+    if let Some(src) = &state.ln_info_xbt {
         src.watch(ln::INFO_POLL);
     }
 
@@ -1076,7 +1111,7 @@ fn handle(req: &mut Request, st: &State) -> Reply {
         (_, p) if p == "/swap" || p.starts_with("/swap/") => swap_route(req, st, &method, p),
         _ if raw_path == "/ln/info" => ln_info_route(req, st, &method),
         _ if raw_path.starts_with("/ln/vss/") => ln_vss_route(req, st, &method, &raw_path["/ln/vss/".len()..]),
-        _ if raw_path == "/ln/account" => ln_account_route(req, st, &method),
+        _ if raw_path == "/ln/account" => ln_account_route(req, st, &method, query),
         _ if raw_path == "/ln/log" => client_log_route(req, st, &method),
         (Method::Post, "/support") => support_route(req, st),
         (_, p) if p.starts_with("/xbt/") || p.starts_with("/btc/") => {
@@ -1240,7 +1275,11 @@ fn ln_info_route(req: &Request, st: &State, method: &Method) -> Reply {
         Metrics::inc(&st.metrics.rate_limited);
         return err(429, "rate limit exceeded");
     }
-    Reply::NoStore(200, "application/json".into(), info.body().to_vec())
+    let mut body = info.body().expect("the BTC info file was validated at startup").to_vec();
+    if let Some(xbt) = st.ln_info_xbt.as_ref().and_then(|x| x.body()) {
+        body = ln::with_xbt(&body, &xbt);
+    }
+    Reply::NoStore(200, "application/json".into(), body)
 }
 
 /// `POST /ln/vss/<call>` → `--vss-upstream`/`<call>`: 404 unless configured;
@@ -1362,13 +1401,22 @@ impl LspAdmin {
     }
 }
 
-/// `POST /ln/account` → fortis-lsp's `/account` (Fortis accounts, spec §7):
-/// 404 unless `--lsp-admin-url`; a valid install token; the install's rate
+/// `POST /ln/account[?chain=btc|xbt]` → fortis-lsp's `/account` (Fortis
+/// accounts, spec §7): 404 unless `--lsp-admin-url` (`--lsp-xbt-admin-url` for
+/// `chain=xbt`); an unknown `chain` is 400; a valid install token; the install's rate
 /// limit; body ≤ 16 KiB. The request is signed by the user's node key and
 /// checked by the LSP; only the body and `X-Fortis-Sig` go upstream, and the
 /// LSP's answer (401/402/409 included) is relayed unchanged.
-fn ln_account_route(req: &mut Request, st: &State, method: &Method) -> Reply {
-    let Some(admin) = &st.lsp_admin else {
+fn ln_account_route(req: &mut Request, st: &State, method: &Method, query: &str) -> Reply {
+    // `chain` is in the query, not the body: the body stays exactly as the
+    // phone signed it. Absent or `btc` → the BTC LSP; `xbt` → the XBT LSP.
+    let chains: Vec<&str> = query.split('&').filter_map(|kv| kv.strip_prefix("chain=")).collect();
+    let admin = match chains.as_slice() {
+        [] | ["btc"] => &st.lsp_admin,
+        ["xbt"] => &st.lsp_xbt_admin,
+        _ => return err(400, "unknown chain"),
+    };
+    let Some(admin) = admin else {
         return err(404, "no such route");
     };
     let Some(tok) = bearer(req).filter(|t| token::verify(&st.secret, t)) else {

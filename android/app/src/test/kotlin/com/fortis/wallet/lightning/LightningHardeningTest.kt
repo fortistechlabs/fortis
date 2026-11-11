@@ -86,6 +86,7 @@ class LightningHardeningTest {
                     Node(balances(0uL))
                 },
                 info = LnInfoApi { info() },
+                chain = uniffi.wallet_ffi.LnChain.BTC,
             )
             session.onUnlocked(wallet.id, seed).join()
             assertEquals("the factory saw the real seed", seed.toList(), seedAtCreation)
@@ -109,6 +110,7 @@ class LightningHardeningTest {
                     throw LnFfiException.BackupUnavailable()
                 },
                 info = LnInfoApi { info() },
+                chain = uniffi.wallet_ffi.LnChain.BTC,
             )
             session.onUnlocked(wallet.id, seed).join()
             assertTrue(session.state.value is LnState.Error)
@@ -136,6 +138,7 @@ class LightningHardeningTest {
                     }
                 },
                 info = LnInfoApi { info() },
+                chain = uniffi.wallet_ffi.LnChain.BTC,
             )
             session.onUnlocked(wallet.id, seed).join()
             delay(900)
@@ -161,6 +164,7 @@ class LightningHardeningTest {
                     info = LnInfoApi { info() },
                     sweepAddressProvider = { "bc1qexample" },
                     onSweepBroadcast = { reported += it },
+                    chain = uniffi.wallet_ffi.LnChain.BTC,
                 )
                 session.onUnlocked(wallet.id, seed).join()
                 assertEquals("txid=$txid", expected, reported.size)
@@ -184,6 +188,8 @@ class LightningHardeningTest {
     ) : Node(bal, LnChannelState.READY) {
         var paid = 0
         override fun payments() = payments
+        // An LNURL / address resolves to a BTC invoice (the session checks its chain, then pays it).
+        override fun lnurlInvoice(target: LnTarget, amountMsat: ULong): String = BTC_INVOICE
         override fun pay(target: LnTarget, amountMsat: ULong?): String {
             paid++
             return "p2"
@@ -194,7 +200,7 @@ class LightningHardeningTest {
         val node = PayingNode(balances(0uL), payments)
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
         try {
-            val session = LightningSession(scope = scope, store = store(), nodeFactory = { node }, info = LnInfoApi { info() })
+            val session = LightningSession(scope = scope, store = store(), nodeFactory = { node }, info = LnInfoApi { info() }, chain = uniffi.wallet_ffi.LnChain.BTC)
             session.onUnlocked(wallet.id, seed).join()
             return runCatching { session.pay(target, 10_000uL) } to node.paid
         } finally {
@@ -225,10 +231,16 @@ class LightningHardeningTest {
             assertEquals(1, paid)
         }
         // BOLT11 has its own guard (the payment hash, in Rust): not blocked here.
-        val b11 = LnTarget.Bolt11(invoice = "lnbc1", amountMsat = 10_000uL, description = "", expirySecs = 3600uL)
+        val b11 = LnTarget.Bolt11(invoice = BTC_INVOICE, amountMsat = 10_000uL, description = "", expirySecs = 3600uL)
         val (r, paid) = payWith(listOf(outbound(LnPaymentStatus.PENDING)), b11)
         assertTrue("$r", r.isSuccess)
         assertEquals(1, paid)
+    }
+
+    private companion object {
+        /** A BTC (no bit 512) mainnet invoice: the only kind a BTC session pays. */
+        const val BTC_INVOICE =
+            "lnbc10u1pj48ugqdqvve5hsar4wfjspp5wtxkappzcsrlkmgfs6g0zyct0hkhashh7hsaxz7e65slq9fkx7fssp5qurswpc8qurswpc8qurswpc8qurswpc8qurswpc8qurswpc8qurs9qyysgqcqzysug9w4fmxjxs5d7ns8mhwf4yee4ku2r0yw4kx52hlu5mj0mtxys6rauzqc3fkpku2utdmc7y4hsg6cc9lafr5s0xzd9zcn5twv3qddyqq777d99"
     }
 
     // ---- /ln/info bounds ----------------------------------------------------

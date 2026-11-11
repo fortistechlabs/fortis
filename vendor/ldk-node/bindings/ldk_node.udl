@@ -21,6 +21,7 @@ dictionary Config {
 dictionary XbtConfig {
 	u32 gossip_floor_height;
 	sequence<PublicKey> splice_peers;
+	boolean splice_all_peers;
 };
 
 dictionary AnchorChannelsConfig {

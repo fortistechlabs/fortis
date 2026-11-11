@@ -1,6 +1,7 @@
 //! The XBT release gate: the patched LDK (ldk-node) on a Knots regtest with
 //! BLAKE2b active (height 20), syncing through fortis-index's Esplora, against
-//! the LND BLAKE2b fork. Every transaction the scenarios make must be
+//! the LND BLAKE2b fork, and the app's own node layer (fortis-lightning,
+//! chain Xbt, with its VSS backup) against the real XBT LSP. Every transaction the scenarios make must be
 //! confirmed by Knots, with the signature hash type bytes expected of it.
 //!
 //! Run it with `tools/xbt-regtest/run.sh` (starts and stops the environment).
@@ -9,6 +10,7 @@
 mod check;
 mod env;
 mod scenarios;
+mod vss;
 
 use std::process::ExitCode;
 
@@ -57,11 +59,19 @@ fn main() -> ExitCode {
 			println!("== {name}: {r}");
 			results.push((name.to_string(), r));
 		}
-		for n in env.nodes() {
+		if failed {
+			if let Some(lsp) = env.lsp.borrow().as_ref() {
+				println!("\nfortis-lsp's last log lines:\n{}", lsp.log_tail(30));
+			}
+		}
+		for n in env.nodes().into_iter().chain(env.p2.get()) {
 			if n.running() {
 				let _ = n.stop();
 			}
 		}
+		// Stops fortis-lsp and the VSS (if a failure left them running).
+		drop(env.lsp.borrow_mut().take());
+		drop(env.vss.borrow_mut().take());
 	}
 
 	println!("\n================ XBT regtest summary ================");

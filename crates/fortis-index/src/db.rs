@@ -4,7 +4,8 @@
 
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
-use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex, MutexGuard};
 
 use anyhow::{bail, Context, Result};
 use bitcoin::hashes::Hash;
@@ -16,6 +17,7 @@ use rocksdb::{
 };
 
 use crate::extract::ParsedBlock;
+use crate::spendcf::{self, BlockSpend, SpendRec};
 use crate::keys::{
     height_key, history_key, history_txnum, p2wpkh_scripthash, tip_from, tip_value, txnum_key,
     utxo_key, utxo_outpoint, BlockRec, Program, TxNum, UtxoVal, MAX_TXNUM,
@@ -37,18 +39,34 @@ const CF_RENDER: &str = "render";
 /// the program's history itself is all in `history`. Never rolled back: a
 /// stale entry only maps a hash to a program whose history says the rest.
 const CF_SCRIPTHASH: &str = "scripthash";
-const ALL_CFS: [&str; 8] = [
+/// Spent outpoint ([`spendcf::key`]) → its spender ([`SpendRec`]), for every
+/// recorded input ([`spendcf::recorded`]) of every block from
+/// [`DbConfig::spends_from`] on. Rolled back with its block (through the undo
+/// record). Created empty when an older database is opened; `meta`'s
+/// `spends_watermark` says how far it is complete.
+const CF_SPENDS: &str = "spends";
+const ALL_CFS: [&str; 9] = [
     CF_META, CF_BLOCKS, CF_TXIDS, CF_HISTORY, CF_UTXO, CF_UNDO, CF_RENDER, CF_SCRIPTHASH,
+    CF_SPENDS,
 ];
 
 const META_SCHEMA: &[u8] = b"schema";
 const META_CHAIN: &[u8] = b"chain";
 const META_TIP: &[u8] = b"tip";
+/// The start height it was counted from, then the highest height `h` such
+/// that every block from that start through `h` has its spends in `spends`
+/// (4 + 4 bytes, BE). Absent: none yet. A mark counted from another start
+/// than the configured `spends_from` counts as none (a lowered start leaves
+/// the heights below the old one unrecorded).
+const META_SPENDS_WATERMARK: &[u8] = b"spends_watermark";
 
 const PROGRAM_LEN: usize = 20;
 
 pub struct DbConfig {
     pub cache_mb: usize,
+    /// Record spends (`spends` column family) for blocks at and above this
+    /// height; `None` records none.
+    pub spends_from: Option<u32>,
 }
 
 /// Bulk: no WAL (crash-safe only up to the last flush, which `meta.tip`
@@ -67,6 +85,11 @@ pub enum OpenError {
         "database schema {found} is not {SCHEMA_VERSION} (v1 index? use a new --db directory)"
     )]
     Schema { found: String },
+    /// `--spends-from-height` below what this index can backfill.
+    #[error("--spends-from-height {from} is below the first block this index holds")]
+    SpendsFromBelowIndex { from: u32 },
+    #[error("--spends-from-height {from} is below --start-height {start}")]
+    SpendsFromBelowStart { from: u32, start: u32 },
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -86,6 +109,19 @@ pub struct NoUndo {
     pub height: u32,
 }
 
+/// Why [`Db::write_backfill`] wrote nothing.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum BackfillRefused {
+    #[error("the watermark moved (planned from {planned:?}, now {now:?})")]
+    MarkMoved { planned: Option<u32>, now: Option<u32> },
+    #[error("block {height} is {node} on the node but {index:?} in the index")]
+    NotIndexed {
+        height: u32,
+        node: BlockHash,
+        index: Option<BlockHash>,
+    },
+}
+
 #[derive(Clone)]
 pub struct Db {
     db: Arc<DB>,
@@ -93,6 +129,14 @@ pub struct Db {
     /// there); its view only changes on `catch_up`.
     secondary: bool,
     render: Arc<RenderCap>,
+    spends_from: Option<u32>,
+    /// Held by every write that reads the spends watermark and writes it
+    /// back (block apply, rollback, a backfill batch), so the mark one makes
+    /// is never based on a value another has since changed.
+    spends_lock: Arc<Mutex<()>>,
+    /// A bulk (WAL-less) [`Db::apply`] has written since the last flush:
+    /// set after each, cleared by [`Db::flush`].
+    bulk_dirty: Arc<AtomicBool>,
 }
 
 /// Rendered transactions cached at most: every one any client asks about
@@ -125,7 +169,9 @@ impl RenderCap {
 
 /// What `rollback` needs to undo one block: the keys it added and the UTXOs
 /// it deleted (with their values). Txids and render rows come from the
-/// block's txnum range.
+/// block's txnum range. `added_spends` is an optional trailing section,
+/// written only when non-empty, so a record with none (every record written
+/// before `spends` existed) has exactly the old layout.
 #[derive(Default, Debug, PartialEq, Eq)]
 pub(crate) struct Undo {
     pub first_txnum: TxNum,
@@ -133,6 +179,7 @@ pub(crate) struct Undo {
     pub added_history: Vec<[u8; 25]>,
     pub added_utxo: Vec<[u8; 56]>,
     pub deleted_utxo: Vec<([u8; 56], UtxoVal)>,
+    pub added_spends: Vec<[u8; 36]>,
 }
 
 impl Undo {
@@ -156,6 +203,12 @@ impl Undo {
         for (k, v) in &self.deleted_utxo {
             b.extend_from_slice(k);
             b.extend_from_slice(&v.encode());
+        }
+        if !self.added_spends.is_empty() {
+            b.extend_from_slice(&(self.added_spends.len() as u32).to_be_bytes());
+            for k in &self.added_spends {
+                b.extend_from_slice(k);
+            }
         }
         b
     }
@@ -190,6 +243,14 @@ impl Undo {
                 Ok((k, UtxoVal::decode(take(&mut r, 12)?)?))
             })
             .collect::<Result<_>>()?;
+        let added_spends = if r.is_empty() {
+            Vec::new()
+        } else {
+            let n = count(&mut r)?;
+            (0..n)
+                .map(|_| Ok(take(&mut r, 36)?.try_into().unwrap()))
+                .collect::<Result<_>>()?
+        };
         if !r.is_empty() {
             bail!("undo record has {} trailing bytes", r.len());
         }
@@ -199,8 +260,17 @@ impl Undo {
             added_history,
             added_utxo,
             deleted_utxo,
+            added_spends,
         })
     }
+}
+
+/// The `spends_watermark` meta value: start height, then watermark (BE).
+fn spends_mark(from: u32, watermark: u32) -> [u8; 8] {
+    let mut v = [0u8; 8];
+    v[..4].copy_from_slice(&from.to_be_bytes());
+    v[4..].copy_from_slice(&watermark.to_be_bytes());
+    v
 }
 
 fn db_options(cfg: &DbConfig) -> (Options, Vec<ColumnFamilyDescriptor>) {
@@ -216,7 +286,7 @@ fn db_options(cfg: &DbConfig) -> (Options, Vec<ColumnFamilyDescriptor>) {
     let cfs = ALL_CFS
         .iter()
         .map(|&name| {
-            let big = name == CF_HISTORY || name == CF_UTXO;
+            let big = name == CF_HISTORY || name == CF_UTXO || name == CF_SPENDS;
             ColumnFamilyDescriptor::new(name, cf_options(&cache, big, big))
         })
         .collect();
@@ -272,6 +342,9 @@ impl Db {
             db: Arc::new(db),
             secondary: false,
             render,
+            spends_from: cfg.spends_from,
+            spends_lock: Arc::default(),
+            bulk_dirty: Arc::default(),
         };
         db.guard(chain_id, true)?;
         Ok(db)
@@ -296,6 +369,9 @@ impl Db {
             db: Arc::new(db),
             secondary: true,
             render,
+            spends_from: cfg.spends_from,
+            spends_lock: Arc::default(),
+            bulk_dirty: Arc::default(),
         };
         db.guard(chain_id, false)?;
         Ok(db)
@@ -351,6 +427,108 @@ impl Db {
         }
     }
 
+    /// The height `spends` is recorded from, as configured.
+    pub fn spends_from(&self) -> Option<u32> {
+        self.spends_from
+    }
+
+    /// The highest height through which `spends` is complete (from
+    /// [`Db::spends_from`]); `None` if no block is yet (or on a read error).
+    pub fn spends_watermark(&self) -> Option<u32> {
+        self.read_spends_watermark().ok().flatten()
+    }
+
+    /// The watermark, if it was counted from the configured `spends_from`.
+    fn read_spends_watermark(&self) -> Result<Option<u32>> {
+        Ok(self
+            .read_spends_mark()?
+            .filter(|(from, _)| Some(*from) == self.spends_from)
+            .map(|(_, w)| w))
+    }
+
+    /// The stored (start height, watermark), whatever start is configured.
+    fn read_spends_mark(&self) -> Result<Option<(u32, u32)>> {
+        let raw = self.db.get_cf(self.cf(CF_META), META_SPENDS_WATERMARK)?;
+        raw.map(|b| {
+            let b: [u8; 8] = b[..].try_into().context("spends_watermark length")?;
+            Ok((
+                u32::from_be_bytes(b[..4].try_into().unwrap()),
+                u32::from_be_bytes(b[4..].try_into().unwrap()),
+            ))
+        })
+        .transpose()
+    }
+
+    /// Who spent `op`, if a recorded input in an indexed block did.
+    pub fn spend_of(&self, op: &OutPoint) -> Result<Option<SpendRec>> {
+        self.db
+            .get_cf(self.cf(CF_SPENDS), spendcf::key(op))?
+            .map(|v| SpendRec::decode(&v).context("spends row length"))
+            .transpose()
+    }
+
+    fn lock_spends(&self) -> MutexGuard<'_, ()> {
+        self.spends_lock.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    /// Write one backfill batch: `blocks` (consecutive heights, each with its
+    /// hash and recorded spends) as `spends` rows, and the watermark moved to
+    /// the last of them — all in one durable batch. Written only if the
+    /// watermark is still `expect` (what the backfill planned from, so the
+    /// first height is `expect + 1`, or the start height when `None`) and
+    /// every block is the index's own block at its height (none rolled back or
+    /// not yet indexed). Otherwise nothing is written and the reason is
+    /// returned: plan again.
+    pub fn write_backfill(
+        &self,
+        expect: Option<u32>,
+        blocks: &[(u32, BlockHash, Vec<BlockSpend>)],
+    ) -> Result<Result<(), BackfillRefused>> {
+        let Some(from) = self.spends_from else {
+            bail!("spends backfill without a start height");
+        };
+        let Some(&(last, _, _)) = blocks.last() else {
+            return Ok(Ok(()));
+        };
+        let first = expect.map_or(from, |w| w + 1);
+        let _spends = self.lock_spends();
+        let now = self.read_spends_watermark()?;
+        if now != expect {
+            return Ok(Err(BackfillRefused::MarkMoved { planned: expect, now }));
+        }
+        let cf_blocks = self.cf(CF_BLOCKS);
+        for (i, (h, hash, _)) in blocks.iter().enumerate() {
+            if *h != first + i as u32 {
+                bail!("spends backfill batch: height {h} where {} was due", first + i as u32);
+            }
+            let ours = self.db.get_cf(cf_blocks, height_key(*h))?;
+            let ours = ours.map(|v| BlockRec::decode(&v)).transpose()?.map(|r| r.hash);
+            if ours != Some(*hash) {
+                return Ok(Err(BackfillRefused::NotIndexed { height: *h, node: *hash, index: ours }));
+            }
+        }
+        // Bulk (WAL-less) block writes may not be flushed yet: this batch
+        // goes to the WAL, so after a crash it would replay — mark and all —
+        // over blocks the crash lost. Flush them first. Durable block writes
+        // are in the WAL ahead of this batch and replay with it, so with no
+        // bulk write pending (follow mode) there is nothing to flush. Checked
+        // under `spends_lock`, which every `apply` holds while it writes.
+        if self.bulk_pending() {
+            self.flush()?;
+        }
+        let mut wb = WriteBatch::default();
+        let cf_spends = self.cf(CF_SPENDS);
+        for (h, _, spends) in blocks {
+            for s in spends {
+                let v = SpendRec { txid: s.txid, vin: s.vin, height: *h };
+                wb.put_cf(cf_spends, spendcf::key(&s.prevout), v.encode());
+            }
+        }
+        wb.put_cf(self.cf(CF_META), META_SPENDS_WATERMARK, spends_mark(from, last));
+        self.db.write_opt(wb, &durable()).context("writing spends backfill batch")?;
+        Ok(Ok(()))
+    }
+
     /// Every `blocks` row, ascending by height.
     pub fn load_blocks(&self) -> Result<Vec<(u32, BlockRec)>> {
         self.db
@@ -373,12 +551,18 @@ impl Db {
         d: Durability,
         keep_undo: bool,
     ) -> Result<Vec<BlockRec>> {
-        let (cf_txids, cf_hist, cf_utxo, cf_sh) = (
+        let (cf_txids, cf_hist, cf_utxo, cf_sh, cf_spends) = (
             self.cf(CF_TXIDS),
             self.cf(CF_HISTORY),
             self.cf(CF_UTXO),
             self.cf(CF_SCRIPTHASH),
+            self.cf(CF_SPENDS),
         );
+        let _spends = self.lock_spends();
+        let mut watermark = match self.spends_from {
+            Some(_) => self.read_spends_watermark()?,
+            None => None,
+        };
         let mut wb = WriteBatch::default();
         let mut recs = Vec::with_capacity(blocks.len());
         let mut n = next_txnum;
@@ -442,6 +626,31 @@ impl Db {
                 }
                 n += 1;
             }
+            if let Some(from) = self.spends_from.filter(|f| b.height >= *f) {
+                for s in &b.spends {
+                    let k = spendcf::key(&s.prevout);
+                    let v = SpendRec {
+                        txid: s.txid,
+                        vin: s.vin,
+                        height: b.height,
+                    };
+                    wb.put_cf(cf_spends, k, v.encode());
+                    if keep_undo {
+                        undo.added_spends.push(k);
+                    }
+                }
+                // Advance only over contiguous heights: from the start height
+                // (whatever the old mark), or from the block before.
+                let follows = watermark.and_then(|w| w.checked_add(1)) == Some(b.height);
+                if b.height == from || follows {
+                    watermark = Some(b.height);
+                    wb.put_cf(
+                        self.cf(CF_META),
+                        META_SPENDS_WATERMARK,
+                        spends_mark(from, b.height),
+                    );
+                }
+            }
             let rec = BlockRec {
                 hash: b.hash,
                 time: b.time,
@@ -471,6 +680,9 @@ impl Db {
             Durability::Durable => durable(),
         };
         self.db.write_opt(wb, &wo).context("writing block batch")?;
+        if d == Durability::Bulk {
+            self.bulk_dirty.store(true, Ordering::SeqCst);
+        }
         Ok(recs)
     }
 
@@ -506,7 +718,8 @@ impl Db {
     }
 
     /// Undo block `height` (whose row is `rec`) in one durable `WriteBatch`:
-    /// delete the keys it added, restore the UTXOs it spent, drop its txids,
+    /// delete the keys it added (its `spends` rows included), lower the spends
+    /// watermark below it, restore the UTXOs it spent, drop its txids,
     /// render cache rows, `blocks` and `undo` rows, and set `meta.tip` to
     /// `new_tip` (removed when `None`). [`NoUndo`] if it has no undo record.
     pub fn rollback(
@@ -531,6 +744,7 @@ impl Db {
             );
         }
         let (cf_hist, cf_utxo) = (self.cf(CF_HISTORY), self.cf(CF_UTXO));
+        let _spends = self.lock_spends();
         let mut wb = WriteBatch::default();
         for k in &undo.added_history {
             wb.delete_cf(cf_hist, k);
@@ -540,6 +754,20 @@ impl Db {
         }
         for (k, v) in &undo.deleted_utxo {
             wb.put_cf(cf_utxo, k, v.encode());
+        }
+        let cf_spends = self.cf(CF_SPENDS);
+        for k in &undo.added_spends {
+            wb.delete_cf(cf_spends, k);
+        }
+        // Whatever start is configured now: a stored mark must never outlive
+        // the block it covers.
+        if let Some((from, w)) = self.read_spends_mark()? {
+            if w == height {
+                match height.checked_sub(1).filter(|h| *h >= from) {
+                    Some(h) => wb.put_cf(self.cf(CF_META), META_SPENDS_WATERMARK, spends_mark(from, h)),
+                    None => wb.delete_cf(self.cf(CF_META), META_SPENDS_WATERMARK),
+                }
+            }
         }
         let end = rec.first_txnum + rec.n_txs as TxNum;
         if end > rec.first_txnum {
@@ -572,9 +800,19 @@ impl Db {
         let cfs: Vec<&ColumnFamily> = ALL_CFS.iter().map(|n| self.cf(n)).collect();
         let mut fo = FlushOptions::default();
         fo.set_wait(true);
-        self.db
-            .flush_cfs_opt(&cfs, &fo)
-            .context("flushing index database")
+        // Cleared before flushing: a bulk write racing this flush sets it
+        // again, so it is never left clear over an unflushed write.
+        let was = self.bulk_dirty.swap(false, Ordering::SeqCst);
+        let r = self.db.flush_cfs_opt(&cfs, &fo).context("flushing index database");
+        if r.is_err() && was {
+            self.bulk_dirty.store(true, Ordering::SeqCst);
+        }
+        r
+    }
+
+    /// A bulk (WAL-less) write has not been flushed yet.
+    pub fn bulk_pending(&self) -> bool {
+        self.bulk_dirty.load(Ordering::SeqCst)
     }
 
     /// Full compaction of `history` and `utxo` on a background thread (after
@@ -809,6 +1047,13 @@ impl<'a> Reader<'a> {
     pub fn utxo(&self, p: &Program, op: &OutPoint) -> Result<Option<UtxoVal>> {
         self.get(CF_UTXO, &utxo_key(p, op))?
             .map(|v| UtxoVal::decode(&v))
+            .transpose()
+    }
+
+    /// The hash of the indexed block at `height`, if there is one.
+    pub fn block_hash(&self, height: u32) -> Result<Option<BlockHash>> {
+        self.get(CF_BLOCKS, &height_key(height))?
+            .map(|v| BlockRec::decode(&v).map(|r| r.hash))
             .transpose()
     }
 

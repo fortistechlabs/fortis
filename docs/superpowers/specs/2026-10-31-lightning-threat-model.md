@@ -11,8 +11,8 @@ This is the document Task 19 step 1 asks for, with the results of steps 2, 4, 6 
 | Asset | Where it lives | Why it matters |
 |---|---|---|
 | Recovery phrase / BIP-39 seed | Android, sealed at rest; in memory while unlocked | Everything derives from it |
-| Node seed (BIP-85 HEX, 64 bytes, index 0) | derived on unlock, handed to ldk-node | Controls every channel and the transit wallet |
-| VSS store id | `HMAC-SHA256(node seed, "fortis/ln/vss/v1")` | The only namespace key to the encrypted channel backup (the VSS server has no per-user auth) |
+| Node seed (BIP-85 HEX, 64 bytes, index 0; XBT: index 1) | derived on unlock, handed to ldk-node | Controls every channel and the transit wallet |
+| VSS store id | `HMAC-SHA256(node seed, "fortis/ln/vss/v1")` (XBT: `"fortis/ln/vss/xbt/v1"`) | The only namespace key to the encrypted channel backup (the VSS server has no per-user auth) |
 | Channel state (VSS blobs) | the fortis VSS server | Losing or rolling it back risks the channel balance |
 | User funds in channels | ldk-node / LSP peer | The main asset |
 | Transit wallet | ldk-node on-chain wallet (same seed) | Holds a "Move to Lightning" deposit until the channel opens |

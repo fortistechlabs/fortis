@@ -41,9 +41,10 @@ import uniffi.wallet_ffi.LnTarget
 import uniffi.wallet_ffi.LnUnifiedLightning
 
 /*
- * The Lightning wallet (chain "ln", one per app): its own tab — balance, Receive /
- * Send / History on the node — its settings card, and the Lightning confirm sheet.
- * BTC wallets are on-chain only; a Lightning target there hands off to this wallet.
+ * The Lightning wallets (chain "ln" for BTC and "ln-xbt" for XBT, one of each per app): the
+ * tab — balance, Receive / Send / History on the node — the settings card, and the Lightning
+ * confirm sheet. The same screens serve both, labelled by the wallet's chain. On-chain wallets
+ * are on-chain only; a Lightning target there hands off to the Lightning wallet of its chain.
  */
 
 private fun fmt(sat: Long) = fmtCoin(sat)
@@ -57,8 +58,8 @@ internal fun leavingLightningSat(r: LnState.Ready): Long {
     return if (open) b.pendingCloseSat.toLong() else (b.pendingCloseSat + b.onchainTransitSat).toLong()
 }
 
-/** Lightning amounts are bitcoin. */
-private const val LN_UNIT = "BTC"
+/** The coin the Lightning wallet in view holds: "BTC" for "ln", "XBT" for "ln-xbt". */
+private fun lnUnit(vm: WalletViewModel): String = chainUnit(vm.config?.chain)
 
 /** How long the receive amount must stand still before a Lightning quote is
  *  bought for it. */
@@ -67,12 +68,12 @@ private const val LN_UNIT = "BTC"
  *  address in it is looked up (it contacts that address's server). */
 private const val LNURL_DEBOUNCE_MS = 1_000L
 
-/** The Lightning wallet's whole balance: its channel and transit funds plus what Fortis holds
- *  for it (the account). `null` while the node is not running. */
+/** The Lightning wallet on [walletChain]'s whole balance: its channel and transit funds plus
+ *  what Fortis holds for it (the account). `null` while the node is not running. */
 @Composable
-internal fun lightningWalletTotalSat(vm: WalletViewModel): Long? {
-    val id = vm.wallets.firstOrNull { it.isLightning }?.id
-    val live = lightningWalletLiveTotalSat(vm)
+internal fun lightningWalletTotalSat(vm: WalletViewModel, walletChain: String): Long? {
+    val id = lightningWalletOf(vm.wallets, walletChain)?.id
+    val live = lightningWalletLiveTotalSat(vm, walletChain)
     if (id != null) {
         androidx.compose.runtime.LaunchedEffect(id) { vm.loadLnCachedTotal(id) }
         androidx.compose.runtime.LaunchedEffect(id, live) { if (live != null) vm.rememberLnTotal(id, live) }
@@ -82,20 +83,21 @@ internal fun lightningWalletTotalSat(vm: WalletViewModel): Long? {
 
 /** The live total: only once the node is ready and the Fortis account has answered. */
 @Composable
-private fun lightningWalletLiveTotalSat(vm: WalletViewModel): Long? {
-    val lnState by vm.lightning.state.collectAsState()
+private fun lightningWalletLiveTotalSat(vm: WalletViewModel, walletChain: String): Long? {
+    val side = vm.lnSide(walletChain)
+    val lnState by side.session.state.collectAsState()
     val ready = lnState as? LnState.Ready ?: return null
-    val acct = vm.accountBalance ?: return null
+    val acct = side.accountBalance ?: return null
     // What the user can use: money already on its way out (a close confirming, its sweep)
     // is shown apart ("on its way to …"), not in the balance.
-    return lightningWalletBalance(vm)?.let { it.totalSat - leavingLightningSat(ready) + (acct.balanceMsat / 1_000uL).toLong() }
+    return lightningWalletBalance(vm, walletChain)?.let { it.totalSat - leavingLightningSat(ready) + (acct.balanceMsat / 1_000uL).toLong() }
 }
 
-/** The Lightning wallet's balance (Lightning plus funds moving on-chain), or null while
- *  the node has not reported one yet. */
+/** The Lightning wallet on [walletChain]'s balance (Lightning plus funds moving on-chain), or
+ *  null while its node has not reported one yet. */
 @Composable
-internal fun lightningWalletBalance(vm: WalletViewModel): HomeBalance? {
-    val lnState by vm.lightning.state.collectAsState()
+internal fun lightningWalletBalance(vm: WalletViewModel, walletChain: String): HomeBalance? {
+    val lnState by vm.lnSide(walletChain).session.state.collectAsState()
     return when (lnState) {
         is LnState.Ready, is LnState.Error -> homeBalance(0L, lnState)
         LnState.Off, LnState.Starting -> null
@@ -116,7 +118,8 @@ fun LightningWalletTab(vm: WalletViewModel) {
     val c = vm.config ?: return
     var tab by remember { mutableStateOf("receive") }
     val lnState by vm.lightning.state.collectAsState()
-    val hb = lightningWalletBalance(vm)
+    val unit = chainUnit(c.chain)
+    val hb = lightningWalletBalance(vm, c.chain)
     val accountSat = ((vm.accountBalance?.balanceMsat ?: 0uL) / 1_000uL).toLong()
     val lnReadyNow = lnState is LnState.Ready
     // A bolt strikes whenever the wallet's Lightning total (channel + Fortis account) changes:
@@ -127,7 +130,7 @@ fun LightningWalletTab(vm: WalletViewModel) {
         hb.totalSat - leavingLightningSat(lnState as LnState.Ready) + accountSat
     } else null
     // The cached total until the node and the account answer, then the live one.
-    val cachedOrLive = lightningWalletTotalSat(vm)
+    val cachedOrLive = lightningWalletTotalSat(vm, c.chain)
     val shownSat = lnTotal ?: cachedOrLive
     var lastLnTotal by remember(c.id) { mutableStateOf<Long?>(null) }
     LaunchedEffect(lnTotal) {
@@ -161,7 +164,7 @@ fun LightningWalletTab(vm: WalletViewModel) {
         Modifier.fillMaxSize().padding(top = Fx.s2),
         verticalArrangement = Arrangement.spacedBy(Fx.s4),
     ) {
-        LightningTakeoverBanner(vm)
+        LightningTakeoverBanner(vm.lightning)
         GlassCard(hero = true) {
             Column(Modifier.fillMaxWidth()) {
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -173,7 +176,7 @@ fun LightningWalletTab(vm: WalletViewModel) {
                         val (whole, fraction) = splitAmount(if (shownSat != null) fmt(countUpSat(shownSat)) else "—")
                         Text(whole, style = FxType.balance, modifier = Modifier.alignByBaseline())
                         if (fraction.isNotEmpty()) Text(fraction, style = FxType.balance, modifier = Modifier.alignByBaseline())
-                        Text(LN_UNIT, style = FxType.label, color = Fx.signal, modifier = Modifier.alignByBaseline().padding(start = 6.dp))
+                        Text(unit, style = FxType.label, color = Fx.signal, modifier = Modifier.alignByBaseline().padding(start = 6.dp))
                     }
                     if (vm.accountSending || lnTotal == null) Row(verticalAlignment = Alignment.CenterVertically) {
                         CircularProgressIndicator(Modifier.size(12.dp), color = Fx.signal, strokeWidth = 2.dp)
@@ -184,7 +187,7 @@ fun LightningWalletTab(vm: WalletViewModel) {
                         )
                     }
                     shownSat?.let { sat ->
-                        vm.fiatText(sat, LN_CHAIN)?.let {
+                        vm.fiatText(sat, c.chain)?.let {
                             Text(stringResource(R.string.fiat_approx, it), style = FxType.fiat)
                         }
                     }
@@ -199,10 +202,13 @@ fun LightningWalletTab(vm: WalletViewModel) {
                         style = FxType.fiatSmall, color = Fx.warn,
                     )
                     // Part of it is still on-chain: a channel opening or closing.
-                    // Leaving: a close (or its sweep) on its way to the BTC wallet. Say how much and where.
+                    // Leaving: a close (or its sweep) on its way to an on-chain wallet of its chain. Say how much and where.
                     val leavingSat = (lnState as? LnState.Ready)?.let { leavingLightningSat(it) } ?: 0L
+                    val leavingTo = vm.moveTargetWallet()
                     if (leavingSat > 0L) Text(
-                        stringResource(R.string.ln_moving_to_wallet, fmt(leavingSat), vm.moveTargetWallet()?.display ?: ""),
+                        // No wallet of its chain to sweep to: say what to add, not an empty name.
+                        if (leavingTo != null) stringResource(R.string.ln_moving_to_wallet, fmt(leavingSat), leavingTo.display)
+                        else stringResource(com.fortis.wallet.lightning.noOnchainWalletRes(c.chain)),
                         style = FxType.fiatSmall, color = Fx.warn,
                     ) else if (hb?.moving == true) Text(
                         stringResource(R.string.wallet_split_moving),
@@ -221,7 +227,7 @@ fun LightningWalletTab(vm: WalletViewModel) {
                 }
             }
         }
-        val tabKeys = if (com.fortis.wallet.lightning.lightningSweepWallet(vm.wallets) != null)
+        val tabKeys = if (com.fortis.wallet.lightning.lightningSweepWallet(vm.wallets, c.chain) != null)
             listOf("receive", "send", "move", "history") else listOf("receive", "send", "history")
         LaunchedEffect(vm.pendingSendText, c.id) {
             if (vm.pendingSendText != null) tab = "send"
@@ -241,7 +247,16 @@ fun LightningWalletTab(vm: WalletViewModel) {
             when (tab) {
                 "receive" -> {
                     LightningReceiveTab(vm)
-                    ReusableOfferCard(vm)
+                    // BTC's offer card always shows (its offer on a tap). XBT's shows only once
+                    // its LSP returned an offer, which it refuses while it holds no custody: ask
+                    // for it as soon as the node is up.
+                    if (c.chain == com.fortis.wallet.data.LN_XBT_CHAIN) {
+                        val ready = lnState is LnState.Ready
+                        LaunchedEffect(c.id, ready) {
+                            if (ready && vm.accountOffer == null) vm.loadAccountOffer()
+                        }
+                    }
+                    if (com.fortis.wallet.lightning.offerShown(c.chain, vm.accountOffer)) ReusableOfferCard(vm)
                 }
                 "send" -> key(vm.sentCount) { LightningSendTab(vm) } // a sent payment starts the form over
                 "move" -> key(vm.sentCount) { TransferToOnchainTab(vm) }
@@ -256,10 +271,11 @@ fun LightningWalletTab(vm: WalletViewModel) {
 @Composable
 internal fun LightningReceiveTab(vm: WalletViewModel) {
     val ctx = LocalContext.current
+    val unit = lnUnit(vm)
     val lnState by vm.lightning.state.collectAsState()
     val minLnSat = vm.lightning.lastInfo?.minPaymentSat ?: 10_000L
     val maxLnSat = vm.lightning.lastInfo?.maxPaymentSat ?: (DEFAULT_LN_LIMITS.maxPaymentMsat / 1_000uL).toLong()
-    val remoteEnabled = vm.lightning.lastInfo?.enabled != false
+    val remoteEnabled = vm.lightning.remoteEnabled
     val remoteMessage = vm.lightning.lastInfo?.message?.takeIf { it.isNotBlank() }
 
     var amount by remember { mutableStateOf("") }
@@ -342,7 +358,7 @@ internal fun LightningReceiveTab(vm: WalletViewModel) {
                 keyboardType = if (amountInSat) KeyboardType.Number else KeyboardType.Decimal,
                 modifier = Modifier.weight(1f),
             )
-            AmountUnitPicker(amountInSat, LN_UNIT) { amountInSat = it }
+            AmountUnitPicker(amountInSat, unit) { amountInSat = it }
         }
         val focus = androidx.compose.ui.platform.LocalFocusManager.current
         if (invoice == null) PrimaryButton(
@@ -365,7 +381,7 @@ internal fun LightningReceiveTab(vm: WalletViewModel) {
                 stringResource(
                     R.string.receive_ln_fee_summary,
                     fmt(amountSat),
-                    LN_UNIT,
+                    unit,
                     fmt(rxQr.feeSat),
                     fmt(rxQr.youGetSat),
                 ),
@@ -421,6 +437,7 @@ internal fun LightningReceiveTab(vm: WalletViewModel) {
                     .combinedClickable(onClick = copyQr, onLongClick = copyQr, onDoubleClick = copyQr)
                     .padding(10.dp),
             )
+            XbtLightningCaption(vm, Modifier.align(Alignment.CenterHorizontally))
             Text(
                 stringResource(R.string.receive_qr_hint),
                 style = FxType.meta,
@@ -474,6 +491,8 @@ internal fun LightningSendTab(vm: WalletViewModel) {
     var amountInSat by remember { mutableStateOf(true) }
     val c = vm.config
     val network = c?.network ?: "bitcoin"
+    val walletChain = c?.chain ?: LN_CHAIN
+    val unit = lnUnit(vm)
     val amountSat = amountToSat(amount, amountInSat)
     val lnState by vm.lightning.state.collectAsState()
     val limits = remember(vm.lightning.lastInfo) {
@@ -496,6 +515,13 @@ internal fun LightningSendTab(vm: WalletViewModel) {
     val lnText = remember(to, parsedTarget) { lightningPart(to, parsedTarget) }
     val onchainOnly = parsedTarget is LnTarget.OnChain
     val isLnurlTarget = parsedTarget is LnTarget.LnurlPay || parsedTarget is LnTarget.LightningAddress
+    // An invoice or offer of the other chain (or of none this app can tell) is refused before
+    // anything else. An LNURL / address is checked when its invoice is fetched, at pay time.
+    val wrongChain = remember(parsedTarget, walletChain) {
+        val t = parsedTarget
+        if (t == null || onchainOnly || isLnurlTarget) null
+        else com.fortis.wallet.lightning.targetChainRefusal(walletChain, t)?.let { it to com.fortis.wallet.lightning.isOfferTarget(t) }
+    }
 
     LaunchedEffect(parsedTarget) {
         val bip21Sat = (parsedTarget as? LnTarget.Unified)?.amountSat?.toLong()
@@ -528,8 +554,8 @@ internal fun LightningSendTab(vm: WalletViewModel) {
         }
     }
 
-    val sendPlan = remember(to, lnText, network, lnState, limits, amountSat, resolvedLnurl, lnurlError, isLnurlTarget, onchainOnly) {
-        if (to.isBlank() || onchainOnly) null
+    val sendPlan = remember(to, lnText, network, lnState, limits, amountSat, resolvedLnurl, lnurlError, isLnurlTarget, onchainOnly, wrongChain) {
+        if (to.isBlank() || onchainOnly || wrongChain != null) null
         else if (isLnurlTarget && resolvedLnurl == null) {
             if (lnurlError != null) SendPlan.Invalid(lnurlError!!) else null
         } else {
@@ -562,8 +588,19 @@ internal fun LightningSendTab(vm: WalletViewModel) {
         if (lnState is LnState.Off || lnState is LnState.Starting) {
             Text(lightningStatusText(lnState), style = FxType.meta, color = Fx.textDim)
         }
-        if (onchainOnly) {
-            ErrorText(stringResource(R.string.ln_send_onchain_target))
+        if (wrongChain != null) {
+            val (targetChain, isOffer) = wrongChain
+            ErrorText(com.fortis.wallet.lightning.wrongChainMessage(walletChain, targetChain, isOffer) { ctx.getString(it) })
+            // The other chain's Lightning wallet can pay it: hand it over when the app has one.
+            val other = if (walletChain == com.fortis.wallet.data.LN_XBT_CHAIN) LN_CHAIN else com.fortis.wallet.data.LN_XBT_CHAIN
+            val otherChain = if (other == LN_CHAIN) uniffi.wallet_ffi.LnTargetChain.BTC else uniffi.wallet_ffi.LnTargetChain.XBT
+            if (targetChain == otherChain && lightningWalletOf(vm.wallets, other) != null) {
+                PrimaryButton(stringResource(com.fortis.wallet.lightning.payFromOtherWalletRes(other))) {
+                    vm.payWithLightningWallet(to, other)
+                }
+            }
+        } else if (onchainOnly) {
+            ErrorText(stringResource(com.fortis.wallet.lightning.onchainTargetRes(walletChain)))
         } else if (resolvingLnurl) {
             Text(stringResource(R.string.send_ln_resolving), style = FxType.meta, color = Fx.textDim)
         } else if (sendPlan != null) {
@@ -598,14 +635,14 @@ internal fun LightningSendTab(vm: WalletViewModel) {
                         keyboardType = if (amountInSat) KeyboardType.Number else KeyboardType.Decimal,
                         modifier = Modifier.weight(1f),
                     )
-                    AmountUnitPicker(amountInSat, LN_UNIT) { amountInSat = it }
+                    AmountUnitPicker(amountInSat, unit) { amountInSat = it }
                 }
             }
 
             when (val plan = sendPlan) {
                 is SendPlan.Lightning -> {
                     val sat = plan.amountMsat?.let { displaySatFromMsat(it) } ?: amountSat ?: 0L
-                    kv(stringResource(R.string.confirm_amount), "${fmt(sat)} $LN_UNIT")
+                    kv(stringResource(R.string.confirm_amount), "${fmt(sat)} $unit")
                     val desc = when (val t = plan.target) {
                         is LnTarget.Bolt11 -> t.description
                         is LnTarget.Bolt12Offer -> t.description
@@ -667,7 +704,7 @@ internal fun LightningHistory(vm: WalletViewModel) {
     // Money already on its way out (a close confirming, then its sweep) was moved by the
     // ledger's move row: it is not in the balance the rows add up to, and that row is pending.
     val leaving = (lnState as? LnState.Ready)?.let { leavingLightningSat(it) } ?: 0L
-    val total = lightningWalletTotalSat(vm)
+    val total = c?.let { lightningWalletTotalSat(vm, it.chain) }
     val shown = remember(rows, leaving) {
         if (leaving <= 0L) rows else {
             val newestClose = rows.firstOrNull { it.noteRes == R.string.history_moved_onchain_closed }
@@ -677,9 +714,10 @@ internal fun LightningHistory(vm: WalletViewModel) {
     val (after, unaccounted) = remember(shown, total) {
         if (total == null) emptyMap<String, Long>() to 0L else ledgerBalances(shown, total)
     }
-    HistoryList(vm, shown, LN_UNIT, chain = LN_CHAIN, network = c?.network ?: "bitcoin", balanceAfter = after)
+    val unit = lnUnit(vm)
+    HistoryList(vm, shown, unit, chain = c?.chain ?: LN_CHAIN, network = c?.network ?: "bitcoin", balanceAfter = after)
     if (total != null && rows.isNotEmpty() && unaccounted != 0L) GlassCard {
-        Text(stringResource(R.string.history_unaccounted, fmt(unaccounted), LN_UNIT), style = FxType.meta, color = Fx.warn)
+        Text(stringResource(R.string.history_unaccounted, fmt(unaccounted), unit), style = FxType.meta, color = Fx.warn)
     }
 }
 
@@ -689,7 +727,15 @@ internal fun CreateLightningWalletDialog(vm: WalletViewModel) {
     AlertDialog(
         onDismissRequest = { vm.dismissLightningWalletPrompt() },
         containerColor = Fx.panel,
-        title = { Text(stringResource(R.string.send_create_lightning_wallet), color = Fx.text) },
+        title = {
+            Text(
+                stringResource(
+                    if (vm.lightningPromptChain == com.fortis.wallet.data.LN_XBT_CHAIN) R.string.send_create_lightning_xbt_wallet
+                    else R.string.send_create_lightning_wallet,
+                ),
+                color = Fx.text,
+            )
+        },
         confirmButton = {
             TextButton({ vm.addLightningWallet() }) {
                 Text(stringResource(R.string.action_add_wallet), color = Fx.signal)
@@ -703,13 +749,16 @@ internal fun CreateLightningWalletDialog(vm: WalletViewModel) {
     )
 }
 
-/** Settings → Lightning (beta), while the app has a Lightning wallet: the node's status,
- *  the takeover from another device, and "Close channel and move to on-chain" (with the
- *  force-close offer when the LSP cannot be reached). */
+/** Settings → Lightning (beta), one card per Lightning wallet the app has ([walletChain]
+ *  "ln" or "ln-xbt"): the node's status, the takeover from another device, and "Close channel
+ *  and move to on-chain" to a wallet of its own chain (with the force-close offer when the LSP
+ *  cannot be reached). */
 @Composable
-internal fun LightningWalletSettingsCard(vm: WalletViewModel) {
-    val c = lightningWalletOf(vm.wallets) ?: return
-    val lnState by vm.lightning.state.collectAsState()
+internal fun LightningWalletSettingsCard(vm: WalletViewModel, walletChain: String) {
+    val c = lightningWalletOf(vm.wallets, walletChain) ?: return
+    val side = vm.lnSide(walletChain)
+    val session = side.session
+    val lnState by session.state.collectAsState()
     var confirmClose by remember { mutableStateOf(false) }
 
     GlassCard {
@@ -723,7 +772,7 @@ internal fun LightningWalletSettingsCard(vm: WalletViewModel) {
                 Text(c.display, style = FxType.meta, color = Fx.textDim)
             }
         }
-        Text(stringResource(R.string.settings_lightning_body), style = FxType.meta, color = Fx.textFaint)
+        Text(stringResource(com.fortis.wallet.lightning.lightningBodyRes(walletChain)), style = FxType.meta, color = Fx.textFaint)
         val statusText = lightningStatusText(lnState)
         val statusColor = when (lnState) {
             is LnState.Ready -> Fx.good
@@ -733,12 +782,12 @@ internal fun LightningWalletSettingsCard(vm: WalletViewModel) {
         Text(statusText, style = FxType.meta, color = statusColor)
 
         if (shouldShowTakeoverBanner(lnState)) {
-            LightningTakeoverButton(vm)
+            LightningTakeoverButton(session)
         }
 
         val ready = lnState as? LnState.Ready
-        val remoteEnabled = vm.lightning.lastInfo?.enabled != false
-        val remoteMessage = vm.lightning.lastInfo?.message?.takeIf { it.isNotBlank() }
+        val remoteEnabled = session.remoteEnabled
+        val remoteMessage = session.lastInfo?.message?.takeIf { it.isNotBlank() }
         if (!remoteEnabled && remoteMessage != null) {
             Text(remoteMessage, style = FxType.meta, color = Fx.warn)
         }
@@ -748,30 +797,30 @@ internal fun LightningWalletSettingsCard(vm: WalletViewModel) {
             )
         if (canCloseOrSweep) {
             GhostButton(
-                stringResource(if (vm.closingLightningChannel) R.string.settings_lightning_closing else R.string.settings_lightning_close_action),
-                enabled = !vm.closingLightningChannel,
+                stringResource(if (side.closing) R.string.settings_lightning_closing else R.string.settings_lightning_close_action),
+                enabled = !side.closing,
                 dense = true,
             ) { confirmClose = true }
         }
-        ErrorText(vm.lightningCloseError)
+        ErrorText(side.closeError)
     }
 
-    if (vm.offerForceClose) {
+    if (side.offerForceClose) {
         AlertDialog(
-            onDismissRequest = { vm.dismissForceCloseOffer() },
+            onDismissRequest = { vm.dismissForceCloseOffer(walletChain) },
             containerColor = Fx.panel,
             title = { Text(stringResource(R.string.settings_lightning_force_title), color = Fx.text) },
             text = { Text(stringResource(R.string.settings_lightning_force_body), color = Fx.textDim) },
             confirmButton = {
                 TextButton({
-                    vm.dismissForceCloseOffer()
-                    vm.closeLightningAndMoveToOnchain(force = true)
+                    vm.dismissForceCloseOffer(walletChain)
+                    vm.closeLightningAndMoveToOnchain(force = true, walletChain = walletChain)
                 }) {
                     Text(stringResource(R.string.settings_lightning_force_action), color = Fx.warn)
                 }
             },
             dismissButton = {
-                TextButton({ vm.dismissForceCloseOffer() }) {
+                TextButton({ vm.dismissForceCloseOffer(walletChain) }) {
                     Text(stringResource(R.string.action_cancel), color = Fx.text)
                 }
             },
@@ -779,12 +828,13 @@ internal fun LightningWalletSettingsCard(vm: WalletViewModel) {
     }
 
     if (confirmClose) {
-        // Name the BTC wallet the funds go to (the one chosen on the Move tab, else the first).
-        val sweepTo = vm.moveTargetWallet()
+        // Name the on-chain wallet (of this wallet's chain) the funds go to (the one chosen on
+        // the Move tab, else the first).
+        val sweepTo = vm.moveTargetWallet(walletChain)
         val closeBody = if (sweepTo != null) {
-            stringResource(R.string.settings_lightning_close_body_to, sweepTo.display)
+            stringResource(com.fortis.wallet.lightning.closeBodyRes(walletChain, named = true), sweepTo.display)
         } else {
-            stringResource(R.string.settings_lightning_close_body)
+            stringResource(com.fortis.wallet.lightning.closeBodyRes(walletChain, named = false))
         }
         AlertDialog(
             onDismissRequest = { confirmClose = false },
@@ -794,7 +844,7 @@ internal fun LightningWalletSettingsCard(vm: WalletViewModel) {
             confirmButton = {
                 TextButton({
                     confirmClose = false
-                    vm.closeLightningAndMoveToOnchain()
+                    vm.closeLightningAndMoveToOnchain(walletChain = walletChain)
                 }) {
                     Text(stringResource(R.string.action_confirm), color = Fx.signal)
                 }
@@ -833,7 +883,7 @@ internal fun LnConfirmSheet(vm: WalletViewModel, p: com.fortis.wallet.LnPlanPrev
                 stringResource(R.string.confirm_payment_title),
                 style = MaterialTheme.typography.titleLarge, color = Fx.text,
             )
-            val chain = LN_CHAIN
+            val chain = p.walletChain
             val amountSat = displaySatFromMsat(p.amountMsat)
             val feeEstimateSat = displaySatFromMsat(p.feeEstimateMsat)
 
@@ -900,6 +950,7 @@ fun lnErrorMessage(e: com.fortis.wallet.lightning.LnFfiError): Int = when (e) {
     is uniffi.wallet_ffi.LnFfiException.NoRoute -> R.string.ln_err_no_route
     is uniffi.wallet_ffi.LnFfiException.InvoiceExpired -> R.string.ln_err_invoice_expired
     is uniffi.wallet_ffi.LnFfiException.WrongNetwork -> R.string.ln_err_wrong_network
+    is uniffi.wallet_ffi.LnFfiException.WrongChain -> R.string.ln_err_wrong_chain
     is uniffi.wallet_ffi.LnFfiException.PaymentStateUnknown -> R.string.ln_err_payment_state_unknown
     is uniffi.wallet_ffi.LnFfiException.AmountOutOfRange -> R.string.ln_err_amount_out_of_range
     is uniffi.wallet_ffi.LnFfiException.Other -> R.string.ln_err_other
@@ -932,22 +983,28 @@ fun lnErrorText(e: com.fortis.wallet.lightning.LnFfiError, get: (Int, Array<out 
 fun shouldShowTakeoverBanner(state: LnState): Boolean =
     state is LnState.Error && state.error is uniffi.wallet_ffi.LnFfiException.ActiveOnAnotherDevice
 
+/** The node of [session] stopped because another device holds its lock: offer the takeover. */
 @Composable
-internal fun LightningTakeoverBanner(vm: WalletViewModel) {
-    val lnState by vm.lightning.state.collectAsState()
+internal fun LightningTakeoverBanner(
+    session: com.fortis.wallet.lightning.LightningSession,
+    /** Whose banner it is, where both Lightning wallets' can show (Home); null inside a wallet. */
+    walletName: String? = null,
+) {
+    val lnState by session.state.collectAsState()
     if (!shouldShowTakeoverBanner(lnState)) return
     GlassCard {
+        walletName?.let { Text(it, color = Fx.text, fontWeight = FontWeight.SemiBold) }
         Text(
             stringResource(R.string.ln_err_active_on_another_device),
             style = FxType.meta,
             color = Fx.warn,
         )
-        LightningTakeoverButton(vm)
+        LightningTakeoverButton(session)
     }
 }
 
 @Composable
-private fun LightningTakeoverButton(vm: WalletViewModel) {
+private fun LightningTakeoverButton(session: com.fortis.wallet.lightning.LightningSession) {
     var confirm by remember { mutableStateOf(false) }
     GhostButton(
         stringResource(R.string.ln_takeover_action),
@@ -962,7 +1019,7 @@ private fun LightningTakeoverButton(vm: WalletViewModel) {
             confirmButton = {
                 TextButton({
                     confirm = false
-                    vm.lightning.takeover()
+                    session.takeover()
                 }) { Text(stringResource(R.string.action_confirm), color = Fx.signal) }
             },
             dismissButton = {
@@ -1005,6 +1062,7 @@ internal fun ReusableOfferCard(vm: WalletViewModel) {
                     .combinedClickable(onClick = copyQr, onLongClick = copyQr, onDoubleClick = copyQr)
                     .padding(10.dp),
             )
+            XbtLightningCaption(vm, Modifier.align(Alignment.CenterHorizontally))
             val copy = { copyToClipboard(ctx, "offer", offer) }
             Text(
                 "${offer.take(24)}…${offer.takeLast(16)}",
@@ -1029,4 +1087,12 @@ internal fun ReusableOfferCard(vm: WalletViewModel) {
             }
         }
     }
+}
+
+/** "XBT Lightning" under the XBT wallet's QR codes: they look like any Lightning QR, and only
+ *  an XBT Lightning wallet can pay them. Nothing for the BTC wallet. */
+@Composable
+private fun XbtLightningCaption(vm: WalletViewModel, modifier: Modifier = Modifier) {
+    if (vm.config?.chain != com.fortis.wallet.data.LN_XBT_CHAIN) return
+    Text(stringResource(R.string.ln_qr_caption_xbt), style = FxType.label, color = Fx.signal, modifier = modifier)
 }

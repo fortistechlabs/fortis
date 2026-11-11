@@ -1,10 +1,13 @@
 //! The environment: Knots, fortis-index, LND (ports from
 //! `tools/xbt-regtest/env.sh`, exported by `run.sh`) and the two ldk-node
-//! nodes, P (the phone) and S (the LSP).
+//! nodes, P (the phone) and S (the LSP). The last two scenarios add the real
+//! `fortis-lsp` binary (chain = "xbt", a child process: [`LspProcess`]) and
+//! two clients of it: a second phone, P2 (ldk-node), and the app's own node
+//! (`fortis_lightning::Node`, chain Xbt) over a VSS ([`crate::vss`]).
 
-use std::cell::{Cell, RefCell};
+use std::cell::{Cell, OnceCell, RefCell};
 use std::collections::HashMap;
-use std::process::Command;
+use std::process::{Child, Command, Stdio};
 use std::str::FromStr;
 use std::sync::{Arc, OnceLock};
 use std::time::{Duration, Instant};
@@ -32,6 +35,13 @@ pub struct Cfg {
 	pub lnd_rpc_port: u16,
 	pub lnd_p2p_port: u16,
 	pub s_port: u16,
+	/// The repository (fortis-lsp is run from its target/debug).
+	pub repo: String,
+	pub lsp_port: u16,
+	pub lsp_admin_port: u16,
+	/// The app node's VSS (vss-server, and its PostgreSQL), started by `app_node_xbt`.
+	pub vss_port: u16,
+	pub vss_pg_port: u16,
 }
 
 static CFG: OnceLock<Cfg> = OnceLock::new();
@@ -56,6 +66,11 @@ pub fn init_cfg() -> R<()> {
 		lnd_rpc_port: port("XR_LND_RPC_PORT")?,
 		lnd_p2p_port: port("XR_LND_P2P_PORT")?,
 		s_port: port("XR_LDK_S_PORT")?,
+		repo: var("XR_REPO")?,
+		lsp_port: port("XR_LSP_PORT")?,
+		lsp_admin_port: port("XR_LSP_ADMIN_PORT")?,
+		vss_port: port("XR_VSS_PORT")?,
+		vss_pg_port: port("XR_VSS_PG_PORT")?,
 	};
 	let _ = CFG.set(cfg);
 	Ok(())
@@ -159,6 +174,10 @@ pub fn poll<T>(what: &str, secs: u64, mut f: impl FnMut() -> R<Option<T>>) -> R<
 pub enum Who {
 	P,
 	S,
+	/// The second phone, client of fortis-lsp.
+	P2,
+	/// fortis-lsp (chain = "xbt").
+	Lsp,
 }
 
 /// One ldk-node node that can be stopped, restarted and rebuilt from its
@@ -383,27 +402,11 @@ pub struct Env {
 	/// Outputs of a force close that `who` must sweep before the suite ends: (who, label,
 	/// txid, vout); `sweeps_settle` checks each has a confirmed spender.
 	pub must_sweep: RefCell<Vec<(Who, String, String, u32)>>,
-}
-
-/// `sync_wallets`, again (at most twice more) if it timed out. ldk-node gives a Lightning
-/// wallet sync 10 s. Asked who spent a channel funding output that is hundreds of blocks
-/// old (S's LND channel, closed in `sweeps_settle`), fortis-index scans 50 blocks per request
-/// and answers 503 "ask again" until it finds the spend, and esplora-client retries a 503
-/// with doubling backoff (0.25 s, 0.5 s, 1 s, ...): past about 5 slices the sync times out.
-/// The index keeps how far it scanned, so the next sync picks up where it stopped.
-/// Any other error, or a third timeout, fails.
-fn sync_retrying_timeouts(node: &Ldk) -> R<()> {
-	let mut attempt = 1;
-	loop {
-		match node.node().sync_wallets() {
-			Ok(()) => return Ok(()),
-			Err(e) if attempt < 3 && e == ldk_node::NodeError::TxSyncTimeout => {
-				println!("  {}: sync_wallets timed out ({e}); syncing again (attempt {})", node.name, attempt + 1);
-				attempt += 1;
-			},
-			Err(e) => return Err(format!("{}: sync_wallets: {e}", node.name)),
-		}
-	}
+	/// fortis-lsp and its client P2, once `lsp_xbt_jit` has started them.
+	pub lsp: RefCell<Option<LspProcess>>,
+	pub p2: OnceCell<Ldk>,
+	/// The app node's VSS, once `app_node_xbt` has started it.
+	pub vss: RefCell<Option<crate::vss::VssProcess>>,
 }
 
 pub fn lsps2_service_config() -> LSPS2ServiceConfig {
@@ -429,11 +432,11 @@ fn base_config(dir: &str, splice_peers: Vec<PublicKey>) -> Config {
 	let mut config = Config::default();
 	config.storage_dir_path = dir.to_string();
 	config.network = Network::Regtest;
-	config.xbt = Some(XbtConfig { gossip_floor_height: GOSSIP_FLOOR, splice_peers });
+	config.xbt = Some(XbtConfig { gossip_floor_height: GOSSIP_FLOOR, splice_peers, splice_all_peers: false });
 	config
 }
 
-fn esplora_url() -> String {
+pub fn esplora_url() -> String {
 	format!("http://127.0.0.1:{}", cfg().index_port)
 }
 
@@ -462,7 +465,29 @@ fn build_p(dir: &str, s: Option<(PublicKey, SocketAddress)>) -> R<Node> {
 	b.build().map_err(|e| format!("build P: {e}"))
 }
 
+/// Node P2: a second phone, LSPS2 client of fortis-lsp (`lsp`), which may splice with it.
+fn build_p2(dir: &str, lsp: PublicKey, lsp_addr: SocketAddress) -> R<Node> {
+	let config = base_config(dir, vec![lsp]);
+	let mut b = Builder::from_config(config);
+	b.set_chain_source_esplora(esplora_url(), None);
+	b.set_liquidity_source_lsps2(lsp, lsp_addr, None);
+	b.build().map_err(|e| format!("build P2: {e}"))
+}
+
 impl Env {
+	/// Builds and starts P2 (directory `$XR/ldk-p2`), the LSPS2 client of fortis-lsp.
+	pub fn start_p2(&self, lsp: PublicKey, lsp_addr: SocketAddress) -> R<&Ldk> {
+		if self.p2.get().is_some() {
+			return Err("P2 already started".into());
+		}
+		let dir = format!("{}/ldk-p2", cfg().xr);
+		let d = dir.clone();
+		let p2 = Ldk::new("P2", Who::P2, dir, Box::new(move || build_p2(&d, lsp, lsp_addr.clone())))?;
+		p2.start()?;
+		let _ = self.p2.set(p2);
+		Ok(self.p2.get().expect("set"))
+	}
+
 	/// Builds and starts P and S (each knows the other's id: probed by a
 	/// first build), funds them on chain.
 	pub fn setup() -> R<Env> {
@@ -511,6 +536,9 @@ impl Env {
 			lnd_s_channel: RefCell::new(None),
 			penalty_msat: Cell::new(0),
 			must_sweep: RefCell::new(vec![]),
+			lsp: RefCell::new(None),
+			p2: OnceCell::new(),
+			vss: RefCell::new(None),
 		};
 		env.mine(6)?;
 		for n in [&env.p, &env.s] {
@@ -538,9 +566,9 @@ impl Env {
 			Ok((ln(&["getinfo"])?["block_height"].as_u64().unwrap_or(0) >= want).then_some(()))
 		})?;
 		self.scan_blocks()?;
-		for node in self.nodes() {
+		for node in self.nodes().into_iter().chain(self.p2.get()) {
 			if node.running() {
-				sync_retrying_timeouts(node)?;
+				node.node().sync_wallets().map_err(|e| format!("{}: sync_wallets: {e}", node.name))?;
 				node.pump();
 			}
 		}
@@ -692,4 +720,177 @@ pub fn show_sighash_types(label: &str, txid: &str) -> R<()> {
 	let info = crate::check::tx(txid)?;
 	println!("  {label} {txid}: signature hash types {}", crate::check::fmt_sigs(&info.sig_bytes));
 	Ok(())
+}
+
+/// The real `fortis-lsp` binary (target/debug), `chain = "xbt"`, as a child
+/// process: data in `$XR/lsp`, stdout in `$XR/logs/lsp.out`, stderr in
+/// `$XR/logs/lsp.log`. Its PID goes in `$XR/pids` (down.sh stops it if the
+/// suite does not); dropping it stops it (SIGTERM, then KILL after 30 s).
+pub struct LspProcess {
+	child: Child,
+	pub id: PublicKey,
+	pub addr: SocketAddress,
+	/// A fresh address of its on-chain wallet (its startup line).
+	pub onchain_address: String,
+	pub data_dir: String,
+}
+
+/// The config the suite runs fortis-lsp with (regtest; JIT fee 1 %, min 1,000 sat, as S).
+pub fn lsp_config_toml(data_dir: &str) -> String {
+	let c = cfg();
+	format!(
+		r#"chain = "xbt"
+network = "regtest"
+esplora_url = "{esplora}"
+xbt_gossip_floor_height = {GOSSIP_FLOOR}
+listen = "127.0.0.1:{lsp_port}"
+metrics_listen = "127.0.0.1:{admin_port}"
+data_dir = "{data_dir}"
+alias = "xr-fortis-lsp"
+open_fee_ppm = {JIT_FEE_PPM}
+open_fee_min_sat = {open_fee_min_sat}
+min_payment_size_msat = 10000000
+max_payment_size_msat = 500000000
+channel_size_factor = 2.0
+channel_min_sat = 100000
+channel_max_sat = 500000
+low_liquidity_sat = 0
+custody_max_sat = 0
+"#,
+		esplora = esplora_url(),
+		lsp_port = c.lsp_port,
+		admin_port = c.lsp_admin_port,
+		open_fee_min_sat = JIT_MIN_FEE_MSAT / 1000,
+	)
+}
+
+fn port_free(port: u16) -> bool {
+	std::net::TcpListener::bind(("127.0.0.1", port)).is_ok()
+}
+
+/// The last `n` lines of a file ("" if it cannot be read).
+pub fn tail(path: &str, n: usize) -> String {
+	let text = std::fs::read_to_string(path).unwrap_or_default();
+	let lines: Vec<&str> = text.lines().collect();
+	lines[lines.len().saturating_sub(n)..].join("\n")
+}
+
+impl LspProcess {
+	/// Writes the config, starts fortis-lsp and waits for its `ready` line.
+	pub fn start() -> R<LspProcess> {
+		use std::os::unix::fs::DirBuilderExt;
+		let c = cfg();
+		for p in [c.lsp_port, c.lsp_admin_port] {
+			if !port_free(p) {
+				return Err(format!("port {p} is in use by a process the suite did not start"));
+			}
+		}
+		let bin = format!("{}/target/debug/fortis-lsp", c.repo);
+		if !std::path::Path::new(&bin).exists() {
+			return Err(format!("{bin} missing: cargo build -p fortis-lsp"));
+		}
+		let data_dir = format!("{}/lsp", c.xr);
+		// fortis-lsp refuses a data_dir group or others can read.
+		std::fs::DirBuilder::new()
+			.recursive(true)
+			.mode(0o700)
+			.create(&data_dir)
+			.map_err(|e| format!("{data_dir}: {e}"))?;
+		let conf = format!("{data_dir}/lsp.toml");
+		std::fs::write(&conf, lsp_config_toml(&data_dir)).map_err(|e| format!("{conf}: {e}"))?;
+		let logs = format!("{}/logs", c.xr);
+		let out_path = format!("{logs}/lsp.out");
+		let open = |p: &str| std::fs::File::create(p).map_err(|e| format!("{p}: {e}"));
+		let mut child = Command::new(&bin)
+			.args(["--config", &conf])
+			.stdin(Stdio::null())
+			.stdout(open(&out_path)?)
+			.stderr(open(&format!("{logs}/lsp.log"))?)
+			.spawn()
+			.map_err(|e| format!("{bin}: {e}"))?;
+		let pid = child.id();
+		// down.sh stops it from here if the suite cannot (its command line names $XR).
+		let pids = format!("{}/pids", c.xr);
+		let recorded = std::fs::OpenOptions::new()
+			.append(true)
+			.create(true)
+			.open(&pids)
+			.and_then(|mut f| std::io::Write::write_all(&mut f, format!("lsp {pid}\n").as_bytes()))
+			.map_err(|e| format!("{pids}: {e}"));
+		let ready = recorded.and_then(|()| poll("fortis-lsp to print ready", 120, || {
+			if let Some(status) = child.try_wait().map_err(|e| e.to_string())? {
+				return Err(format!("fortis-lsp exited ({status}) before ready"));
+			}
+			let out = std::fs::read_to_string(&out_path).unwrap_or_default();
+			Ok(out.lines().any(|l| l == "ready").then_some(out))
+		}));
+		let started = ready.and_then(|out| {
+			let field = |k: &str| {
+				out.lines()
+					.find_map(|l| l.strip_prefix(k).and_then(|v| v.strip_prefix(' ')).map(str::to_string))
+					.ok_or_else(|| format!("fortis-lsp printed no {k} line"))
+			};
+			let id = PublicKey::from_str(&field("node_id")?).map_err(|e| format!("node_id: {e}"))?;
+			Ok((id, field("onchain_address")?))
+		});
+		let (id, onchain_address) = match started {
+			Ok(v) => v,
+			Err(e) => {
+				let _ = child.kill();
+				let _ = child.wait();
+				return Err(format!("{e}\n--- {logs}/lsp.log (last 30) ---\n{}", tail(&format!("{logs}/lsp.log"), 30)));
+			},
+		};
+		let addr = SocketAddress::from_str(&format!("127.0.0.1:{}", c.lsp_port)).unwrap();
+		println!("  fortis-lsp (pid {pid}) ready: node {id} at {addr}");
+		Ok(LspProcess { child, id, addr, onchain_address, data_dir })
+	}
+
+	/// A gauge of its `GET /metrics` (e.g. `fortis_lsp_onchain_sat`).
+	pub fn metric(&self, name: &str) -> R<u64> {
+		let url = format!("http://127.0.0.1:{}/metrics", cfg().lsp_admin_port);
+		let text = run("curl", &["-sf", &url])?;
+		text.lines()
+			.find_map(|l| l.strip_prefix(name).and_then(|v| v.strip_prefix(' ')).map(str::trim))
+			.ok_or_else(|| format!("fortis-lsp metrics: no {name}"))?
+			.parse()
+			.map_err(|e| format!("{name}: {e}"))
+	}
+
+	/// Its last `n` log lines: ldk-node's log, then its stderr.
+	pub fn log_tail(&self, n: usize) -> String {
+		let xr = &cfg().xr;
+		format!(
+			"--- {d}/ldk_node.log (last {n}) ---\n{}\n--- {xr}/logs/lsp.log (last {n}) ---\n{}",
+			tail(&format!("{d}/ldk_node.log", d = self.data_dir), n),
+			tail(&format!("{xr}/logs/lsp.log"), n),
+			d = self.data_dir,
+		)
+	}
+
+	/// SIGTERM (fortis-lsp stops its node cleanly), KILL after 30 s.
+	pub fn stop(&mut self) {
+		if let Ok(Some(_)) = self.child.try_wait() {
+			return;
+		}
+		let pid = self.child.id().to_string();
+		let _ = Command::new("kill").args(["-TERM", &pid]).status();
+		let t = Instant::now();
+		while t.elapsed() < Duration::from_secs(30) {
+			if let Ok(Some(status)) = self.child.try_wait() {
+				println!("  fortis-lsp stopped ({status})");
+				return;
+			}
+			sleep_ms(200);
+		}
+		println!("  fortis-lsp ignored SIGTERM for 30 s: KILL");
+		let _ = self.child.kill();
+		let _ = self.child.wait();
+	}
+}
+
+impl Drop for LspProcess {
+	fn drop(&mut self) {
+		self.stop();
+	}
 }

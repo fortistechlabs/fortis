@@ -1,5 +1,6 @@
 use super::*;
 use crate::extract::{Funded, ParsedBlock, Spent, TxRows};
+use crate::spendcf::{BlockSpend, SpendRec};
 use bitcoin::hashes::Hash;
 use bitcoin::{BlockHash, OutPoint, Txid};
 
@@ -22,6 +23,7 @@ fn blk(height: u32, txs: Vec<TxRows>) -> ParsedBlock {
         hash: hash(height),
         prev: hash(height.wrapping_sub(1)),
         time: 1_700_000_000 + height,
+        spends: vec![],
         txs,
     }
 }
@@ -39,7 +41,7 @@ fn fund(t: Txid, program: Program, vout: u32, value: u64) -> TxRows {
 }
 
 fn cfg() -> DbConfig {
-    DbConfig { cache_mb: 8 }
+    DbConfig { cache_mb: 8, spends_from: None }
 }
 
 fn open(dir: &tempfile::TempDir) -> Db {
@@ -439,6 +441,7 @@ fn undo_record_round_trips() {
                 height: 8,
             },
         )],
+        added_spends: vec![[5; 36]],
     };
     assert_eq!(Undo::decode(&u.encode()).unwrap(), u);
     assert!(Undo::decode(&u.encode()[..30]).is_err());
@@ -487,4 +490,309 @@ fn past_the_cap_the_largest_coins_are_listed_and_the_rest_summed() {
     let (all, none) = r.utxos_largest(&P1, 100, |_| true).unwrap();
     assert_eq!(all.len(), 10);
     assert_eq!(none, Unlisted::default());
+}
+
+fn spend(prev: u8, vout: u32, by: u8, vin: u32) -> BlockSpend {
+    BlockSpend {
+        prevout: OutPoint { txid: txid(prev), vout },
+        txid: txid(by),
+        vin,
+    }
+}
+
+/// A block whose only content is `spends` (no indexed program).
+fn blk_spending(height: u32, spends: Vec<BlockSpend>) -> ParsedBlock {
+    ParsedBlock {
+        spends,
+        ..blk(height, vec![])
+    }
+}
+
+fn open_spends(dir: &tempfile::TempDir, from: Option<u32>) -> Db {
+    let cfg = DbConfig {
+        spends_from: from,
+        ..cfg()
+    };
+    Db::open(dir.path(), &cfg, "btc").unwrap()
+}
+
+fn op(prev: u8, vout: u32) -> OutPoint {
+    OutPoint { txid: txid(prev), vout }
+}
+
+#[test]
+fn commit_records_spends_from_start_height() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = open_spends(&dir, Some(11));
+    assert_eq!(db.spends_from(), Some(11));
+    assert_eq!(db.spends_watermark(), None);
+    db.apply(&[blk_spending(10, vec![spend(1, 0, 0x10, 0)])], 0, Durability::Bulk, false)
+        .unwrap();
+    db.apply(
+        &[
+            blk_spending(11, vec![spend(2, 1, 0x11, 2)]),
+            blk_spending(12, vec![spend(3, 5, 0x12, 0), spend(4, 0, 0x12, 1)]),
+        ],
+        0,
+        Durability::Durable,
+        true,
+    )
+    .unwrap();
+    assert_eq!(db.spend_of(&op(1, 0)).unwrap(), None);
+    assert_eq!(
+        db.spend_of(&op(2, 1)).unwrap(),
+        Some(SpendRec { txid: txid(0x11), vin: 2, height: 11 })
+    );
+    assert_eq!(
+        db.spend_of(&op(3, 5)).unwrap(),
+        Some(SpendRec { txid: txid(0x12), vin: 0, height: 12 })
+    );
+    assert_eq!(
+        db.spend_of(&op(4, 0)).unwrap(),
+        Some(SpendRec { txid: txid(0x12), vin: 1, height: 12 })
+    );
+    assert_eq!(db.spend_of(&op(3, 4)).unwrap(), None);
+    assert_eq!(db.spends_watermark(), Some(12));
+}
+
+/// The watermark only advances over contiguous heights from the start: a
+/// block past a gap is recorded but doesn't claim the gap is complete.
+#[test]
+fn watermark_does_not_jump_a_gap() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = open_spends(&dir, Some(11));
+    db.apply(&[blk_spending(13, vec![spend(2, 1, 0x13, 0)])], 0, Durability::Durable, false)
+        .unwrap();
+    assert!(db.spend_of(&op(2, 1)).unwrap().is_some());
+    assert_eq!(db.spends_watermark(), None);
+}
+
+#[test]
+fn disconnect_removes_spends() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = open_spends(&dir, Some(11));
+    let r11 = db
+        .apply(&[blk_spending(11, vec![spend(2, 1, 0x11, 0)])], 0, Durability::Durable, true)
+        .unwrap();
+    let r12 = db
+        .apply(&[blk_spending(12, vec![spend(3, 0, 0x12, 0)])], 0, Durability::Durable, true)
+        .unwrap();
+    assert_eq!(db.spends_watermark(), Some(12));
+    db.rollback(12, &r12[0], Some((11, r11[0].hash))).unwrap();
+    assert_eq!(db.spend_of(&op(3, 0)).unwrap(), None);
+    assert!(db.spend_of(&op(2, 1)).unwrap().is_some());
+    assert_eq!(db.spends_watermark(), Some(11));
+    // Re-connecting 12 (or its replacement) resumes from the lowered mark.
+    db.apply(&[blk_spending(12, vec![spend(5, 0, 0x22, 0)])], 0, Durability::Durable, true)
+        .unwrap();
+    assert_eq!(db.spends_watermark(), Some(12));
+    assert!(db.spend_of(&op(5, 0)).unwrap().is_some());
+}
+
+#[test]
+fn no_spends_when_disabled() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = open_spends(&dir, None);
+    db.apply(&[blk_spending(11, vec![spend(2, 1, 0x11, 0)])], 0, Durability::Durable, true)
+        .unwrap();
+    assert_eq!(db.spends_from(), None);
+    assert_eq!(db.spend_of(&op(2, 1)).unwrap(), None);
+    assert_eq!(db.spends_watermark(), None);
+}
+
+/// A database made before `spends` existed (no such column family) opens
+/// without a rebuild: the column family is created, empty, with no watermark.
+#[test]
+fn an_old_database_gains_an_empty_spends_on_open() {
+    let dir = tempfile::tempdir().unwrap();
+    {
+        let mut opts = Options::default();
+        opts.create_if_missing(true);
+        opts.create_missing_column_families(true);
+        let old: Vec<&str> = ALL_CFS.iter().copied().filter(|c| *c != CF_SPENDS).collect();
+        let raw = DB::open_cf(&opts, dir.path(), &old).unwrap();
+        let meta = raw.cf_handle(CF_META).unwrap();
+        raw.put_cf(meta, META_SCHEMA, SCHEMA_VERSION.to_be_bytes()).unwrap();
+        raw.put_cf(meta, META_CHAIN, b"btc").unwrap();
+    }
+    let db = open_spends(&dir, Some(0));
+    assert_eq!(db.spends_watermark(), None);
+    assert_eq!(db.spend_of(&op(2, 1)).unwrap(), None);
+    db.apply(&[blk_spending(0, vec![spend(2, 1, 0x11, 0)])], 0, Durability::Durable, true)
+        .unwrap();
+    assert_eq!(db.spends_watermark(), Some(0));
+}
+
+/// Undo records written before `spends` existed have no spends section and
+/// still decode; one with spends round-trips.
+#[test]
+fn undo_with_spends_round_trips_and_old_records_decode() {
+    let old = Undo {
+        first_txnum: 5,
+        n_txs: 1,
+        added_history: vec![[1; 25]],
+        ..Undo::default()
+    };
+    let bytes = old.encode();
+    assert_eq!(bytes.len(), 5 + 4 + 4 + 25 + 4 + 4, "no spends: the old layout exactly");
+    assert_eq!(Undo::decode(&bytes).unwrap(), old);
+    let new = Undo {
+        added_spends: vec![[7; 36], [8; 36]],
+        ..old
+    };
+    assert_eq!(Undo::decode(&new.encode()).unwrap(), new);
+    assert!(Undo::decode(&new.encode()[..new.encode().len() - 1]).is_err());
+}
+
+/// The mark is tied to the start height it was counted from: lowering
+/// `spends_from` leaves the heights below the old start unrecorded, so the
+/// mark reads as none until the new start is reached again.
+#[test]
+fn a_changed_start_height_voids_the_watermark() {
+    let dir = tempfile::tempdir().unwrap();
+    {
+        let db = open_spends(&dir, Some(11));
+        db.apply(
+            &[
+                blk_spending(11, vec![spend(2, 1, 0x11, 0)]),
+                blk_spending(12, vec![spend(3, 0, 0x12, 0)]),
+            ],
+            0,
+            Durability::Durable,
+            true,
+        )
+        .unwrap();
+        assert_eq!(db.spends_watermark(), Some(12));
+    }
+    assert_eq!(open_spends(&dir, Some(5)).spends_watermark(), None);
+    assert_eq!(open_spends(&dir, None).spends_watermark(), None);
+    assert_eq!(open_spends(&dir, Some(11)).spends_watermark(), Some(12));
+}
+
+/// Rolling back a block recorded past a gap (the mark below it) deletes its
+/// rows and leaves the mark where it was.
+#[test]
+fn rollback_past_a_gap_deletes_rows_and_keeps_the_mark() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = open_spends(&dir, Some(11));
+    let r11 = db
+        .apply(&[blk_spending(11, vec![spend(2, 1, 0x11, 0)])], 0, Durability::Durable, true)
+        .unwrap();
+    let r13 = db
+        .apply(&[blk_spending(13, vec![spend(3, 0, 0x13, 0)])], 0, Durability::Durable, true)
+        .unwrap();
+    assert_eq!(db.spends_watermark(), Some(11));
+    assert!(db.spend_of(&op(3, 0)).unwrap().is_some());
+    db.rollback(13, &r13[0], Some((11, r11[0].hash))).unwrap();
+    assert_eq!(db.spend_of(&op(3, 0)).unwrap(), None);
+    assert!(db.spend_of(&op(2, 1)).unwrap().is_some());
+    assert_eq!(db.spends_watermark(), Some(11));
+}
+
+/// Rolling back the start block itself leaves no mark.
+#[test]
+fn rollback_of_the_start_block_clears_the_mark() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = open_spends(&dir, Some(11));
+    let r11 = db
+        .apply(&[blk_spending(11, vec![spend(2, 1, 0x11, 0)])], 0, Durability::Durable, true)
+        .unwrap();
+    db.rollback(11, &r11[0], None).unwrap();
+    assert_eq!(db.spends_watermark(), None);
+    assert_eq!(db.spend_of(&op(2, 1)).unwrap(), None);
+}
+
+/// A backfill batch is written only when the watermark is still what it was
+/// planned from and every block is still the index's block at its height —
+/// so a block applied, or rolled back, while it was being fetched never
+/// leaves the mark claiming heights it doesn't cover.
+#[test]
+fn a_backfill_batch_is_refused_when_the_index_moved() {
+    let dir = tempfile::tempdir().unwrap();
+    {
+        let db = open_spends(&dir, None);
+        db.apply(&(10..=14).map(|h| blk(h, vec![])).collect::<Vec<_>>(), 0, Durability::Durable, true)
+            .unwrap();
+    }
+    let db = open_spends(&dir, Some(10));
+    let batch = |hs: std::ops::RangeInclusive<u32>| -> Vec<_> {
+        hs.map(|h| (h, hash(h), vec![spend(h as u8, 0, 0x40 + h as u8, 0)])).collect()
+    };
+    // Planned from another watermark: refused.
+    assert_eq!(
+        db.write_backfill(Some(11), &batch(12..=13)).unwrap(),
+        Err(BackfillRefused::MarkMoved { planned: Some(11), now: None })
+    );
+    // A block that isn't the index's (reorged, or not yet indexed): refused.
+    let mut wrong = batch(10..=11);
+    wrong[1].1 = hash(99);
+    assert_eq!(
+        db.write_backfill(None, &wrong).unwrap(),
+        Err(BackfillRefused::NotIndexed { height: 11, node: hash(99), index: Some(hash(11)) })
+    );
+    assert_eq!(
+        db.write_backfill(None, &batch(10..=15)).unwrap(),
+        Err(BackfillRefused::NotIndexed { height: 15, node: hash(15), index: None })
+    );
+    assert_eq!(db.spends_watermark(), None);
+    assert_eq!(db.spend_of(&op(10, 0)).unwrap(), None, "nothing written");
+    // As planned: written, mark moved.
+    assert_eq!(db.write_backfill(None, &batch(10..=12)).unwrap(), Ok(()));
+    assert_eq!(db.spends_watermark(), Some(12));
+    assert_eq!(db.spend_of(&op(11, 0)).unwrap(), Some(SpendRec { txid: txid(0x4b), vin: 0, height: 11 }));
+    // The same plan again (another writer got there first): refused.
+    assert!(db.write_backfill(None, &batch(10..=12)).unwrap().is_err());
+    // Rolled back below the mark: the old plan is refused, the new one fits.
+    let tip = db.load_blocks().unwrap();
+    let (r13, r14) = (tip[3].1, tip[4].1);
+    db.rollback(14, &r14, Some((13, r13.hash))).unwrap();
+    db.rollback(13, &r13, Some((12, tip[2].1.hash))).unwrap();
+    assert!(matches!(
+        db.write_backfill(Some(12), &batch(13..=14)).unwrap(),
+        Err(BackfillRefused::NotIndexed { height: 13, index: None, .. })
+    ));
+    assert_eq!(db.spends_watermark(), Some(12));
+}
+
+/// Entries in `blocks`' active memtable (0 right after a flush).
+fn unflushed_blocks(db: &Db) -> u64 {
+    db.db
+        .property_int_value_cf(db.cf(CF_BLOCKS), "rocksdb.num-entries-active-mem-table")
+        .unwrap()
+        .unwrap()
+}
+
+/// Bulk (WAL-less) writes mark the database dirty until a flush; durable
+/// writes don't. A backfill batch flushes first only when that flag is set:
+/// in follow mode (every block written durably) it doesn't flush at all.
+#[test]
+fn backfill_flushes_only_over_unflushed_bulk_writes() {
+    let dir = tempfile::tempdir().unwrap();
+    {
+        let db = open_spends(&dir, None);
+        assert!(!db.bulk_pending(), "fresh");
+        db.apply(&(10..=11).map(|h| blk(h, vec![])).collect::<Vec<_>>(), 0, Durability::Bulk, false)
+            .unwrap();
+        assert!(db.bulk_pending(), "after a bulk write");
+        db.flush().unwrap();
+        assert!(!db.bulk_pending(), "flushed");
+        db.apply(&[blk(12, vec![])], 0, Durability::Durable, true).unwrap();
+        assert!(!db.bulk_pending(), "a durable write is in the WAL");
+    }
+    let db = open_spends(&dir, Some(10));
+    let batch = |hs: std::ops::RangeInclusive<u32>| -> Vec<_> {
+        hs.map(|h| (h, hash(h), vec![spend(h as u8, 0, 0x40 + h as u8, 0)])).collect()
+    };
+    // Live: the durable block 13 stays in the memtable through the batch.
+    db.apply(&[blk(13, vec![])], 0, Durability::Durable, true).unwrap();
+    assert!(unflushed_blocks(&db) > 0);
+    assert_eq!(db.write_backfill(None, &batch(10..=11)).unwrap(), Ok(()));
+    assert!(unflushed_blocks(&db) > 0, "no flush in live mode");
+    // A bulk block not yet flushed: the batch flushes it first.
+    db.apply(&[blk(14, vec![])], 0, Durability::Bulk, false).unwrap();
+    assert!(db.bulk_pending());
+    assert_eq!(db.write_backfill(Some(11), &batch(12..=13)).unwrap(), Ok(()));
+    assert!(!db.bulk_pending());
+    assert_eq!(unflushed_blocks(&db), 0, "flushed before the batch");
+    assert_eq!(db.spends_watermark(), Some(13));
 }

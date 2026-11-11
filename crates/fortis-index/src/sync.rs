@@ -10,10 +10,12 @@ use anyhow::{Context, Result};
 
 use crate::chain::HeaderFormat;
 use crate::chainstate::{BlockTable, SharedChain};
-use crate::db::{Db, Durability, NoUndo, OpenError, MAX_REORG_DEPTH};
+use crate::db::{BackfillRefused, Db, Durability, NoUndo, OpenError, MAX_REORG_DEPTH};
 use crate::extract::ParsedBlock;
 use crate::fetch::{fetch_range, FetchConfig};
 use crate::source::BlockSource;
+use crate::spendcf;
+use crate::spends::SpendNode;
 
 const BULK_BATCH: usize = 64;
 
@@ -211,6 +213,7 @@ impl Syncer {
         let rx = fetch_range(
             self.src.clone(),
             self.fmt,
+            self.db.spends_from(),
             from,
             to,
             &self.fetch,
@@ -307,6 +310,111 @@ impl Syncer {
     }
 }
 
+/// Blocks per spends backfill batch (one durable write, one watermark step).
+pub const BACKFILL_BATCH: u32 = 100;
+
+/// Fill the `spends` column family for heights `max(from, watermark + 1)..=to`
+/// from the node's blocks, in batches of [`BACKFILL_BATCH`], moving the
+/// watermark with each batch (so a restart resumes after the last one). Stops
+/// early, without error, if a batch no longer matches the index (a reorg, or
+/// a block applied meanwhile moved the mark): the caller plans again.
+/// (The backfill thread uses [`backfill_spends_until`], which can be stopped.)
+#[cfg_attr(not(test), allow(dead_code))]
+pub fn backfill_spends(db: &Db, node: &dyn SpendNode, from: u32, to: u32) -> Result<()> {
+    backfill_spends_until(db, node, from, to, &AtomicBool::new(false)).map(|_| ())
+}
+
+/// [`backfill_spends`], abandoning the batch in hand once `stop` is set.
+/// Returns why a batch was refused, if one was.
+fn backfill_spends_until(
+    db: &Db,
+    node: &dyn SpendNode,
+    from: u32,
+    to: u32,
+    stop: &AtomicBool,
+) -> Result<Option<BackfillRefused>> {
+    loop {
+        let w = db.spends_watermark();
+        let first = w.map_or(from, |w| from.max(w + 1));
+        if first > to {
+            return Ok(None);
+        }
+        let last = to.min(first + (BACKFILL_BATCH - 1));
+        let mut batch = Vec::with_capacity((last - first + 1) as usize);
+        for h in first..=last {
+            if stop.load(Ordering::SeqCst) {
+                return Ok(None);
+            }
+            let (hash, txs) = node.block(h).with_context(|| format!("spends backfill: block {h}"))?;
+            let spends = txs
+                .iter()
+                .flat_map(|t| spendcf::tx_spends(t, t.compute_txid()).collect::<Vec<_>>())
+                .collect();
+            batch.push((h, hash, spends));
+        }
+        if let Err(refused) = db.write_backfill(w, &batch)? {
+            return Ok(Some(refused));
+        }
+        eprintln!("spends backfill: {last}/{to}");
+    }
+}
+
+/// The backfill thread: backfill up to the index tip until the watermark
+/// reaches it (blocks indexed meanwhile are taken in on the next round), then
+/// log `spends backfill: done` and return; from then on every indexed block
+/// moves the watermark itself. Node errors are retried; returns early if
+/// `stop` is set.
+pub fn run_spends_backfill(db: &Db, node: &dyn SpendNode, from: u32, stop: &AtomicBool) {
+    let mut delay = Duration::from_secs(1);
+    let mut refusals = 0u32;
+    while !stop.load(Ordering::SeqCst) {
+        let tip = match db.reader().tip() {
+            Ok(t) => t.map(|(h, _)| h),
+            Err(e) => {
+                eprintln!("spends backfill: reading the index tip: {e:#}");
+                sleep_unless_stopped(delay, stop);
+                continue;
+            }
+        };
+        let w = db.spends_watermark();
+        let tip = match tip {
+            // Nothing indexed at or above the start yet: the first such block
+            // starts the watermark itself.
+            None => break,
+            Some(t) if t < from => break,
+            Some(t) if w.is_some_and(|w| w >= t) => break,
+            Some(t) => t,
+        };
+        let result = backfill_spends_until(db, node, from, tip, stop);
+        if db.spends_watermark() != w {
+            delay = Duration::from_secs(1);
+            refusals = 0;
+        }
+        match result {
+            Ok(None) => {}
+            // Planned on a view that changed (a block applied or rolled back,
+            // or the node not yet where the index is): plan again. Logged on
+            // the first refusal in a row and every 60th after, so a backfill
+            // that stays stuck is visible.
+            Ok(Some(refused)) => {
+                if refusals.is_multiple_of(60) {
+                    eprintln!("spends backfill: batch refused ({} in a row): {refused}", refusals + 1);
+                }
+                refusals += 1;
+                sleep_unless_stopped(Duration::from_secs(1), stop);
+            }
+            Err(e) => {
+                eprintln!("spends backfill: {e:#} — retrying in {delay:?}");
+                sleep_unless_stopped(delay, stop);
+                delay = (delay * 2).min(Duration::from_secs(30));
+            }
+        }
+    }
+    if !stop.load(Ordering::SeqCst) {
+        eprintln!("spends backfill: done");
+    }
+}
+
 fn sleep_unless_stopped(d: Duration, stop: &AtomicBool) {
     let end = std::time::Instant::now() + d;
     while !stop.load(Ordering::SeqCst) {
@@ -336,7 +444,7 @@ mod tests {
 
     fn rig(src: Arc<MemSource>, start: u32, stop_height: Option<u32>) -> Rig {
         let dir = tempfile::tempdir().unwrap();
-        let db = Db::open(dir.path(), &DbConfig { cache_mb: 8 }, "btc").unwrap();
+        let db = Db::open(dir.path(), &DbConfig { cache_mb: 8, spends_from: None }, "btc").unwrap();
         let chain: SharedChain = Arc::new(ArcSwap::from_pointee(BlockTable::default()));
         let syncer = Syncer::new(
             db,
@@ -510,7 +618,7 @@ mod tests {
         // Bulk data was flushed: a reopen sees it.
         let path = r._dir.path().to_path_buf();
         drop(r.syncer);
-        let db = Db::open(&path, &DbConfig { cache_mb: 8 }, "btc").unwrap();
+        let db = Db::open(&path, &DbConfig { cache_mb: 8, spends_from: None }, "btc").unwrap();
         assert_eq!(db.load_blocks().unwrap().len(), 501);
     }
 
@@ -521,11 +629,12 @@ mod tests {
     fn a_crash_mid_bulk_resumes_from_the_last_flush() {
         const CHILD: &str = "FORTIS_INDEX_CRASH_CHILD_DB";
         if let Ok(path) = std::env::var(CHILD) {
-            let db = Db::open(Path::new(&path), &DbConfig { cache_mb: 8 }, "btc").unwrap();
+            let db = Db::open(Path::new(&path), &DbConfig { cache_mb: 8, spends_from: None }, "btc").unwrap();
             let src: Arc<dyn BlockSource> = Arc::new(MemSource::new(1000));
             let rx = fetch_range(
                 src,
                 HeaderFormat::BTC,
+                None,
                 0,
                 383,
                 &FetchConfig { workers: 4 },
@@ -557,7 +666,7 @@ mod tests {
             .unwrap();
         assert!(!status.success(), "the child must have aborted");
 
-        let db = Db::open(dir.path(), &DbConfig { cache_mb: 8 }, "btc").unwrap();
+        let db = Db::open(dir.path(), &DbConfig { cache_mb: 8, spends_from: None }, "btc").unwrap();
         assert_eq!(
             db.reader().tip().unwrap().map(|t| t.0),
             Some(191),
@@ -569,7 +678,7 @@ mod tests {
 
         let src = Arc::new(MemSource::new(1000));
         let mut resumed = rig(src.clone(), 0, None);
-        resumed.syncer.db = Db::open(dir.path(), &DbConfig { cache_mb: 8 }, "btc").unwrap();
+        resumed.syncer.db = Db::open(dir.path(), &DbConfig { cache_mb: 8, spends_from: None }, "btc").unwrap();
         resumed.syncer.chain.store(Arc::new(table));
         resumed.syncer.step(&AtomicBool::new(false)).unwrap();
         assert_eq!(tip(&resumed.syncer), 1000);

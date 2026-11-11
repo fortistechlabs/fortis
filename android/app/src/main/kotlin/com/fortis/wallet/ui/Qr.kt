@@ -3,6 +3,7 @@ package com.fortis.wallet.ui
 import android.graphics.Bitmap
 import android.graphics.Color
 import android.net.Uri
+import com.fortis.wallet.data.LN_CHAIN
 import com.fortis.wallet.data.WalletConfig
 import com.fortis.wallet.lightning.LnState
 import com.fortis.wallet.lightning.lightningWalletOf
@@ -151,26 +152,67 @@ fun isLightningTarget(text: String, network: String, nowSecs: ULong? = null): Bo
     }
 }
 
-/** Where a payment link goes: the Lightning wallet, a prompt to create one, or on-chain. */
+/** Where a payment link goes: a Lightning wallet, a prompt to create one, or on-chain. */
 sealed interface LightningLinkRoute {
     data class OpenLightningWallet(val id: String) : LightningLinkRoute
-    data object CreateLightningWallet : LightningLinkRoute
+    /** No Lightning wallet on [chain] ("ln" or "ln-xbt") to pay it: offer to create that one. */
+    data class CreateLightningWallet(val chain: String) : LightningLinkRoute
     data object OnChain : LightningLinkRoute
 }
 
-/** With no Lightning wallet, a BIP21 URI that also carries an on-chain address still goes
- *  to a BTC wallet that can pay it there (its Send then offers to create the Lightning wallet). */
+/** The chain of [text]'s Lightning target (an invoice's or offer's bit 512), or UNKNOWN for an
+ *  LNURL / Lightning address (known only once its invoice is fetched) or anything unparseable. */
+fun lightningTargetChain(text: String, network: String, nowSecs: ULong? = null): uniffi.wallet_ffi.LnTargetChain =
+    runCatching { uniffi.wallet_ffi.lnTargetChain(parseScan(text.trim(), network, nowSecs)) }
+        .getOrDefault(uniffi.wallet_ffi.LnTargetChain.UNKNOWN)
+
+/** A Lightning target goes to the Lightning wallet of its chain (an XBT invoice to "ln-xbt",
+ *  wherever it was opened or scanned; an LNURL or address to [fromChain]'s own). With no such
+ *  wallet, a BIP21 URI that also carries an on-chain address still goes to a BTC wallet that
+ *  can pay it there (its Send then offers to create the Lightning wallet). */
 fun lightningLinkRoute(
     wallets: List<WalletConfig>,
     text: String,
     network: String,
     nowSecs: ULong? = null,
+    /** The chain of the wallet it was scanned in; a link from outside the app counts as BTC. */
+    fromChain: String = "btc",
 ): LightningLinkRoute {
     if (!isLightningTarget(text, network, nowSecs)) return LightningLinkRoute.OnChain
-    lightningWalletOf(wallets)?.let { return LightningLinkRoute.OpenLightningWallet(it.id) }
+    val lnChain = com.fortis.wallet.lightning.lightningChainForTarget(lightningTargetChain(text, network, nowSecs), fromChain)
+    lightningWalletOf(wallets, lnChain)?.let { return LightningLinkRoute.OpenLightningWallet(it.id) }
     val unified = runCatching { parseScan(text.trim(), network, nowSecs) }.getOrNull() is LnTarget.Unified
-    val canPayOnChain = wallets.any { it.chain == "btc" && !it.watchOnly }
-    return if (unified && canPayOnChain) LightningLinkRoute.OnChain else LightningLinkRoute.CreateLightningWallet
+    val canPayOnChain = lnChain == LN_CHAIN && wallets.any { it.chain == "btc" && !it.watchOnly }
+    return if (unified && canPayOnChain) LightningLinkRoute.OnChain else LightningLinkRoute.CreateLightningWallet(lnChain)
+}
+
+/**
+ * What an on-chain wallet's Send offers for [text]:
+ * - [lightningChain]: the Lightning wallet ("ln" / "ln-xbt") that pays its Lightning part,
+ *   null when it has none;
+ * - [onchain]: whether this wallet may also pay it on-chain (no Lightning part, or a BIP21
+ *   URI whose Lightning part is this wallet's own chain);
+ * - [wrongChain]: the Lightning part's chain when it is the other chain's (its copy is shown,
+ *   and the on-chain address, almost certainly that chain's, is not offered).
+ */
+data class OnchainSendOffer(
+    val lightningChain: String?,
+    val onchain: Boolean,
+    val wrongChain: uniffi.wallet_ffi.LnTargetChain? = null,
+)
+
+/** See [OnchainSendOffer]; [walletChain] is the on-chain wallet's ("btc" / "xbt"). */
+fun onchainSendOffer(walletChain: String, text: String, network: String, nowSecs: ULong? = null): OnchainSendOffer {
+    if (!isLightningTarget(text, network, nowSecs)) return OnchainSendOffer(null, onchain = true)
+    val targetChain = lightningTargetChain(text, network, nowSecs)
+    val lnChain = com.fortis.wallet.lightning.lightningChainForTarget(targetChain, walletChain)
+    val own = com.fortis.wallet.lightning.lightningChainForOnchain(walletChain) == lnChain
+    val unified = runCatching { parseScan(text.trim(), network, nowSecs) }.getOrNull() is LnTarget.Unified
+    return OnchainSendOffer(
+        lightningChain = lnChain,
+        onchain = unified && own,
+        wrongChain = targetChain.takeIf { !own && it != uniffi.wallet_ffi.LnTargetChain.UNKNOWN },
+    )
 }
 
 /** Where a link that opened the app goes, or null while the wallet list is not loaded yet

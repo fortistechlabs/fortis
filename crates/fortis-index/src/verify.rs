@@ -242,7 +242,7 @@ pub fn run(db_path: &Path, rpc: &Rpc, network: Network, sample: usize) -> Result
     let chain_id = HeaderFormat::detect(rpc)?.chain_id();
     let secondary =
         std::env::temp_dir().join(format!("fortis-index-verify-{}", std::process::id()));
-    let db = Db::open_secondary(db_path, &secondary, &DbConfig { cache_mb: 256 }, &chain_id)?;
+    let db = Db::open_secondary(db_path, &secondary, &DbConfig { cache_mb: 256, spends_from: None }, &chain_id)?;
     let seed = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map_or(1, |d| d.as_nanos() as u64);
@@ -304,7 +304,7 @@ mod tests {
     #[test]
     fn sample_programs_is_deterministic_for_a_seed_and_unique() {
         let dir = tempfile::tempdir().unwrap();
-        let db = Db::open(dir.path(), &DbConfig { cache_mb: 8 }, "btc").unwrap();
+        let db = Db::open(dir.path(), &DbConfig { cache_mb: 8, spends_from: None }, "btc").unwrap();
         let txs = (0..200u32)
             .map(|i| {
                 let mut p = [0u8; 20];
@@ -325,6 +325,7 @@ mod tests {
             hash: BlockHash::all_zeros(),
             prev: BlockHash::all_zeros(),
             time: 0,
+            spends: vec![],
             txs,
         };
         db.apply(&[b], 0, Durability::Durable, false).unwrap();
@@ -337,7 +338,7 @@ mod tests {
         // Asking for more than exist returns every program once.
         assert_eq!(sample_programs(&r, 500, 7).unwrap().len(), 200);
         let empty = tempfile::tempdir().unwrap();
-        let db = Db::open(empty.path(), &DbConfig { cache_mb: 8 }, "btc").unwrap();
+        let db = Db::open(empty.path(), &DbConfig { cache_mb: 8, spends_from: None }, "btc").unwrap();
         assert!(sample_programs(&db.reader(), 5, 1).unwrap().is_empty());
     }
 
@@ -345,15 +346,16 @@ mod tests {
     fn a_secondary_sees_the_primarys_writes_after_catch_up() {
         let dir = tempfile::tempdir().unwrap();
         let sec = tempfile::tempdir().unwrap();
-        let db = Db::open(dir.path(), &DbConfig { cache_mb: 8 }, "btc").unwrap();
+        let db = Db::open(dir.path(), &DbConfig { cache_mb: 8, spends_from: None }, "btc").unwrap();
         let s =
-            Db::open_secondary(dir.path(), sec.path(), &DbConfig { cache_mb: 8 }, "btc").unwrap();
+            Db::open_secondary(dir.path(), sec.path(), &DbConfig { cache_mb: 8, spends_from: None }, "btc").unwrap();
         assert_eq!(s.reader().tip().unwrap(), None);
         let b = ParsedBlock {
             height: 5,
             hash: BlockHash::all_zeros(),
             prev: BlockHash::all_zeros(),
             time: 0,
+            spends: vec![],
             txs: vec![TxRows {
                 txid: Txid::all_zeros(),
                 funded: vec![Funded {
@@ -374,7 +376,7 @@ mod tests {
         assert_eq!(sample_programs(&r, 3, 1).unwrap(), vec![[1; 20]]);
         drop(r);
         assert!(
-            Db::open_secondary(dir.path(), sec.path(), &DbConfig { cache_mb: 8 }, "xbt@1").is_err()
+            Db::open_secondary(dir.path(), sec.path(), &DbConfig { cache_mb: 8, spends_from: None }, "xbt@1").is_err()
         );
     }
 }
