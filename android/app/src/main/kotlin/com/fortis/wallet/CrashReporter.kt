@@ -35,21 +35,48 @@ object CrashReporter {
     }
 
     private fun send(thread: Thread, error: Throwable) {
+        post(reportBody(thread.name, error, where = null))
+    }
+
+    /** One JSON report; `where` marks a caught (non-fatal) error, absent for a real crash. */
+    internal fun reportBody(threadName: String, error: Throwable, where: String?): String {
         val trace = StringWriter().also { error.printStackTrace(PrintWriter(it)) }.toString()
-        val body = JSONObject().apply {
+        return JSONObject().apply {
             put("app_version", BuildConfig.VERSION_NAME)
             put("version_code", BuildConfig.VERSION_CODE)
             put("build_type", if (BuildConfig.DEBUG) "debug" else "release")
             put("android_sdk", Build.VERSION.SDK_INT)
             put("model", Build.MODEL)
             put("manufacturer", Build.MANUFACTURER)
-            put("thread", thread.name)
+            put("thread", threadName)
+            if (where != null) put("caught_at", where)
             put("exception", error.javaClass.name)
             put("message", redact(error.message ?: ""))
             put("stack", redact(trace).take(12_000))
         }.toString()
+    }
 
-        post(body)
+    private val caughtSeen = HashMap<String, Long>()
+    private const val CAUGHT_REPEAT_MS = 60 * 60 * 1000L
+
+    /** True at most once per [CAUGHT_REPEAT_MS] for the same key, so a retry loop can't flood. */
+    internal fun firstInWindow(key: String, now: Long, seen: MutableMap<String, Long> = caughtSeen): Boolean =
+        synchronized(seen) {
+            val last = seen[key]
+            if (last != null && now - last < CAUGHT_REPEAT_MS) false else { seen[key] = now; true }
+        }
+
+    /**
+     * Report an error the app caught and showed instead of crashing (e.g. an unlock that
+     * failed before the system prompt). Same redaction and endpoint as a crash; best effort,
+     * off the calling thread, never throws, at most once an hour per place and exception.
+     */
+    fun reportCaught(where: String, error: Throwable) {
+        if (!firstInWindow("$where|${error.javaClass.name}", System.currentTimeMillis())) return
+        Thread {
+            runCatching { post(reportBody("caught", error, where)) }
+                .onFailure { android.util.Log.w("CrashReporter", "report not sent: $it") }
+        }.start()
     }
 
     /**

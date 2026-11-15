@@ -23,6 +23,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.FragmentActivity
 import com.fortis.wallet.LockSetup
+import com.fortis.wallet.CrashReporter
 import com.fortis.wallet.R
 import com.fortis.wallet.WalletViewModel
 import com.fortis.wallet.data.LOCK_BIOMETRIC
@@ -201,6 +202,7 @@ fun BiometricAppUnlock(vm: WalletViewModel) {
                 val d = diagnoseUnlockFailure(e, keyPresent = !SeedKeystore.keyMissing())
                 detail = d.detail
                 KeyTrace.failure(e, d.detail)
+                CrashReporter.reportCaught("app_unlock", e)
                 if (d.keyLost) invalidated = true else vm.error = e.message
             }
         }
@@ -269,6 +271,7 @@ fun IdentityGate.require(vm: WalletViewModel, act: FragmentActivity?, scope: kot
                 // stays as it was
             } catch (e: Throwable) {
                 KeyTrace.failure(e, diagnoseUnlockFailure(e, keyPresent = !SeedKeystore.keyMissing()).detail)
+                CrashReporter.reportCaught("identity_gate", e)
                 vm.error = if (e.isKeyInvalidated()) a.getString(R.string.biometric_invalidated) else e.message
             }
         }

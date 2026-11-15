@@ -27,4 +27,14 @@ class CrashReporterTest {
         val out = CrashReporter.redact("key=$zpub priv=$vprv tx=$txid")
         assertEquals("key=<xkey> priv=<xkey> tx=<hex>", out)
     }
+
+    @Test
+    fun caughtReportsAreLimitedPerKeyAndWindow() {
+        val seen = HashMap<String, Long>()
+        val hour = 60 * 60 * 1000L
+        assertEquals(true, CrashReporter.firstInWindow("a|X", 0, seen))
+        assertEquals(false, CrashReporter.firstInWindow("a|X", hour - 1, seen))
+        assertEquals(true, CrashReporter.firstInWindow("b|X", 5, seen))
+        assertEquals(true, CrashReporter.firstInWindow("a|X", hour, seen))
+    }
 }
