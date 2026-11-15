@@ -202,6 +202,10 @@ sudo -u postgres pg_dump -Fc vss > "$DEST/vss.dump"
 # 2. LSP keys_seed and SQLite store (sqlite3 online backup avoids torn WAL reads)
 cp -a /var/lib/fortis/lsp/keys_seed "$DEST/keys_seed"
 sqlite3 /var/lib/fortis/lsp/ldk_node_data.sqlite ".backup '$DEST/ldk_node_data.sqlite'"
+# Fortis custody accounts (who is owed what); the seed cannot rebuild them. Use .backup, never cp:
+# the database runs in WAL mode, so a plain copy of the main file misses recent commits.
+sqlite3 /var/lib/fortis/lsp/accounts.sqlite ".backup '$DEST/accounts.sqlite'"
+cp -a /var/lib/fortis/lsp/admin.token "$DEST/admin.token"
 cp -a /etc/fortis/lsp.toml /etc/fortis/ln-info.json "$DEST/"
 
 # 2b. XBT LSP (if /var/lib/fortis/lsp-xbt exists): its own seed and store
@@ -209,12 +213,33 @@ if [ -d /var/lib/fortis/lsp-xbt ]; then
   mkdir -p "$DEST/lsp-xbt"
   cp -a /var/lib/fortis/lsp-xbt/keys_seed "$DEST/lsp-xbt/keys_seed"
   sqlite3 /var/lib/fortis/lsp-xbt/ldk_node_data.sqlite ".backup '$DEST/lsp-xbt/ldk_node_data.sqlite'"
+  sqlite3 /var/lib/fortis/lsp-xbt/accounts.sqlite ".backup '$DEST/lsp-xbt/accounts.sqlite'"
+  cp -a /var/lib/fortis/lsp-xbt/admin.token "$DEST/lsp-xbt/admin.token"
   cp -a /etc/fortis/lsp-xbt.toml /etc/fortis/ln-info-xbt.json "$DEST/lsp-xbt/" 2>/dev/null || true
 fi
 
 # 3. Sync off-host and prune local snapshots older than 14 days
 find /var/backups/fortis-ln -maxdepth 1 -mindepth 1 -type d -mtime +14 -exec rm -rf {} +
 ```
+
+### 6.1 Weekly backup to the encrypted USB drive (home host)
+
+For a host with no always-on off-site target, `linux-home/fortis-backup.sh` writes a verified backup to a LUKS-encrypted USB drive. It is a **weekly** job, not nightly, because the drive is unlocked by hand and is not always plugged in.
+
+What it backs up: for the BTC and XBT LSPs `keys_seed`, `admin.token`, `accounts.sqlite` and `ldk_node_data.sqlite` (online `.backup`); the VSS Postgres dump; and `/etc/fortis` configs and secrets (`lsp*.toml`, `edge.env`, `ln-info*.json`, the FCM key, `lsp-rpc-password`, `msmtprc`) plus the edge secret. It checks each database (`PRAGMA integrity_check`), that the dump reads back, writes a `SHA256SUMS`, and keeps the newest 8 backups in `<mount>/weekly/` (never touching `<mount>/manual/`).
+
+Install (once), after the drive is formatted and mounted at `/mnt/fortis-backup`:
+
+```sh
+sudo install -m 0755 deploy/linux-home/fortis-backup.sh /usr/local/bin/
+sudo install -m 0644 deploy/linux-home/fortis-backup.service deploy/linux-home/fortis-backup.timer /etc/systemd/system/
+sudo systemctl daemon-reload && sudo systemctl enable --now fortis-backup.timer
+sudo systemctl start fortis-backup && journalctl -u fortis-backup -n 20 --no-pager   # first run by hand
+```
+
+If the drive is not mounted the run **fails** and writes nothing (`systemctl --failed`, `journalctl -u fortis-backup`); plug in and unlock the drive and `sudo systemctl start fortis-backup`. `Persistent=true` runs a missed week at next boot. A backup is not proven until restored (procedure: [backup-recovery.md](backup-recovery.md)): periodically restore a weekly folder into a scratch directory and open it, and keep the drive passphrase off this host.
+
+> **Custody accounts:** `accounts.sqlite` holds the Fortis account balances and held payments. Restoring an old copy rolls balances back to that moment, so after a restore reconcile it against the channel state before re-enabling custody. `admin.token` is a credential: keep the backup encrypted and owner-only (the script's `umask 077`).
 
 > **Critical:** Never restore an older `ldk_node_data.sqlite` on a running LSP that has advanced channel states since the snapshot, or the counterparty may broadcast a justice transaction. `keys_seed` is static and safe to back up once + nightly.
 

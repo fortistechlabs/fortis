@@ -1,0 +1,13 @@
+[Unit]
+Description=Fortis weekly backup to the encrypted USB drive
+# Not a hard dependency: the drive is unlocked by hand. The script fails loudly if it is absent.
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/fortis-backup.sh
+# Reads root-only secrets; writes only to the backup drive.
+ProtectSystem=strict
+ReadWritePaths=-/mnt/fortis-backup
+PrivateTmp=true
+Nice=10
+IOSchedulingClass=idle
