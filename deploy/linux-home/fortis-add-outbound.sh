@@ -10,7 +10,10 @@
 #
 # Rules (from crates/fortis-lsp/src/outbound.rs): each sat is 20,000..100,000,000; a peer may be listed
 # once; the LSP opens each target at most once per run, only when the on-chain wallet is synced and
-# covers the channel, and leaves a peer alone if any channel to it already exists. The entries are
+# covers the channel, and leaves a peer alone if any channel to it already exists. It opens ONE channel
+# per check (every 60 s) and none while an earlier funding transaction is unconfirmed, so several
+# entries open one after another as each confirms. (An LSP built before 2026-11-15 opened them all
+# at once from the same coin, and the later funding transactions were rejected as double spends.) The entries are
 # appended at the END of the file: in TOML everything after an [[outbound]] header belongs to it.
 set -euo pipefail
 

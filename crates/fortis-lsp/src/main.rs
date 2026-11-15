@@ -450,12 +450,15 @@ fn open_missing_outbound(
     state: &mut outbound::State,
     waiting_logged: &mut bool,
 ) {
+    let channels = node.list_channels();
     let snap = outbound::Snapshot {
-        with_channel: node
-            .list_channels()
+        with_channel: channels
             .iter()
             .map(|c| c.counterparty_node_id)
             .collect::<HashSet<_>>(),
+        funding_unconfirmed: channels
+            .iter()
+            .any(|c| outbound::funding_unconfirmed(c.is_outbound, c.is_channel_ready, c.confirmations)),
         wallet_synced: node.status().latest_onchain_wallet_sync_timestamp.is_some(),
         spendable_sat: node.list_balances().spendable_onchain_balance_sats,
         reserve_per_channel_sat: AnchorChannelsConfig::default().per_channel_reserve_sats,
@@ -463,6 +466,17 @@ fn open_missing_outbound(
     let now = Instant::now();
     let due = outbound::due(targets, &snap, state, now);
     let waiting = outbound::waiting_for_funds(targets, &snap, state, &due);
+    if snap.funding_unconfirmed && !*waiting_logged {
+        let missing = targets.iter().any(|t| {
+            !snap.with_channel.contains(&t.node_id) && !state.is_opened(&t.node_id)
+        });
+        if missing {
+            *waiting_logged = true;
+            eprintln!(
+                "fortis-lsp: outbound channels open one at a time: waiting for the funding transaction of an earlier channel to confirm"
+            );
+        }
+    }
     if !waiting.is_empty() && !*waiting_logged {
         *waiting_logged = true;
         for t in &waiting {

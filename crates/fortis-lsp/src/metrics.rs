@@ -220,8 +220,8 @@ pub fn serve(
                 s.custody_sat = accounts.as_ref().map_or(0, |a| a.custody_sat());
                 tiny_http::Response::from_string(render(&s)).with_header(text.clone())
             }
-            (tiny_http::Method::Post, "/admin/pay" | "/admin/close") => {
-                let is_pay = req.url() == "/admin/pay";
+            (tiny_http::Method::Post, "/admin/pay" | "/admin/close" | "/admin/abandon") => {
+                let route = req.url().to_string();
                 let (status, body) = match &admin_token {
                     Some(token) => {
                         let auth = req
@@ -234,10 +234,12 @@ pub fn serve(
                             &mut std::io::Read::take(req.as_reader(), 16 * 1024),
                             &mut buf,
                         );
-                        if is_pay {
-                            crate::admin::pay(&*node, auth.as_deref(), token, &buf)
-                        } else {
-                            crate::admin::close(&*node, auth.as_deref(), token, &buf)
+                        match route.as_str() {
+                            "/admin/pay" => crate::admin::pay(&*node, auth.as_deref(), token, &buf),
+                            "/admin/abandon" => {
+                                crate::admin::abandon(&*node, auth.as_deref(), token, &buf)
+                            }
+                            _ => crate::admin::close(&*node, auth.as_deref(), token, &buf),
                         }
                     }
                     None => (404, serde_json::json!({ "error": "admin disabled" })),

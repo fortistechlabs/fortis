@@ -222,6 +222,20 @@ fi
 find /var/backups/fortis-ln -maxdepth 1 -mindepth 1 -type d -mtime +14 -exec rm -rf {} +
 ```
 
+### 5.1 Outbound channels open one at a time; abandoning a dead one
+
+With several `[[outbound]]` entries the LSP opens **one channel per check (every 60 s) and none while an earlier funding transaction is unconfirmed**, so the entries open one after another as each confirms. (Opening them together spends the same coin twice: the later funding transactions are rejected as double spends and their channels never confirm.) The journal says `outbound channels open one at a time: waiting for the funding transaction of an earlier channel to confirm` while it waits.
+
+A channel we funded whose funding never confirmed stays `pending` for ever (LDK only times out channels the peer opened). Force-close it, and only it, with:
+
+```sh
+T=$(sudo cat /var/lib/fortis/lsp-xbt/admin.token)      # lsp for the BTC LSP, port 9736
+curl -s -X POST http://127.0.0.1:9746/admin/abandon -H "Authorization: Bearer $T" \
+     -d '{"peer":"<node id of the peer>"}'              # → {"abandoned":1}
+```
+
+`/admin/abandon` refuses any channel whose funding has confirmed (it answers 400 and points to the cooperative `/admin/close`), so it cannot close a live channel by mistake. The restart-time rule "a peer with any channel is left alone" then frees that peer again.
+
 ### 6.1 Weekly backup to the encrypted USB drive (home host)
 
 For a host with no always-on off-site target, `linux-home/fortis-backup.sh` writes a verified backup to a LUKS-encrypted USB drive. It is a **weekly** job, not nightly, because the drive is unlocked by hand and is not always plugged in.

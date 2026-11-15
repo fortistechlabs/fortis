@@ -3,7 +3,9 @@
 //! `POST /admin/pay {"invoice": "...", "amount_msat": optional}` with
 //! `Authorization: Bearer <token>`; `POST /admin/close {"peer": "<node id>"}`
 //! cooperatively closes every channel with that peer (funds return to the
-//! on-chain wallet). The token is `<data_dir>/admin.token`
+//! on-chain wallet); `POST /admin/abandon {"peer": "<node id>"}` force-closes only the
+//! channels we funded whose funding transaction never confirmed (a dead channel, e.g. its
+//! funding was rejected as a double spend), and refuses a confirmed one. The token is `<data_dir>/admin.token`
 //! (random, created owner-only on first start). Never forwarded by the edge.
 
 use std::io::Write;
@@ -47,11 +49,46 @@ pub fn authorized(header: Option<&str>, token: &str) -> bool {
     a.len() == b.len() && a.iter().zip(b).fold(0u8, |acc, (x, y)| acc | (x ^ y)) == 0
 }
 
+/// A channel as the abandon rules see it (see [`abandon_ids`]).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ChanView {
+    pub id: u128,
+    pub peer: String,
+    pub is_outbound: bool,
+    pub is_channel_ready: bool,
+    pub confirmations: Option<u32>,
+}
+
+/// Which of `chans` `POST /admin/abandon` may force-close for `peer`: only channels WE funded
+/// whose funding transaction has not confirmed. A confirmed channel is never abandoned here
+/// (that would force-close live funds); close those cooperatively with `/admin/close`.
+pub fn abandon_ids(chans: &[ChanView], peer: &str) -> Result<Vec<u128>, String> {
+    let with_peer: Vec<&ChanView> = chans.iter().filter(|c| c.peer == peer).collect();
+    if with_peer.is_empty() {
+        return Err("no channel with that peer".into());
+    }
+    let ids: Vec<u128> = with_peer
+        .iter()
+        .filter(|c| crate::outbound::funding_unconfirmed(c.is_outbound, c.is_channel_ready, c.confirmations))
+        .map(|c| c.id)
+        .collect();
+    if ids.is_empty() {
+        return Err(
+            "no channel with that peer is one we funded with an unconfirmed funding transaction; \
+             close a live channel cooperatively with /admin/close"
+                .into(),
+        );
+    }
+    Ok(ids)
+}
+
 /// What `POST /admin/pay` needs from the node.
 pub trait AdminNode {
     fn pay_bolt11(&self, invoice: &str, amount_msat: Option<u64>) -> Result<String, String>;
     /// Cooperatively closes every channel with `peer`; how many.
     fn close_peer(&self, peer: &str) -> Result<usize, String>;
+    /// Force-closes the channels with `peer` that [`abandon_ids`] allows; how many.
+    fn abandon_peer(&self, peer: &str) -> Result<usize, String>;
 }
 
 impl AdminNode for ldk_node::Node {
@@ -86,6 +123,32 @@ impl AdminNode for ldk_node::Node {
         }
         Ok(channels.len())
     }
+
+    fn abandon_peer(&self, peer: &str) -> Result<usize, String> {
+        let pk: ldk_node::bitcoin::secp256k1::PublicKey =
+            peer.trim().parse().map_err(|_| "peer must be a node id".to_string())?;
+        let views: Vec<ChanView> = self
+            .list_channels()
+            .iter()
+            .map(|c| ChanView {
+                id: c.user_channel_id.0,
+                peer: c.counterparty_node_id.to_string(),
+                is_outbound: c.is_outbound,
+                is_channel_ready: c.is_channel_ready,
+                confirmations: c.confirmations,
+            })
+            .collect();
+        let ids = abandon_ids(&views, &pk.to_string())?;
+        for id in &ids {
+            self.force_close_channel(
+                &ldk_node::UserChannelId(*id),
+                pk,
+                Some("abandoned: funding transaction never confirmed".into()),
+            )
+            .map_err(|e| e.to_string())?;
+        }
+        Ok(ids.len())
+    }
 }
 
 /// Handles `POST /admin/pay`. Status and JSON body.
@@ -103,6 +166,26 @@ pub fn pay(node: &dyn AdminNode, auth: Option<&str>, token: &str, body: &[u8]) -
         Ok(id) => {
             eprintln!("fortis-lsp: admin pay started (payment {id})");
             (200, json!({ "payment_id": id }))
+        }
+        Err(e) => (400, json!({ "error": e })),
+    }
+}
+
+/// Handles `POST /admin/abandon`. Status and JSON body.
+pub fn abandon(node: &dyn AdminNode, auth: Option<&str>, token: &str, body: &[u8]) -> (u16, Value) {
+    if !authorized(auth, token) {
+        return (401, json!({ "error": "unauthorized" }));
+    }
+    let Some(peer) = serde_json::from_slice::<Value>(body)
+        .ok()
+        .and_then(|v| v["peer"].as_str().map(str::to_string))
+    else {
+        return (400, json!({ "error": "peer" }));
+    };
+    match node.abandon_peer(&peer) {
+        Ok(n) => {
+            eprintln!("fortis-lsp: admin abandon of {n} unconfirmed channel(s) with {peer}");
+            (200, json!({ "abandoned": n }))
         }
         Err(e) => (400, json!({ "error": e })),
     }
@@ -144,6 +227,14 @@ mod tests {
             self.0.borrow_mut().push((format!("close {peer}"), None));
             Ok(1)
         }
+        fn abandon_peer(&self, peer: &str) -> Result<usize, String> {
+            self.0.borrow_mut().push((format!("abandon {peer}"), None));
+            Ok(1)
+        }
+    }
+
+    fn chan(id: u128, peer: &str, outbound: bool, ready: bool, confs: Option<u32>) -> ChanView {
+        ChanView { id, peer: peer.into(), is_outbound: outbound, is_channel_ready: ready, confirmations: confs }
     }
 
     #[test]
@@ -197,5 +288,41 @@ mod tests {
             .permissions()
             .mode();
         assert_eq!(mode & 0o077, 0);
+    }
+
+    // --- /admin/abandon: force-close a channel whose funding never confirmed -------------
+
+    #[test]
+    fn abandon_picks_only_our_unconfirmed_channels_with_that_peer() {
+        let chans = vec![
+            chan(1, "02aa", true, false, None),     // ours, funding unconfirmed: yes
+            chan(2, "02aa", true, true, Some(6)),   // ours, ready: never
+            chan(3, "02bb", true, false, Some(0)),  // another peer: never
+            chan(4, "02aa", false, false, None),    // the peer funded it: not ours to abandon
+            chan(5, "02aa", true, false, Some(2)),  // funding confirmed, waiting for depth: no
+        ];
+        assert_eq!(abandon_ids(&chans, "02aa"), Ok(vec![1]));
+    }
+
+    #[test]
+    fn abandon_refuses_with_a_reason_when_nothing_qualifies() {
+        let ready = vec![chan(1, "02aa", true, true, Some(6))];
+        let e = abandon_ids(&ready, "02aa").unwrap_err();
+        assert!(e.contains("/admin/close"), "points a live channel to the cooperative close: {e}");
+        let e = abandon_ids(&ready, "02ff").unwrap_err();
+        assert!(e.contains("no channel"), "{e}");
+        assert!(abandon_ids(&[], "02aa").is_err());
+    }
+
+    #[test]
+    fn abandon_needs_the_token_and_a_peer() {
+        let node = Fake(RefCell::new(vec![]));
+        assert_eq!(abandon(&node, None, "t", br#"{"peer":"02aa"}"#).0, 401);
+        assert_eq!(abandon(&node, Some("Bearer wrong"), "t", br#"{"peer":"02aa"}"#).0, 401);
+        assert_eq!(abandon(&node, Some("Bearer t"), "t", b"{}").0, 400);
+        assert!(node.0.borrow().is_empty(), "nothing was attempted without auth or a peer");
+        let (s, v) = abandon(&node, Some("Bearer t"), "t", br#"{"peer":"02aa"}"#);
+        assert_eq!((s, v["abandoned"].as_u64()), (200, Some(1)));
+        assert_eq!(node.0.borrow()[0].0, "abandon 02aa");
     }
 }

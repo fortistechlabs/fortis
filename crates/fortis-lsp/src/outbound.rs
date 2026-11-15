@@ -107,6 +107,10 @@ pub struct State {
 }
 
 impl State {
+    pub fn is_opened(&self, peer: &PublicKey) -> bool {
+        self.opened.contains(peer)
+    }
+
     pub fn record_opened(&mut self, peer: PublicKey) {
         self.failed_at.remove(&peer);
         self.opened.insert(peer);
@@ -128,18 +132,30 @@ pub struct Snapshot {
     pub spendable_sat: u64,
     /// The anchor reserve ldk-node keeps back for each new channel.
     pub reserve_per_channel_sat: u64,
+    /// One of our own channels still has an unconfirmed funding transaction.
+    pub funding_unconfirmed: bool,
 }
 
-/// The targets to open now, in config order, as many as the balance covers.
-pub fn due<'a>(
+/// True while a channel we funded has a funding transaction that is not yet confirmed.
+///
+/// Opening the next channel before it confirms is unsafe: the wallet builds each funding
+/// transaction from the coins it knows, and two opened together spend the same coin, so the
+/// second is rejected (a double spend) and its channel can never confirm.
+pub fn funding_unconfirmed(
+    is_outbound: bool,
+    is_channel_ready: bool,
+    confirmations: Option<u32>,
+) -> bool {
+    is_outbound && !is_channel_ready && confirmations.unwrap_or(0) == 0
+}
+
+/// Missing targets the balance covers, in config order (each takes its channel plus reserve).
+fn affordable<'a>(
     targets: &'a [Outbound],
     snap: &Snapshot,
     state: &State,
     now: Instant,
 ) -> Vec<&'a Outbound> {
-    if !snap.wallet_synced {
-        return Vec::new();
-    }
     let mut budget = snap.spendable_sat;
     let mut out = Vec::new();
     for t in targets {
@@ -158,8 +174,26 @@ pub fn due<'a>(
     out
 }
 
-/// Targets still missing that the balance does not cover yet: for a
-/// "waiting for funds" log line, not an error.
+/// The target to open now: at most ONE per pass, and none while an earlier funding
+/// transaction is unconfirmed (see [`funding_unconfirmed`]). The rest are queued and come up
+/// on later passes, once the wallet has seen the previous funding transaction confirm.
+pub fn due<'a>(
+    targets: &'a [Outbound],
+    snap: &Snapshot,
+    state: &State,
+    now: Instant,
+) -> Vec<&'a Outbound> {
+    if !snap.wallet_synced || snap.funding_unconfirmed {
+        return Vec::new();
+    }
+    affordable(targets, snap, state, now)
+        .into_iter()
+        .take(1)
+        .collect()
+}
+
+/// Targets still missing that the balance does not cover: for a "waiting for funds" log
+/// line, not an error. Targets that are only queued behind another open are not listed.
 pub fn waiting_for_funds<'a>(
     targets: &'a [Outbound],
     snap: &Snapshot,
@@ -169,11 +203,13 @@ pub fn waiting_for_funds<'a>(
     if !snap.wallet_synced {
         return Vec::new();
     }
+    let covered = affordable(targets, snap, state, Instant::now());
     targets
         .iter()
         .filter(|t| !snap.with_channel.contains(&t.node_id) && !state.opened.contains(&t.node_id))
         .filter(|t| !state.failed_at.contains_key(&t.node_id))
         .filter(|t| !due.iter().any(|d| d.node_id == t.node_id))
+        .filter(|t| !covered.iter().any(|c| c.node_id == t.node_id))
         .collect()
 }
 
@@ -233,6 +269,7 @@ mod tests {
             wallet_synced: synced,
             spendable_sat,
             reserve_per_channel_sat: 25_000,
+            funding_unconfirmed: false,
         }
     }
 
@@ -248,8 +285,9 @@ mod tests {
             "wallet not synced"
         );
         assert_eq!(
-            due(&targets, &snap(&[], true, PLENTY), &state, now).len(),
-            2
+            due(&targets, &snap(&[], true, PLENTY), &state, now),
+            vec![&targets[0]],
+            "one per pass: the second is queued"
         );
         let d = due(
             &targets,
@@ -276,10 +314,11 @@ mod tests {
             waiting_for_funds(&targets, &s, &state, &d),
             vec![&targets[1]]
         );
-        assert_eq!(
-            due(&targets, &snap(&[], true, 350_000), &state, now).len(),
-            2
-        );
+        // Enough for both: still one per pass, and the second is queued, not short of funds.
+        let s = snap(&[], true, 350_000);
+        let d = due(&targets, &s, &state, now);
+        assert_eq!(d, vec![&targets[0]]);
+        assert!(waiting_for_funds(&targets, &s, &state, &d).is_empty());
     }
 
     #[test]
@@ -307,5 +346,65 @@ mod tests {
         )
         .is_empty());
         assert_eq!(due(&targets, &s, &state, t0 + RETRY_AFTER).len(), 1);
+    }
+    // --- one funding transaction at a time -------------------------------------------------
+    // Two channels opened in the same second were funded from the same coin: the second
+    // funding transaction conflicted with the first and was rejected, leaving a channel that
+    // can never confirm (XBT LSP, 2026-11-15). So: at most one open per pass, and none while
+    // an earlier funding transaction is still unconfirmed.
+
+    #[test]
+    fn opens_one_channel_per_pass_even_with_funds_for_all() {
+        let targets = vec![target(ACINQ), target(OTHER)];
+        let d = due(
+            &targets,
+            &snap(&[], true, PLENTY),
+            &State::default(),
+            Instant::now(),
+        );
+        assert_eq!(d, vec![&targets[0]], "only the first, in config order");
+    }
+
+    #[test]
+    fn opens_nothing_while_an_earlier_funding_is_unconfirmed() {
+        let targets = vec![target(ACINQ), target(OTHER)];
+        let mut s = snap(&[targets[0].node_id], true, PLENTY);
+        s.funding_unconfirmed = true;
+        assert!(due(&targets, &s, &State::default(), Instant::now()).is_empty());
+        s.funding_unconfirmed = false;
+        assert_eq!(
+            due(&targets, &s, &State::default(), Instant::now()),
+            vec![&targets[1]],
+            "once that funding confirmed, the next one is opened"
+        );
+    }
+
+    #[test]
+    fn queued_targets_are_not_reported_as_waiting_for_funds() {
+        let targets = vec![target(ACINQ), target(OTHER)];
+        let s = snap(&[], true, PLENTY);
+        let state = State::default();
+        let d = due(&targets, &s, &state, Instant::now());
+        assert!(
+            waiting_for_funds(&targets, &s, &state, &d).is_empty(),
+            "the second is queued behind the first, not short of funds"
+        );
+    }
+    #[test]
+    fn funding_is_unconfirmed_only_for_our_not_yet_confirmed_channels() {
+        assert!(
+            funding_unconfirmed(true, false, None),
+            "no confirmation info yet"
+        );
+        assert!(funding_unconfirmed(true, false, Some(0)));
+        assert!(
+            !funding_unconfirmed(true, false, Some(1)),
+            "confirmed, waiting for depth"
+        );
+        assert!(!funding_unconfirmed(true, true, Some(6)), "ready");
+        assert!(
+            !funding_unconfirmed(false, false, None),
+            "the peer funded it, not us"
+        );
     }
 }
