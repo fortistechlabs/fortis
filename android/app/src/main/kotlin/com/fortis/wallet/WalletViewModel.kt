@@ -207,6 +207,10 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
     fun keySecurity(): com.fortis.wallet.data.SeedKeystore.KeySecurity? =
         if (lockMode == com.fortis.wallet.data.LOCK_BIOMETRIC) com.fortis.wallet.data.SeedKeystore.keySecurity() else null
 
+    /** The key trace as text, for support or sharing (no secrets; see [com.fortis.wallet.data.KeyTrace]). */
+    fun keyDiagnostics(): String =
+        com.fortis.wallet.data.KeyTrace.report(getApplication(), lockMode, appWrapped)
+
     /** The wallet currently in view. */
     val config: WalletConfig? get() = wallets.firstOrNull { it.id == selectedId }
     val session: WalletSession? get() = selectedId?.let { sessions[it] }
@@ -658,9 +662,14 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
         feePaymentId: String? = null,
         feeSat: Long = 0L,
         walletChain: String = ln.walletChain,
+        requireReauth: Boolean = true,
     ) = viewModelScope.launch {
         val side = lnSide(walletChain)
         if (side.closing) return@launch
+        if (requireReauth && !reauth.consume()) {
+            side.closeError = str(R.string.reauth_needed)
+            return@launch
+        }
         side.offerForceClose = false
         side.closeError = null
         val sweep = moveTargetWallet(side.walletChain)
@@ -826,9 +835,10 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
     /** Unseal a wallet with the in-memory app secret (no extra prompt).
      *  `quiet` suppresses the error banner (used by the bulk balance scan). */
     private fun ensureSession(id: String, quiet: Boolean = false): WalletSession? {
-        sessions[id]?.let { return it }
+        synchronized(sessions) { sessions[id]?.let { return it } }
         val c = wallets.firstOrNull { it.id == id } ?: return null
         if (c.isLightning) return null // no on-chain session: its keys are [ensureLightningKeys]
+        val gen = lockGeneration
         return try {
             val session = if (c.watchOnly) {
                 WalletSession.watchOnly(c.chain, c.network, c.xpub ?: return null)
@@ -837,9 +847,18 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
                 val (mnemonic, passphrase) = unsealSeed(c.sealed!!, c.salt!!, secret)
                 WalletSession.signing(c.chain, c.network, mnemonic, passphrase)
             }
-            session.also {
-                it.setIndices(c.nextReceive, c.nextChange)
-                sessions[id] = it
+            synchronized(sessions) {
+                if (lockGeneration != gen || (!c.watchOnly && appSecret == null)) {
+                    session.close()
+                    return null
+                }
+                sessions[id]?.let { existing ->
+                    session.close()
+                    return existing
+                }
+                session.setIndices(c.nextReceive, c.nextChange)
+                sessions[id] = session
+                session
             }
         } catch (e: Exception) {
             if (!quiet) error = e.message ?: str(R.string.error_open_wallet)
@@ -1714,9 +1733,10 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
                 val keys = LightningWalletKeys.fromMnemonic(mnemonic, passphrase)
                 synchronized(lnKeys) { lnKeys.put(c.id, keys)?.close() }
             } else {
-                WalletSession.signing(c.chain, c.network, mnemonic, passphrase).also {
-                    it.setIndices(c.nextReceive, c.nextChange)
-                    sessions[c.id] = it
+                val s = WalletSession.signing(c.chain, c.network, mnemonic, passphrase)
+                synchronized(sessions) {
+                    s.setIndices(c.nextReceive, c.nextChange)
+                    sessions.put(c.id, s)?.close()
                 }
             }
         }
@@ -1729,14 +1749,18 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
     /** Lock the whole app — clears every seed and the app secret from memory. */
     fun lock() {
         lnSides.forEach { it.session.onRelocked() }
-        sessions.values.forEach { it.close() }
-        sessions.clear()
+        appSecret = null
         synchronized(lnKeys) {
             lockGeneration++
             lnKeys.values.forEach { it.close() }
             lnKeys.clear()
         }
-        appSecret = null
+        synchronized(sessions) {
+            sessions.values.forEach { it.close() }
+            sessions.clear()
+        }
+        draftMnemonic = null
+        onboardChain = null
         synchronized(balanceLock) { overview = OverviewBalances(); coinPrices = emptyMap() }
         overviewBackends.clear()
         revealingId = null
@@ -1796,16 +1820,17 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
         if (keys != null) refuseSeedOfOtherLightningWallet(keys, chain, secret, restoring)
         val sealed = sealSeed(mnemonic, passphrase, secret)
         val id = UUID.randomUUID().toString()
-        val c = if (isLn) {
+        // Reaching here means the user re-typed words of the phrase (create) or restored from it.
+        val c = (if (isLn) {
             newLightningConfig(id, cleanWalletName(name), sealed, chain)
         } else {
             WalletConfig(id, cleanWalletName(name), chain, network, sealed.blobHex, sealed.saltHex)
-        }
+        }).copy(backupConfirmed = true)
         store.save(c); store.setSelected(id)
         wallets = wallets + c
         selectedId = id
         resetView()
-        if (s != null) sessions[id] = s
+        if (s != null) synchronized(sessions) { sessions.put(id, s)?.close() }
         if (keys != null) synchronized(lnKeys) { lnKeys.put(id, keys)?.close() }
         draftMnemonic = null
         onboardChain = null
@@ -1971,6 +1996,9 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
     }
     fun closeReveal() { revealingId = null; resolvePhase() }
 
+    /** The user re-typed the words asked for from this wallet's phrase. */
+    fun confirmBackup(id: String) { viewModelScope.launch { updateConfig(id) { it.copy(backupConfirmed = true) } } }
+
     /** Decrypt a wallet's seed for display. `(words, passphrase)`; passphrase is
      *  "" when none was set. Runs Argon2id — call from a coroutine. */
     suspend fun seedFor(id: String): Pair<List<String>, String>? {
@@ -2015,7 +2043,7 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
             lnSide(removed.chain).session.forget(id).join()
             synchronized(lnKeys) { lnKeys.remove(id)?.close() }
         }
-        sessions.remove(id)?.close()
+        synchronized(sessions) { sessions.remove(id) }?.close()
         overviewBackends.remove(id)
         synchronized(balanceLock) { overview = overview.without(id) }
         val remaining = store.remove(id)
@@ -2359,7 +2387,8 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
         val to = to.trim()
         val b = active(); val s = session!!; val c = config!!
         s.checkAddress(to) // clear "… is not a valid address" before any network I/O
-        val feerate = (feerateOverride ?: b.feerateSatVb(confTarget).toLong()).coerceAtLeast(1)
+        val feerate = (feerateOverride ?: b.feerateSatVb(confTarget).toLong())
+            .coerceIn(1L, uniffi.wallet_ffi.maxSwapFeerateSatVb().toLong())
         // Not the coins a payment just sent spent, while the server may still list them.
         val spent = spentLocally(c.id)
         val utxos = b.utxos(1u).filterNot { "${it.txid}:${it.vout}" in spent }
@@ -2401,7 +2430,8 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
         val lnChain = com.fortis.wallet.lightning.lightningChainForOnchain(c.chain)
             ?: throw Exception(str(R.string.transfer_needs_lightning))
         val node = lnSide(lnChain).session.currentNode ?: throw Exception(str(R.string.transfer_needs_lightning))
-        val feerate = b.feerateSatVb(6).toLong().coerceAtLeast(1)
+        val feerate = b.feerateSatVb(6).toLong()
+            .coerceIn(1L, uniffi.wallet_ffi.maxSwapFeerateSatVb().toLong())
         val transit = withContext(Dispatchers.IO) { node.transitAddress() }
         val spent = spentLocally(c.id)
         val utxos = b.utxos(1u).filterNot { "${it.txid}:${it.vout}" in spent }
@@ -2497,9 +2527,26 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
             } else {
             // The share first when closing: after the close there is no channel to pay it from.
             if (all) {
+                val ready = side.session.state.value as? com.fortis.wallet.lightning.LnState.Ready
+                if (side.session.currentNode == null || ready == null) {
+                    error = str(R.string.transfer_needs_lightning)
+                    return@launch
+                }
+                side.closeError = null
                 val feeId = payTransferShare(side, q.shareSat)
-                closeLightningAndMoveToOnchain(feePaymentId = feeId, feeSat = if (feeId != null) q.shareSat else 0L, walletChain = side.walletChain).join()
-                if (error == null) side.lastMoveToOnchain = MoveToOnchainResult(amountSat, 0L, 0L, dest.display, closing = true)
+                closeLightningAndMoveToOnchain(
+                    feePaymentId = feeId,
+                    feeSat = if (feeId != null) q.shareSat else 0L,
+                    walletChain = side.walletChain,
+                    requireReauth = false,
+                ).join()
+                if (side.closeError != null) {
+                    error = side.closeError
+                    return@launch
+                }
+                if (error == null && side.closeError == null) {
+                    side.lastMoveToOnchain = MoveToOnchainResult(amountSat, 0L, 0L, dest.display, closing = true)
+                }
             } else {
                 val addr = s.receiveAddress(dest.nextReceive).address
                 val before = channelSatNow(side)
@@ -2742,6 +2789,12 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
         if (!reauth.consume()) throw Exception(str(R.string.reauth_needed))
         val p = pending!!; val b = active(); val s = session!!; val c = config!!
         val signed = s.sign(p.plan.txHex, p.plan.selected)
+        // A deposit to the Lightning wallet: once it confirms it becomes channel funds.
+        // Persisted before broadcast so a process crash or lost response during/after broadcast
+        // cannot let sweepOrphanTransit mistake the deposit for an orphan transit balance.
+        val transferSide = p.transferTo?.let { lnSide(it) }
+        if (p.transfer != null && transferSide != null) runCatching { transferSide.session.commitTransfer(p.feerate.toLong()) }
+            .onFailure { if (it is CancellationException) throw it }
         val txid = b.broadcast(signed)
         // Sent: nothing below may turn that into an error on screen, or leave the
         // confirm sheet up inviting a second tap.
@@ -2749,10 +2802,6 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
         pending = null
         lastSentTxid = sent
         sentCount++
-        // A deposit to the Lightning wallet: once it confirms it becomes channel funds.
-        val transferSide = p.transferTo?.let { lnSide(it) }
-        if (p.transfer != null && transferSide != null) runCatching { transferSide.session.commitTransfer(p.feerate.toLong()) }
-            .onFailure { if (it is CancellationException) throw it }
         // In the Lightning wallet's ledger: what reaches it (about, once the deposit confirms), and the fees.
         if (transferSide != null) p.transfer?.let { t -> runCatching { recordLnMove(transferSide, t.arrivesSat, t.arrivesSat, t.feeSat, c.display, null, "in") } }
         runCatching {
@@ -2840,6 +2889,7 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
         d.put("android", android.os.Build.VERSION.RELEASE + " (SDK " + android.os.Build.VERSION.SDK_INT + ")")
         d.put("locale", java.util.Locale.getDefault().toLanguageTag())
         d.put("time_zone", java.util.TimeZone.getDefault().id)
+        d.put("key_report", keyDiagnostics())
         d.put("wallets", org.json.JSONArray(wallets.map { w ->
             listOf(w.chain, w.network, if (w.isLightning) "lightning" else if (w.watchOnly) "watch-only" else if (w.hardware) "hardware" else "software").joinToString("/")
         }))
@@ -2878,11 +2928,11 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
     }.getOrDefault("")
 
     /** "LnFfi.Other(chain_sync_failed: …)", "LspUnreachable", "IOException: timeout": the kind and its reason. */
-    private fun describeError(t: Throwable): String = when (t) {
+    private fun describeError(t: Throwable): String = CrashReporter.redact(when (t) {
         is uniffi.wallet_ffi.LnFfiException.Other -> "LnFfi.Other(${t.reason})"
         is com.fortis.wallet.lightning.LnFfiError -> "LnFfi." + (t::class.simpleName ?: "Error")
         else -> (t::class.simpleName ?: "Error") + ": " + (t.message ?: "")
-    }
+    })
 
     /**
      * Sends an error the app hit to the server (`POST /ln/log` on the edge), so the operator
@@ -2891,7 +2941,7 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
      * must not flood it). Best effort: never fails or delays the caller.
      */
     fun reportError(where: String, t: Throwable) {
-        val err = describeError(t)
+        val err = CrashReporter.redact(describeError(t))
         val key = "$where|$err"
         val now = System.currentTimeMillis()
         synchronized(reportedErrors) {
@@ -2913,7 +2963,7 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
                 o.put("app", BuildConfig.VERSION_NAME)
                 o.put("where", where)
                 o.put("error", err)
-                o.put("detail", t.stackTraceToString().take(1_500))
+                o.put("detail", CrashReporter.redact(t.stackTraceToString()).take(1_500))
                 val req = okhttp3.Request.Builder()
                     .url("$HOSTED_EDGE/ln/log")
                     .header("Authorization", "Bearer $tok")

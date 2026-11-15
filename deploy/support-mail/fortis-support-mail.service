@@ -6,3 +6,8 @@ Wants=network-online.target
 [Service]
 Type=oneshot
 ExecStart=/usr/bin/python3 -I /usr/local/bin/fortis-support-mail.py
+NoNewPrivileges=yes
+ProtectSystem=strict
+PrivateTmp=yes
+StateDirectory=fortis-support-mail
+ReadWritePaths=/var/lib/fortis/edge/support /var/lib/fortis-support-mail

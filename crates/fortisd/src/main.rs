@@ -133,7 +133,8 @@ fn run() -> Result<()> {
     let proxy_only = settings.esplora_proxy.is_some();
 
     let rpc = match &settings.cookie_file {
-        Some(cf) => Rpc::new(&settings.rpc_url, std::fs::read_to_string(cf)?.trim()),
+        Some(cf) => Rpc::from_cookie_file(&settings.rpc_url, std::path::Path::new(cf))
+            .with_context(|| format!("reading {cf}"))?,
         None => match Rpc::new_cookie(&settings.rpc_url, &settings.datadir, &settings.network) {
             Ok(r) => r,
             Err(e) if proxy_only => {
@@ -160,16 +161,14 @@ fn run() -> Result<()> {
         }
         Some(url) => {
             let rpc = match &args.btc_cookie_file {
-                Some(cf) => Rpc::new(
-                    url,
-                    std::fs::read_to_string(cf).with_context(|| format!("reading {cf}"))?.trim(),
-                ),
+                Some(cf) => Rpc::from_cookie_file(url, std::path::Path::new(cf))
+                    .with_context(|| format!("reading {cf}"))?,
                 None => {
                     let dd = args
                         .btc_datadir
                         .as_ref()
                         .ok_or_else(|| anyhow!("--btc-rpc-url needs --btc-datadir or --btc-cookie-file"))?;
-                    Rpc::new_cookie(url, &dd.to_string_lossy(), "mainnet")?
+                    Rpc::new_cookie(url, &dd.to_string_lossy(), &settings.network)?
                 }
             };
             match fortis_node::chain_status(&rpc) {
@@ -289,13 +288,13 @@ fn handle(
     if let Some(rest) = path.strip_prefix("/esplora/") {
         if let Some(btc) = nodes.btc {
             match (&method, rest) {
-                (Method::Post, "tx") => return esplora_broadcast(btc, raw_body),
+                (Method::Post, "tx") => return esplora_broadcast(btc, raw_body, settings),
                 (Method::Get, "v1/fees/recommended") => return esplora_fees(btc),
                 _ => {}
             }
         }
         return match &settings.esplora_proxy {
-            Some(upstream) => proxy_esplora(http, &method, upstream, rest, query, raw_body),
+            Some(upstream) => proxy_esplora(http, &method, upstream, rest, query, raw_body, settings),
             None => err(404, "no such route"),
         };
     }
@@ -353,9 +352,29 @@ fn esplora_agent() -> ureq::Agent {
     b.build()
 }
 
+fn check_esplora_tx_fee(raw_body: &str, settings: &Settings) -> Result<()> {
+    if let Some(p) = &settings.pricing {
+        let raw = hex::decode(raw_body.trim()).map_err(|e| anyhow!("bad tx hex: {e}"))?;
+        let tx: wallet_core::bitcoin::Transaction =
+            wallet_core::bitcoin::consensus::deserialize(&raw).map_err(|e| anyhow!("bad tx: {e}"))?;
+        handlers::check_service_fee(&tx, p, handlers::address_network(&settings.network))?;
+    }
+    Ok(())
+}
+
+fn valid_esplora_path(rest: &str) -> bool {
+    !rest.is_empty()
+        && !rest.starts_with('/')
+        && !rest.contains("..")
+        && !rest.chars().any(|c| matches!(c, '\\' | '@' | '%') || c.is_control())
+}
+
 /// Esplora `POST /tx` served locally: the body is raw tx hex, the response is the
 /// txid as plain text (matching a real Esplora), or a plain-text error.
-fn esplora_broadcast(btc: &Rpc, raw_body: &str) -> Reply {
+fn esplora_broadcast(btc: &Rpc, raw_body: &str, settings: &Settings) -> Reply {
+    if let Err(e) = check_esplora_tx_fee(raw_body, settings) {
+        return Reply::Text(400, format!("{e:#}"));
+    }
     match fortis_node::broadcast(btc, raw_body.trim()) {
         Ok(txid) => Reply::Text(200, txid.to_string()),
         Err(e) => Reply::Text(400, format!("{e:#}")),
@@ -384,7 +403,23 @@ fn recommended_fees(fastest: u64, half_hour: u64, hour: u64, economy: u64) -> Va
     })
 }
 
-fn proxy_esplora(agent: &ureq::Agent, method: &Method, upstream: &str, rest: &str, query: &str, body: &str) -> Reply {
+fn proxy_esplora(
+    agent: &ureq::Agent,
+    method: &Method,
+    upstream: &str,
+    rest: &str,
+    query: &str,
+    body: &str,
+    settings: &Settings,
+) -> Reply {
+    if !valid_esplora_path(rest) {
+        return err(400, "invalid esplora path");
+    }
+    if method == &Method::Post && rest.trim_end_matches('/') == "tx" {
+        if let Err(e) = check_esplora_tx_fee(body, settings) {
+            return Reply::Text(400, format!("{e:#}"));
+        }
+    }
     let base = upstream.trim_end_matches('/');
     let target = if query.is_empty() {
         format!("{base}/{rest}")
@@ -454,5 +489,16 @@ mod tests {
         assert_eq!(f["halfHourFee"], 8);
         assert_eq!(f["hourFee"], 5);
         assert_eq!(f["economyFee"], 3);
+    }
+
+    #[test]
+    fn esplora_path_rejects_traversal_and_special_chars() {
+        use super::valid_esplora_path;
+        assert!(valid_esplora_path("tx"));
+        assert!(valid_esplora_path("v1/fees/recommended"));
+        assert!(valid_esplora_path("address/bc1qxyz/utxo"));
+        for bad in ["", "/tx", "../admin", "tx/..", "a\\b", "user@host", "a%2e%2e", "tx\n"] {
+            assert!(!valid_esplora_path(bad), "should reject {bad:?}");
+        }
     }
 }

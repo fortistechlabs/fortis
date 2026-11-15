@@ -122,11 +122,11 @@ fn settle_into_account(
     h: &Held,
     amount: u64,
 ) -> Result<(), LedgerError> {
-    let room = accounts
-        .custody_max_msat
-        .saturating_sub(accounts.ledger.total_custody_msat()?);
+    let total = accounts.ledger.total_custody_msat()?;
+    let room = accounts.custody_max_msat.saturating_sub(total);
+    let backed = total.saturating_add(amount).div_ceil(1_000) <= accounts.node.backing_sat();
     let p = node.bolt11_payment();
-    if accounts.custody_max_msat > 0 && room >= amount {
+    if accounts.custody_max_msat > 0 && room >= amount && backed {
         if let Err(e) = p.claim_for_hash(PaymentHash(h.payment_hash), amount, PaymentPreimage(h.preimage)) {
             eprintln!("fortis-lsp: settling held payment for {}: {e}", h.node);
             return Ok(());
@@ -204,6 +204,10 @@ pub fn deliver_balances(node: &ldk_node::Node, accounts: &AccountService) {
         }
         let tmp = format!("deliver:pending:{pk}");
         let Ok(amount) = ledger.start_conversion(&pk, &tmp) else { continue };
+        if amount < 1_000 || amount > room {
+            let _ = ledger.abandon_conversion(&tmp);
+            continue;
+        }
         match node.spontaneous_payment().send(amount, pk, None) {
             Ok(id) => {
                 let _ = ledger.rename_hold(&tmp, &format!("deliver:pay:{}", hex::encode(id.0)));

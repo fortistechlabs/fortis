@@ -330,7 +330,7 @@ impl SwapSession {
 
     pub fn record_our_outpoint(&self, txid: String, vout: u32) -> Result<()> {
         let op = outpoint(&txid, vout)?;
-        machine(&mut self.lock())?.set_our_outpoint(op);
+        machine(&mut self.lock())?.set_our_outpoint(op)?;
         Ok(())
     }
 

@@ -390,8 +390,11 @@ fn parse_desc_path(desc: &str) -> Option<(bool, u32)> {
         body.split('[').nth(1)?.split(']').next()? // expanded: /<b>/<i> is inside [origin]
     };
     let mut parts = path.rsplit('/');
-    let index: u32 = parts.next()?.trim_end_matches('h').parse().ok()?;
-    let branch: u32 = parts.next()?.trim_end_matches('h').parse().ok()?;
+    let index: u32 = parts.next()?.parse().ok()?;
+    let branch: u32 = parts.next()?.parse().ok()?;
+    if !matches!(branch, 0 | 1) {
+        return None;
+    }
     Some((branch == 1, index))
 }
 
@@ -434,5 +437,10 @@ mod tests {
         );
         assert_eq!(parse_desc_path("wpkh(xpub.../0/42)"), Some((false, 42)));
         assert_eq!(parse_desc_path("raw(00)#xx"), None);
+        // Hardened or out-of-range branches/indices must be rejected.
+        assert_eq!(parse_desc_path("wpkh([73c5da0a/84h/1h/0h]03aabb)#cs"), None);
+        assert_eq!(parse_desc_path("wpkh(xpub.../0h/5)"), None);
+        assert_eq!(parse_desc_path("wpkh(xpub.../0/5h)"), None);
+        assert_eq!(parse_desc_path("wpkh(xpub.../2/5)"), None);
     }
 }

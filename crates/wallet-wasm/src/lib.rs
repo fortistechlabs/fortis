@@ -578,6 +578,9 @@ impl Htlc {
         preimage_hex: &str,
     ) -> Result<String, JsError> {
         let mut tx = tx_from_hex(tx_hex)?;
+        if input_index >= tx.input.len() {
+            return Err(JsError::new("input_index out of range"));
+        }
         let sig = hex::decode(sig_hex).map_err(js)?;
         self.inner.finalize_redeem(
             &mut tx,
@@ -598,6 +601,9 @@ impl Htlc {
         refund_pubkey_hex: &str,
     ) -> Result<String, JsError> {
         let mut tx = tx_from_hex(tx_hex)?;
+        if input_index >= tx.input.len() {
+            return Err(JsError::new("input_index out of range"));
+        }
         let sig = hex::decode(sig_hex).map_err(js)?;
         self.inner.finalize_refund(&mut tx, input_index, &sig, &pubkey(refund_pubkey_hex)?);
         Ok(tx_to_hex(&tx))
@@ -873,9 +879,12 @@ impl SwapSession {
 
     #[wasm_bindgen(js_name = onCounterpartyRedeemed)]
     pub fn on_counterparty_redeemed(&mut self, preimage_hex: &str) -> Result<String, JsError> {
-        Ok(state_tag(
-            self.inner.on_event(SwapEvent::CounterpartyRedeemed { preimage: bytes32(preimage_hex)? }),
-        ))
+        let preimage = bytes32(preimage_hex)?;
+        let state = self.inner.on_event(SwapEvent::CounterpartyRedeemed { preimage });
+        if !matches!(state, SwapState::Redeemed { preimage: p } if *p == preimage) {
+            return Err(JsError::new("preimage does not match hashlock"));
+        }
+        Ok(state_tag(state))
     }
 
     #[wasm_bindgen(js_name = onOurOutputConfirmed)]

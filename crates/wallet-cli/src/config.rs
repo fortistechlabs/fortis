@@ -101,7 +101,27 @@ impl WalletConfig {
         let p = Self::path(home);
         let mut json = serde_json::to_vec_pretty(self)?;
         json.push(b'\n');
-        fs::write(&p, json).with_context(|| format!("writing {}", p.display()))?;
+        #[cfg(unix)]
+        {
+            use std::io::Write;
+            use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
+            fs::set_permissions(home, fs::Permissions::from_mode(0o700))
+                .with_context(|| format!("setting permissions on {}", home.display()))?;
+            let mut f = fs::OpenOptions::new()
+                .write(true)
+                .create(true)
+                .truncate(true)
+                .mode(0o600)
+                .open(&p)
+                .with_context(|| format!("opening {}", p.display()))?;
+            f.write_all(&json).with_context(|| format!("writing {}", p.display()))?;
+            fs::set_permissions(&p, fs::Permissions::from_mode(0o600))
+                .with_context(|| format!("setting permissions on {}", p.display()))?;
+        }
+        #[cfg(not(unix))]
+        {
+            fs::write(&p, json).with_context(|| format!("writing {}", p.display()))?;
+        }
         Ok(())
     }
 }

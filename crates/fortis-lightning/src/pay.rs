@@ -330,12 +330,6 @@ impl Node {
                 let params = lnurl::resolve(target, http)?;
                 let pr = lnurl::request_invoice(&params, amount, http)?;
                 let inv = parse_invoice(&pr)?;
-                // The returned invoice must be this node's chain (bit 512 = XBT): BTC and
-                // XBT invoices look alike, and only the fetch says which one this is.
-                let xbt_invoice = inv.features().is_some_and(|f| f.supports_blake2b());
-                if xbt_invoice != (self.ln_chain() == crate::LnChain::Xbt) {
-                    return Err(LnError::WrongChain);
-                }
                 self.check_bolt11(inv, Some(amount), Some(params.description))
             }
             PaymentTarget::Unified { lightning, .. } => match lightning.as_ref() {
@@ -354,6 +348,12 @@ impl Node {
     ) -> Result<Prepared, LnError> {
         if inv.network() != self.network() {
             return Err(LnError::WrongNetwork);
+        }
+        // The invoice must be this node's chain (bit 512 = XBT): BTC and XBT
+        // invoices share a network prefix, and bit 512 distinguishes them.
+        let xbt_invoice = inv.features().is_some_and(|f| f.supports_blake2b());
+        if xbt_invoice != (self.ln_chain() == crate::LnChain::Xbt) {
+            return Err(LnError::WrongChain);
         }
         if inv.would_expire(now()) {
             return Err(LnError::InvoiceExpired);
@@ -379,6 +379,9 @@ impl Node {
             .map_err(|e| LnError::Other(format!("invalid offer: {e:?}")))?;
         if !offer.supports_chain(ChainHash::using_genesis_block(self.network())) {
             return Err(LnError::WrongNetwork);
+        }
+        if offer.offer_features().supports_blake2b() != (self.ln_chain() == crate::LnChain::Xbt) {
+            return Err(LnError::WrongChain);
         }
         if offer.is_expired_no_std(now()) {
             return Err(LnError::InvoiceExpired);
@@ -944,6 +947,18 @@ mod tests {
         assert_eq!(
             xbt.pay_with_http(&bob(), Some(5_000), &fake(Some(signed_xbt_invoice(5_000)))),
             Err(LnError::Other("not_started".into()))
+        );
+        // Direct Bolt11 target on the wrong chain is also refused in prepare() before gate/VSS.
+        let xbt_target = crate::parse(&signed_xbt_invoice(5_000), Network::Regtest).unwrap();
+        assert_eq!(
+            btc.pay_with_http(&xbt_target, None, &Fake(HashMap::new())),
+            Err(LnError::WrongChain)
+        );
+        let btc_target =
+            crate::parse(&signed_invoice(5_000, META, false), Network::Regtest).unwrap();
+        assert_eq!(
+            xbt.pay_with_http(&btc_target, None, &Fake(HashMap::new())),
+            Err(LnError::WrongChain)
         );
     }
 

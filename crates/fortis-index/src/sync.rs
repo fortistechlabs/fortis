@@ -106,11 +106,19 @@ impl Syncer {
         // A node behind us whose own tip is on our chain is catching up (e.g.
         // restarted with -reindex), not reorging: wait rather than discard
         // valid blocks.
-        if let (Some((h, _)), Some(ours)) = (t.tip(), t.get(node_tip)) {
-            if h > node_tip && self.src.hashes(node_tip, 1)?[0] == ours.hash {
+        if let Some((h, _)) = t.tip() {
+            if node_tip < self.start_height {
                 anyhow::bail!(
-                    "node tip {node_tip} is behind the index tip {h} on the same chain; waiting"
+                    "node tip {node_tip} is below index start height {} (index tip {h}); waiting",
+                    self.start_height
                 );
+            }
+            if let Some(ours) = t.get(node_tip) {
+                if h > node_tip && self.src.hashes(node_tip, 1)?[0] == ours.hash {
+                    anyhow::bail!(
+                        "node tip {node_tip} is behind the index tip {h} on the same chain; waiting"
+                    );
+                }
             }
         }
         while let Some((h, rec)) = t.tip().map(|(h, r)| (h, *r)) {
@@ -577,6 +585,20 @@ mod tests {
         assert_eq!(tip(&r.syncer), 1000);
         assert_eq!(r.syncer.db.reader().tip().unwrap().unwrap().0, 1000);
         r.src.reorg(601, 1001, 0); // caught up, and one more block
+        r.syncer.step(&AtomicBool::new(false)).unwrap();
+        assert_eq!(tip(&r.syncer), 1001);
+    }
+
+    #[test]
+    fn a_node_below_start_height_is_waited_for_not_unwound() {
+        let mut r = rig(Arc::new(MemSource::new(1000)), 100, None);
+        r.syncer.step(&AtomicBool::new(false)).unwrap();
+        r.src.reorg(10, 10, 0);
+        let err = r.syncer.step(&AtomicBool::new(false)).unwrap_err();
+        assert!(!is_fatal(&err), "{err:#}");
+        assert_eq!(tip(&r.syncer), 1000);
+        assert_eq!(r.syncer.db.reader().tip().unwrap().unwrap().0, 1000);
+        r.src.reorg(11, 1001, 0);
         r.syncer.step(&AtomicBool::new(false)).unwrap();
         assert_eq!(tip(&r.syncer), 1001);
     }

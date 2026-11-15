@@ -239,7 +239,11 @@ impl HtlcContract {
         if !self.has_release() {
             return Err(WalletError::InvalidSwapParams("this contract has no release branch".into()));
         }
-        tx.input[input_index].witness = release_witness(redeem_sig, refund_sig, &self.witness_script);
+        let inp = tx
+            .input
+            .get_mut(input_index)
+            .ok_or_else(|| WalletError::InvalidSwapParams("input_index out of range".into()))?;
+        inp.witness = release_witness(redeem_sig, refund_sig, &self.witness_script);
         Ok(())
     }
 
@@ -260,8 +264,9 @@ impl HtlcContract {
         redeem_pubkey: &PublicKey,
         preimage: &Preimage,
     ) {
-        tx.input[input_index].witness =
-            redeem_witness(sig, redeem_pubkey, preimage, &self.witness_script);
+        if let Some(inp) = tx.input.get_mut(input_index) {
+            inp.witness = redeem_witness(sig, redeem_pubkey, preimage, &self.witness_script);
+        }
     }
 
     /// Attach the refund witness in place.
@@ -272,7 +277,9 @@ impl HtlcContract {
         sig: &[u8],
         refund_pubkey: &PublicKey,
     ) {
-        tx.input[input_index].witness = refund_witness(self.version, sig, &refund_pubkey.serialize(), &self.witness_script);
+        if let Some(inp) = tx.input.get_mut(input_index) {
+            inp.witness = refund_witness(self.version, sig, &refund_pubkey.serialize(), &self.witness_script);
+        }
     }
 }
 
@@ -711,5 +718,15 @@ mod tests {
     #[test]
     fn an_unknown_contract_version_is_refused() {
         assert!(HtlcContract::try_build(&ChainParams::bitcoin(), 3, sha256::Hash::hash(b"s"), &pk(1), &pk(2), 1, Amount::from_sat(1)).is_err());
+    }
+
+    #[test]
+    fn out_of_bounds_finalize_does_not_panic() {
+        let c = v(CONTRACT_V2);
+        let mut tx = c.release_tx(OutPoint::null(), payout(), Amount::from_sat(500)).unwrap();
+        assert!(c.finalize_release(&mut tx, 1, b"a", b"b").is_err());
+        c.finalize_redeem(&mut tx, 5, b"a", &pk(1), &[0u8; 32]);
+        c.finalize_refund(&mut tx, 5, b"a", &pk(2));
+        assert!(tx.input[0].witness.is_empty());
     }
 }

@@ -31,6 +31,7 @@ class FortisApplication : Application() {
     override fun onCreate() {
         super.onCreate()
         CrashReporter.install()
+        com.fortis.wallet.data.KeyTrace.init(this)
         SwapNotifications.createChannels(this)
         com.fortis.wallet.lightning.LightningPush.createChannel(this)
         SwapWorker.schedule(this)

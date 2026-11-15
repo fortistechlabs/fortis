@@ -53,7 +53,7 @@ fi
 step "User"
 id fortis &>/dev/null || useradd --system --home-dir /var/lib/fortis --shell /usr/bin/nologin fortis
 usermod -aG bitcoin-core,bitcoin-knots fortis
-install -d -o fortis -g fortis -m 0700 /var/lib/fortis /var/lib/fortis/edge /var/lib/fortis/lsp /var/log/fortis
+install -d -o fortis -g fortis -m 0700 /var/lib/fortis /var/lib/fortis/edge /var/lib/fortis/lsp /var/lib/fortis/lsp-xbt /var/log/fortis
 # Owner-only, including what older installs left readable (the edge's token
 # secret, the swap and index databases, the crash log). The units keep it so:
 # StateDirectoryMode / LogsDirectoryMode 0700 and UMask 0077.
@@ -74,8 +74,18 @@ fi
 step "Units"
 install -d -m 0755 /etc/fortis
 [[ -e /etc/fortis/edge.env ]] || install -m 0644 "$here/edge.env" /etc/fortis/edge.env
+if [[ ! -e /etc/fortis/vss.env ]]; then
+  install -m 0600 -o root -g fortis /dev/null /etc/fortis/vss.env
+  printf 'VSS_PSQL_PASSWORD=%s\n' "$(head -c 24 /dev/urandom | base64 | tr -dc 'A-Za-z0-9' | head -c 32)" > /etc/fortis/vss.env
+fi
 [[ -e /etc/fortis/lsp.toml ]] || install -m 0640 -o root -g fortis "$here/lsp.toml.example" /etc/fortis/lsp.toml
-for u in fortis-xbt-index fortis-btc-index fortis-edge fortis-lsp fortis-vss; do
+[[ -e /etc/fortis/lsp-xbt.toml ]] || install -m 0640 -o root -g fortis "$here/lsp-xbt.toml.example" /etc/fortis/lsp-xbt.toml
+if [[ ! -e /etc/fortis/lsp-xbt.token ]]; then
+  install -m 0640 -o root -g fortis /dev/null /etc/fortis/lsp-xbt.token
+  head -c 24 /dev/urandom | base64 | tr -dc 'A-Za-z0-9' | head -c 32 > /etc/fortis/lsp-xbt.token
+  printf '\n' >> /etc/fortis/lsp-xbt.token
+fi
+for u in fortis-xbt-index fortis-btc-index fortis-edge fortis-lsp fortis-lsp-xbt fortis-vss; do
   install -m 0644 "$here/$u.service" "/etc/systemd/system/$u.service"
 done
 systemctl daemon-reload

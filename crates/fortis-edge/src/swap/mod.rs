@@ -987,6 +987,10 @@ fn take_offer(req: &mut Request, id: &str, token: &str, sw: &Swap) -> Reply {
             return err(409, &e.to_string());
         }
     };
+    if m.initiator_offer != taker.id && m.participant_offer != taker.id {
+        let offer_id = if m.initiator_token == token { &m.initiator_offer } else { &m.participant_offer };
+        return Reply::Json(200, json!({ "match_id": m.id, "owner_secret": secret, "offer_id": offer_id }));
+    }
     // Whatever the fill left of the taker's side isn't an offer anyone asked for.
     {
         let _g = sw.store.lock_matching();

@@ -59,16 +59,26 @@ pub fn connect(rpc: &Rpc, state: &mut State, home: &Path, req: ConnectReq) -> Re
     };
     let params = ChainParams::resolve(chain, &req.network)
         .ok_or_else(|| anyhow!("unknown chain/network {}/{}", req.chain, req.network))?;
+    let fp = req
+        .master_fingerprint
+        .trim()
+        .parse::<wallet_core::bitcoin::bip32::Fingerprint>()
+        .map_err(|e| anyhow!("invalid master_fingerprint: {e}"))?
+        .to_string();
+    let mut xpub = wallet_core::parse_account_xpub(&req.account_xpub)
+        .map_err(|e| anyhow!("{e}"))?;
+    xpub.network = wallet_core::bitcoin::NetworkKind::from(params.network);
+    let account_xpub = xpub.to_string();
     let watch_wallet = format!("fortis-{}", req.chain);
 
     fortis_node::ensure_watch_wallet(rpc, &watch_wallet)?;
     let (recv_ok, change_ok) = fortis_node::import_account(
         rpc,
         &watch_wallet,
-        &req.master_fingerprint,
+        &fp,
         params.bip44_coin_type,
         0,
-        &req.account_xpub,
+        &account_xpub,
         req.range,
         req.rescan,
     )?;
@@ -79,8 +89,8 @@ pub fn connect(rpc: &Rpc, state: &mut State, home: &Path, req: ConnectReq) -> Re
     state.connected = Some(Connected {
         chain: req.chain,
         network: req.network,
-        account_xpub: req.account_xpub,
-        master_fingerprint: req.master_fingerprint,
+        account_xpub,
+        master_fingerprint: fp,
         watch_wallet: watch_wallet.clone(),
     });
     state.save(home)?;
@@ -130,7 +140,7 @@ pub struct BroadcastReq {
 
 /// The `bitcoin` crate's network for address parsing. Matches `ChainParams`:
 /// both chains use `Bitcoin`-prefixed addresses on mainnet.
-fn address_network(settings_network: &str) -> Network {
+pub(crate) fn address_network(settings_network: &str) -> Network {
     if settings_network.starts_with("regtest") { Network::Regtest } else { Network::Bitcoin }
 }
 
@@ -138,7 +148,7 @@ fn address_network(settings_network: &str) -> Network {
 /// service fee address. A floor-only check: it can't tell payment from change,
 /// so it doesn't verify the full percentage — that's cooperative, this is the
 /// minimum integrity check against a buggy or stripped client.
-fn check_service_fee(tx: &Transaction, p: &Pricing, network: Network) -> Result<()> {
+pub(crate) fn check_service_fee(tx: &Transaction, p: &Pricing, network: Network) -> Result<()> {
     let fee_spk = p
         .address
         .parse::<Address<NetworkUnchecked>>()

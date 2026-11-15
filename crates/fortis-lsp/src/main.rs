@@ -316,6 +316,13 @@ fn serve(
         account::Ledger::open(&cfg.data_dir.join(account::LEDGER_FILE))
             .map_err(|e| format!("account ledger: {e}"))?,
     );
+    if let Ok(holds) = ledger.conversions() {
+        for (id, _) in holds {
+            if id.starts_with("conv:pending:") || id.starts_with("deliver:pending:") {
+                let _ = ledger.abandon_conversion(&id);
+            }
+        }
+    }
     import_earlier_revenue(node, &ledger);
     let accounts = Arc::new(account_api::AccountService::new(
         Arc::clone(&ledger),
@@ -700,23 +707,40 @@ fn run_conversions(
             .map(|c| c.next_outbound_htlc_limit_msat)
             .max()
             .unwrap_or(0);
+        if matches!(
+            conversion::plan(
+                acct.free_msat(),
+                accounts.account_max_msat,
+                peer.is_some(),
+                room,
+                busy.contains(&pk),
+                cfg.channel_min_sat,
+            ),
+            conversion::Plan::None
+        ) {
+            continue;
+        }
+        let tmp = format!("conv:pending:{pk}");
+        let held = match ledger.start_conversion(&pk, &tmp) {
+            Ok(h) => h,
+            Err(e) => {
+                eprintln!("fortis-lsp: account conversion for {pk}: {e}");
+                continue;
+            }
+        };
         let plan = conversion::plan(
-            acct.free_msat(),
+            held,
             accounts.account_max_msat,
             peer.is_some(),
             room,
-            busy.contains(&pk),
+            false,
             cfg.channel_min_sat,
         );
-        let tmp = format!("conv:pending:{pk}");
-        let started = || ledger.start_conversion(&pk, &tmp);
         match plan {
-            conversion::Plan::None => {}
+            conversion::Plan::None => {
+                let _ = ledger.abandon_conversion(&tmp);
+            }
             conversion::Plan::PayOverChannel { amount_msat } => {
-                if let Err(e) = started() {
-                    eprintln!("fortis-lsp: account conversion for {pk}: {e}");
-                    continue;
-                }
                 match node.spontaneous_payment().send(amount_msat, pk, None) {
                     Ok(id) => {
                         let _ =
@@ -735,11 +759,10 @@ fn run_conversions(
                 channel_sat,
                 push_msat,
             } => {
-                let Some(peer) = peer else { continue };
-                if let Err(e) = started() {
-                    eprintln!("fortis-lsp: account conversion for {pk}: {e}");
+                let Some(peer) = peer else {
+                    let _ = ledger.abandon_conversion(&tmp);
                     continue;
-                }
+                };
                 let cfg_fees = fee_config(fees, ChannelConfig::default());
                 match node.open_channel(
                     pk,

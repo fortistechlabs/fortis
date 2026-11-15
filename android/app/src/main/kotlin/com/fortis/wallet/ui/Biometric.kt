@@ -27,7 +27,9 @@ import com.fortis.wallet.R
 import com.fortis.wallet.WalletViewModel
 import com.fortis.wallet.data.LOCK_BIOMETRIC
 import com.fortis.wallet.data.LOCK_PASSWORD
+import com.fortis.wallet.data.KeyTrace
 import com.fortis.wallet.data.SeedKeystore
+import com.fortis.wallet.data.diagnoseUnlockFailure
 import com.fortis.wallet.data.toHex
 import com.fortis.wallet.ui.theme.Fx
 import com.fortis.wallet.ui.theme.FxType
@@ -91,10 +93,10 @@ suspend fun authenticate(
     cont.invokeOnCancellation { prompt.cancelAuthentication() }
 }
 
-/** True if this failure means the Keystore key is gone (device security removed). */
+/** True if this failure means the Keystore key is gone (device security removed).
+ *  Checks the whole cause chain and whether the key entry still exists. */
 fun Throwable.isKeyInvalidated(): Boolean =
-    this is KeyPermanentlyInvalidatedException ||
-        cause is KeyPermanentlyInvalidatedException
+    diagnoseUnlockFailure(this, keyPresent = !SeedKeystore.keyMissing()).keyLost
 
 // --- first-wallet: choosing how the app is locked ---
 
@@ -181,6 +183,9 @@ fun BiometricAppUnlock(vm: WalletViewModel) {
     val act = rememberFragmentActivity()
     val scope = rememberCoroutineScope()
     var invalidated by remember { mutableStateOf(false) }
+    var detail by remember { mutableStateOf<String?>(null) }
+    var supporting by remember { mutableStateOf(false) }
+    val ctx = androidx.compose.ui.platform.LocalContext.current
 
     fun go() {
         val a = act ?: return
@@ -189,10 +194,14 @@ fun BiometricAppUnlock(vm: WalletViewModel) {
             try {
                 val cipher = authenticate(a, a.getString(R.string.biometric_unlock_title), "", SeedKeystore.decryptCipher(wrapped))
                 vm.appUnlockWithSecret(SeedKeystore.unwrap(cipher, wrapped).toHex())
+                KeyTrace.unlockOk()
             } catch (e: BiometricCancelled) {
                 // stay put — the button retries
             } catch (e: Throwable) {
-                if (e.isKeyInvalidated()) invalidated = true else vm.error = e.message
+                val d = diagnoseUnlockFailure(e, keyPresent = !SeedKeystore.keyMissing())
+                detail = d.detail
+                KeyTrace.failure(e, d.detail)
+                if (d.keyLost) invalidated = true else vm.error = e.message
             }
         }
     }
@@ -201,10 +210,34 @@ fun BiometricAppUnlock(vm: WalletViewModel) {
 
     if (invalidated) {
         Text(stringResource(R.string.biometric_invalidated), style = FxType.meta, color = Fx.bad)
+        Text(stringResource(R.string.biometric_invalidated_keep_data), style = FxType.meta, color = Fx.bad)
     } else {
         PrimaryButton(stringResource(R.string.action_unlock)) { go() }
     }
     ErrorText(vm.error)
+    detail?.let { d ->
+        Text(d, style = FxType.meta)
+        // The user can send the key trace to us, or share it anywhere (email, a chat, a note).
+        Text(stringResource(R.string.key_diag_help), style = FxType.meta, color = Fx.textDim)
+        GhostButton(stringResource(R.string.key_diag_send)) { supporting = true }
+        GhostButton(stringResource(R.string.key_diag_share)) { shareKeyDiagnostics(ctx, vm.keyDiagnostics()) }
+    }
+    if (supporting) SupportDialog(vm, detail.orEmpty().let { "Unlock failed: $it" }) { supporting = false }
+}
+
+/** Offer the key trace to any app the user picks (email, messaging, notes…). */
+fun shareKeyDiagnostics(ctx: android.content.Context, report: String) {
+    val send = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+        type = "text/plain"
+        putExtra(android.content.Intent.EXTRA_SUBJECT, ctx.getString(R.string.key_diag_subject))
+        putExtra(android.content.Intent.EXTRA_TEXT, report)
+    }
+    runCatching {
+        ctx.startActivity(
+            android.content.Intent.createChooser(send, ctx.getString(R.string.key_diag_share))
+                .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK),
+        )
+    }
 }
 
 
@@ -235,7 +268,8 @@ fun IdentityGate.require(vm: WalletViewModel, act: FragmentActivity?, scope: kot
             } catch (e: BiometricCancelled) {
                 // stays as it was
             } catch (e: Throwable) {
-                vm.error = e.message
+                KeyTrace.failure(e, diagnoseUnlockFailure(e, keyPresent = !SeedKeystore.keyMissing()).detail)
+                vm.error = if (e.isKeyInvalidated()) a.getString(R.string.biometric_invalidated) else e.message
             }
         }
     } else {

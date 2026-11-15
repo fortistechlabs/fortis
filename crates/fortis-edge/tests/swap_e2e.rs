@@ -728,7 +728,7 @@ fn step(u: &mut User, s: Step) {
             let txid = tx.compute_txid();
             assert_eq!(body.trim(), txid.to_string());
             let vout = tx.output.iter().position(|o| o.script_pubkey == contract.script_pubkey).unwrap() as u32;
-            u.machine().set_our_outpoint(OutPoint::new(txid, vout));
+            u.machine().set_our_outpoint(OutPoint::new(txid, vout)).unwrap();
             u.machine().on_event(SwapEvent::OurFundingBroadcast { txid });
             let (s, b) = u.message(json!({ "type": "funded", "chain": chain.as_str(), "txid": txid.to_string(), "vout": vout }));
             assert_eq!(s, 200, "{}: funded: {b}", u.name);

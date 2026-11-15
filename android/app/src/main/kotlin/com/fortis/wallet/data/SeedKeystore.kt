@@ -11,6 +11,7 @@ import androidx.biometric.BiometricManager.Authenticators.BIOMETRIC_STRONG
 import androidx.biometric.BiometricManager.Authenticators.DEVICE_CREDENTIAL
 import java.security.KeyStore
 import java.security.SecureRandom
+import java.security.UnrecoverableKeyException
 import javax.crypto.Cipher
 import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
@@ -39,10 +40,45 @@ object SeedKeystore {
 
     private fun keyStore() = KeyStore.getInstance(KS).apply { load(null) }
 
+    /** Android deletes this key when the secure lock screen is removed; on some
+     *  devices `getEntry` then returns null rather than throwing, so say so
+     *  explicitly instead of letting a cast NPE reach the user. */
     private fun secretKey(): SecretKey =
-        (keyStore().getEntry(ALIAS, null) as KeyStore.SecretKeyEntry).secretKey
+        (keyStore().getEntry(ALIAS, null) as? KeyStore.SecretKeyEntry)?.secretKey
+            ?: throw UnrecoverableKeyException("the $ALIAS key is missing from the Keystore")
 
-    fun hasKey(): Boolean = runCatching { keyStore().containsAlias(ALIAS) }.getOrDefault(false)
+    fun hasKey(): Boolean = keyPresence().first == KeyPresence.PRESENT
+
+    /** Like [hasKey] but tells "the Keystore has no such key" from "the check itself failed" —
+     *  the old `getOrDefault(false)` reported every error as a missing key. A key that is listed
+     *  but whose entry can't be read is reported as an error too. */
+    fun keyPresence(): Pair<KeyPresence, String?> = try {
+        val ks = keyStore()
+        when {
+            !ks.containsAlias(ALIAS) -> KeyPresence.MISSING to null
+            ks.getEntry(ALIAS, null) == null -> KeyPresence.ERROR to "alias listed but its entry is null"
+            else -> KeyPresence.PRESENT to null
+        }
+    } catch (e: Exception) {
+        KeyPresence.ERROR to "${e.javaClass.simpleName}: ${e.message.orEmpty().take(160)}"
+    }
+
+    /** True only when the Keystore positively reports no key (not on a failed check). */
+    fun keyMissing(): Boolean = keyPresence().first == KeyPresence.MISSING
+
+    /** Names of this app's Keystore entries (no key material). */
+    fun aliases(): List<String> = runCatching { keyStore().aliases().toList().sorted() }.getOrDefault(emptyList())
+
+    /** The key's security properties as one line, for the key diagnostics; null if not inspectable. */
+    fun keyInfoText(): String? = runCatching {
+        val key = secretKey()
+        val info = SecretKeyFactory.getInstance(key.algorithm, KS).getKeySpec(key, KeyInfo::class.java) as KeyInfo
+        val level = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) "level=${info.securityLevel}" else "inHardware=${info.isInsideSecureHardware}"
+        "$level, authRequired=${info.isUserAuthenticationRequired}, " +
+            "authEnforcedByHardware=${info.isUserAuthenticationRequirementEnforcedBySecureHardware}, " +
+            "validitySecs=${info.userAuthenticationValidityDurationSeconds}, " +
+            "invalidatedByEnrollment=${info.isInvalidatedByBiometricEnrollment}"
+    }.getOrNull()
 
     /** Where the app key actually lives — for the Settings security line.
      *  `null` when there is no key (password mode) or it can't be inspected. */
@@ -96,6 +132,7 @@ object SeedKeystore {
             try {
                 gen.init(keySpec(strongBox = true))
                 gen.generateKey()
+                KeyTrace.record("key created (StrongBox)")
                 return
             } catch (e: Exception) {
                 // StrongBoxUnavailableException (or a strongbox-provisioning failure
@@ -109,9 +146,11 @@ object SeedKeystore {
         }
         gen.init(keySpec(strongBox = false))
         gen.generateKey()
+        KeyTrace.record("key created (TEE)")
     }
 
     fun deleteKey() {
+        KeyTrace.record("key deleted by the app")
         runCatching { keyStore().deleteEntry(ALIAS) }
     }
 

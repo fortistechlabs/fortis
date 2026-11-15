@@ -1532,7 +1532,7 @@ fn upstream_path_ok(method: &Method, rest: &str) -> Result<(), Reply> {
     {
         return Err(err(400, "bad path"));
     }
-    if method == &Method::Post && rest != "tx" && rest != "scan" {
+    if method == &Method::Post && rest != "tx" && rest != "scan" && rest != "prewarm" {
         return Err(err(405, "method not allowed"));
     }
     Ok(())
@@ -1612,6 +1612,13 @@ fn proxy_chain(req: &mut Request, st: &State, method: &Method, path: &str, query
                 Metrics::inc(&st.metrics.unauthorized);
                 return err(401, "missing or invalid token — POST /register first");
             }
+            let rl_key = tok
+                .clone()
+                .unwrap_or_else(|| format!("ip:{}", client_ip(req, st.trust_forwarded_for)));
+            if !st.limiter.check(&rl_key) {
+                Metrics::inc(&st.metrics.rate_limited);
+                return err(429, "rate limit exceeded");
+            }
             let txs = st.btc_history.as_ref().map(|h| h.get(addr)).unwrap_or_default();
             return Reply::Json(200, json!({ "address": addr, "count": txs.len(), "txs": txs }));
         }
@@ -1621,8 +1628,8 @@ fn proxy_chain(req: &mut Request, st: &State, method: &Method, path: &str, query
     // them all from Haskoin in two calls, reshape into per-address Esplora
     // `/address/{a}/{utxo,txs}` bodies, and prime the cache so the scan that
     // follows is local. On any failure the client falls back to per-address.
-    if method == &Method::Post && chain == "btc" && rest == "prewarm" {
-        let Some(hs) = &st.btc_haskoin else {
+    if method == &Method::Post && rest == "prewarm" {
+        let Some(hs) = st.btc_haskoin.as_ref().filter(|_| chain == "btc") else {
             return err(404, "batch prewarm is not enabled");
         };
         if st.require_token && !token_ok() {
@@ -2350,6 +2357,7 @@ mod tests {
         }
         assert!(upstream_path_ok(&Method::Post, "tx").is_ok());
         assert!(upstream_path_ok(&Method::Post, "scan").is_ok());
+        assert!(upstream_path_ok(&Method::Post, "prewarm").is_ok());
     }
 
     /// `POST /btc/./tx` used to skip the service-fee check (it only ran for

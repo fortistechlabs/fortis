@@ -260,7 +260,7 @@ fn cmd_init(home: &Path, a: &InitArgs) -> Result<()> {
     let phrase: Zeroizing<String> = if a.restore {
         eprint!("Enter your recovery phrase, then press Enter:\n> ");
         io::stderr().flush().ok();
-        let mut line = String::new();
+        let mut line = Zeroizing::new(String::new());
         io::stdin().read_line(&mut line)?;
         let words: Vec<&str> = line.split_whitespace().collect();
         if words.len() < 12 {
@@ -295,7 +295,7 @@ fn cmd_init(home: &Path, a: &InitArgs) -> Result<()> {
     let passphrase: Zeroizing<String> = if a.passphrase {
         eprint!("BIP-39 passphrase (leave empty for none): ");
         io::stderr().flush().ok();
-        let mut line = String::new();
+        let mut line = Zeroizing::new(String::new());
         io::stdin().read_line(&mut line)?;
         Zeroizing::new(line.trim_end_matches(['\r', '\n']).to_string())
     } else {
@@ -388,7 +388,7 @@ fn cmd_import_seed(home: &Path, a: &ImportSeedArgs) -> Result<()> {
     let params = resolve_params(&cfg)?;
 
     let (mnemonic, passphrase): (Zeroizing<String>, Zeroizing<String>) = if a.phrase_stdin {
-        let mut input = String::new();
+        let mut input = Zeroizing::new(String::new());
         io::stdin().read_to_string(&mut input)?;
         let mut lines = input.lines();
         let m = lines

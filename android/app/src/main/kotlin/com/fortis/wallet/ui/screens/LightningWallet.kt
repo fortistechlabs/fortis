@@ -760,6 +760,10 @@ internal fun LightningWalletSettingsCard(vm: WalletViewModel, walletChain: Strin
     val session = side.session
     val lnState by session.state.collectAsState()
     var confirmClose by remember { mutableStateOf(false) }
+    val gate = rememberIdentityGate()
+    val gateAct = rememberFragmentActivity()
+    val gateScope = rememberCoroutineScope()
+    ConfirmIdentityDialog(gate, vm)
 
     GlassCard {
         Row(
@@ -814,7 +818,9 @@ internal fun LightningWalletSettingsCard(vm: WalletViewModel, walletChain: Strin
             confirmButton = {
                 TextButton({
                     vm.dismissForceCloseOffer(walletChain)
-                    vm.closeLightningAndMoveToOnchain(force = true, walletChain = walletChain)
+                    gate.require(vm, gateAct, gateScope) {
+                        vm.closeLightningAndMoveToOnchain(force = true, walletChain = walletChain)
+                    }
                 }) {
                     Text(stringResource(R.string.settings_lightning_force_action), color = Fx.warn)
                 }
@@ -844,7 +850,9 @@ internal fun LightningWalletSettingsCard(vm: WalletViewModel, walletChain: Strin
             confirmButton = {
                 TextButton({
                     confirmClose = false
-                    vm.closeLightningAndMoveToOnchain(walletChain = walletChain)
+                    gate.require(vm, gateAct, gateScope) {
+                        vm.closeLightningAndMoveToOnchain(walletChain = walletChain)
+                    }
                 }) {
                     Text(stringResource(R.string.action_confirm), color = Fx.signal)
                 }

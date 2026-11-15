@@ -14,10 +14,9 @@ Type=simple
 User=fortis
 Group=fortis
 WorkingDirectory=/var/lib/fortis
-EnvironmentFile=-/etc/fortis/vss.env
+EnvironmentFile=/etc/fortis/vss.env
 Environment=VSS_BIND_ADDRESS=127.0.0.1:8080
 Environment=VSS_PSQL_USERNAME=fortis
-Environment=VSS_PSQL_PASSWORD=fortis
 Environment=VSS_PSQL_ADDRESS=127.0.0.1:5432
 Environment=VSS_PSQL_DEFAULT_DB=postgres
 Environment=VSS_PSQL_VSS_DB=vss

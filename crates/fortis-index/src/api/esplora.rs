@@ -425,6 +425,20 @@ pub(crate) fn page_after<T: Copy>(rows: &[(T, Txid)], last: Option<Txid>) -> Vec
     rows.iter().skip(start).take(CHAIN_PAGE).map(|(n, _)| *n).collect()
 }
 
+/// Unconfirmed txids to show on the first page: mempool txids not already in
+/// `confirmed` (a block may have been indexed before the mempool snapshot
+/// refreshed), capped at `MEMPOOL_PAGE.min(PENDING_MAX)`.
+fn pending_for_page(mempool_ids: Vec<Txid>, confirmed: &[(TxNum, Txid)], last: Option<Txid>) -> Vec<Txid> {
+    if last.is_some() {
+        return Vec::new();
+    }
+    mempool_ids
+        .into_iter()
+        .filter(|id| !confirmed.iter().any(|(_, cid)| cid == id))
+        .take(MEMPOOL_PAGE.min(PENDING_MAX))
+        .collect()
+}
+
 async fn scripthash_page(st: AppState, sh: [u8; 32], last: Option<Txid>) -> ApiResult<Json<Value>> {
     // Txs to render: (pending txids) and (confirmed txnum, height, block) rows.
     let (pending, confirmed) = with_view(&st, move |_, v, mp| {
@@ -433,22 +447,14 @@ async fn scripthash_page(st: AppState, sh: [u8; 32], last: Option<Txid>) -> ApiR
         let Some(p) = found.or_else(|| mp.program_for_scripthash(&sh)) else {
             return Ok((Vec::new(), Vec::new()));
         };
-        let pending: Vec<Txid> = if last.is_none() {
-            let ids = mp.txids_for(&p);
-            ids.into_iter().take(MEMPOOL_PAGE.min(PENDING_MAX)).collect()
-        } else {
-            Vec::new()
-        };
         let rows = v.reader.history(&p, MAX_SCRIPT_HISTORY).map_err(ApiError::index)?;
         let mut with_ids: Vec<(TxNum, Txid)> = Vec::with_capacity(rows.len());
         for n in rows {
             if let Some(id) = v.reader.txid(n).map_err(ApiError::index)? {
-                // A tx the mempool snapshot still lists is shown once, as pending.
-                if !pending.contains(&id) {
-                    with_ids.push((n, id));
-                }
+                with_ids.push((n, id));
             }
         }
+        let pending = pending_for_page(mp.txids_for(&p), &with_ids, last);
         let page = page_after(&with_ids, last);
         let confirmed: Vec<(Txid, Value)> = page
             .into_iter()
@@ -678,5 +684,15 @@ mod tests {
         assert_eq!(page_after(&rows, Some(id(49))), (50..60).collect::<Vec<u64>>());
         assert!(page_after(&rows, Some(id(59))).is_empty());
         assert!(page_after(&rows, Some(id(200))).is_empty(), "an unknown last_seen ends the walk");
+    }
+
+    #[test]
+    fn recently_mined_tx_still_in_mempool_view_is_kept_in_confirmed_and_filtered_from_pending() {
+        let id = |n: u8| Txid::from_byte_array([n; 32]);
+        let confirmed = vec![(10, id(1)), (9, id(2))];
+        let mempool = vec![id(3), id(1)];
+        assert_eq!(pending_for_page(mempool.clone(), &confirmed, None), vec![id(3)]);
+        assert_eq!(page_after(&confirmed, None), vec![10, 9]);
+        assert!(pending_for_page(mempool, &confirmed, Some(id(1))).is_empty());
     }
 }

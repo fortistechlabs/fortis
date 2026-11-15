@@ -113,6 +113,7 @@ export class EsploraBackend {
     this._lastPrewarm = 0;
     this._watchSetCache = null;
     this._watchSetCacheAt = 0;
+    this._seededFromIdb = false;
     // Only the hosted edge has `/scan`. Flips to false for good if it turns out
     // this deployment doesn't serve it, reverting to the per-address walk.
     this._batchOn = this.kind === 'edge';
@@ -299,7 +300,8 @@ export class EsploraBackend {
     // confirms the seed and persists anything new. Confirmed-tx history never
     // changes, but "is there anything new" still needs a live check
     // eventually — this only defers that, never skips it.
-    if (!this._watchSetCache) {
+    if (!this._watchSetCache && !this._seededFromIdb) {
+      this._seededFromIdb = true;
       const persisted = await loadAddrTxs(this.session.chain).catch(() => ({}));
       const seed = [];
       for (const branch of [0, 1]) {
@@ -413,6 +415,7 @@ export class EsploraBackend {
     const txs = new Map();
     let tip = 0;
     let unlisted = 0;
+    let degraded = false;
 
     const fresh = [];
     for (const branch of [0, 1]) {
@@ -431,10 +434,11 @@ export class EsploraBackend {
       const part = fresh.slice(i, i + BATCH_MAX_ADDRESSES).map((a) => a.address);
       const r = await this._postScan(part);
       tip = Math.max(tip, Number(r.tip));
+      if (r.degraded) degraded = true;
       unlisted += unlistedSat(r, new Set(part));
-      for (const a of r.used) used.add(a);
-      unspent.push(...r.utxos);
-      for (const t of r.txs) if (!txs.has(t.txid)) txs.set(t.txid, summarizeTx(t));
+      for (const a of r.used || []) used.add(a);
+      unspent.push(...(r.utxos || []));
+      for (const t of r.txs || []) if (!txs.has(t.txid)) txs.set(t.txid, summarizeTx(t));
     }
 
     const utxos = unspent.map((u) => {
@@ -452,7 +456,7 @@ export class EsploraBackend {
     });
     // `txs` / `mine` stand in for the per-address `addrs[].txs` the walk produces.
     // `unlisted`: confirmed coins summed instead of listed (dust): in the balance, not spendable here.
-    return { tip, utxos, addrs: [], txs: [...txs.values()], mine: new Set(byAddr.keys()), unlisted };
+    return { tip, utxos, addrs: [], txs: [...txs.values()], mine: new Set(byAddr.keys()), used, unlisted, degraded };
   }
 
   async _refresh(force = false) {
@@ -497,7 +501,7 @@ export class EsploraBackend {
         })),
       );
       this._snap = { tip, utxos, addrs };
-      this._snapAt = Date.now();
+      if (this._watchSetCacheAt !== 0) this._snapAt = Date.now();
       return this._snap;
     })();
     this._refreshing = run;
@@ -530,13 +534,15 @@ export class EsploraBackend {
   }
 
   async balances() {
-    const { utxos, unlisted = 0 } = await this._refresh();
+    const { utxos, unlisted = 0, degraded = false } = await this._refresh();
     const sum = (f) => utxos.filter(f).reduce((s, u) => s + u.value_sat, 0);
-    return {
+    const out = {
       confirmed_sat: sum((u) => u.confirmations >= 1) + unlisted,
       pending_sat: sum((u) => u.confirmations < 1),
       immature_sat: 0,
     };
+    if (degraded) out.degraded = true;
+    return out;
   }
 
   async utxos(minConf = 1) {

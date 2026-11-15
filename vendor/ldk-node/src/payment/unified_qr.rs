@@ -169,6 +169,10 @@ impl UnifiedQrPayment {
 					log_error!(self.logger, "Failed to send BOLT12 offer: PersistenceFailed. This is part of a unified QR code payment. Aborting to avoid a potential duplicate payment.");
 					return Err(Error::PersistenceFailed);
 				},
+				Err(Error::WrongChain) => {
+					log_error!(self.logger, "Failed to send BOLT12 offer: WrongChain. Aborting unified QR payment to avoid cross-chain fallback.");
+					return Err(Error::WrongChain);
+				},
 				Err(e) => {
 					log_error!(self.logger, "Failed to send BOLT12 offer: {:?}. This is part of a unified QR code payment. Falling back to the BOLT11 invoice.", e);
 				},
@@ -192,6 +196,10 @@ impl UnifiedQrPayment {
 				Err(Error::PersistenceFailed) => {
 					log_error!(self.logger, "Failed to send BOLT11 invoice: PersistenceFailed. This is part of a unified QR code payment. Aborting to avoid a potential duplicate payment.");
 					return Err(Error::PersistenceFailed);
+				},
+				Err(Error::WrongChain) => {
+					log_error!(self.logger, "Failed to send BOLT11 invoice: WrongChain. Aborting unified QR payment to avoid cross-chain fallback.");
+					return Err(Error::WrongChain);
 				},
 				Err(e) => {
 					log_error!(self.logger, "Failed to send BOLT11 invoice: {:?}. This is part of a unified QR code payment. Falling back to the on-chain transaction.", e);

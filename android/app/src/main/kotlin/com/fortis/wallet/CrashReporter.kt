@@ -60,9 +60,10 @@ object CrashReporter {
      * (`crypto::unseal` only ever returns it as a success value) — but the report
      * must not carry them even if that changes.
      */
-    private fun redact(s: String): String = s
+    internal fun redact(s: String): String = s
         .replace(Regex("(?i)\\b(bc|tb|bcrt)1[a-z0-9]{8,}"), "<addr>")
-        .replace(Regex("\\b[xt]p(ub|rv)[1-9A-HJ-NP-Za-km-z]{40,}"), "<xkey>")
+        .replace(Regex("\\b[xtyzuv]p(ub|rv)[1-9A-HJ-NP-Za-km-z]{40,}"), "<xkey>")
+        .replace(Regex("\\b[13mn2][1-9A-HJ-NP-Za-km-z]{25,34}\\b"), "<addr>")
         .replace(Regex("\\b[0-9a-fA-F]{64,}\\b"), "<hex>")
 
     private fun post(body: String) {

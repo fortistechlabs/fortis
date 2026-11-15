@@ -324,6 +324,21 @@ pub fn take_public(
     fee_address: &str,
 ) -> anyhow::Result<Match> {
     let _g = store.lock_matching();
+    if let Some(c) = taker.client_id.as_deref() {
+        if let Some(existing) = store.offer_by_client(&taker.token, c) {
+            let match_id = existing.match_id.or_else(|| {
+                store
+                    .all_matches()
+                    .into_iter()
+                    .filter(|m| m.initiator_offer == existing.id || m.participant_offer == existing.id)
+                    .max_by_key(|m| m.terms.matched_at)
+                    .map(|m| m.id)
+            });
+            return match_id
+                .and_then(|id| store.get_match(&id))
+                .ok_or_else(|| anyhow!("offer is no longer available"));
+        }
+    }
     let maker = store.offer(offer_id).ok_or_else(|| anyhow!("no such offer"))?;
     if maker.private {
         bail!("that offer is private: take it with its share code");
@@ -366,6 +381,9 @@ fn release(
     let Some(mut o) = store.offer(offer_id) else {
         return Ok(());
     };
+    // A synthetic one-shot taker offer (`private` with no `share_code`) exists
+    // only for the take that created it: never reopen it on the book.
+    let how = if o.private && o.share_code.is_none() { Release::Cancel } else { how };
     if o.match_id.as_deref() == Some(m.id.as_str()) {
         o.match_id = None;
         match how {
@@ -1062,5 +1080,52 @@ mod tests {
         assert!(s.offer("b").is_none());
         assert!(s.msgs_after(&old.id, 0).is_empty());
         assert!(s.offer("r").is_some());
+    }
+
+    #[test]
+    fn synthetic_taker_offer_is_cancelled_not_reopened_when_match_dissolves_or_declines() {
+        // Timeout in Proposed (AwaitingAccept): maker reopens as Open, synthetic taker is Cancelled.
+        let s = store_with(&[sell("maker", 20_000_000, PRICE, 1)]);
+        let mut taker = buy("taker", 200_000, PRICE, 2);
+        taker.private = true;
+        taker.share_code = None;
+        let m = take_public(&s, "maker", &taker, NOW, MAX, "bitcoin", "bc1qfee").unwrap();
+        tick(&s, NOW + ACCEPT_SECS as u64 + 1);
+        assert_eq!(s.get_match(&m.id).unwrap().status, MatchStatus::Cancelled);
+        assert_eq!(s.offer("maker").unwrap().status, OfferStatus::Open);
+        assert_eq!(s.offer("taker").unwrap().status, OfferStatus::Cancelled);
+
+        // Maker declines: synthetic taker becomes Cancelled (not Open).
+        let s = store_with(&[sell("maker", 20_000_000, PRICE, 1)]);
+        let m = take_public(&s, "maker", &taker, NOW, MAX, "bitcoin", "bc1qfee").unwrap();
+        on_decline(&s, &m.id, Role::Initiator).unwrap();
+        assert_eq!(s.offer("maker").unwrap().status, OfferStatus::Cancelled);
+        assert_eq!(s.offer("taker").unwrap().status, OfferStatus::Cancelled);
+
+        // Taker declines: maker reopens as Open, synthetic taker becomes Cancelled.
+        let s = store_with(&[sell("maker", 20_000_000, PRICE, 1)]);
+        let m = take_public(&s, "maker", &taker, NOW, MAX, "bitcoin", "bc1qfee").unwrap();
+        on_decline(&s, &m.id, Role::Participant).unwrap();
+        assert_eq!(s.offer("maker").unwrap().status, OfferStatus::Open);
+        assert_eq!(s.offer("taker").unwrap().status, OfferStatus::Cancelled);
+    }
+
+    #[test]
+    fn take_public_is_idempotent_on_client_id_under_lock() {
+        let s = store_with(&[sell("maker", 40_000_000, PRICE, 1)]);
+        let mut t1 = buy("taker-1", 200_000, PRICE, 2);
+        t1.private = true;
+        t1.client_id = Some("aa01".into());
+        let mut t2 = buy("taker-2", 200_000, PRICE, 3);
+        t2.token = t1.token.clone();
+        t2.private = true;
+        t2.client_id = Some("aa01".into());
+
+        let m1 = take_public(&s, "maker", &t1, NOW, MAX, "bitcoin", "bc1qfee").unwrap();
+        let m2 = take_public(&s, "maker", &t2, NOW, MAX, "bitcoin", "bc1qfee").unwrap();
+        assert_eq!(m1, m2);
+        assert_eq!(s.all_matches().len(), 1);
+        assert!(s.offer("taker-1").is_some());
+        assert!(s.offer("taker-2").is_none());
     }
 }

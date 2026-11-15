@@ -885,6 +885,12 @@ function onLock() {
   overview.balances.clear();
   overview.prices = {};
   detail = { status: null, balances: null, history: [], feerate: {}, prices: null, _shownBal: undefined };
+  ui.dialog = null;
+  ui.pendingPlan = null;
+  ui.draftMnemonic = null;
+  ui.pendingWallet = null;
+  ui.addingWallet = false;
+  ui.screen = null;
   ui.prfAutoTried = false;
   ui.nav = 'home';
   render();
@@ -1137,13 +1143,21 @@ async function onReview(w) {
     if (!d.to) throw new Error(t('error_enter_destination'));
     const session = ensureSession(w);
     session.checkAddress(d.to); // clear "… is not a valid address" before any network I/O
+    let customFee = null;
+    if (d.customFee != null && String(d.customFee).trim() !== '') {
+      const custom = Number(d.customFee);
+      if (!Number.isFinite(custom) || custom < 1 || custom > 10000) {
+        throw new Error('feerate must be between 1 and 10,000 sat/vB');
+      }
+      customFee = custom;
+    }
     const backend = ensureBackend(w);
     const minConf = 1;
     const [feerateResp, utxos] = await Promise.all([
-      d.customFee ? Promise.resolve({ sat_vb: Number(d.customFee) }) : backend.feerate(d.target),
+      customFee != null ? Promise.resolve({ sat_vb: customFee }) : backend.feerate(d.target),
       backend.utxos(minConf),
     ]);
-    const feerate = Math.max(1, Math.round(feerateResp.sat_vb));
+    const feerate = Math.min(10000, Math.max(1, Math.round(feerateResp.sat_vb)));
     if (!utxos.length) throw new Error(t('error_no_coins'));
 
     let opReturnHex;
@@ -1892,7 +1906,9 @@ function renderPsbtReviewSheet() {
       };
       renderDialogSheet();
     } catch (e) {
-      err.textContent = String(e.message || e).replace(/^.*?: /, '');
+      const msg = String(e.message || e).replace(/^.*?: /, '');
+      if (err) err.textContent = msg;
+      else toast(msg);
     }
   };
   mount(el('div', { class: 'sheet-wrap' },
@@ -1912,7 +1928,7 @@ function renderPsbtReviewSheet() {
       el('div', { id: 'err', class: 'err' }),
       el('div', { class: 'row' },
         el('button', { class: 'ghost', onclick: closeDialog }, t('action_cancel')),
-        el('button', { class: 'primary', onclick: doSign }, t('action_sign'))))));
+        el('button', { class: 'primary', onclick: () => confirmIdentity(doSign) }, t('action_sign'))))));
 }
 
 function renderChangePasswordSheet() {
@@ -2048,9 +2064,9 @@ async function refresh() {
     // the next poll tick corrected it. Discard silently instead — the
     // new selection's own refresh() owns `detail` now.
     if (state.selected !== refreshingFor) return;
-    if (balances) detail.balances = balances;
+    if (balances && !balances.degraded) detail.balances = balances;
     if (prices) { detail.prices = prices; overview.prices[w.chain] = prices; }
-    if (detail.balances) overview.balances.set(w.id, detail.balances.confirmed_sat);
+    if (detail.balances && !balances?.degraded) overview.balances.set(w.id, detail.balances.confirmed_sat);
     if (!Object.keys(detail.feerate).length) {
       for (const target of [1, 6, 144]) {
         backend.feerate(target).then((r) => {
@@ -2078,7 +2094,7 @@ async function refreshAllBalances() {
         if (!backend) continue;
         await backend.prewarm?.();
         const bal = await backend.balances();
-        overview.balances.set(w.id, bal.confirmed_sat);
+        if (!bal.degraded) overview.balances.set(w.id, bal.confirmed_sat);
         if (!priced.has(w.chain) && backend.prices) {
           priced.add(w.chain);
           const p = await backend.prices();

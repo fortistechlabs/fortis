@@ -2,9 +2,13 @@
 //! Esplora API for BTC) and return the raw response.
 
 use anyhow::Result;
+use std::io::Read;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tiny_http::Method;
+
+/// Largest upstream response body accepted (16 MiB).
+const MAX_RESPONSE_BYTES: usize = 16 * 1024 * 1024;
 
 pub struct Upstream {
     base: String,
@@ -140,7 +144,10 @@ impl Upstream {
             }
             let content_type = r.content_type().to_string();
             let mut out = Vec::new();
-            r.into_reader().read_to_end(&mut out)?;
+            r.into_reader().take(MAX_RESPONSE_BYTES as u64 + 1).read_to_end(&mut out)?;
+            if out.len() > MAX_RESPONSE_BYTES {
+                anyhow::bail!("upstream response too large");
+            }
             return Ok(UpstreamResponse { status, content_type, body: out });
         }
         Err(last_err.map_or_else(|| anyhow::anyhow!("upstream unreachable"), Into::into))

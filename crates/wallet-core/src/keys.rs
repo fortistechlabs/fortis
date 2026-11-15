@@ -18,6 +18,12 @@ pub struct MasterKey {
     xpriv: Xpriv,
 }
 
+impl Drop for MasterKey {
+    fn drop(&mut self) {
+        self.xpriv.private_key.non_secure_erase();
+    }
+}
+
 /// The 2048-word BIP-39 English wordlist, in standard order. Frontends use it to
 /// offer word completions while the user types a recovery phrase.
 pub fn bip39_wordlist() -> &'static [&'static str; 2048] {
@@ -139,8 +145,9 @@ impl MasterKey {
     /// descriptor.
     pub fn account_xpub(&self, params: &ChainParams, account: u32) -> Result<Xpub> {
         let secp = Secp256k1::new();
-        let child = self.xpriv.derive_priv(&secp, &account_path(params.bip44_coin_type, account)?)?;
+        let mut child = self.xpriv.derive_priv(&secp, &account_path(params.bip44_coin_type, account)?)?;
         let mut xpub = Xpub::from_priv(&secp, &child);
+        child.private_key.non_secure_erase();
         xpub.network = NetworkKind::from(params.network);
         Ok(xpub)
     }
@@ -155,7 +162,10 @@ impl MasterKey {
 
     pub fn swap_pubkey(&self, params: &ChainParams, account: u32, swap_index: u32) -> Result<PublicKey> {
         let secp = Secp256k1::new();
-        Ok(self.swap_xpriv(params, account, swap_index)?.private_key.public_key(&secp))
+        let mut child = self.swap_xpriv(params, account, swap_index)?;
+        let pk = child.private_key.public_key(&secp);
+        child.private_key.non_secure_erase();
+        Ok(pk)
     }
 
     /// A swap's recovery tag: `HMAC-SHA256(k_rec, index as 4 bytes big-endian)`,
@@ -166,7 +176,9 @@ impl MasterKey {
     pub fn swap_recovery_tag(&self, account: u32, index: u32) -> Result<[u8; 32]> {
         let secp = Secp256k1::new();
         let path = parse_path(&format!("m/84h/0h/{account}h/3h"))?;
-        let key = Zeroizing::new(self.xpriv.derive_priv(&secp, &path)?.private_key.secret_bytes());
+        let mut child = self.xpriv.derive_priv(&secp, &path)?;
+        let key = Zeroizing::new(child.private_key.secret_bytes());
+        child.private_key.non_secure_erase();
         let mut e = hmac::HmacEngine::<sha256::Hash>::new(&key[..]);
         e.input(&index.to_be_bytes());
         Ok(hmac::Hmac::<sha256::Hash>::from_engine(e).to_byte_array())
@@ -175,7 +187,10 @@ impl MasterKey {
     /// The raw swap secret at `m/84'/<coin>'/<account>'/2'/<swap_index>'`, for a
     /// [`SwapKey`] the swap engine can hold without the seed.
     pub fn swap_secret(&self, params: &ChainParams, account: u32, swap_index: u32) -> Result<[u8; 32]> {
-        Ok(self.swap_xpriv(params, account, swap_index)?.private_key.secret_bytes())
+        let mut child = self.swap_xpriv(params, account, swap_index)?;
+        let out = child.private_key.secret_bytes();
+        child.private_key.non_secure_erase();
+        Ok(out)
     }
 
     /// ECDSA-sign a 32-byte sighash message with the swap key. Returns the DER
@@ -188,7 +203,8 @@ impl MasterKey {
         swap_index: u32,
         msg: &[u8; 32],
     ) -> Result<Vec<u8>> {
-        Ok(SwapKey::from_secret(params, self.swap_secret(params, account, swap_index)?)?.sign(msg))
+        let secret = Zeroizing::new(self.swap_secret(params, account, swap_index)?);
+        Ok(SwapKey::from_secret(params, *secret)?.sign(msg))
     }
 
     /// Public key for a wallet (P2WPKH) address at `m/84'/<coin>'/<account>'/<branch>/<index>`,
@@ -201,7 +217,10 @@ impl MasterKey {
         index: u32,
     ) -> Result<PublicKey> {
         let secp = Secp256k1::new();
-        Ok(self.wallet_xpriv(params, account, is_change, index)?.private_key.public_key(&secp))
+        let mut child = self.wallet_xpriv(params, account, is_change, index)?;
+        let pk = child.private_key.public_key(&secp);
+        child.private_key.non_secure_erase();
+        Ok(pk)
     }
 
     fn wallet_xpriv(
@@ -240,25 +259,33 @@ impl MasterKey {
         let variant = params.sighash_variant();
         let mut witnesses = Vec::with_capacity(tx.input.len());
         for (i, &(is_change, index)) in paths.iter().enumerate() {
-            let sk = self.wallet_xpriv(params, account, is_change, index)?.private_key;
-            let pk = sk.public_key(&secp);
+            let mut child = self.wallet_xpriv(params, account, is_change, index)?;
+            let pk = child.private_key.public_key(&secp);
             // The prevout this input spends must be the P2WPKH output of the key we
             // just derived — otherwise `paths` was mispaired with the inputs and
             // the signature would be worthless (a silently un-broadcastable tx).
             let expected_spk =
                 ScriptBuf::new_p2wpkh(&CompressedPublicKey(pk).wpubkey_hash());
             if prevouts[i].script_pubkey != expected_spk {
+                child.private_key.non_secure_erase();
                 return Err(WalletError::InvalidSwapParams(format!(
                     "input {i}: prevout scriptPubKey does not match the key at (change={is_change}, index={index})"
                 )));
             }
             // BIP-143 scriptCode for a P2WPKH input is the implied P2PKH script.
             let script_code = ScriptBuf::new_p2pkh(&bitcoin::PublicKey::new(pk).pubkey_hash());
-            let sh = sighash_all(&*tx, prevouts, i, &script_code, variant)?;
+            let sh = match sighash_all(&*tx, prevouts, i, &script_code, variant) {
+                Ok(sh) => sh,
+                Err(e) => {
+                    child.private_key.non_secure_erase();
+                    return Err(e);
+                }
+            };
             let mut sig = secp
-                .sign_ecdsa(&Message::from_digest(sh.message), &sk)
+                .sign_ecdsa(&Message::from_digest(sh.message), &child.private_key)
                 .serialize_der()
                 .to_vec();
+            child.private_key.non_secure_erase();
             sig.push(sh.flag);
             let mut w = Witness::new();
             w.push(&sig);
@@ -281,6 +308,12 @@ pub struct SwapKey {
     flag: u8,
 }
 
+impl Drop for SwapKey {
+    fn drop(&mut self) {
+        self.secret.non_secure_erase();
+    }
+}
+
 impl std::fmt::Debug for SwapKey {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("SwapKey")
@@ -293,9 +326,10 @@ impl std::fmt::Debug for SwapKey {
 const PREIMAGE_TAG: &[u8] = b"fortis-swap-preimage-v2";
 
 impl SwapKey {
-    pub fn from_secret(params: &ChainParams, secret: [u8; 32]) -> Result<SwapKey> {
-        let secret = SecretKey::from_slice(&secret)
-            .map_err(|e| WalletError::InvalidInput(format!("swap secret: {e}")))?;
+    pub fn from_secret(params: &ChainParams, mut secret: [u8; 32]) -> Result<SwapKey> {
+        let sk = SecretKey::from_slice(&secret);
+        zeroize::Zeroize::zeroize(&mut secret);
+        let secret = sk.map_err(|e| WalletError::InvalidInput(format!("swap secret: {e}")))?;
         Ok(SwapKey { secret, flag: sighash_flag(params) })
     }
 

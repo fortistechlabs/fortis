@@ -101,6 +101,10 @@ impl ClientConnection {
                     .map_err(|_| IoError::new(ErrorKind::InvalidInput, "Header is not in ASCII"));
             }
 
+            if buf.len() >= 16 * 1024 {
+                return Err(IoError::new(ErrorKind::InvalidData, "Header line too long"));
+            }
+
             prev_byte_was_cr = byte == b'\r';
 
             buf.push(byte);
@@ -141,6 +145,9 @@ impl ClientConnection {
                     if line.is_empty() {
                         break;
                     };
+                    if headers.len() >= 100 {
+                        return Err(ReadError::WrongHeader(version));
+                    }
                     headers.push(match FromStr::from_str(line.as_str().trim()) {
                         // TODO: remove this conversion
                         Ok(h) => h,

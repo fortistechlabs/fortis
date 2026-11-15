@@ -59,6 +59,20 @@
     <string name="create_phrase_title">Your recovery phrase</string>
     <string name="create_phrase_body">Write these %1$d words on paper, offline. Anyone with them controls your funds.</string>
     <string name="create_passphrase_hint">A \"25th word\" — an extra secret, not stored. If you set one you need both the phrase and this to restore. Leave blank if unsure.</string>
+    <string name="backup_quiz_title">Check your backup</string>
+    <string name="backup_quiz_body">Type these words from the phrase you wrote down. This proves you can restore the wallet.</string>
+    <string name="backup_quiz_word">Word %1$d</string>
+    <string name="backup_quiz_check">Check</string>
+    <string name="backup_quiz_wrong">Those words don\'t match your recovery phrase. Check your written copy and try again.</string>
+    <string name="backup_quiz_ok">Backup verified.</string>
+    <string name="error_verify_phrase">First check your backup: type the words asked for.</string>
+    <string name="lock_loss_warning">If you remove or reset your phone\'s screen lock, Android permanently deletes the key that opens this app. Your recovery phrase is then the only way to get your funds back.</string>
+    <string name="backup_unverified_funds">Backup not verified. Tap here to check your recovery phrase now.</string>
+    <string name="key_diag_help">To help us find out why, send the details below to us. They contain your phone model, screen-lock state and the app key\'s status, never your recovery phrase or any wallet data.</string>
+    <string name="key_diag_send">Send details to support</string>
+    <string name="key_diag_share">Share key details</string>
+    <string name="key_diag_subject">Fortis key diagnostics</string>
+    <string name="settings_key_diag">Key diagnostics</string>
     <string name="create_ack">I\'ve written the phrase down</string>
 
     <!-- restore -->
@@ -137,6 +151,7 @@
     <string name="reauth_wrong">That password isn\'t right.</string>
     <string name="biometric_subtitle">Fortis Wallet</string>
     <string name="biometric_invalidated">Your device\'s screen lock changed, so the app can\'t be unlocked here any more. Reinstall and restore each wallet from its recovery phrase.</string>
+    <string name="biometric_invalidated_keep_data">If you have not saved a recovery phrase for a wallet, do not uninstall the app or clear its data — that would erase the only copy on this phone.</string>
     <string name="lock_choice_use_biometric">Lock the app with fingerprint or PIN</string>
     <string name="lock_choice_biometric_note">One unlock opens all your wallets. No password to remember — your device\'s fingerprint/face or screen-lock PIN gets you in.</string>
     <string name="lock_choice_password_note">This password unlocks the app and every wallet in it.</string>

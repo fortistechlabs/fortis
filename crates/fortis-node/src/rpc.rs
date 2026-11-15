@@ -70,7 +70,7 @@ impl Rpc {
 
     /// Build an [`Rpc`] using the node's `.cookie` file for auth.
     pub fn new_cookie(base_url: &str, datadir: &str, network: &str) -> Result<Self> {
-        Ok(Self::new(base_url, &cookie_auth(datadir, network)?))
+        Self::from_cookie_file(base_url, &cookie_path(datadir, network))
     }
 
     /// Build an [`Rpc`] from an explicit cookie file. On HTTP 401 (the node
@@ -269,9 +269,7 @@ fn urlencode(s: &str) -> String {
     out
 }
 
-/// Read the node's RPC cookie (`<datadir>[/<chain-subdir>]/.cookie`) as the
-/// `user:password` string for HTTP Basic auth.
-pub fn cookie_auth(datadir: &str, network: &str) -> Result<String> {
+fn cookie_path(datadir: &str, network: &str) -> PathBuf {
     let subdir = match network {
         "regtest" | "regtest-legacy" => "regtest",
         "testnet4" => "testnet4",
@@ -284,14 +282,13 @@ pub fn cookie_auth(datadir: &str, network: &str) -> Result<String> {
         p.push(subdir);
     }
     p.push(".cookie");
-    std::fs::read_to_string(&p)
-        .map(|s| s.trim().to_string())
-        .with_context(|| {
-            format!(
-                "reading RPC cookie {} — is the node running with server=1, and is the datadir right?",
-                p.display()
-            )
-        })
+    p
+}
+
+/// Read the node's RPC cookie (`<datadir>[/<chain-subdir>]/.cookie`) as the
+/// `user:password` string for HTTP Basic auth.
+pub fn cookie_auth(datadir: &str, network: &str) -> Result<String> {
+    read_cookie(&cookie_path(datadir, network))
 }
 
 #[cfg(test)]

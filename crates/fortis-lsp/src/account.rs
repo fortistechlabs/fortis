@@ -77,6 +77,10 @@ pub struct Entry {
 pub enum LedgerError {
     #[error("not enough in the account")]
     InsufficientBalance,
+    #[error("duplicate payment")]
+    DuplicatePayment,
+    #[error("invalid amount")]
+    InvalidAmount,
     #[error("unknown hold {0}")]
     UnknownHold(String),
     #[error("ledger: {0}")]
@@ -279,10 +283,18 @@ impl Ledger {
         if account_of(&tx, &k)?.free_msat() < amount_msat {
             return Err(LedgerError::InsufficientBalance);
         }
-        tx.execute(
+        match tx.execute(
             "INSERT INTO holds (id, node, amount_msat, base_msat, kind) VALUES (?1, ?2, ?3, ?4, ?5)",
             params![id, k, as_i64(amount_msat), as_i64(base_msat), kind],
-        )?;
+        ) {
+            Ok(_) => {}
+            Err(rusqlite::Error::SqliteFailure(e, _))
+                if e.code == rusqlite::ErrorCode::ConstraintViolation =>
+            {
+                return Err(LedgerError::DuplicatePayment);
+            }
+            Err(e) => return Err(e.into()),
+        }
         tx.commit()?;
         Ok(())
     }
@@ -359,6 +371,18 @@ impl Ledger {
         let mut c = self.conn();
         let tx = c.transaction()?;
         let (f, t) = (key(from), key(to));
+        let inv_amount: Option<i64> = tx
+            .query_row(
+                "SELECT amount_msat FROM invoices WHERE payment_hash = ?1 AND node = ?2",
+                params![payment_hash.to_vec(), &t],
+                |r| r.get(0),
+            )
+            .optional()?;
+        if let Some(expected) = inv_amount {
+            if expected > 0 && expected as u64 != amount_msat {
+                return Err(LedgerError::InvalidAmount);
+            }
+        }
         let inserted = tx.execute(
             "INSERT OR IGNORE INTO entries (node, at_secs, kind, amount_msat, payment_hash) VALUES (?1, ?2, 'internal', ?3, ?4)",
             params![t, now_secs() as i64, as_i64(amount_msat), payment_hash.to_vec()],

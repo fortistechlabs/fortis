@@ -29,31 +29,49 @@ def send(msg: EmailMessage) -> None:
 
 
 def summary(doc: dict) -> str:
-    t = doc.get("ticket", {})
-    d = t.get("diagnostics") or {}
+    if not isinstance(doc, dict):
+        doc = {}
+    t = doc.get("ticket")
+    if not isinstance(t, dict):
+        t = {}
+    d = t.get("diagnostics")
+    if not isinstance(d, dict):
+        d = {}
+    received_at = doc.get("received_at", 0)
+    if not isinstance(received_at, (int, float)):
+        received_at = 0
+    wallets = d.get("wallets")
+    if not isinstance(wallets, list):
+        wallets = []
     lines = [
         f"Ticket:   {doc.get('id')}",
-        f"Received: {time.strftime('%Y-%m-%d %H:%M:%S %Z', time.localtime(doc.get('received_at', 0)))}",
+        f"Received: {time.strftime('%Y-%m-%d %H:%M:%S %Z', time.localtime(received_at))}",
         f"Install:  {doc.get('install')}",
         f"Reply to: {t.get('email') or '(none given)'}",
-        f"App:      {t.get('app', '')}",
+        f"App:      {t.get('app') or ''}",
     ]
     if d:
         lines += [
-            f"Phone:    {d.get('device', '')} · Android {d.get('android', '')} · {d.get('locale', '')} · {d.get('time_zone', '')}",
-            f"Wallets:  {', '.join(d.get('wallets', []))}",
-            f"Lightning: {d.get('lightning_state', '')}",
-            f"Account:  {d.get('account', '')}",
+            f"Phone:    {d.get('device') or ''} · Android {d.get('android') or ''} · {d.get('locale') or ''} · {d.get('time_zone') or ''}",
+            f"Wallets:  {', '.join(str(w) for w in wallets)}",
+            f"Lightning: {d.get('lightning_state') or ''}",
+            f"Account:  {d.get('account') or ''}",
         ]
-    lines += ["", "Message:", t.get("message", ""), ""]
-    errors = d.get("recent_errors") or []
-    if errors:
+    lines += ["", "Message:", str(t.get("message") or ""), ""]
+    errors = d.get("recent_errors")
+    if isinstance(errors, list) and errors:
         lines += ["Recent errors (newest last):"] + [f"  {e}" for e in errors[-15:]] + [""]
     if not d:
         lines += ["(The user did not include diagnostic logs.)"]
     else:
         lines += ["The full ticket, with the Lightning node log, is attached."]
     return "\n".join(lines)
+
+
+def read_ticket_bytes(path: Path) -> bytes:
+    fd = os.open(path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+    with os.fdopen(fd, "rb") as fh:
+        return fh.read()
 
 
 def main() -> int:
@@ -69,21 +87,27 @@ def main() -> int:
     if not TICKETS.is_dir():
         return 0
     failed = 0
-    for f in sorted(TICKETS.glob("FT-*.json"), key=lambda p: p.stat().st_mtime):
+    for f in sorted(TICKETS.glob("FT-*.json"), key=lambda p: p.lstat().st_mtime):
         if f.stem in sent:
             continue
         try:
-            doc = json.loads(f.read_text())
+            raw = read_ticket_bytes(f)
+            doc = json.loads(raw.decode("utf-8"))
         except (OSError, ValueError):
-            continue  # still being written: the next run picks it up
-        m = EmailMessage()
-        msg = (doc.get("ticket", {}).get("message") or "").strip().splitlines()
-        m["Subject"] = f"Fortis support {doc.get('id')}: {(msg[0] if msg else '')[:70]}"
-        m.set_content(summary(doc))
-        m.add_attachment(f.read_bytes(), maintype="application", subtype="json", filename=f.name)
+            continue  # still being written or invalid symlink: the next run picks it up
         try:
+            if not isinstance(doc, dict):
+                raise ValueError("ticket root must be a JSON object")
+            ticket = doc.get("ticket") if isinstance(doc.get("ticket"), dict) else {}
+            m = EmailMessage()
+            msg = str(ticket.get("message") or "").strip().splitlines()
+            first_line = (msg[0] if msg else "").replace("\r", " ").replace("\n", " ")[:70]
+            ticket_id = str(doc.get("id") or f.stem).replace("\r", "").replace("\n", "")
+            m["Subject"] = f"Fortis support {ticket_id}: {first_line}"
+            m.set_content(summary(doc))
+            m.add_attachment(raw, maintype="application", subtype="json", filename=f.name)
             send(m)
-        except (subprocess.SubprocessError, OSError) as e:
+        except Exception as e:
             print(f"{f.stem}: not sent ({e}); will retry", file=sys.stderr)
             failed += 1
             continue

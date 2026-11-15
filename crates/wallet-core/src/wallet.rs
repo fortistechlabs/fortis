@@ -517,12 +517,13 @@ impl WalletView {
             .saturating_add(output_vb(&dest))
             .saturating_add(fee_out_vb);
         let fee = Amount::from_sat(vb.saturating_mul(feerate_sat_vb));
+        let dest_dust = dest.minimal_non_dust().to_sat();
         let value = total
             .checked_sub(fee)
             .and_then(|v| v.checked_sub(fee_out_value))
-            .filter(|v| v.to_sat() >= CHANGE_DUST_SAT)
+            .filter(|v| v.to_sat() >= dest_dust)
             .ok_or(WalletError::InsufficientFunds {
-                need: (fee + fee_out_value).to_sat() + CHANGE_DUST_SAT,
+                need: (fee + fee_out_value).to_sat() + dest_dust,
                 have: total.to_sat(),
             })?;
         let service_fee_sat = fee_out.as_ref().map(|o| o.value);

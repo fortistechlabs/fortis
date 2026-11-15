@@ -67,6 +67,9 @@ data class WalletConfig(
     /** The device's master key fingerprint (8 hex), when its export carried
      *  one — the key origin a PSBT for it needs. */
     val masterFingerprint: String? = null,
+    /** The user has proved they hold this wallet's recovery phrase (re-typed words, or
+     *  restored from it). Wallets created before this existed read as false. */
+    val backupConfirmed: Boolean = false,
 ) {
     /** e.g. `XBT · Savings` — the label the picker shows. */
     val display: String get() = when (chain) {
@@ -97,6 +100,7 @@ data class WalletConfig(
         lastKnownBalanceSat?.let { put("last_known_balance_sat", it) }
         if (hardware) put("hardware", true)
         masterFingerprint?.let { put("master_fingerprint", it) }
+        if (backupConfirmed) put("backup_confirmed", true)
     }
 
     companion object {
@@ -115,6 +119,7 @@ data class WalletConfig(
             lastKnownBalanceSat = if (o.has("last_known_balance_sat")) o.getLong("last_known_balance_sat") else null,
             hardware = o.optBoolean("hardware", false),
             masterFingerprint = o.optString("master_fingerprint").ifBlank { null },
+            backupConfirmed = o.optBoolean("backup_confirmed", false),
         )
     }
 }

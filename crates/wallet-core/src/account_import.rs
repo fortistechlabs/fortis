@@ -91,6 +91,9 @@ fn from_ur(ur_type: &str, cbor: &[u8]) -> Result<AccountImport> {
 /// `{1: master-fingerprint, 2: [output-descriptor…]}` → its `wpkh` key.
 fn decode_account(d: &mut Decoder) -> Result<AccountImport> {
     let n = d.map().map_err(cbor_err)?.ok_or_else(|| bad("indefinite-length map"))?;
+    if n > 64 {
+        return Err(bad("CBOR map too large"));
+    }
     let mut master = None;
     let mut found = None;
     for _ in 0..n {
@@ -98,6 +101,9 @@ fn decode_account(d: &mut Decoder) -> Result<AccountImport> {
             1 => master = Some(Fingerprint::from(d.u32().map_err(cbor_err)?.to_be_bytes())),
             2 => {
                 let len = d.array().map_err(cbor_err)?.ok_or_else(|| bad("indefinite-length array"))?;
+                if len > 64 {
+                    return Err(bad("CBOR array too large"));
+                }
                 for _ in 0..len {
                     let outer = d.tag().map_err(cbor_err)?.as_u64();
                     if !TAG_OUTPUT.contains(&outer) {
@@ -137,6 +143,9 @@ fn decode_hdkey(d: &mut Decoder) -> Result<AccountImport> {
 /// The `crypto-hdkey` map body.
 fn decode_hdkey_map(d: &mut Decoder) -> Result<AccountImport> {
     let n = d.map().map_err(cbor_err)?.ok_or_else(|| bad("indefinite-length map"))?;
+    if n > 64 {
+        return Err(bad("CBOR map too large"));
+    }
     let (mut is_master, mut is_private) = (false, false);
     let (mut key, mut chain_code) = (None, None);
     let mut network = NetworkKind::Main;
@@ -152,6 +161,9 @@ fn decode_hdkey_map(d: &mut Decoder) -> Result<AccountImport> {
             5 => {
                 expect_tag(d, &TAG_COIN_INFO)?;
                 let m = d.map().map_err(cbor_err)?.ok_or_else(|| bad("indefinite-length map"))?;
+                if m > 64 {
+                    return Err(bad("CBOR map too large"));
+                }
                 for _ in 0..m {
                     match d.u32().map_err(cbor_err)? {
                         2 => {
@@ -168,6 +180,9 @@ fn decode_hdkey_map(d: &mut Decoder) -> Result<AccountImport> {
             6 => {
                 expect_tag(d, &TAG_KEYPATH)?;
                 let m = d.map().map_err(cbor_err)?.ok_or_else(|| bad("indefinite-length map"))?;
+                if m > 64 {
+                    return Err(bad("CBOR map too large"));
+                }
                 for _ in 0..m {
                     match d.u32().map_err(cbor_err)? {
                         1 => components = Some(decode_components(d)?),
@@ -230,6 +245,9 @@ fn decode_components(d: &mut Decoder) -> Result<Vec<ChildNumber>> {
     let len = d.array().map_err(cbor_err)?.ok_or_else(|| bad("indefinite-length array"))?;
     if len % 2 != 0 {
         return Err(bad("odd-length key path"));
+    }
+    if len > 510 {
+        return Err(bad("key path too long"));
     }
     let mut out = Vec::with_capacity(len as usize / 2);
     for _ in 0..len / 2 {
@@ -306,17 +324,31 @@ impl UrAccountDecoder {
         if !is_ur(part) {
             return Err(bad("not a UR QR code"));
         }
-        let (kind, payload) = ur::ur::decode(part).map_err(|e| bad(format!("invalid UR: {e}")))?;
+        let lower = part.to_ascii_lowercase();
+        let mut segs = lower[3..].split('/');
+        let _ur_type = segs.next();
+        if let (Some(seq_seg), Some(_)) = (segs.next(), segs.next()) {
+            let (_, count_str) = seq_seg
+                .split_once('-')
+                .ok_or_else(|| bad("invalid multi-part UR sequence"))?;
+            let count: usize = count_str
+                .parse()
+                .map_err(|_| bad("invalid multi-part UR count"))?;
+            if count == 0 || count > 256 {
+                return Err(bad("multi-part UR fragment count out of range"));
+            }
+        }
+        let (kind, payload) = ur::ur::decode(&lower).map_err(|e| bad(format!("invalid UR: {e}")))?;
         match kind {
             ur::ur::Kind::SinglePart => {
-                self.frames = Frames::Single { ur_type: ur_type(part), payload };
+                self.frames = Frames::Single { ur_type: ur_type(&lower), payload };
             }
             ur::ur::Kind::MultiPart => {
                 if !matches!(self.frames, Frames::Multi(_)) {
                     self.frames = Frames::Multi(Box::default());
                 }
                 if let Frames::Multi(d) = &mut self.frames {
-                    d.receive(part).map_err(|e| bad(format!("invalid UR frame: {e}")))?;
+                    d.receive(&lower).map_err(|e| bad(format!("invalid UR frame: {e}")))?;
                 }
             }
         }
@@ -571,5 +603,31 @@ mod tests {
         dec.receive(&enc.next_part().unwrap()).unwrap();
         assert!(!dec.is_complete());
         assert!(dec.result().is_err());
+    }
+
+    #[test]
+    fn oversized_cbor_headers_and_fountain_counts_are_rejected() {
+        // CBOR map with declared length > 64 (0xB8 0x64 = map(100)).
+        let big_map = ur::ur::encode(&[0xB8, 100], &ur::ur::Type::Custom("crypto-account"));
+        assert!(parse_account_import(&big_map).is_err());
+
+        // CBOR hdkey with keypath components array length > 510 (e.g. u64::MAX).
+        let mut buf = Vec::new();
+        let mut e = minicbor::Encoder::new(&mut buf);
+        e.map(1).unwrap();
+        e.u8(6).unwrap().tag(minicbor::data::Tag::new(304)).unwrap().map(1).unwrap();
+        e.u8(1).unwrap().array(1000).unwrap();
+        let big_path = ur::ur::encode(&buf, &ur::ur::Type::Custom("crypto-hdkey"));
+        assert!(parse_account_import(&big_path).is_err());
+
+        // Multi-part UR with count == 0 or count > 256 is rejected before fountain allocation.
+        let cbor = account_cbor();
+        let mut enc = ur::ur::Encoder::new(&cbor, 60, "crypto-account").unwrap();
+        let valid_part = enc.next_part().unwrap();
+        let body = valid_part.rsplit('/').next().unwrap();
+        let mut dec = UrAccountDecoder::new();
+        assert!(dec.receive(&format!("ur:crypto-account/1-0/{body}")).is_err());
+        assert!(dec.receive(&format!("ur:crypto-account/1-257/{body}")).is_err());
+        assert!(dec.receive(&format!("ur:crypto-account/1-1000000000/{body}")).is_err());
     }
 }

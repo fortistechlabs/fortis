@@ -84,6 +84,7 @@ import com.fortis.wallet.lightning.lightningWalletOf
 import com.fortis.wallet.lightning.deleteWalletLightningWarningSat
 import com.fortis.wallet.lightning.isLightningWallet
 import com.fortis.wallet.ui.*
+import com.fortis.wallet.security.needsBackupWarning
 import com.fortis.wallet.ui.theme.Fx
 import com.fortis.wallet.ui.theme.FxType
 import com.fortis.wallet.ui.theme.caps
@@ -193,12 +194,15 @@ internal fun copyImageToClipboard(ctx: Context, bitmap: Bitmap) {
         file.outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
         val uri = FileProvider.getUriForFile(ctx, "${ctx.packageName}.fileprovider", file)
         val cm = ctx.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-        cm.setPrimaryClip(
-            ClipData(
-                ClipDescription(ctx.getString(R.string.cd_address_qr), arrayOf("image/png")),
-                ClipData.Item(uri),
-            ),
-        )
+        val clip = ClipData(
+            ClipDescription(ctx.getString(R.string.cd_address_qr), arrayOf("image/png")),
+            ClipData.Item(uri),
+        ).apply {
+            description.extras = android.os.PersistableBundle().apply {
+                putBoolean("android.content.extra.IS_SENSITIVE", true)
+            }
+        }
+        cm.setPrimaryClip(clip)
         Toast.makeText(ctx, ctx.getString(R.string.toast_copied), Toast.LENGTH_SHORT).show()
     }
 }
@@ -310,8 +314,10 @@ fun CreateScreen(vm: WalletViewModel) {
     val ctx = LocalContext.current
     var name by remember { mutableStateOf("") }
     var chain by remember { mutableStateOf(startChain(vm, restoring = false)) }
+    // Entered through "Create a Lightning wallet": choose BTC or XBT Lightning, nothing else.
+    val lightningFlow = remember { vm.onboardChain?.let(::isLightningChain) == true }
     var passphrase by remember { mutableStateOf("") }
-    var ack by remember { mutableStateOf(false) }
+    var quizOk by remember { mutableStateOf(false) }
     val words = (vm.draftMnemonic ?: "").split(" ")
     val settingUp = vm.settingUp
     val choice = rememberLockChoice()
@@ -323,22 +329,23 @@ fun CreateScreen(vm: WalletViewModel) {
         Text(stringResource(R.string.create_phrase_title), style = MaterialTheme.typography.titleMedium, color = Fx.text)
         Text(stringResource(R.string.create_phrase_body, words.size), color = Fx.textDim)
         GlassCard { PhraseGrid(words) }
+        Text(stringResource(R.string.lock_loss_warning), style = FxType.meta, color = Fx.warn)
         Field(name, { name = it }, stringResource(R.string.field_wallet_name), maxLen = MAX_WALLET_NAME)
-        ChainRow(chain, vm.lightningOnboardChoices(restoring = false)) { chain = it }
+        ChainRow(
+            chain, createLightningTabs(lightningFlow, vm.lightningOnboardChoices(restoring = false)),
+            lightningOnly = lightningFlow,
+        ) { chain = it }
         Field(passphrase, { passphrase = it }, stringResource(R.string.field_passphrase), password = true)
         Text(stringResource(R.string.create_passphrase_hint), style = FxType.meta, color = Fx.textFaint)
         if (settingUp) LockChoiceFields(choice)
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Checkbox(ack, { ack = it })
-            Text(stringResource(R.string.create_ack), color = Fx.text)
-        }
+        BackupQuiz(words, quizOk) { quizOk = true }
         ErrorText(vm.error)
-        val confirmPhrase = stringResource(R.string.error_confirm_phrase)
+        val verifyPhrase = stringResource(R.string.error_verify_phrase)
         Row(horizontalArrangement = Arrangement.spacedBy(Fx.s2)) {
             GhostButton(stringResource(R.string.action_back), Modifier.weight(1f)) { vm.cancelOnboard() }
             PrimaryButton(stringResource(R.string.action_continue), Modifier.weight(1f)) {
                 val problem = when {
-                    !ack -> confirmPhrase
+                    !quizOk -> verifyPhrase
                     settingUp -> choice.problem(ctx)
                     else -> null
                 }
@@ -438,13 +445,30 @@ fun WatchScreen(vm: WalletViewModel) {
 /** XBT · BTC, then the Lightning wallets in [lightning] ("ln" → "Lightning", "ln-xbt" →
  *  "Lightning (XBT)"): one of each per app, never watch-only. */
 @Composable
-private fun ChainRow(chain: String, lightning: List<String>, onChain: (String) -> Unit) {
-    val labels = mapOf(
-        LN_CHAIN to stringResource(R.string.wallet_chain_lightning),
-        LN_XBT_CHAIN to stringResource(R.string.wallet_chain_lightning_xbt),
+private fun ChainRow(chain: String, lightning: List<String>, lightningOnly: Boolean = false, onChain: (String) -> Unit) {
+    val options = chainRowOptions(
+        lightning, lightningOnly,
+        lnLabel = stringResource(R.string.wallet_chain_lightning),
+        lnXbtLabel = stringResource(R.string.wallet_chain_lightning_xbt),
     )
-    val options = listOf("xbt" to "XBT", "btc" to "BTC") + lightning.mapNotNull { c -> labels[c]?.let { c to it } }
-    Segmented(options, chain, onChain)
+    // A bolt on every Lightning tab, so it is clear which wallet type is being made.
+    Segmented(options, chain, onChain, bolts = lightning.toSet())
+}
+
+/** Which Lightning wallets the create screen offers: only in the Lightning flow ("Create a
+ *  Lightning wallet"). A plain "Create wallet" makes an on-chain wallet, so no Lightning tab. */
+internal fun createLightningTabs(lightningFlow: Boolean, choices: List<String>): List<String> =
+    if (lightningFlow) choices else emptyList()
+
+/** The chain tabs of the create / restore screens. In the Lightning flow ("Create a Lightning
+ *  wallet") only the Lightning wallets on offer, labelled by their coin: BTC and XBT. Otherwise
+ *  the on-chain XBT / BTC tabs and the Lightning ones under their full names. */
+internal fun chainRowOptions(
+    lightning: List<String>, lightningOnly: Boolean, lnLabel: String, lnXbtLabel: String,
+): List<Pair<String, String>> {
+    val named = mapOf(LN_CHAIN to lnLabel, LN_XBT_CHAIN to lnXbtLabel)
+    if (lightningOnly) return lightning.mapNotNull { c -> if (c in named) c to (if (c == LN_XBT_CHAIN) "XBT" else "BTC") else null }
+    return listOf("xbt" to "XBT", "btc" to "BTC") + lightning.mapNotNull { c -> named[c]?.let { c to it } }
 }
 
 /** The chain the create / restore screens open on: Lightning when that flow was asked for. */
@@ -504,6 +528,9 @@ fun RevealSeedScreen(vm: WalletViewModel) {
                 } else {
                     Text(stringResource(R.string.reveal_no_passphrase), style = FxType.meta, color = Fx.textFaint)
                 }
+                if (w != null && !w.watchOnly && !w.hardware) {
+                    BackupQuiz(words, w.backupConfirmed) { vm.confirmBackup(id) }
+                }
             }
         }
         PrimaryButton(stringResource(R.string.action_done)) { vm.closeReveal() }
@@ -511,8 +538,10 @@ fun RevealSeedScreen(vm: WalletViewModel) {
 }
 
 @Composable
-fun Segmented(options: List<Pair<String, String>>, selected: String, onSelect: (String) -> Unit, modifier: Modifier = Modifier) =
-    TextTabs(options, selected, onSelect, modifier)
+fun Segmented(
+    options: List<Pair<String, String>>, selected: String, onSelect: (String) -> Unit,
+    modifier: Modifier = Modifier, bolts: Set<String> = emptySet(),
+) = TextTabs(options, selected, onSelect, modifier, bolts = bolts)
 
 /** Folder tabs over a 1 dp rule: the active one in the page colour with a
  *  [Fx.signal] top edge, the rest slate keys. Nav bar, wallet tabs and pickers. */
@@ -523,6 +552,8 @@ internal fun <T> TextTabs(
     onSelect: (T) -> Unit,
     modifier: Modifier = Modifier,
     icons: Map<T, ImageVector> = emptyMap(),
+    /** Tabs that show the Lightning bolt before their label. */
+    bolts: Set<T> = emptySet(),
 ) {
     // Folder tabs on a baseline: the selected tab is raised, outlined and open at the
     // bottom, with a signal edge on top; the others sit back, darker.
@@ -548,12 +579,18 @@ internal fun <T> TextTabs(
                     Icon(icon, contentDescription = label, tint = if (on) Fx.text else Fx.dimOnSlate, modifier = Modifier.size(22.dp))
                 } else {
                     // One line always: long translations (EINSTELLUNGEN) shrink to fit rather than break mid-word.
-                    Text(
-                        caps(label), style = FxType.nav, color = if (on) Fx.text else Fx.dimOnSlate,
-                        maxLines = 1, softWrap = false,
-                        autoSize = TextAutoSize.StepBased(minFontSize = 9.sp, maxFontSize = FxType.nav.fontSize, stepSize = 0.5.sp),
-                        modifier = Modifier.padding(horizontal = Fx.s1),
-                    )
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center) {
+                        if (v in bolts) {
+                            com.fortis.wallet.ui.LightningBoltIcon(Modifier.size(14.dp))
+                            Spacer(Modifier.width(4.dp))
+                        }
+                        Text(
+                            caps(label), style = FxType.nav, color = if (on) Fx.text else Fx.dimOnSlate,
+                            maxLines = 1, softWrap = false,
+                            autoSize = TextAutoSize.StepBased(minFontSize = 9.sp, maxFontSize = FxType.nav.fontSize, stepSize = 0.5.sp),
+                            modifier = Modifier.weight(1f, fill = false).padding(horizontal = Fx.s1),
+                        )
+                    }
                 }
             }
         }
@@ -672,7 +709,14 @@ private fun NavBar(current: NavTab, showSwaps: Boolean, onSelect: (NavTab) -> Un
 
 /** Home tab — the list of wallets; tap one to open it. */
 @Composable
-private fun HomeTab(vm: WalletViewModel) = Column(
+private fun HomeTab(vm: WalletViewModel) {
+    // "Verify backup" on a wallet tile goes straight to its recovery phrase and the check,
+    // after the same fingerprint / password confirmation as Settings → Recovery phrase.
+    val gate = com.fortis.wallet.ui.rememberIdentityGate()
+    val gateAct = com.fortis.wallet.ui.rememberFragmentActivity()
+    val gateScope = rememberCoroutineScope()
+    com.fortis.wallet.ui.ConfirmIdentityDialog(gate, vm)
+    Column(
     Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(top = Fx.s2),
     verticalArrangement = Arrangement.spacedBy(Fx.s4),
 ) {
@@ -706,6 +750,12 @@ private fun HomeTab(vm: WalletViewModel) = Column(
                     bal?.let { vm.fiatText(it, w.chain) }?.let {
                         Text(stringResource(R.string.fiat_approx, it), style = FxType.fiatSmall, color = Fx.dimOnSlate)
                     }
+                    // Funds with no proof that the recovery phrase was saved.
+                    if (needsBackupWarning(w, bal)) Text(
+                        stringResource(R.string.backup_unverified_funds),
+                        style = FxType.fiatSmall, color = Fx.warn,
+                        modifier = Modifier.clickable { gate.require(vm, gateAct, gateScope) { vm.startReveal(w.id) } },
+                    )
                     // Lightning funds still moving (a channel opening or closing).
                     if (lnBal?.moving == true) Text(
                         stringResource(R.string.wallet_split_moving),
@@ -728,6 +778,7 @@ private fun HomeTab(vm: WalletViewModel) = Column(
     if (vm.canAddWallet) PrimaryButton(stringResource(R.string.action_add_wallet)) { vm.addWallet() }
     else Text(stringResource(R.string.wallets_max, MAX_WALLETS), style = FxType.meta, color = Fx.textFaint)
     ErrorText(vm.error)
+    }
 }
 
 /** The one gate into the app — fingerprint / device PIN, or a password. */
@@ -832,6 +883,13 @@ private fun SettingsTab(vm: WalletViewModel) {
                 else stringResource(R.string.lock_mode_password),
             )
             Text(stringResource(R.string.settings_one_unlock), style = FxType.meta, color = Fx.textFaint)
+            if (vm.lockMode == com.fortis.wallet.data.LOCK_BIOMETRIC) {
+                Text(stringResource(R.string.lock_loss_warning), style = FxType.meta, color = Fx.warn)
+                val kctx = LocalContext.current
+                GhostButton(stringResource(R.string.settings_key_diag), dense = true) {
+                    shareKeyDiagnostics(kctx, vm.keyDiagnostics())
+                }
+            }
             val keySec = remember(vm.lockMode) { vm.keySecurity() }
             if (keySec == com.fortis.wallet.data.SeedKeystore.KeySecurity.SOFTWARE) {
                 Text(stringResource(R.string.settings_key_software), style = FxType.meta, color = Fx.warn)

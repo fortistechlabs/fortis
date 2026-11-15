@@ -47,6 +47,28 @@ pub struct State {
     pub connected: Option<Connected>,
 }
 
+fn write_private(home: &Path, path: &Path, data: &[u8]) -> std::io::Result<()> {
+    fs::create_dir_all(home)?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
+        fs::set_permissions(home, fs::Permissions::from_mode(0o700))?;
+        let mut f = fs::OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .mode(0o600)
+            .open(path)?;
+        std::io::Write::write_all(&mut f, data)?;
+        fs::set_permissions(path, fs::Permissions::from_mode(0o600))?;
+    }
+    #[cfg(not(unix))]
+    {
+        fs::write(path, data)?;
+    }
+    Ok(())
+}
+
 impl State {
     fn path(home: &Path) -> PathBuf {
         home.join("fortisd.json")
@@ -60,10 +82,9 @@ impl State {
     }
 
     pub fn save(&self, home: &Path) -> Result<()> {
-        fs::create_dir_all(home)?;
         let mut b = serde_json::to_vec_pretty(self)?;
         b.push(b'\n');
-        fs::write(Self::path(home), b).context("writing fortisd.json")?;
+        write_private(home, &Self::path(home), &b).context("writing fortisd.json")?;
         Ok(())
     }
 }
@@ -75,14 +96,19 @@ pub fn load_or_create_token(home: &Path) -> Result<(String, bool)> {
     if let Ok(s) = fs::read_to_string(&p) {
         let t = s.trim().to_string();
         if t.len() >= 32 {
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                let _ = fs::set_permissions(home, fs::Permissions::from_mode(0o700));
+                let _ = fs::set_permissions(&p, fs::Permissions::from_mode(0o600));
+            }
             return Ok((t, false));
         }
     }
     let mut raw = [0u8; 24];
     getrandom::getrandom(&mut raw).map_err(|e| anyhow!("CSPRNG failed: {e}"))?;
     let token = hex::encode(raw);
-    fs::create_dir_all(home)?;
-    fs::write(&p, format!("{token}\n")).context("writing fortisd.token")?;
+    write_private(home, &p, format!("{token}\n").as_bytes()).context("writing fortisd.token")?;
     Ok((token, true))
 }
 

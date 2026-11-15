@@ -222,8 +222,6 @@ fn a_swap_from_before_versions_keeps_the_v1_contract() {
 #[test]
 fn on_event_advances_and_survives_json() {
     let (alice, _bob, a, _b) = matched();
-    let s = a.on_event(format!(r#"{{"type":"OurFundingBroadcast","txid":"{}"}}"#, fake_txid(1))).unwrap();
-    assert!(s.contains("OurFundingBroadcast"), "{s}");
     let s = a.on_event(r#"{"type":"CounterpartyFunded","confirmations":2}"#.into()).unwrap();
     assert!(s.contains("CounterpartyFundingConfirmed"), "{s}");
     assert!(a.on_event(r#"{"type":"Nope"}"#.into()).is_err());
@@ -231,6 +229,8 @@ fn on_event_advances_and_survives_json() {
     let back = SwapSession::from_json(a.to_json(), alice.xbt_secret, alice.btc_secret).unwrap();
     let s = back.on_event(r#"{"type":"TimelockExpired"}"#.into()).unwrap();
     assert!(s.contains("CounterpartyFundingConfirmed"), "{s}");
+    let s = back.on_event(format!(r#"{{"type":"OurFundingBroadcast","txid":"{}"}}"#, fake_txid(1))).unwrap();
+    assert!(s.contains("OurFundingBroadcast"), "{s}");
 }
 
 #[test]
@@ -358,12 +358,16 @@ fn a_wrong_relayed_nonce_is_refused_by_the_hashlock() {
 /// preimage is revealed, and a bad signature is refused before broadcast.
 #[test]
 fn a_cancelled_swap_releases_the_initiators_coins() {
-    let (_alice, _bob, a, b) = matched();
+    let (_alice, bob, a, b) = matched();
     let op = fake_txid(0x11);
     a.record_our_outpoint(op.clone(), 0).unwrap();
     let asks = a.release_txs(vec![2, 20]).unwrap();
     assert_eq!(asks.len(), 2);
+    // the participant signs only a release of the initiator's contract
+    assert!(b.sign_release(asks[0].clone(), fake_txid(0x12), 0).is_err());
+    let b_json = b.to_json();
     for ask in &asks {
+        let b = SwapSession::from_json(b_json.clone(), bob.xbt_secret.clone(), bob.btc_secret.clone()).unwrap();
         let sig = b.sign_release(ask.clone(), op.clone(), 0).unwrap();
         let hex = a.finish_release(ask.clone(), sig.clone()).unwrap();
         let tx: Transaction = deserialize_hex(&hex).unwrap();
@@ -374,6 +378,4 @@ fn a_cancelled_swap_releases_the_initiators_coins() {
         bad[10] ^= 1;
         assert!(a.finish_release(ask.clone(), hex::encode(bad)).is_err());
     }
-    // the participant signs only a release of the initiator's contract
-    assert!(b.sign_release(asks[0].clone(), fake_txid(0x12), 0).is_err());
 }

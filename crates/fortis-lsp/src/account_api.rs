@@ -54,9 +54,12 @@ pub fn withdrawal(amount_sat: u64, feerate_sat_vb: u64) -> Option<Withdrawal> {
         .map(|payout_sat| Withdrawal { payout_sat, fee_sat })
 }
 
+/// 21 million BTC in msat.
+pub const MAX_MONEY_MSAT: u64 = 21_000_000 * 100_000_000 * 1_000;
+
 /// 1 % + 50 sat.
 pub fn fee_cap_msat(amount_msat: u64) -> u64 {
-    amount_msat / 100 + 50_000
+    (amount_msat / 100).saturating_add(50_000)
 }
 
 /// What the account service needs from the node (a trait so the handlers
@@ -65,6 +68,10 @@ pub trait AccountNode: Send + Sync {
     /// True while `node`'s phone is connected to us (then its app shows a receipt itself).
     fn is_connected(&self, _node: &PublicKey) -> bool {
         false
+    }
+    /// True when `invoice` is signed by this LSP node (used to authenticate internal transfers).
+    fn is_our_invoice(&self, _invoice: &str) -> bool {
+        true
     }
     /// A BOLT11 invoice paying this node; its payment hash.
     fn receive_invoice(
@@ -96,7 +103,7 @@ pub const MAX_PUSH_TOKEN_LEN: usize = 1024;
 
 pub struct AccountService {
     pub ledger: Arc<Ledger>,
-    node: Arc<dyn AccountNode>,
+    pub node: Arc<dyn AccountNode>,
     /// Per-account cap (msat): the account converts above it (`conversion.rs`).
     pub account_max_msat: u64,
     /// All accounts together (msat); 0 = accounts disabled.
@@ -384,16 +391,24 @@ impl AccountService {
             (None, Some(b)) if b > 0 => b,
             _ => return Ok(err(400, "amount_required")),
         };
+        if amount == 0 || amount > MAX_MONEY_MSAT {
+            return Ok(err(400, "amount_msat"));
+        }
         // Another Fortis account's invoice: settle it in the ledger.
         if let Some(to) = self.ledger.invoice_owner(hash)? {
+            if !self.node.is_our_invoice(invoice) {
+                return Ok(err(400, "invoice"));
+            }
             if &to == node {
                 return Ok(err(400, "own_invoice"));
             }
             return match self.ledger.transfer(node, &to, hash, amount) {
-                Ok(_) => Ok((
+                Ok(true) => Ok((
                     200,
                     json!({ "internal": true, "payment_hash": hex::encode(hash), "fee_msat": 0 }),
                 )),
+                Ok(false) | Err(LedgerError::DuplicatePayment) => Ok(err(409, "duplicate_payment")),
+                Err(LedgerError::InvalidAmount) => Ok(err(400, "amount_mismatch")),
                 Err(LedgerError::InsufficientBalance) => Ok(err(402, "insufficient")),
                 Err(e) => Err(e),
             };
@@ -401,10 +416,11 @@ impl AccountService {
         let id = send_hold_id(&hash);
         match self
             .ledger
-            .hold_send(node, &id, amount, amount + fee_cap_msat(amount))
+            .hold_send(node, &id, amount, amount.saturating_add(fee_cap_msat(amount)))
         {
             Ok(()) => {}
             Err(LedgerError::InsufficientBalance) => return Ok(err(402, "insufficient")),
+            Err(LedgerError::DuplicatePayment) => return Ok(err(409, "duplicate_payment")),
             Err(e) => return Err(e),
         }
         let pay_amount = if inv_amount.is_none() {
@@ -548,12 +564,33 @@ impl AccountNode for LdkAccountNode {
         Ok((inv.to_string(), inv.payment_hash().to_byte_array()))
     }
 
+    fn is_our_invoice(&self, invoice: &str) -> bool {
+        invoice
+            .trim()
+            .parse::<ldk_node::lightning_invoice::Bolt11Invoice>()
+            .map(|inv| inv.recover_payee_pub_key() == self.0.node_id())
+            .unwrap_or(false)
+    }
+
     fn invoice_details(&self, invoice: &str) -> Result<(Option<u64>, [u8; 32]), String> {
         use ldk_node::bitcoin::hashes::Hash;
         let inv = invoice
             .trim()
             .parse::<ldk_node::lightning_invoice::Bolt11Invoice>()
             .map_err(|e| e.to_string())?;
+        if inv.network() != self.0.config().network {
+            return Err("wrong network".into());
+        }
+        let is_xbt = inv.features().is_some_and(|f| f.supports_blake2b());
+        if is_xbt != self.0.config().xbt.is_some() {
+            return Err("wrong chain".into());
+        }
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default();
+        if inv.would_expire(now) {
+            return Err("expired".into());
+        }
         Ok((
             inv.amount_milli_satoshis(),
             inv.payment_hash().to_byte_array(),
@@ -1016,6 +1053,30 @@ mod tests {
             &nonce(7),
         );
         assert_eq!((s, v["error"].as_str()), (400, Some("own_invoice")));
+        // Re-paying the already-settled internal invoice returns 409 duplicate_payment.
+        let (s, v) = call(
+            &svc,
+            1,
+            "pay",
+            &format!(r#"{{"invoice":"{inv2}"}}"#),
+            &nonce(8),
+        );
+        assert_eq!((s, v["error"].as_str()), (409, Some("duplicate_payment")));
+    }
+
+    #[test]
+    fn duplicate_outbound_send_is_409_and_overflow_amount_is_400() {
+        let (svc, node) = service("dup_out", FakeNode::with_backing(1_000_000), 1_000_000);
+        call(&svc, 1, "invoice", r#"{"amount_msat":500000}"#, &nonce(1));
+        svc.on_payment_received([1; 32], 500_000).unwrap();
+        node.foreign("lnbc-out", Some(30_000), [50; 32]);
+        node.foreign("lnbc-any", None, [51; 32]);
+        assert_eq!(call(&svc, 1, "pay", r#"{"invoice":"lnbc-out"}"#, &nonce(2)).0, 200);
+        let (s, v) = call(&svc, 1, "pay", r#"{"invoice":"lnbc-out"}"#, &nonce(3));
+        assert_eq!((s, v["error"].as_str()), (409, Some("duplicate_payment")));
+        let huge = format!(r#"{{"invoice":"lnbc-any","amount_msat":{}}}"#, u64::MAX);
+        let (s, v) = call(&svc, 1, "pay", &huge, &nonce(4));
+        assert_eq!((s, v["error"].as_str()), (400, Some("amount_msat")));
     }
 
     #[test]

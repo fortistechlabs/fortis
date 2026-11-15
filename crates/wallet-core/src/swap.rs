@@ -135,6 +135,14 @@ impl SwapMachine {
     /// Our HTLC on the send chain: redeemable by the counterparty with the preimage,
     /// refundable to us after `our_contract_locktime`.
     pub fn build_our_contract(&mut self, send_params: &ChainParams) -> Result<&HtlcContract> {
+        if matches!(
+            self.state,
+            SwapState::Failed { .. } | SwapState::Refunded | SwapState::Settled
+        ) {
+            return Err(WalletError::InvalidSwapParams(
+                "cannot build contract in terminal state".into(),
+            ));
+        }
         let c = HtlcContract::try_build(
             send_params,
             self.params.contract_version,
@@ -201,8 +209,17 @@ impl SwapMachine {
         self.our_outpoint
     }
 
-    pub fn set_our_outpoint(&mut self, outpoint: OutPoint) {
+    pub fn set_our_outpoint(&mut self, outpoint: OutPoint) -> Result<()> {
+        if matches!(
+            self.state,
+            SwapState::Failed { .. } | SwapState::Refunded | SwapState::Settled
+        ) {
+            return Err(WalletError::InvalidSwapParams(
+                "cannot set our outpoint in terminal state".into(),
+            ));
+        }
         self.our_outpoint = Some(outpoint);
+        Ok(())
     }
 
     pub fn their_outpoint(&self) -> Option<OutPoint> {
@@ -257,6 +274,9 @@ impl SwapMachine {
             expected: "our contract built".into(),
             actual: "none".into(),
         })?;
+        if tx.input.is_empty() {
+            return Err(WalletError::InvalidSwapParams("input_index out of range".into()));
+        }
         c.finalize_refund(tx, 0, sig, refund_pubkey);
         Ok(())
     }
@@ -274,6 +294,9 @@ impl SwapMachine {
             expected: "their contract verified".into(),
             actual: "none".into(),
         })?;
+        if tx.input.is_empty() {
+            return Err(WalletError::InvalidSwapParams("input_index out of range".into()));
+        }
         c.finalize_redeem(tx, 0, sig, redeem_pubkey, preimage);
         Ok(())
     }
@@ -344,12 +367,22 @@ impl SwapMachine {
     /// signature then moves nothing else. The caller must never fund this swap
     /// afterwards: with the release, the counterparty has its coins back.
     pub fn sign_their_release(
-        &self,
+        &mut self,
         tx: &Transaction,
         outpoint: OutPoint,
         key: &SwapKey,
         recv_params: &ChainParams,
     ) -> Result<Vec<u8>> {
+        if self.our_outpoint.is_some()
+            || !matches!(
+                self.state,
+                SwapState::Negotiated | SwapState::CounterpartyFundingConfirmed
+            )
+        {
+            return Err(WalletError::InvalidSwapParams(
+                "cannot release counterparty contract after funding our own or in terminal state".into(),
+            ));
+        }
         let c = self.expected_their_contract(recv_params);
         if !c.has_release() {
             return Err(WalletError::InvalidSwapParams("this swap's contract has no release".into()));
@@ -361,7 +394,11 @@ impl SwapMachine {
         if input.previous_output != outpoint {
             return Err(WalletError::InvalidInput("the release doesn't spend their contract".into()));
         }
-        Ok(key.sign(&c.spend_sighash(tx, 0)?))
+        let sig = key.sign(&c.spend_sighash(tx, 0)?);
+        self.state = SwapState::Failed {
+            reason: "counterparty contract released".into(),
+        };
+        Ok(sig)
     }
 
     /// Complete `tx`, one of our [`Self::release_txs`], with the counterparty's
@@ -384,14 +421,19 @@ impl SwapMachine {
         let max_fee = htlc_spend_fee(c, HtlcPath::Release, MAX_SWAP_FEERATE_SAT_VB);
         let ours = c.release_tx(outpoint, to.clone(), Amount::ZERO)?;
         let paid = tx.output.first().map(|o| o.value).unwrap_or(Amount::ZERO);
-        let same_shape = tx.input.len() == 1
+        let same_shape = tx.version == ours.version
+            && tx.input.len() == 1
             && tx.input[0].previous_output == outpoint
+            && tx.input[0].script_sig.is_empty()
             && tx.lock_time == ours.lock_time
             && tx.input[0].sequence == ours.input[0].sequence
             && tx.output.len() == ours.output.len()
             && tx.output[0].script_pubkey == *to
             && tx.output[1..] == ours.output[1..];
-        if !same_shape || paid + max_fee < c.value {
+        let Some(fee) = c.value.checked_sub(paid) else {
+            return Err(WalletError::InvalidInput("not our release".into()));
+        };
+        if !same_shape || fee == Amount::ZERO || fee > max_fee || paid < to.minimal_non_dust() {
             return Err(WalletError::InvalidInput("not our release".into()));
         }
         let msg = c.spend_sighash(tx, 0)?;
@@ -445,22 +487,42 @@ impl SwapMachine {
     /// Advance on a chain event. Transitions are intentionally conservative — an
     /// unexpected event is recorded rather than acted on.
     pub fn on_event(&mut self, event: SwapEvent) -> &SwapState {
+        if matches!(
+            self.state,
+            SwapState::Settled | SwapState::Refunded | SwapState::Failed { .. }
+        ) {
+            return &self.state;
+        }
         self.state = match (&self.state, event) {
-            (SwapState::Negotiated, SwapEvent::OurFundingBroadcast { txid }) => {
-                SwapState::OurFundingBroadcast { txid }
-            }
-            (_, SwapEvent::CounterpartyFunded { confirmations })
+            (
+                SwapState::Negotiated | SwapState::CounterpartyFundingConfirmed,
+                SwapEvent::OurFundingBroadcast { txid },
+            ) => SwapState::OurFundingBroadcast { txid },
+            (SwapState::Negotiated, SwapEvent::CounterpartyFunded { confirmations })
                 if confirmations >= self.params.required_incoming_confs =>
             {
                 SwapState::CounterpartyFundingConfirmed
             }
-            (_, SwapEvent::CounterpartyRedeemed { preimage }) => SwapState::Redeemed { preimage },
+            (
+                SwapState::Negotiated
+                | SwapState::OurFundingBroadcast { .. }
+                | SwapState::CounterpartyFundingConfirmed
+                | SwapState::Redeemed { .. },
+                SwapEvent::CounterpartyRedeemed { preimage },
+            ) if sha256::Hash::hash(&preimage) == self.params.hashlock => {
+                SwapState::Redeemed { preimage }
+            }
             (SwapState::Redeemed { .. }, SwapEvent::OurOutputConfirmed { confirmations })
                 if confirmations >= self.params.required_incoming_confs =>
             {
                 SwapState::Settled
             }
             (SwapState::OurFundingBroadcast { .. }, SwapEvent::TimelockExpired) => {
+                SwapState::Refunded
+            }
+            (SwapState::CounterpartyFundingConfirmed, SwapEvent::TimelockExpired)
+                if self.our_outpoint.is_some() =>
+            {
                 SwapState::Refunded
             }
             (other, _) => other.clone(),
@@ -631,7 +693,7 @@ mod tests {
             recv_chain: Chain::Xbt,
             send_amount: Amount::from_sat(1_000_000),
             recv_amount: Amount::from_sat(2_000_000),
-            hashlock: sha256::Hash::hash(b"x"),
+            hashlock: sha256::Hash::hash(&[9u8; 32]),
             our_pubkey_send: pk(1),
             their_pubkey_send: pk(2),
             our_pubkey_recv: pk(3),
@@ -751,7 +813,7 @@ mod tests {
         let mut m = SwapMachine::new(params());
         assert_eq!((m.our_outpoint(), m.their_outpoint()), (None, None));
         let (ours, theirs) = (OutPoint::new(Txid::all_zeros(), 1), OutPoint::new(Txid::all_zeros(), 2));
-        m.set_our_outpoint(ours);
+        m.set_our_outpoint(ours).unwrap();
         m.set_their_outpoint(theirs);
         let back: SwapMachine = serde_json::from_str(&serde_json::to_string(&m).unwrap()).unwrap();
         assert_eq!((back.our_outpoint(), back.their_outpoint()), (Some(ours), Some(theirs)));
@@ -1020,14 +1082,53 @@ mod tests {
     #[test]
     fn state_machine_happy_path() {
         let mut m = SwapMachine::new(params());
-        m.on_event(SwapEvent::OurFundingBroadcast { txid: Txid::all_zeros() });
-        assert!(matches!(m.state(), SwapState::OurFundingBroadcast { .. }));
         m.on_event(SwapEvent::CounterpartyFunded { confirmations: 5 });
         assert_eq!(m.state(), &SwapState::CounterpartyFundingConfirmed);
+        m.on_event(SwapEvent::OurFundingBroadcast { txid: Txid::all_zeros() });
+        assert!(matches!(m.state(), SwapState::OurFundingBroadcast { .. }));
         m.on_event(SwapEvent::CounterpartyRedeemed { preimage: [9u8; 32] });
         assert!(matches!(m.state(), SwapState::Redeemed { .. }));
         m.on_event(SwapEvent::OurOutputConfirmed { confirmations: 3 });
         assert_eq!(m.state(), &SwapState::Settled);
+    }
+
+    #[test]
+    fn state_machine_validates_preimage_and_never_regresses() {
+        let mut m = SwapMachine::new(params());
+        // Wrong preimage does not transition to Redeemed.
+        m.on_event(SwapEvent::CounterpartyRedeemed { preimage: [0u8; 32] });
+        assert_eq!(m.state(), &SwapState::Negotiated);
+
+        // OurFundingBroadcast is not overwritten by a late CounterpartyFunded.
+        m.on_event(SwapEvent::OurFundingBroadcast { txid: Txid::all_zeros() });
+        m.on_event(SwapEvent::CounterpartyFunded { confirmations: 10 });
+        assert!(matches!(m.state(), SwapState::OurFundingBroadcast { .. }));
+
+        // Valid preimage transitions to Redeemed, and late CounterpartyFunded / TimelockExpired do not overwrite it.
+        m.on_event(SwapEvent::CounterpartyRedeemed { preimage: [9u8; 32] });
+        assert_eq!(m.state(), &SwapState::Redeemed { preimage: [9u8; 32] });
+        m.on_event(SwapEvent::CounterpartyFunded { confirmations: 10 });
+        assert_eq!(m.state(), &SwapState::Redeemed { preimage: [9u8; 32] });
+        m.on_event(SwapEvent::TimelockExpired);
+        assert_eq!(m.state(), &SwapState::Redeemed { preimage: [9u8; 32] });
+
+        // Settled is terminal.
+        m.on_event(SwapEvent::OurOutputConfirmed { confirmations: 3 });
+        assert_eq!(m.state(), &SwapState::Settled);
+        m.on_event(SwapEvent::TimelockExpired);
+        m.on_event(SwapEvent::CounterpartyFunded { confirmations: 10 });
+        m.on_event(SwapEvent::CounterpartyRedeemed { preimage: [9u8; 32] });
+        assert_eq!(m.state(), &SwapState::Settled);
+
+        // TimelockExpired from CounterpartyFundingConfirmed when our_outpoint is Some -> Refunded (terminal).
+        let mut m2 = SwapMachine::new(params());
+        m2.set_our_outpoint(OutPoint::new(Txid::all_zeros(), 0)).unwrap();
+        m2.on_event(SwapEvent::CounterpartyFunded { confirmations: 3 });
+        assert_eq!(m2.state(), &SwapState::CounterpartyFundingConfirmed);
+        m2.on_event(SwapEvent::TimelockExpired);
+        assert_eq!(m2.state(), &SwapState::Refunded);
+        m2.on_event(SwapEvent::CounterpartyRedeemed { preimage: [9u8; 32] });
+        assert_eq!(m2.state(), &SwapState::Refunded);
     }
 
     // ---- the cooperative release (v2 contracts) ----
@@ -1053,7 +1154,9 @@ mod tests {
         let asks = am.release_txs(op, to.clone(), &[2, 20]).unwrap();
         assert_eq!(asks.len(), 2);
         for ask in &asks {
+            let mut bm = bm.clone();
             let their = bm.sign_their_release(ask, op, &bob.xbt, &xbt).unwrap();
+            assert!(matches!(bm.state(), SwapState::Failed { .. }));
             let done = am.finish_release(ask, op, &to, &their, &alice.xbt).unwrap();
             let w = &done.input[0].witness;
             assert_eq!(w.len(), 5);
@@ -1070,7 +1173,7 @@ mod tests {
     #[test]
     fn the_counterparty_signs_a_release_of_that_contract_only() {
         let (_btc, xbt) = network_params("bitcoin").unwrap();
-        let (_alice, bob, mut am, bm, _p) = pair();
+        let (_alice, bob, mut am, mut bm, _p) = pair();
         am.build_our_contract(&xbt).unwrap();
         let op = OutPoint::new(Txid::from_byte_array([7; 32]), 1);
         let ask = am.release_txs(op, ScriptBuf::from(vec![0u8; 22]), &[2]).unwrap().remove(0);
@@ -1083,13 +1186,39 @@ mod tests {
         assert!(bm.sign_their_release(&ask, op, &bob.btc, &xbt).is_err(), "the wrong key");
     }
 
+    #[test]
+    fn sign_their_release_refuses_when_funded_and_transitions_to_failed() {
+        let (btc, xbt) = network_params("bitcoin").unwrap();
+        let (_alice, bob, mut am, mut bm, _p) = pair();
+        am.build_our_contract(&xbt).unwrap();
+        let op = OutPoint::new(Txid::from_byte_array([7; 32]), 1);
+        let ask = am.release_txs(op, ScriptBuf::from(vec![0u8; 22]), &[2]).unwrap().remove(0);
+
+        // If we already recorded our own funding outpoint, refuse to release theirs.
+        let mut bm_funded = bm.clone();
+        bm_funded.set_our_outpoint(OutPoint::new(Txid::all_zeros(), 0)).unwrap();
+        assert!(bm_funded.sign_their_release(&ask, op, &bob.xbt, &xbt).is_err());
+
+        // If our funding was already broadcast, refuse to release theirs.
+        let mut bm_bcast = bm.clone();
+        bm_bcast.on_event(SwapEvent::OurFundingBroadcast { txid: Txid::all_zeros() });
+        assert!(bm_bcast.sign_their_release(&ask, op, &bob.xbt, &xbt).is_err());
+
+        // Signing their release transitions to Failed and prevents building/recording our own contract afterward.
+        bm.sign_their_release(&ask, op, &bob.xbt, &xbt).unwrap();
+        assert!(matches!(bm.state(), SwapState::Failed { .. }));
+        assert!(bm.sign_their_release(&ask, op, &bob.xbt, &xbt).is_err());
+        assert!(bm.build_our_contract(&btc).is_err());
+        assert!(bm.set_our_outpoint(OutPoint::new(Txid::all_zeros(), 0)).is_err());
+    }
+
     /// The funder broadcasts only a release paying itself, with a counterparty
     /// signature that verifies.
     #[test]
     fn the_funder_finishes_only_a_good_release_to_itself() {
         let (_btc, xbt) = network_params("bitcoin").unwrap();
-        let (alice, bob, mut am, bm, _p) = pair();
-        am.build_our_contract(&xbt).unwrap();
+        let (alice, bob, mut am, mut bm, _p) = pair();
+        let c = am.build_our_contract(&xbt).unwrap().clone();
         let op = OutPoint::new(Txid::from_byte_array([7; 32]), 1);
         let to = ScriptBuf::from(vec![0u8; 22]);
         let ask = am.release_txs(op, to.clone(), &[2]).unwrap().remove(0);
@@ -1103,6 +1232,18 @@ mod tests {
         let mut pricey = ask.clone();
         pricey.output[0].value = Amount::from_sat(1);
         assert!(am.finish_release(&pricey, op, &to, &their, &alice.xbt).is_err(), "a fee over the cap");
+
+        // Overflowing paid = u64::MAX must not panic, and paid > c.value or paid == c.value (zero fee) must be rejected.
+        for bad_paid in [Amount::from_sat(u64::MAX), c.value + Amount::from_sat(1), c.value] {
+            let mut bad_tx = ask.clone();
+            bad_tx.output[0].value = bad_paid;
+            assert!(am.finish_release(&bad_tx, op, &to, &their, &alice.xbt).is_err(), "bad_paid = {bad_paid}");
+        }
+
+        // Non-empty script_sig must be rejected.
+        let mut malleable = ask.clone();
+        malleable.input[0].script_sig = ScriptBuf::from(vec![0x00]);
+        assert!(am.finish_release(&malleable, op, &to, &their, &alice.xbt).is_err(), "non-empty script_sig");
     }
 
     #[test]
@@ -1114,5 +1255,22 @@ mod tests {
         let mut am = SwapMachine::new(params_from_terms(&t, SwapRole::Initiator, alice.pks(), bob.pks(), h, [1; 16]));
         am.build_our_contract(&xbt).unwrap();
         assert!(am.release_txs(OutPoint::null(), ScriptBuf::new(), &[2]).is_err());
+    }
+
+    #[test]
+    fn empty_input_finalize_is_rejected() {
+        let (btc, xbt) = network_params("bitcoin").unwrap();
+        let (_alice, _bob, mut am, _bm, preimage) = pair();
+        am.build_our_contract(&xbt).unwrap();
+        let theirs = am.expected_their_contract(&btc);
+        am.verify_their_contract(&serialize(&funding_paying(&theirs)), &btc).unwrap();
+        let mut empty_tx = Transaction {
+            version: transaction::Version::TWO,
+            lock_time: bitcoin::absolute::LockTime::ZERO,
+            input: vec![],
+            output: vec![],
+        };
+        assert!(am.finalize_our_refund(&mut empty_tx, b"sig", &pk(1)).is_err());
+        assert!(am.finalize_their_redeem(&mut empty_tx, b"sig", &pk(1), &preimage).is_err());
     }
 }

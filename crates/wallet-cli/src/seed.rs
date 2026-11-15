@@ -68,10 +68,14 @@ pub fn seal(home: &Path, mnemonic: &str, passphrase: &str, password: &str) -> Re
     let kek = crypto::kek_from_password(password.as_bytes(), &salt, &params)
         .map_err(|e| anyhow!("{e}"))?;
 
-    let plain = Zeroizing::new(serde_json::to_vec(&Plain {
+    let mut plain_struct = Plain {
         mnemonic: mnemonic.to_string(),
         passphrase: passphrase.to_string(),
-    })?);
+    };
+    let plain_res = serde_json::to_vec(&plain_struct);
+    zeroize::Zeroize::zeroize(&mut plain_struct.mnemonic);
+    zeroize::Zeroize::zeroize(&mut plain_struct.passphrase);
+    let plain = Zeroizing::new(plain_res?);
     let blob = crypto::seal(&plain, &kek, &nonce).map_err(|e| anyhow!("{e}"))?;
 
     let file = SealedFile {
@@ -86,7 +90,27 @@ pub fn seal(home: &Path, mnemonic: &str, passphrase: &str, password: &str) -> Re
     fs::create_dir_all(home)?;
     let mut bytes = serde_json::to_vec_pretty(&file)?;
     bytes.push(b'\n');
-    fs::write(sealed_path(home), bytes).context("writing seed.enc")?;
+    let p = sealed_path(home);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
+        fs::set_permissions(home, fs::Permissions::from_mode(0o700))
+            .context("setting home permissions")?;
+        let mut f = fs::OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .mode(0o600)
+            .open(&p)
+            .context("opening seed.enc")?;
+        f.write_all(&bytes).context("writing seed.enc")?;
+        fs::set_permissions(&p, fs::Permissions::from_mode(0o600))
+            .context("setting seed.enc permissions")?;
+    }
+    #[cfg(not(unix))]
+    {
+        fs::write(&p, bytes).context("writing seed.enc")?;
+    }
     Ok(())
 }
 
@@ -115,16 +139,20 @@ fn unseal(home: &Path, password: &str) -> Result<(Zeroizing<String>, Zeroizing<S
         .map_err(|e| anyhow!("{e}"))?;
     let plain = crypto::unseal(&blob, &kek)
         .map_err(|_| anyhow!("wrong password, or seed.enc is corrupt"))?;
-    let p: Plain = serde_json::from_slice(&plain).context("decrypted seed payload")?;
-    Ok((Zeroizing::new(p.mnemonic), Zeroizing::new(p.passphrase)))
+    let mut p: Plain = serde_json::from_slice(&plain).context("decrypted seed payload")?;
+    Ok((
+        Zeroizing::new(std::mem::take(&mut p.mnemonic)),
+        Zeroizing::new(std::mem::take(&mut p.passphrase)),
+    ))
 }
 
 /// The sealing password: `$FORTIS_SEED_PASSWORD` if set (for scripting), else the
 /// terminal prompt.
 fn read_password(prompt: &str) -> Result<Zeroizing<String>> {
     if let Ok(p) = std::env::var("FORTIS_SEED_PASSWORD") {
+        let p = Zeroizing::new(p);
         if !p.is_empty() {
-            return Ok(Zeroizing::new(p));
+            return Ok(p);
         }
     }
     Ok(Zeroizing::new(
@@ -153,15 +181,16 @@ pub fn load_master_key(home: &Path, source: SeedSource) -> Result<MasterKey> {
         SeedSource::Stdin => {
             let stdin = io::stdin();
             let mut lines = stdin.lock().lines();
-            let mnemonic = lines
-                .next()
-                .transpose()?
-                .ok_or_else(|| anyhow!("expected a recovery phrase on stdin"))?;
-            let mnemonic =
-                Zeroizing::new(mnemonic.split_whitespace().collect::<Vec<_>>().join(" "));
-            let passphrase = Zeroizing::new(
-                lines.next().transpose()?.unwrap_or_default().trim().to_string(),
+            let raw_mnemonic = Zeroizing::new(
+                lines
+                    .next()
+                    .transpose()?
+                    .ok_or_else(|| anyhow!("expected a recovery phrase on stdin"))?,
             );
+            let mnemonic =
+                Zeroizing::new(raw_mnemonic.split_whitespace().collect::<Vec<_>>().join(" "));
+            let raw_pass = Zeroizing::new(lines.next().transpose()?.unwrap_or_default());
+            let passphrase = Zeroizing::new(raw_pass.trim().to_string());
             (mnemonic, passphrase)
         }
         SeedSource::Auto => unreachable!(),
@@ -172,29 +201,34 @@ pub fn load_master_key(home: &Path, source: SeedSource) -> Result<MasterKey> {
 /// A new sealing password: `$FORTIS_SEED_PASSWORD` if set, else prompt twice.
 pub fn prompt_new_password() -> Result<Zeroizing<String>> {
     if let Ok(p) = std::env::var("FORTIS_SEED_PASSWORD") {
+        let p = Zeroizing::new(p);
         if !p.is_empty() {
             if p.chars().count() < 8 {
                 bail!("FORTIS_SEED_PASSWORD must be at least 8 characters");
             }
-            return Ok(Zeroizing::new(p));
+            return Ok(p);
         }
     }
-    let a = rpassword::prompt_password("new seed password: ").context("reading password")?;
+    let a = Zeroizing::new(
+        rpassword::prompt_password("new seed password: ").context("reading password")?,
+    );
     if a.chars().count() < 8 {
         bail!("use a password of at least 8 characters");
     }
-    let b = rpassword::prompt_password("confirm password:  ").context("reading password")?;
+    let b = Zeroizing::new(
+        rpassword::prompt_password("confirm password:  ").context("reading password")?,
+    );
     if a != b {
         bail!("passwords do not match");
     }
-    Ok(Zeroizing::new(a))
+    Ok(a)
 }
 
 /// Read a recovery phrase from a visible stdin prompt.
 pub fn prompt_mnemonic() -> Result<Zeroizing<String>> {
     eprint!("recovery phrase: ");
     io::stderr().flush().ok();
-    let mut line = String::new();
+    let mut line = Zeroizing::new(String::new());
     io::stdin().read_line(&mut line)?;
     let words: Vec<&str> = line.split_whitespace().collect();
     if words.len() < 12 {
@@ -207,7 +241,7 @@ pub fn prompt_mnemonic() -> Result<Zeroizing<String>> {
 pub fn prompt_passphrase() -> Result<Zeroizing<String>> {
     eprint!("BIP-39 passphrase (empty for none): ");
     io::stderr().flush().ok();
-    let mut line = String::new();
+    let mut line = Zeroizing::new(String::new());
     io::stdin().read_line(&mut line)?;
     Ok(Zeroizing::new(line.trim_end_matches(['\r', '\n']).to_string()))
 }
