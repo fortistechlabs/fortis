@@ -33,14 +33,14 @@
   <div class="wrap">
     <div class="eyebrow">Fortis Wallet · Lightning (beta) · Android</div>
     <h1>Instant Bitcoin payments, keys on your phone</h1>
-    <p>Send and receive Bitcoin in seconds over the Lightning Network. Your phone runs its own Lightning node, with keys derived from a recovery phrase that never leaves it. Fortis opens the channel and relays payments, but can't spend what's in your channel.</p>
+    <p>Send and receive Bitcoin (BTC) and Bitcoin XBT in seconds over the Lightning Network. Your phone runs its own Lightning node, with keys derived from a recovery phrase that never leaves it. Fortis opens the channel and relays payments, but can't spend what's in your channel.</p>
   </div>
 </header>
 
 <section>
   <div class="wrap">
     <h2>How it works</h2>
-    <p class="lead">Lightning is a wallet of its own. On Home, tap <strong>Add wallet → Lightning</strong>. It gets its own recovery phrase, separate from your BTC wallets, so your on-chain coins and your Lightning channel never share keys.</p>
+    <p class="lead">Lightning is a wallet of its own, one for each coin: <strong>BTC Lightning</strong> and <strong>XBT Lightning</strong>. On Home, tap <strong>Add wallet → Lightning</strong> and choose BTC or XBT. You can have one of each. Every Lightning wallet gets its own recovery phrase, separate from your on-chain wallets and from the other Lightning wallet, so your coins and your channels never share keys.</p>
 
     <dl class="facts">
       <div>
@@ -79,6 +79,32 @@
   </div>
 </section>
 
+<section id="xbt">
+  <div class="wrap">
+    <h2>XBT Lightning</h2>
+    <p class="lead">Lightning for Bitcoin XBT works the same way as BTC Lightning, on its own network. It is new, and the XBT Lightning network is still small.</p>
+    <dl class="facts">
+      <div>
+        <dt>Separate from BTC</dt>
+        <dd>XBT Lightning has its own node key, its own backup and its own channel with the Fortis XBT provider. A BTC Lightning invoice or offer can't be paid from it, and the app says so instead of sending anything.</dd>
+      </div>
+      <div>
+        <dt>Funding it takes a few blocks</dt>
+        <dd>Move XBT in from an on-chain wallet with the <strong>Move</strong> tab, or receive over Lightning. Opening a channel needs several block confirmations, which on XBT can take an hour or more. The wallet shows what it is waiting for, for example "Channel opening: waiting for confirmation 2 of 6". Your coins are yours throughout, and if a channel's opening transaction never reaches the network the app notices, cancels it and returns your funds to your on-chain wallet.</dd>
+      </div>
+      <div>
+        <dt>What it costs and how much</dt>
+        <dd>The provider currently opens a channel for you for 1% of the payment (minimum 1,000&nbsp;sat), for payments from 51,000 up to 250,000&nbsp;sat. As on BTC, smaller payments are held by Fortis on your balance (up to 50,000&nbsp;sat each) until they are worth a channel of your own.</dd>
+      </div>
+      <div>
+        <dt>Paying people</dt>
+        <dd>You can pay XBT invoices and LNURL-pay codes, and BOLT&nbsp;12 offers and Lightning addresses where the person or service you pay supports XBT. An address that hands out BTC invoices is refused, safely.</dd>
+      </div>
+    </dl>
+    <p class="warn" style="font-size:14px; margin-top:26px">XBT Lightning is early. Moving funds in, opening a channel and paying invoices and LNURL codes from it are tested and work; BOLT&nbsp;12 offers are not yet. Fewer nodes and services support XBT, so fewer people can pay you than on BTC Lightning. Start with small amounts.</p>
+  </div>
+</section>
+
 <section id="fortis-balance">
   <div class="wrap">
     <h2>The Fortis balance: what we hold for you</h2>
@@ -111,7 +137,7 @@
         <dd>The LSP sees your node's ID and the payments that pass through it. The <a href="/privacy">privacy policy</a> lists everything it sees and stores.</dd>
       </div>
     </dl>
-    <p class="warn" style="font-size:14px; margin-top:26px">Lightning is in beta: a payment that opens your channel can be up to 100,000&nbsp;sat, and a channel you fund yourself up to 1,000,000&nbsp;sat. Start with small amounts.</p>
+    <p class="warn" style="font-size:14px; margin-top:26px">Lightning is in beta: on BTC a payment that opens your channel can be up to 100,000&nbsp;sat, and a channel you fund yourself up to 1,000,000&nbsp;sat. XBT Lightning has its own, smaller limits (above). Start with small amounts.</p>
   </div>
 </section>
 
