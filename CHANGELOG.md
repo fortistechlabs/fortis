@@ -2,6 +2,26 @@
 
 Fortis Wallet (Android). Versions are `versionName (versionCode)`.
 
+## 0.7.4 (31) — 2026-11-16
+
+- Lightning starts faster: the node's saved state is fetched from the backup
+  in one parallel batch instead of one item at a time (about 9 s down to about
+  3.5 s on a phone in testing), and larger backup items are compressed before
+  they are encrypted. Backups made by earlier versions are read as before. A
+  compressed item cannot be read by 0.7.3 or older, so do not go back to an
+  older version on a wallet that has been backed up by this one.
+- Send: "Amount (up to X sat)" in the unit of the amount field, and the limit
+  is rounded down so the largest amount offered can actually be sent. When a
+  payment is more than can be sent, the screen says what it is for and shows
+  the sum from the balance: the channel's reserve and fee buffer held back, the
+  change from opening the channel (not spendable over Lightning), and what can
+  be sent now. It no longer says "not enough funds" while the node is still
+  starting, and it updates when the channel becomes usable.
+- Send: pasting an invoice puts the keyboard away.
+- Receive: Create invoice can be tapped while the node starts; the invoice is
+  made as soon as it is ready. The balance shows "Last known balance" in place
+  of "Updating…" while it connects.
+
 ## 0.7.3 (30) — 2026-11-16
 
 - A payment no longer fails with "Lightning backup unavailable" because of one

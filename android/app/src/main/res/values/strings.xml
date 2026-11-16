@@ -535,6 +535,9 @@
     <string name="receive_ln_quoting">Getting Lightning invoice…</string>
     <string name="send_ln_resolving">Resolving Lightning payment…</string>
     <string name="send_ln_amount_range">Amount (%1$s–%2$s sat)</string>
+    <string name="send_ln_amount_range_unit">Amount (%1$s–%2$s %3$s)</string>
+    <string name="send_ln_amount_up_to">Amount (up to %1$s %2$s)</string>
+    <string name="send_ln_reserve_note">About %1$s sat of your balance is the channel\'s reserve and can\'t be spent while the channel is open.</string>
     <string name="send_ln_sending">Sending…</string>
     <string name="confirm_ln_description">Description</string>
     <string name="confirm_ln_expiry">Expiry</string>
@@ -552,6 +555,15 @@
     <string name="ln_err_active_on_another_device">Lightning is active on another device.</string>
     <string name="ln_err_lsp_unreachable">Can\'t reach the Lightning service right now.</string>
     <string name="ln_err_insufficient_lightning">Not enough funds on Lightning for this payment.</string>
+    <string name="ln_math_payment">This payment</string>
+    <string name="ln_math_balance">Your balance (as shown above)</string>
+    <string name="ln_math_held_back">Held back (channel reserve and fee buffer)</string>
+    <string name="ln_math_in_wallet">Change from opening the channel (not spendable over Lightning)</string>
+    <string name="ln_math_arriving">Arriving, not yet confirmed</string>
+    <string name="ln_math_held_by_fortis">Held by Fortis (not spendable here)</string>
+    <string name="ln_math_can_send">You can send now</string>
+    <string name="ln_math_short">Short by</string>
+    <string name="ln_insufficient_reserve">The %1$s sat held back stays yours: the channel keeps a reserve (about 1%% of its size) plus a small fee buffer, and neither can be spent while the channel is open. To use it, move your balance back on-chain, or add funds to the channel.</string>
     <string name="ln_err_no_route">Couldn\'t find a Lightning route to the recipient.</string>
     <string name="ln_err_invoice_expired">This Lightning invoice has expired.</string>
     <string name="ln_err_wrong_network">This payment request is for a different Bitcoin network.</string>
@@ -591,6 +603,7 @@
     <string name="ln_balance_in_channel">In your channel: %1$s</string>
     <string name="ln_balance_held_by_fortis">Held by Fortis: %1$s</string>
     <string name="ln_balance_updating">Updating…</string>
+    <string name="ln_balance_last_known">Last known balance</string>
     <string name="ln_account_explainer">Small amounts are held by Fortis. Once they add up to more than 50,000 sat, Fortis moves them into a channel of your own.</string>
     <string name="ln_receive_to_account">This payment will be held by Fortis on your Fortis balance.</string>
     <string name="ln_account_custody_full">Fortis can\'t hold more small balances right now — receive at least %1$s sat to open your own channel.</string>

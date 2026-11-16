@@ -190,7 +190,12 @@ fun LightningWalletTab(vm: WalletViewModel) {
                     if (vm.accountSending || lnTotal == null) Row(verticalAlignment = Alignment.CenterVertically) {
                         CircularProgressIndicator(Modifier.size(12.dp), color = Fx.signal, strokeWidth = 2.dp)
                         Text(
-                            stringResource(R.string.ln_balance_updating),
+                            // With a balance already on screen it is the last one we knew: say so,
+                            // not "Updating…" (which reads as if the number were wrong or missing).
+                            stringResource(
+                                if (!vm.accountSending && shownSat != null) R.string.ln_balance_last_known
+                                else R.string.ln_balance_updating,
+                            ),
                             style = FxType.fiatSmall, color = Fx.textDim,
                             modifier = Modifier.padding(start = 6.dp),
                         )
@@ -398,8 +403,9 @@ internal fun LightningReceiveTab(vm: WalletViewModel) {
         if (invoice == null) PrimaryButton(
             stringResource(R.string.ln_create_invoice),
             modifier = Modifier.fillMaxWidth(),
-            enabled = lnReady && amountSat != null && amountSat > 0L,
-            working = quoting,
+            // While the node starts the request is queued and runs as soon as it is ready.
+            enabled = (lnReady || lnState == LnState.Starting) && amountSat != null && amountSat > 0L,
+            working = quoting || (!lnReady && lnState == LnState.Starting && requestedSat != null),
         ) {
             focus.clearFocus()
             requestedSat = amountSat
@@ -588,7 +594,8 @@ internal fun LightningSendTab(vm: WalletViewModel) {
         }
     }
 
-    val sendPlan = remember(to, lnText, network, lnState, limits, amountSat, resolvedLnurl, lnurlError, isLnurlTarget, onchainOnly, wrongChain) {
+    val sendableNow by vm.lightning.sendableFlow.collectAsState()
+    val sendPlan = remember(to, lnText, network, lnState, limits, amountSat, resolvedLnurl, lnurlError, isLnurlTarget, onchainOnly, wrongChain, sendableNow) {
         if (to.isBlank() || onchainOnly || wrongChain != null) null
         else if (isLnurlTarget && resolvedLnurl == null) {
             if (lnurlError != null) SendPlan.Invalid(lnurlError!!) else null
@@ -603,7 +610,7 @@ internal fun LightningSendTab(vm: WalletViewModel) {
                 lnurlResolver = {
                     resolvedLnurl ?: throw IllegalStateException(lnurlError ?: "Resolving LNURL…")
                 },
-                sendableMsat = vm.lightning.sendableMsat,
+                sendableMsat = sendableNow,
                 extraSendableMsat = vm.accountBalance?.freeMsat ?: 0uL,
             )
         }
@@ -617,7 +624,14 @@ internal fun LightningSendTab(vm: WalletViewModel) {
     )
     GlassCard {
         Text(stringResource(R.string.tab_send), color = Fx.text, fontWeight = FontWeight.SemiBold)
-        Field(to, { new -> to = new.filterNot(Char::isWhitespace) }, stringResource(R.string.field_to_address), mono = true)
+        // A paste (many characters at once, not typing) is done: put the keyboard away so the
+        // result of the check is in view.
+        val pasteFocus = LocalFocusManager.current
+        Field(to, { new ->
+            val cleaned = new.filterNot(Char::isWhitespace)
+            if (cleaned.length - to.length >= 20) pasteFocus.clearFocus()
+            to = cleaned
+        }, stringResource(R.string.field_to_address), mono = true)
         GhostButton(stringResource(R.string.action_scan_qr)) { scanning = true }
 
         if (lnState is LnState.Off || lnState is LnState.Starting) {
@@ -639,7 +653,7 @@ internal fun LightningSendTab(vm: WalletViewModel) {
         } else if (resolvingLnurl) {
             Text(stringResource(R.string.send_ln_resolving), style = FxType.meta, color = Fx.textDim)
         } else if (sendPlan != null) {
-            val baseNeedsAmount = remember(lnText, network, lnState, limits, resolvedLnurl) {
+            val baseNeedsAmount = remember(lnText, network, lnState, limits, resolvedLnurl, sendableNow) {
                 if (isLnurlTarget && resolvedLnurl == null) null
                 else planSend(
                     text = lnText,
@@ -649,7 +663,7 @@ internal fun LightningSendTab(vm: WalletViewModel) {
                     limits = limits,
                     userAmountMsat = null,
                     lnurlResolver = { resolvedLnurl ?: throw IllegalStateException() },
-                    sendableMsat = vm.lightning.sendableMsat,
+                    sendableMsat = sendableNow,
                 extraSendableMsat = vm.accountBalance?.freeMsat ?: 0uL,
                 ) as? SendPlan.NeedsAmount
             }
@@ -657,10 +671,26 @@ internal fun LightningSendTab(vm: WalletViewModel) {
             if (baseNeedsAmount != null) {
                 val minSat = displaySatFromMsat(baseNeedsAmount.minMsat)
                 val maxSat = displaySatFromMsat(baseNeedsAmount.maxMsat)
+                // What can be sent, in the unit the amount field is in. A 1 sat minimum is not worth
+                // showing: "up to X". The top is what the channel can send NOW (the balance less the
+                // channel reserve and fee buffer), plus any Fortis-held balance.
+                val rangeUnit = if (amountInSat) "sat" else unit
+                val showAmt: (Long) -> String = { if (amountInSat) fmtSat(it) else fmt(it) }
                 Text(
-                    caps(stringResource(R.string.send_ln_amount_range, fmt(minSat), fmt(maxSat))),
+                    caps(
+                        if (minSat <= 1L) stringResource(R.string.send_ln_amount_up_to, showAmt(maxSat), rangeUnit)
+                        else stringResource(R.string.send_ln_amount_range_unit, showAmt(minSat), showAmt(maxSat), rangeUnit),
+                    ),
                     style = FxType.label,
                 )
+                // Part of the balance is the channel's reserve: say so, or the balance looks wrong.
+                val channelBalanceSat = (lnState as? LnState.Ready)?.balances?.lightningSat?.toLong() ?: 0L
+                if (channelBalanceSat > maxSat && maxSat > 0L) {
+                    Text(
+                        stringResource(R.string.send_ln_reserve_note, fmtSat(channelBalanceSat - maxSat)),
+                        style = FxType.meta, color = Fx.textDim,
+                    )
+                }
                 Row(
                     horizontalArrangement = Arrangement.spacedBy(Fx.s2),
                     verticalAlignment = Alignment.Top,
@@ -689,12 +719,53 @@ internal fun LightningSendTab(vm: WalletViewModel) {
                 }
                 is SendPlan.NeedsAmount -> {}
                 // Not enough on Lightning (a transfer from a BTC wallet comes later).
-                is SendPlan.NeedsMove -> {
-                    Text(
-                        stringResource(R.string.ln_err_insufficient_lightning),
-                        style = FxType.meta,
-                        color = Fx.warn,
-                    )
+                is SendPlan.NeedsMove -> if (lnState == LnState.Starting) {
+                    // The sendable amount is not known until the node is up: no verdict yet.
+                    Text(lightningStatusText(lnState), style = FxType.meta, color = Fx.textDim)
+                } else {
+                    // Say what it is for and show the sum: the balance is not all sendable (the channel
+                    // keeps a reserve and a fee buffer).
+                    // The same total as the header, so the sum adds up to the number the user sees.
+                    val readyState = lnState as? LnState.Ready
+                    val channelSat = readyState?.balances?.lightningSat?.toLong() ?: 0L
+                    val accountTotalSat = ((vm.accountBalance?.balanceMsat ?: 0uL) / 1_000uL).toLong()
+                    val accountFreeSat = ((vm.accountBalance?.freeMsat ?: 0uL) / 1_000uL).toLong()
+                    val balanceSat = (lightningWalletBalance(vm, walletChain)?.totalSat ?: channelSat) -
+                        (readyState?.let { leavingLightningSat(it) } ?: 0L) + accountTotalSat
+                    val channelSendSat = minOf(channelSat, (sendableNow / 1_000uL).toLong())
+                    val canSendSat = channelSendSat + accountFreeSat
+                    val needSat = canSendSat + plan.shortfallSat
+                    // Held back inside the channel (reserve + fee buffer), and whatever else is part of the
+                    // balance but cannot be sent now (on its way, or held by Fortis).
+                    val heldBack = maxOf(0L, channelSat - channelSendSat)
+                    val otherSat = maxOf(0L, balanceSat - heldBack - canSendSat)
+                    // What the "other" is made of, from the parts the header adds up.
+                    val fortisHeldSat = maxOf(0L, accountTotalSat - accountFreeSat)
+                    val fortisRowSat = minOf(otherSat, fortisHeldSat)
+                    val nodeSideSat = otherSat - fortisRowSat
+                    // Coins in this wallet's own on-chain part (change from opening the channel, spendable
+                    // on-chain, not over Lightning); anything beyond that is still unconfirmed.
+                    val inWalletSat = minOf(nodeSideSat, readyState?.balances?.onchainTransitSat?.toLong() ?: 0L)
+                    val arrivingSat = nodeSideSat - inWalletSat
+                    val forWhat = when (val t = parsedTarget) {
+                        is LnTarget.Bolt11 -> t.description
+                        is LnTarget.Bolt12Offer -> t.description
+                        else -> resolvedLnurl?.description.orEmpty()
+                    }
+                    Text(stringResource(R.string.ln_err_insufficient_lightning), style = FxType.meta, color = Fx.warn)
+                    if (forWhat.isNotBlank()) kv(stringResource(R.string.confirm_ln_description), forWhat)
+                    // A reconciliation: the balance shown above, less what cannot be sent, = what can.
+                    kv(stringResource(R.string.ln_math_balance), "${fmtSat(balanceSat)} sat")
+                    if (heldBack > 0L) kv(stringResource(R.string.ln_math_held_back), "\u2212${fmtSat(heldBack)} sat")
+                    if (inWalletSat > 0L) kv(stringResource(R.string.ln_math_in_wallet), "\u2212${fmtSat(inWalletSat)} sat")
+                    if (arrivingSat > 0L) kv(stringResource(R.string.ln_math_arriving), "\u2212${fmtSat(arrivingSat)} sat")
+                    if (fortisRowSat > 0L) kv(stringResource(R.string.ln_math_held_by_fortis), "\u2212${fmtSat(fortisRowSat)} sat")
+                    kv(stringResource(R.string.ln_math_can_send), "= ${fmtSat(maxOf(0L, canSendSat))} sat")
+                    kv(stringResource(R.string.ln_math_payment), "${fmtSat(needSat)} sat")
+                    kv(stringResource(R.string.ln_math_short), "${fmtSat(plan.shortfallSat)} sat")
+                    if (heldBack > 0L) {
+                        Text(stringResource(R.string.ln_insufficient_reserve, fmtSat(heldBack)), style = FxType.meta, color = Fx.textDim)
+                    }
                 }
                 is SendPlan.Invalid -> {
                     // Off / Starting already shows the node's status above. An error waits until the typing stops.

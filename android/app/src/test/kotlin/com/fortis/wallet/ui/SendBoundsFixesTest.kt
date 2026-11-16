@@ -68,6 +68,15 @@ class SendBoundsFixesTest {
     }
 
     @Test
+    fun a_limit_with_part_of_a_sat_is_rounded_down_so_the_top_amount_can_be_sent() {
+        // The node can send 130 600 msat: 130 sat goes through, 131 sat (131 000 msat) would be refused.
+        val over = plan(131L, 2_512uL, sendableMsat = 130_600uL)
+        assertEquals(SendPlan.NeedsMove(1L), over)
+        val ok = plan(130L, 2_512uL, sendableMsat = 130_600uL)
+        assertTrue("got $ok", ok is SendPlan.Lightning)
+    }
+
+    @Test
     fun a_fixed_amount_invoice_is_judged_by_the_outbound_limit_too() {
         val p = planSend(
             text = bolt11, // 2 500 000 sat

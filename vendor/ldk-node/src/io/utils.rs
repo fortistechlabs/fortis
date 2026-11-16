@@ -274,25 +274,66 @@ where
 }
 
 /// Read previously persisted payments information from the store.
+/// How many saved items a start reads at once. Each read is a network round trip to the backup
+/// server (about 100 ms on a phone); one after another, a wallet with 60 saved payments waited
+/// 6 seconds at start. The reads only look at the store, so they can overlap.
+const START_READ_WORKERS: usize = 16;
+
+/// Applies `f` to every item, up to `workers` at a time, and returns the results in the order of
+/// `items`. The first error (in that order) is returned. Used to overlap independent reads.
+pub(crate) fn parallel_map<T: Sync, R: Send, E: Send>(
+	items: &[T], workers: usize, f: impl Fn(&T) -> Result<R, E> + Sync,
+) -> Result<Vec<R>, E> {
+	let workers = workers.max(1).min(items.len().max(1));
+	let next = std::sync::atomic::AtomicUsize::new(0);
+	let slots: Vec<std::sync::Mutex<Option<Result<R, E>>>> =
+		items.iter().map(|_| std::sync::Mutex::new(None)).collect();
+	std::thread::scope(|scope| {
+		for _ in 0..workers {
+			scope.spawn(|| loop {
+				let i = next.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+				if i >= items.len() {
+					break;
+				}
+				let r = f(&items[i]);
+				*slots[i].lock().unwrap_or_else(|e| e.into_inner()) = Some(r);
+			});
+		}
+	});
+	let mut out = Vec::with_capacity(items.len());
+	for slot in slots {
+		match slot.into_inner().unwrap_or_else(|e| e.into_inner()) {
+			Some(Ok(v)) => out.push(v),
+			Some(Err(e)) => return Err(e),
+			None => unreachable!("every item is visited before the scope ends"),
+		}
+	}
+	Ok(out)
+}
+
 pub(crate) fn read_payments<L: Deref>(
 	kv_store: Arc<DynStore>, logger: L,
 ) -> Result<Vec<PaymentDetails>, std::io::Error>
 where
 	L::Target: LdkLogger,
 {
-	let mut res = Vec::new();
-
-	for stored_key in KVStoreSync::list(
+	let keys = KVStoreSync::list(
 		&*kv_store,
 		PAYMENT_INFO_PERSISTENCE_PRIMARY_NAMESPACE,
 		PAYMENT_INFO_PERSISTENCE_SECONDARY_NAMESPACE,
-	)? {
-		let mut reader = Cursor::new(KVStoreSync::read(
+	)?;
+	// The reads overlap; the payments are decoded after, in the order of the keys.
+	let blobs = parallel_map(&keys, START_READ_WORKERS, |stored_key| {
+		KVStoreSync::read(
 			&*kv_store,
 			PAYMENT_INFO_PERSISTENCE_PRIMARY_NAMESPACE,
 			PAYMENT_INFO_PERSISTENCE_SECONDARY_NAMESPACE,
-			&stored_key,
-		)?);
+			stored_key,
+		)
+	})?;
+	let mut res = Vec::with_capacity(blobs.len());
+	for blob in blobs {
+		let mut reader = Cursor::new(blob);
 		let payment = PaymentDetails::read(&mut reader).map_err(|e| {
 			log_error!(logger, "Failed to deserialize PaymentDetails: {}", e);
 			std::io::Error::new(
@@ -640,6 +681,28 @@ pub(crate) fn read_bdk_wallet_change_set(
 #[cfg(test)]
 mod tests {
 	use super::*;
+
+	#[test]
+	fn parallel_map_keeps_order_and_overlaps_slow_reads() {
+		let items: Vec<u32> = (0..40).collect();
+		let began = std::time::Instant::now();
+		// 40 reads of 50 ms: 2 s one after another.
+		let out = parallel_map(&items, 16, |i| -> Result<u32, ()> {
+			std::thread::sleep(std::time::Duration::from_millis(50));
+			Ok(i * 2)
+		})
+		.unwrap();
+		assert_eq!(out, (0..40).map(|i| i * 2).collect::<Vec<_>>(), "results in the order of the items");
+		assert!(began.elapsed() < std::time::Duration::from_millis(600), "took {:?}", began.elapsed());
+	}
+
+	#[test]
+	fn parallel_map_returns_the_first_error_in_item_order() {
+		let items: Vec<u32> = (0..10).collect();
+		let r = parallel_map(&items, 4, |i| if *i == 3 || *i == 7 { Err(*i) } else { Ok(*i) });
+		assert_eq!(r, Err(3));
+		assert_eq!(parallel_map(&Vec::<u32>::new(), 4, |i| Ok::<u32, ()>(*i)), Ok(vec![]));
+	}
 
 	#[test]
 	fn mnemonic_to_entropy_to_mnemonic() {

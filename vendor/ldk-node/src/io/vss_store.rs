@@ -137,6 +137,10 @@ impl VssStore {
 			key_obfuscator,
 		));
 
+		// Start the batch that fetches everything a start reads, all at once.
+		let handle = internal_runtime.handle().clone();
+		Prefetch::start(Arc::clone(&inner), handle);
+
 		Ok(Self { inner, next_version, internal_runtime: Some(internal_runtime) })
 	}
 
@@ -370,6 +374,8 @@ struct VssStoreInner {
 	// Per-key locks that ensures that we don't have concurrent writes to the same namespace/key.
 	// The lock also encapsulates the latest written version per key.
 	locks: Mutex<HashMap<String, Arc<tokio::sync::Mutex<u64>>>>,
+	// Items fetched together at start (see `Prefetch`).
+	prefetch: Arc<Prefetch>,
 }
 
 impl VssStoreInner {
@@ -387,6 +393,7 @@ impl VssStoreInner {
 			data_encryption_key,
 			key_obfuscator,
 			locks,
+			prefetch: Arc::new(Prefetch::default()),
 		}
 	}
 
@@ -481,6 +488,25 @@ impl VssStoreInner {
 		&self, client: &VssClient<CustomRetryPolicy>, primary_namespace: String,
 		secondary_namespace: String, key: String,
 	) -> io::Result<Vec<u8>> {
+		// Wait (briefly) for the start-up batch, then serve from it once.
+		match self.prefetch.take(&primary_namespace, &secondary_namespace, &key) {
+			Some(Some(data)) => return Ok(data),
+			Some(None) => {
+				let msg = format!(
+					"Failed to read from key {}/{}/{}: not found",
+					primary_namespace, secondary_namespace, key
+				);
+				return Err(Error::new(ErrorKind::NotFound, msg));
+			},
+			None => {},
+		}
+		self.read_remote(client, primary_namespace, secondary_namespace, key).await
+	}
+
+	async fn read_remote(
+		&self, client: &VssClient<CustomRetryPolicy>, primary_namespace: String,
+		secondary_namespace: String, key: String,
+	) -> io::Result<Vec<u8>> {
 		check_namespace_key_validity(&primary_namespace, &secondary_namespace, Some(&key), "read")?;
 
 		let store_key = self.build_obfuscated_key(&primary_namespace, &secondary_namespace, &key);
@@ -510,7 +536,7 @@ impl VssStoreInner {
 		let aad =
 			if self.schema_version == VssSchemaVersion::V1 { store_key.as_bytes() } else { &[] };
 		let decrypted = storable_builder.deconstruct(storable, &self.data_encryption_key, aad)?.0;
-		Ok(decrypted)
+		Ok(decompress_stored(decrypted))
 	}
 
 	async fn write_internal(
@@ -525,13 +551,20 @@ impl VssStoreInner {
 			"write",
 		)?;
 
+		self.prefetch.forget(&primary_namespace, &secondary_namespace, &key);
 		let store_key = self.build_obfuscated_key(&primary_namespace, &secondary_namespace, &key);
 		let vss_version = -1;
 		let storable_builder = StorableBuilder::new(RandEntropySource);
 		let aad =
 			if self.schema_version == VssSchemaVersion::V1 { store_key.as_bytes() } else { &[] };
-		let storable =
-			storable_builder.build(buf.to_vec(), vss_version, &self.data_encryption_key, aad);
+		// Compressed BEFORE it is encrypted (encrypted bytes do not compress). Items that are small
+		// or do not shrink are stored as they were, so older readers still understand them.
+		let storable = storable_builder.build(
+			compress_for_store(&buf),
+			vss_version,
+			&self.data_encryption_key,
+			aad,
+		);
 		let request = PutObjectRequest {
 			store_id: self.store_id.clone(),
 			global_version: None,
@@ -562,6 +595,7 @@ impl VssStoreInner {
 		locking_key: String, version: u64, primary_namespace: String, secondary_namespace: String,
 		key: String,
 	) -> io::Result<()> {
+		self.prefetch.forget(&primary_namespace, &secondary_namespace, &key);
 		check_namespace_key_validity(
 			&primary_namespace,
 			&secondary_namespace,
@@ -838,5 +872,207 @@ mod tests {
 
 		do_read_write_remove_list_persist(&vss_store);
 		drop(vss_store)
+	}
+}
+
+/// Marks a stored item that is compressed: this prefix, then a zlib stream. Eight bytes, so a
+/// plain item (older data, or one that did not shrink) is told apart from a compressed one.
+const COMPRESSED_MAGIC: &[u8; 8] = b"\xF7ZLDKV\x01\x00";
+
+/// Items below this are stored as they are: the saving is nothing, and an older app can read them.
+const COMPRESS_MIN_BYTES: usize = 1024;
+
+/// The bytes to encrypt and upload: compressed when that makes the item smaller, else as given.
+pub(crate) fn compress_for_store(data: &[u8]) -> Vec<u8> {
+	use std::io::Write;
+	if data.len() < COMPRESS_MIN_BYTES {
+		return data.to_vec();
+	}
+	let mut enc = flate2::write::ZlibEncoder::new(
+		Vec::with_capacity(data.len() / 2),
+		flate2::Compression::default(),
+	);
+	let packed = match enc.write_all(data).and_then(|_| enc.finish()) {
+		Ok(p) => p,
+		Err(_) => return data.to_vec(),
+	};
+	if packed.len() + COMPRESSED_MAGIC.len() >= data.len() {
+		return data.to_vec();
+	}
+	let mut out = Vec::with_capacity(COMPRESSED_MAGIC.len() + packed.len());
+	out.extend_from_slice(COMPRESSED_MAGIC);
+	out.extend_from_slice(&packed);
+	out
+}
+
+/// The inverse of [`compress_for_store`]. An item without the prefix, or one that does not
+/// decompress, is returned unchanged (it is data stored before compression existed).
+pub(crate) fn decompress_stored(data: Vec<u8>) -> Vec<u8> {
+	use std::io::Read;
+	if !data.starts_with(COMPRESSED_MAGIC) {
+		return data;
+	}
+	let mut out = Vec::new();
+	match flate2::read::ZlibDecoder::new(&data[COMPRESSED_MAGIC.len()..]).read_to_end(&mut out) {
+		Ok(_) => out,
+		Err(_) => data,
+	}
+}
+
+#[cfg(test)]
+mod compression_tests {
+	use super::*;
+
+	#[test]
+	fn a_large_repetitive_item_shrinks_and_comes_back_identical() {
+		let data: Vec<u8> = (0..200_000u32).map(|i| (i % 251) as u8).collect();
+		let packed = compress_for_store(&data);
+		assert!(packed.len() < data.len() / 4, "packed to {}", packed.len());
+		assert!(packed.starts_with(COMPRESSED_MAGIC));
+		assert_eq!(decompress_stored(packed), data);
+	}
+
+	#[test]
+	fn small_or_incompressible_items_are_stored_as_they_are() {
+		let small = vec![7u8; 500];
+		assert_eq!(compress_for_store(&small), small);
+		// Pseudo-random bytes do not shrink.
+		let mut x = 0x1234_5678u32;
+		let noise: Vec<u8> = (0..4096)
+			.map(|_| {
+				x = x.wrapping_mul(1664525).wrapping_add(1013904223);
+				(x >> 24) as u8
+			})
+			.collect();
+		assert_eq!(compress_for_store(&noise), noise);
+	}
+
+	#[test]
+	fn data_stored_before_compression_existed_is_read_unchanged() {
+		let old = vec![1u8, 2, 3, 4, 5];
+		assert_eq!(decompress_stored(old.clone()), old);
+		// The prefix with garbage after it is returned as it was, not lost.
+		let mut odd = COMPRESSED_MAGIC.to_vec();
+		odd.extend_from_slice(&[9, 9, 9]);
+		assert_eq!(decompress_stored(odd.clone()), odd);
+	}
+}
+
+type PrefetchKey = (String, String, String);
+
+/// The saved items a node start reads, fetched in ONE parallel batch when the store is created.
+/// A start used to read about 30 of them one after another, each a ~200 ms round trip on a
+/// phone. The big, unneeded items (network graph, scorer) are not in the batch. Each item is
+/// served once; a write or remove of an item drops it, so a stale copy is never served. If the
+/// batch is slow or fails, reads simply go to the server as before.
+#[derive(Default)]
+pub(crate) struct Prefetch {
+	state: Mutex<PrefetchState>,
+	done: std::sync::Condvar,
+}
+
+#[derive(Default)]
+struct PrefetchState {
+	finished: bool,
+	items: HashMap<PrefetchKey, Option<Vec<u8>>>,
+}
+
+/// The longest a read waits for the batch before going to the server itself.
+const PREFETCH_WAIT: Duration = Duration::from_secs(8);
+/// Reads in flight at once.
+const PREFETCH_PARALLEL: usize = 16;
+
+impl Prefetch {
+	fn lock(&self) -> std::sync::MutexGuard<'_, PrefetchState> {
+		self.state.lock().unwrap_or_else(|e| e.into_inner())
+	}
+
+	fn take(&self, p: &str, s: &str, k: &str) -> Option<Option<Vec<u8>>> {
+		let mut st = self.lock();
+		if !st.finished {
+			let (g, _) = self
+				.done
+				.wait_timeout_while(st, PREFETCH_WAIT, |st| !st.finished)
+				.unwrap_or_else(|e| e.into_inner());
+			st = g;
+		}
+		st.items.remove(&(p.to_string(), s.to_string(), k.to_string()))
+	}
+
+	fn forget(&self, p: &str, s: &str, k: &str) {
+		self.lock().items.remove(&(p.to_string(), s.to_string(), k.to_string()));
+	}
+
+	fn finish(&self) {
+		self.lock().finished = true;
+		self.done.notify_all();
+	}
+
+	fn start(inner: Arc<VssStoreInner>, handle: tokio::runtime::Handle) {
+		std::thread::spawn(move || {
+			let prefetch = Arc::clone(&inner.prefetch);
+			// Whatever happens below, the readers are released at the end.
+			struct Release(Arc<Prefetch>);
+			impl Drop for Release {
+				fn drop(&mut self) {
+					self.0.finish();
+				}
+			}
+			let _release = Release(prefetch);
+			handle.block_on(prefetch_all(inner));
+		});
+	}
+}
+
+/// What a start reads at fixed names, and the namespaces it lists and then reads whole.
+const PREFETCH_FIXED: &[(&str, &str, &str)] = &[
+	("bdk_wallet", "", "descriptor"),
+	("bdk_wallet", "", "change_descriptor"),
+	("bdk_wallet", "", "network"),
+	("bdk_wallet", "", "local_chain"),
+	("bdk_wallet", "", "tx_graph"),
+	("bdk_wallet", "", "indexer"),
+	("", "", "manager"),
+	("", "", "events"),
+	("", "", "peers"),
+	("", "", "node_metrics"),
+	("", "", "output_sweeper"),
+	("lightning_liquidity_state", "", "event_queue"),
+];
+const PREFETCH_LISTED: &[(&str, &str)] = &[("payments", ""), ("monitors", "")];
+
+async fn prefetch_all(inner: Arc<VssStoreInner>) {
+	let mut wanted: Vec<PrefetchKey> = PREFETCH_FIXED
+		.iter()
+		.map(|(p, s, k)| (p.to_string(), s.to_string(), k.to_string()))
+		.collect();
+	for (p, s) in PREFETCH_LISTED {
+		if let Ok(keys) = inner.list_all_keys(&inner.blocking_client, p, s).await {
+			wanted.extend(keys.into_iter().map(|k| (p.to_string(), s.to_string(), k)));
+		}
+	}
+	let gate = Arc::new(tokio::sync::Semaphore::new(PREFETCH_PARALLEL));
+	let mut set = tokio::task::JoinSet::new();
+	for (p, s, k) in wanted {
+		let inner = Arc::clone(&inner);
+		let gate = Arc::clone(&gate);
+		set.spawn(async move {
+			let _permit = gate.acquire().await.ok();
+			let r = inner.read_remote(&inner.blocking_client, p.clone(), s.clone(), k.clone()).await;
+			((p, s, k), r)
+		});
+	}
+	while let Some(joined) = set.join_next().await {
+		let Ok((key, r)) = joined else { continue };
+		match r {
+			Ok(data) => {
+				inner.prefetch.lock().items.insert(key, Some(data));
+			},
+			Err(e) if e.kind() == ErrorKind::NotFound => {
+				inner.prefetch.lock().items.insert(key, None);
+			},
+			// Any other failure: leave it out, the normal read will try again and report it.
+			Err(_) => {},
+		}
 	}
 }

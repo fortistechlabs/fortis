@@ -71,6 +71,11 @@ name = "payments"
 path = "benches/payments.rs"
 harness = false
 
+[dependencies.flate2]
+version = "1"
+default-features = false
+features = ["rust_backend"]
+
 [dependencies.base64]
 version = "0.22.1"
 features = ["std"]

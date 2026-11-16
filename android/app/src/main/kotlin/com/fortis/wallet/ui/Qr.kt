@@ -270,7 +270,8 @@ fun planSend(
     }
 
     // What a payment is judged against: what can be sent now, which is less than the balance.
-    val sendableSat = minOf(lightningSat, sendableMsat?.let { displaySatFromMsat(it) } ?: lightningSat) +
+    // Rounded DOWN: a limit of 130.6 sat is 130 sat, not 131 (the node would refuse 131).
+    val sendableSat = minOf(lightningSat, sendableMsat?.let { (it / 1_000uL).toLong() } ?: lightningSat) +
         (extraSendableMsat / 1_000uL).toLong()
 
     return when (target) {

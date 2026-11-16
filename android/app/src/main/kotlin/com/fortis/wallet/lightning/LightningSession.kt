@@ -259,6 +259,11 @@ class LightningSession(
     var sendableMsat: ULong = 0uL
         private set
 
+    /** The same figure as a flow, so a screen that judges a payment by it is redrawn when it changes
+     *  (it changes without the balances changing, e.g. once the channel becomes usable after a start). */
+    private val _sendableFlow = kotlinx.coroutines.flow.MutableStateFlow(0uL)
+    val sendableFlow: kotlinx.coroutines.flow.StateFlow<ULong> = _sendableFlow
+
     private var unlockedWalletId: String? = null
     private var unlockedSeed: ByteArray? = null
     private var lastKnownBalances: LnBalances = ZERO_LN_BALANCES
@@ -356,6 +361,7 @@ class LightningSession(
     private fun publish(node: LnNodeApi, bal: LnBalances, ch: LnChannelState) {
         lastKnownBalances = bal
         sendableMsat = runCatching { node.sendableMsat() }.getOrDefault(bal.lightningSat * 1_000uL)
+        _sendableFlow.value = sendableMsat
         _state.value = LnState.Ready(bal, ch)
     }
 
