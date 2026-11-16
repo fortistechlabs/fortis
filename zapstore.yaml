@@ -71,10 +71,10 @@ release_notes: ./CHANGELOG.md
 icon: https://fortistechlabs.com/icon.png
 
 images:
-  - https://fortistechlabs.com/img/android-home.jpg
-  - https://fortistechlabs.com/img/android-receive.jpg
-  - https://fortistechlabs.com/img/android-history.jpg
-  - https://fortistechlabs.com/img/android-move.jpg
+  - https://fortistechlabs.com/img/android-home-62386bd4.jpg
+  - https://fortistechlabs.com/img/android-receive-30ad35e6.jpg
+  - https://fortistechlabs.com/img/android-history-f39583be.jpg
+  - https://fortistechlabs.com/img/android-move-c00c3854.jpg
   - https://fortistechlabs.com/img/swaps/swaps.jpg
   - https://fortistechlabs.com/img/swaps/funded.jpg
   - https://fortistechlabs.com/img/swaps/done.jpg
