@@ -2,6 +2,14 @@
 
 Fortis Wallet (Android). Versions are `versionName (versionCode)`.
 
+## 0.7.1 (28) — 2026-11-16
+
+- Removed the "Backup not verified" message from the wallet tiles on Home.
+  0.7.0 showed it on every wallet that had not been through the backup check,
+  which meant every existing wallet after the update. The recovery phrase screen
+  and its "Check your backup" step are still in Settings, and the warnings that
+  removing the phone's screen lock permanently locks the app stay.
+
 ## 0.7.0 (27) — 2026-11-16
 
 - **Lightning (XBT).** XBT now has a Lightning wallet beside the BTC one: add it

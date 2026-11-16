@@ -84,7 +84,6 @@ import com.fortis.wallet.lightning.lightningWalletOf
 import com.fortis.wallet.lightning.deleteWalletLightningWarningSat
 import com.fortis.wallet.lightning.isLightningWallet
 import com.fortis.wallet.ui.*
-import com.fortis.wallet.security.needsBackupWarning
 import com.fortis.wallet.ui.theme.Fx
 import com.fortis.wallet.ui.theme.FxType
 import com.fortis.wallet.ui.theme.caps
@@ -775,12 +774,6 @@ private fun HomeTab(vm: WalletViewModel) {
                     bal?.let { vm.fiatText(it, w.chain) }?.let {
                         Text(stringResource(R.string.fiat_approx, it), style = FxType.fiatSmall, color = Fx.dimOnSlate)
                     }
-                    // Funds with no proof that the recovery phrase was saved.
-                    if (needsBackupWarning(w, bal)) Text(
-                        stringResource(R.string.backup_unverified_funds),
-                        style = FxType.fiatSmall, color = Fx.warn,
-                        modifier = Modifier.clickable { gate.require(vm, gateAct, gateScope) { vm.startReveal(w.id) } },
-                    )
                     // Lightning funds still moving (a channel opening or closing).
                     if (w.isLightning) {
                         val transferPending by vm.lnSide(w.chain).session.transferPending.collectAsState()
