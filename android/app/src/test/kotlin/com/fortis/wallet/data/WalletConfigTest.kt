@@ -59,7 +59,7 @@ class WalletConfigTest {
         val back = WalletConfig.fromJson(JSONObject(ln.toJson().toString()))
         assertEquals("ln", back.chain)
         assertTrue(back.isLightning)
-        assertEquals("Lightning · Spend", back.display)
+        assertEquals("BTC Lightning · Spend", back.display)
         assertFalse(WalletConfig("b1", "Main", "btc", "mainnet").isLightning)
     }
 }

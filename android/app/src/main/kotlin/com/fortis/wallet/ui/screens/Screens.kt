@@ -1378,7 +1378,7 @@ private fun SendTab(vm: WalletViewModel) {
                 ) { vm.addLightningWallet(lnChain) }
             }
         }
-        if (sendPlan is SendPlan.Invalid && !lightningTarget) ErrorText(sendPlan.reason)
+        if (sendPlan is SendPlan.Invalid && !lightningTarget && com.fortis.wallet.ui.rememberTypingPaused(to)) ErrorText(sendPlan.reason)
         // Only Lightning can pay it (an invoice, offer or Lightning address): no on-chain form.
         if (!lightningTarget || (offer.onchain && (isXbt || sendPlan is SendPlan.OnChain))) {
             val effectiveAddress = (sendPlan as? SendPlan.OnChain)?.address ?: addressFromScan(to)
@@ -1699,12 +1699,26 @@ private fun ConfirmSheet(vm: WalletViewModel, p: PlanPreview, unit: String) {
 }
 
 @Composable
-internal fun kv(k: String, v: String) = Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-    // The value is measured first and keeps its width; a long label wraps instead
-    // (otherwise "Your price (the worst you'll take)" squeezed the price to one character).
-    Text(k, style = FxType.body, color = Fx.textDim, modifier = Modifier.weight(1f))
-    Text(v, style = FxType.amount, modifier = Modifier.padding(start = Fx.s4), textAlign = androidx.compose.ui.text.style.TextAlign.End)
+internal fun kv(k: String, v: String) {
+    if (kvStacked(v)) {
+        // A long value (an invoice description) goes under its label, on the full width: beside it, it
+        // took the whole row and squeezed the label into one character-wide column.
+        Column(Modifier.fillMaxWidth()) {
+            Text(k, style = FxType.body, color = Fx.textDim)
+            Text(v, style = FxType.body, color = Fx.text)
+        }
+    } else Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+        // The value is measured first and keeps its width; a long label wraps instead
+        // (otherwise "Your price (the worst you'll take)" squeezed the price to one character).
+        Text(k, style = FxType.body, color = Fx.textDim, modifier = Modifier.weight(1f))
+        Text(v, style = FxType.amount, modifier = Modifier.padding(start = Fx.s4), textAlign = androidx.compose.ui.text.style.TextAlign.End)
+    }
 }
+
+/** Values longer than this are laid out under their label ([kv]). */
+private const val KV_STACK_AT = 28
+
+internal fun kvStacked(v: String): Boolean = v.length > KV_STACK_AT
 
 /** The currency fiat values are shown in. Empty = the device region's. */
 /** What a failed own-server check tells the user. */

@@ -82,8 +82,8 @@ class XbtLightningWalletTest {
         // Both are Lightning wallets (no on-chain session, no xpub), each labelled by its chain.
         assertTrue(lnXbt.isLightning)
         assertTrue(isLightningWallet(lnXbt))
-        assertEquals("Lightning (XBT) · Spend", lnXbt.display)
-        assertEquals("Lightning · Spend", ln.display)
+        assertEquals("XBT Lightning · Spend", lnXbt.display)
+        assertEquals("BTC Lightning · Spend", ln.display)
         assertNull(lnXbt.otherChain)
     }
 
@@ -116,10 +116,10 @@ class XbtLightningWalletTest {
         assertEquals("This is a BTC Lightning invoice", wrongChainMessage(LN_XBT_CHAIN, LnTargetChain.UNKNOWN, isOffer = false, ::str))
         assertEquals(str(R.string.ln_err_wrong_chain), wrongChainMessage(LN_CHAIN, LnTargetChain.UNKNOWN, isOffer = false, ::str))
         // "Pay from …" names the other wallet; the QR caption.
-        assertEquals("Pay from your Lightning (XBT) wallet", str(payFromOtherWalletRes(LN_XBT_CHAIN)))
-        assertEquals("Pay from your Lightning wallet", str(payFromOtherWalletRes(LN_CHAIN)))
+        assertEquals("Pay from your XBT Lightning wallet", str(payFromOtherWalletRes(LN_XBT_CHAIN)))
+        assertEquals("Pay from your BTC Lightning wallet", str(payFromOtherWalletRes(LN_CHAIN)))
         assertEquals("XBT Lightning", str(R.string.ln_qr_caption_xbt))
-        assertEquals("Lightning (XBT)", str(R.string.wallet_chain_lightning_xbt))
+        assertEquals("XBT Lightning", str(R.string.wallet_chain_lightning_xbt))
     }
 
     @Test
@@ -134,7 +134,7 @@ class XbtLightningWalletTest {
             str(closeBodyRes(LN_XBT_CHAIN, named = true)),
         )
         assertEquals("Send and receive instant XBT payments over the Lightning Network.", str(lightningBodyRes(LN_XBT_CHAIN)))
-        assertEquals("Moves XBT from your Lightning (XBT) wallet to your on-chain XBT wallet.", str(toOnchainHelpRes(LN_XBT_CHAIN)))
+        assertEquals("Moves XBT from your XBT Lightning wallet to your on-chain XBT wallet.", str(toOnchainHelpRes(LN_XBT_CHAIN)))
         // BTC: the strings it always had.
         assertEquals(R.string.ln_send_onchain_target, onchainTargetRes(LN_CHAIN))
         assertEquals(R.string.settings_lightning_close_body, closeBodyRes(LN_CHAIN, named = false))
@@ -338,7 +338,7 @@ class XbtLightningWalletTest {
 
     @Test
     fun leaving_funds_without_a_wallet_of_its_chain_say_what_to_add() {
-        assertEquals("Add an XBT wallet to move Lightning (XBT) funds on-chain.", str(noOnchainWalletRes(LN_XBT_CHAIN)))
+        assertEquals("Add an XBT wallet to move XBT Lightning funds on-chain.", str(noOnchainWalletRes(LN_XBT_CHAIN)))
         assertEquals(str(R.string.error_no_onchain_wallet_for_lightning), str(noOnchainWalletRes(LN_CHAIN)))
     }
 

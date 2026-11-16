@@ -2,6 +2,19 @@
 
 Fortis Wallet (Android). Versions are `versionName (versionCode)`.
 
+## 0.7.3 (30) — 2026-11-16
+
+- A payment no longer fails with "Lightning backup unavailable" because of one
+  failed round trip to the backup store (for example just after the app
+  restarted or the network changed): the check is tried up to three times
+  before it refuses. A payment is still refused when the backup really cannot
+  be reached, and nothing is sent in that case.
+- Wallets are named "BTC Lightning" and "XBT Lightning" throughout.
+- Send: the "unrecognized" message waits until you stop typing instead of
+  appearing at every keystroke.
+- Send: a long payment description is shown under its "Description" label
+  instead of squeezing the label into a narrow column.
+
 ## 0.7.2 (29) — 2026-11-16
 
 - Add wallet offers Lightning (XBT) when you already have a BTC Lightning

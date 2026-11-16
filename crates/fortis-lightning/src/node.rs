@@ -109,6 +109,9 @@ const XBT_NODE_SEED_INDEX: u32 = 1;
 pub(crate) const LOCK_CHECK_INTERVAL: Duration = Duration::from_secs(60);
 /// Cap on one device-lock check (background, or before an action).
 pub(crate) const LOCK_CHECK_TIMEOUT: Duration = Duration::from_secs(3);
+/// Tries of the lock refresh a payment is gated on, and the pause between them.
+const LOCK_CHECK_TRIES: u32 = 3;
+const LOCK_CHECK_PAUSE: Duration = Duration::from_millis(400);
 /// Cap on releasing the lock in `stop()`.
 const LOCK_RELEASE_TIMEOUT: Duration = Duration::from_secs(3);
 /// `stop()` waits at most this long for a cancelled start worker and the
@@ -941,7 +944,8 @@ fn refresh_lock(shared: &Shared, generation: u64, timeout: Duration) -> Result<(
     };
     let client = shared.vss_client()?;
     let store = client.with_timeout(timeout);
-    match device::refresh(&store, h.me, &mut h.held) {
+    // A payment is gated on this: one failed round trip (the network just came back) must not refuse it.
+    match device::refresh_retrying(&store, h.me, &mut h.held, LOCK_CHECK_TRIES, LOCK_CHECK_PAUSE) {
         Ok(_) => {
             *slot = Some(h);
             Ok(())

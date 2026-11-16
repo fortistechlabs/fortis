@@ -609,6 +609,7 @@ internal fun LightningSendTab(vm: WalletViewModel) {
         }
     }
 
+    val typingPaused = com.fortis.wallet.ui.rememberTypingPaused(to)
     var scanning by remember { mutableStateOf(false) }
     if (scanning) QrScanDialog(
         onResult = { raw -> scanning = false; to = textFromIntent(raw) ?: raw.trim() },
@@ -696,8 +697,8 @@ internal fun LightningSendTab(vm: WalletViewModel) {
                     )
                 }
                 is SendPlan.Invalid -> {
-                    // Off / Starting already shows the node's status above.
-                    if (lnState !is LnState.Off && lnState !is LnState.Starting) ErrorText(plan.reason)
+                    // Off / Starting already shows the node's status above. An error waits until the typing stops.
+                    if (lnState !is LnState.Off && lnState !is LnState.Starting && typingPaused) ErrorText(plan.reason)
                 }
                 is SendPlan.OnChain -> {}
             }

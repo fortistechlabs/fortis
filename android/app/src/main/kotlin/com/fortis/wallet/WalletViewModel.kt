@@ -2054,8 +2054,8 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
     private fun requireFreeName(name: String, chain: String, exceptId: String? = null) {
         if (walletNameTaken(wallets, name, chain, exceptId)) {
             val label = when (chain) {
-                LN_CHAIN -> "Lightning"
-                LN_XBT_CHAIN -> "Lightning (XBT)"
+                LN_CHAIN -> "BTC Lightning"
+                LN_XBT_CHAIN -> "XBT Lightning"
                 else -> chain.uppercase()
             }
             throw Exception(str(R.string.error_name_taken, label, cleanWalletName(name)))

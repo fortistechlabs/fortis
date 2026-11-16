@@ -9,7 +9,7 @@ import com.fortis.wallet.lightning.canAddLightningWallet
 class LightningWalletExists : Exception("This app already has a Lightning wallet.")
 
 /** Lightning (XBT) is not offered yet (the edge has it off, and this is not a debug build). */
-class LightningWalletUnavailable : Exception("Lightning (XBT) is not available yet.")
+class LightningWalletUnavailable : Exception("XBT Lightning is not available yet.")
 
 /** The new Lightning wallet's BIP-39 seed (phrase + passphrase) is the other Lightning
  *  wallet's. Their nodes would still be apart (XBT derives its own node key and VSS store),

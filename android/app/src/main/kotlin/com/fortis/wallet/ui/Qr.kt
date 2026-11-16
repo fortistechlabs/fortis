@@ -397,3 +397,22 @@ fun textFromIntent(raw: String?): String? {
 fun textFromIntent(uri: URI?): String? = textFromIntent(uri?.toString())
 
 fun textFromIntent(uri: Uri?): String? = textFromIntent(uri?.toString())
+
+
+/** How long the Send address field must stand still before an error about it is shown. */
+const val TYPING_PAUSE_MS = 1_200L
+
+/**
+ * True once [key] (what the user is typing) has not changed for [ms]. An error about half-typed input
+ * ("unrecognized") must wait for this, or it flashes at every keystroke: found 2026-11-16, it came up
+ * while the address was still being typed. Valid results are never delayed, only errors.
+ */
+@androidx.compose.runtime.Composable
+fun rememberTypingPaused(key: Any?, ms: Long = TYPING_PAUSE_MS): Boolean {
+    val paused = androidx.compose.runtime.remember(key) { androidx.compose.runtime.mutableStateOf(false) }
+    androidx.compose.runtime.LaunchedEffect(key) {
+        kotlinx.coroutines.delay(ms)
+        paused.value = true
+    }
+    return paused.value
+}

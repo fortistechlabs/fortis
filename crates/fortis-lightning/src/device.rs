@@ -250,6 +250,30 @@ pub(crate) fn refresh(
     }
 }
 
+/// [`refresh`], tried up to `tries` times (at least once) while VSS does not answer
+/// (`BackupUnavailable`), `pause` apart. A lost or foreign lock, or a corrupt record, is final at
+/// once and never retried; a write whose answer was lost is reconciled by the next try (it
+/// conflicts, re-reads, and finds its own record). One failed round trip must not refuse a payment.
+pub(crate) fn refresh_retrying(
+    store: &dyn LockStore,
+    me: DeviceId,
+    held: &mut Held,
+    tries: u32,
+    pause: Duration,
+) -> Result<Held, LnError> {
+    let mut last = Err(LnError::BackupUnavailable);
+    for attempt in 0..tries.max(1) {
+        if attempt > 0 && !pause.is_zero() {
+            std::thread::sleep(pause);
+        }
+        match refresh(store, me, held) {
+            Err(LnError::BackupUnavailable) => last = Err(LnError::BackupUnavailable),
+            other => return other,
+        }
+    }
+    last
+}
+
 /// Clean stop: deletes the record at the version we hold. A conflict means
 /// it is not ours any more (left alone, `Ok`); unreachable is
 /// `BackupUnavailable` and the lock stays ours (same device restarts
@@ -685,6 +709,70 @@ mod tests {
         *f.before_put.borrow_mut() = Some(Box::new(|f: &Fake| f.down.set(1)));
         let mut held = Held { version: 3, since: 7 };
         assert_eq!(refresh(&f, ME, &mut held), Err(LnError::BackupUnavailable));
+    }
+
+    /// 2026-11-16: one failed round trip to VSS (right after the app restarted) refused a payment:
+    /// "Lightning backup unavailable, try again shortly". The check is retried before giving up.
+    #[test]
+    fn a_failed_round_trip_is_retried_and_the_check_passes() {
+        let f = Fake::holding(ME, 3);
+        f.down.set(1);
+        let mut held = Held { version: 3, since: 7 };
+        assert_eq!(
+            refresh_retrying(&f, ME, &mut held, 3, Duration::ZERO),
+            Ok(Held { version: 4, since: 7 })
+        );
+        assert_eq!(f.holder(), Some((ME, 4)));
+    }
+
+    #[test]
+    fn a_lost_response_is_reconciled_by_the_retry() {
+        // The first write landed but its answer was lost: the retry conflicts, re-reads, finds its own.
+        let f = Fake::holding(ME, 3);
+        f.lose_response.set(true);
+        let mut held = Held { version: 3, since: 7 };
+        assert_eq!(
+            refresh_retrying(&f, ME, &mut held, 3, Duration::ZERO),
+            Ok(Held { version: 5, since: 7 })
+        );
+        assert_eq!(f.holder(), Some((ME, 5)));
+    }
+
+    #[test]
+    fn an_outage_longer_than_the_retries_is_still_backup_unavailable() {
+        let f = Fake::holding(ME, 3);
+        f.down.set(3);
+        let mut held = Held { version: 3, since: 7 };
+        assert_eq!(
+            refresh_retrying(&f, ME, &mut held, 3, Duration::ZERO),
+            Err(LnError::BackupUnavailable)
+        );
+        assert_eq!(f.holder(), Some((ME, 3)), "nothing written while it was down");
+    }
+
+    #[test]
+    fn a_lost_lock_is_never_retried() {
+        // Another device holds it: refused at once, and left alone (no write attempts after the first).
+        let f = Fake::holding(OTHER, 4);
+        let mut held = Held { version: 3, since: 7 };
+        let writes_before = f.writes.get();
+        assert_eq!(
+            refresh_retrying(&f, ME, &mut held, 3, Duration::ZERO),
+            Err(LnError::ActiveOnAnotherDevice)
+        );
+        assert_eq!(f.holder(), Some((OTHER, 4)));
+        assert_eq!(f.writes.get(), writes_before, "never wrote over the other device's lock");
+        // Unparsable record: lost too, not retried.
+        let f = Fake::default();
+        f.set(Some((b"?".to_vec(), 9)));
+        assert_eq!(refresh_retrying(&f, ME, &mut held, 3, Duration::ZERO), Err(corrupt()));
+    }
+
+    #[test]
+    fn zero_tries_still_makes_one_attempt() {
+        let f = Fake::holding(ME, 3);
+        let mut held = Held { version: 3, since: 7 };
+        assert_eq!(refresh_retrying(&f, ME, &mut held, 0, Duration::ZERO), Ok(Held { version: 4, since: 7 }));
     }
 
     #[test]

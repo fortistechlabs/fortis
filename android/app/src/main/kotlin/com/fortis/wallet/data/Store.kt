@@ -73,8 +73,8 @@ data class WalletConfig(
 ) {
     /** e.g. `XBT · Savings` — the label the picker shows. */
     val display: String get() = when (chain) {
-        LN_CHAIN -> "Lightning"
-        LN_XBT_CHAIN -> "Lightning (XBT)"
+        LN_CHAIN -> "BTC Lightning"
+        LN_XBT_CHAIN -> "XBT Lightning"
         else -> chain.uppercase()
     } + " · $name" + when {
         hardware -> " · hardware"
