@@ -120,6 +120,9 @@ class LightningOnboardTest {
         assertEquals(listOf(LN_CHAIN), lightningOnboardChoices(listOf(btc), restoring = false, xbtEnabled = false, debug = false))
         assertEquals(listOf(LN_CHAIN, LN_XBT_CHAIN), lightningOnboardChoices(listOf(btc), restoring = false, xbtEnabled = true, debug = false))
         assertEquals(listOf(LN_XBT_CHAIN), lightningOnboardChoices(listOf(ln), restoring = true, xbtEnabled = false, debug = false))
+        // 2026-11-16: with the BTC Lightning wallet made, Add wallet still offers Lightning (XBT) (one of each).
+        assertEquals(listOf(LN_XBT_CHAIN), lightningOnboardChoices(listOf(ln), restoring = false, xbtEnabled = true, debug = false))
+        assertEquals(emptyList<String>(), lightningOnboardChoices(listOf(ln), restoring = false, xbtEnabled = false, debug = false))
         assertEquals(emptyList<String>(), lightningOnboardChoices(listOf(ln, lnXbt), restoring = true, xbtEnabled = true, debug = true))
     }
 

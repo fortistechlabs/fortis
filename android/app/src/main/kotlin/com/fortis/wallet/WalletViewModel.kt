@@ -1762,8 +1762,10 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
 
     /** "Create a Lightning wallet": the create screen opens with Lightning chosen. Only while the app has none. */
     fun goCreateLightning() {
-        if (!canAddLightning(LN_CHAIN)) { error = str(R.string.error_lightning_wallet_exists); return }
-        onboardChain = LN_CHAIN
+        // The first Lightning wallet the app can still add: BTC while it has none, else XBT.
+        val chain = lightningOnboardChoices(restoring = false).firstOrNull()
+        if (chain == null) { error = str(R.string.error_lightning_wallet_exists); return }
+        onboardChain = chain
         phase = if (draftMnemonic != null) Phase.Create else Phase.Gen
     }
     fun generateSeed(extra: ByteArray, words: Int) = wrap {

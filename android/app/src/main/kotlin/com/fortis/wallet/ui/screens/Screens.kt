@@ -216,8 +216,9 @@ fun OnboardScreen(vm: WalletViewModel) = Screen {
     PrimaryButton(stringResource(R.string.onboard_create)) { vm.goCreate() }
     // Whether the edge offers Lightning (XBT) yet (the create / restore screens' chain choice).
     LaunchedEffect(Unit) { vm.refreshXbtLightningOffered() }
-    // One Lightning wallet per app: offered until the app has it.
-    if (vm.canAddLightning(LN_CHAIN)) {
+    // One Lightning wallet per chain: offered while the app lacks one of them (BTC, or XBT once the
+    // edge offers it). Found 2026-11-16: with the BTC one made, the button vanished and XBT could not be added.
+    if (vm.lightningOnboardChoices(restoring = false).isNotEmpty()) {
         GhostButton(stringResource(R.string.onboard_create_lightning)) { vm.goCreateLightning() }
     }
     GhostButton(stringResource(R.string.onboard_restore)) { vm.goRestore() }

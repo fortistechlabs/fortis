@@ -2,6 +2,12 @@
 
 Fortis Wallet (Android). Versions are `versionName (versionCode)`.
 
+## 0.7.2 (29) — 2026-11-16
+
+- Add wallet offers Lightning (XBT) when you already have a BTC Lightning
+  wallet. Before, the Lightning option disappeared as soon as the BTC one was
+  made, so XBT Lightning could not be added. You can have one of each.
+
 ## 0.7.1 (28) — 2026-11-16
 
 - Removed the "Backup not verified" message from the wallet tiles on Home.
