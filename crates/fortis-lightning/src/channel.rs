@@ -1272,6 +1272,13 @@ impl Node {
             .find_map(pending_funding_txid)
     }
 
+    /// The feerate (sat per 1000 weight) a cooperative close of a channel of this node would pay;
+    /// `None` when the node is not running.
+    pub fn closing_fee_rate_sat_per_kw(&self) -> Option<u64> {
+        let running = self.running()?;
+        Some(running.node.closing_fee_rate_sat_per_kwu())
+    }
+
     /// `(confirmations so far, confirmations needed)` of the channel being opened (not yet ready);
     /// `None` when there is none or the node is not running. The first count is 0 while the funding
     /// is unconfirmed.

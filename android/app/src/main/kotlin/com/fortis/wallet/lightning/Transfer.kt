@@ -30,6 +30,16 @@ const val USER_CHANNEL_MIN_SAT = 5_000L
 /** How long a broadcast deposit may take to confirm before the transfer is dropped (the funds stay in transit and are swept back). */
 const val PENDING_TRANSFER_MAX_AGE_MS = 48L * 60 * 60 * 1000
 
+/** A move out of Lightning pays the network fee plus a small Fortis share: this fraction (0.5%) of the amount ... */
+const val TRANSFER_OUT_SHARE_BPS = 50L
+
+/** ... and at least this much, so a small move costs the network fee plus a little, not a fixed 1,000 sat. */
+const val TRANSFER_OUT_SHARE_MIN_SAT = 150L
+
+/** Fortis's share of a move out of Lightning (paid over Lightning when the channel can pay it; else waived). */
+fun transferOutShareSat(amountSat: Long): Long =
+    maxOf(amountSat * TRANSFER_OUT_SHARE_BPS / 10_000L, TRANSFER_OUT_SHARE_MIN_SAT)
+
 fun transferFeeSat(amountSat: Long, networkFeeSat: Long): Long =
     maxOf(amountSat / 100, TRANSFER_FEE_FLOOR_SAT, networkFeeSat)
 
@@ -90,11 +100,16 @@ data class ToOnchainQuote(
 
 /** `null` when nothing worth sending would arrive. [fallbackFeerate]: [feerateSatVb] is a
  *  stand-in, not the destination's estimate. */
-fun quoteToOnchain(amountSat: Long, feerateSatVb: Long, fallbackFeerate: Boolean = false): ToOnchainQuote? {
+fun quoteToOnchain(
+    amountSat: Long, feerateSatVb: Long, fallbackFeerate: Boolean = false, networkFeeSat: Long? = null,
+    /** A close quote is shown even when little arrives (it shows the real, small figure); a splice's is not. */
+    allowDust: Boolean = false,
+): ToOnchainQuote? {
     val rate = feerateSatVb.coerceAtLeast(1)
-    val net = CHANNEL_TX_VBYTES * rate
-    val q = ToOnchainQuote(amountSat, net, operatorShareSat(amountSat, net), rate, fallbackFeerate)
-    return q.takeIf { it.payoutSat >= DUST_SAT }
+    // A close pays the node's own close feerate, not the destination chain's: when it is known the quote uses it.
+    val net = networkFeeSat ?: (CHANNEL_TX_VBYTES * rate)
+    val q = ToOnchainQuote(amountSat, net, transferOutShareSat(amountSat), rate, fallbackFeerate)
+    return q.takeIf { allowDust || it.payoutSat >= DUST_SAT }
 }
 
 /** What a confirmed move out does next. */
@@ -184,6 +199,9 @@ fun settleMoves(moves: List<LnMove>, history: List<com.fortis.wallet.data.Histor
     var changed = false
     val out = moves.map { m ->
         if (m.kind == "in" || m.txid != null) return@map m
+        // A close already settled against the closing transaction (its payout is below what left) ends in the
+        // wallet's own on-chain coins; the sweep that follows is its own record and takes the receive.
+        if (m.kind == "close" && m.payoutSat < m.amountSat) return@map m
         val tx = history
             .filter { !it.send && it.txid !in used }
             .filter { it.amountSat in (m.amountSat - MOVE_MAX_FEE_SAT)..m.amountSat }
@@ -297,6 +315,20 @@ fun lightningMoveLabel(transferPending: Boolean, opening: Boolean, closing: Bool
 
 /** The most the estimate of a move's channel opening fee can be off by and still be settled. */
 const val MAX_OPEN_FEE_SETTLE_SAT = 2_000L
+
+/**
+ * A close is recorded before its transaction is known, at what the channel held. Once the node sees the
+ * transaction, [payoutSat] (what it pays to this wallet) is what really arrives and the gap is the
+ * closing fee. Only the newest move, only when it is a close, and only downwards (so an early, larger
+ * estimate never undoes a real figure). Null when nothing changes.
+ */
+fun adjustLatestClose(moves: List<LnMove>, payoutSat: Long): List<LnMove>? {
+    val newest = moves.filter { it.kind != "open" }.maxByOrNull { it.atSecs } ?: return null
+    if (newest.kind != "close") return null
+    if (payoutSat <= 0L || payoutSat >= newest.payoutSat) return null
+    val fixed = newest.copy(payoutSat = payoutSat, feeSat = newest.amountSat - payoutSat)
+    return moves.map { if (it === newest) fixed else it }
+}
 
 /**
  * After the channel opened, the wallet holds [deltaSat] more (or less) than the newest move in

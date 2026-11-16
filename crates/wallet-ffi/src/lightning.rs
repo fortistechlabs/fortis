@@ -995,6 +995,11 @@ impl LnNode {
             .map(|(confirmations, required)| LnOpeningProgress { confirmations, required })
     }
 
+    /// What a cooperative close would pay, in sat per 1000 weight; none while the node is not running.
+    pub fn closing_fee_rate_sat_per_kw(&self) -> Option<u64> {
+        self.inner.closing_fee_rate_sat_per_kw()
+    }
+
     /// The funding txid of the channel this node funds while it is unconfirmed.
     pub fn pending_funding_txid(&self) -> Option<String> {
         self.inner.pending_funding_txid()

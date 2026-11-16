@@ -70,7 +70,9 @@ class HistoryMergeTest {
         val txNew = merged[1]
         assertFalse(txNew.lightning)
         assertTrue(txNew.send)
-        assertEquals(-40_000L, txNew.amountSat)
+        // A send's amount is the total that left the wallet, fee included (the fee is its own row in History).
+        assertEquals(-40_350L, txNew.amountSat)
+        assertEquals(-40_350L, txNew.netSat)
         assertEquals(350L, txNew.feeSat)
 
         val lnMid = merged[2]

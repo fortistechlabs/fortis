@@ -56,6 +56,8 @@ data class HistoryRow(
     val fromLightning: Boolean = false,
     /** Of [feeSat]: the transfer fee paid to Fortis (the rest is the network fee). */
     val transferFeeSat: Long = 0L,
+    /** A move out whose Fortis share could not be paid and was waived. */
+    val shareWaived: Boolean = false,
     /** The on-chain transaction this row can be opened as in the explorer (a Lightning row: a channel's funding). */
     val explorerTxid: String? = null,
 ) {
@@ -141,11 +143,13 @@ fun mergeLightningHistory(
             noteRes = when (m.kind) {
                 "in" -> com.fortis.wallet.R.string.history_moved_in
                 "close" -> com.fortis.wallet.R.string.history_moved_onchain_closed
+                "sweep" -> com.fortis.wallet.R.string.history_swept_change
                 else -> com.fortis.wallet.R.string.history_moved_onchain
             },
             netSat = if (into) m.amountSat else -m.amountSat,
             arrivedSat = if (!into && m.txid != null) m.payoutSat else null,
             transferFeeSat = ln.firstOrNull { it.id == m.feePaymentId }?.let { displaySatFromMsat(it.amountMsat) } ?: 0L,
+            shareWaived = m.feePaymentId == com.fortis.wallet.SHARE_WAIVED,
         )
     }
     return (mergeLightningHistoryInner(ln.filterNot { it.id in folded }, account) + moveRows + openRows).sortedByDescending { it.time }
@@ -225,7 +229,8 @@ fun mergeHistory(onchain: List<TxRow>, ln: List<LnPayment>): List<HistoryRow> {
             id = h.txid,
             lightning = false,
             send = h.send,
-            amountSat = h.amountSat,
+            // A send's amount is the whole of what left the wallet, fee included (as for Lightning rows).
+            amountSat = if (h.send) h.amountSat - h.feeSat else h.amountSat,
             feeSat = h.feeSat,
             description = "",
             time = h.time,
@@ -233,6 +238,7 @@ fun mergeHistory(onchain: List<TxRow>, ln: List<LnPayment>): List<HistoryRow> {
             internal = h.internal,
             pending = h.confirmations < 1L,
             failed = false,
+            netSat = if (h.send) h.amountSat - h.feeSat else h.amountSat,
         )
     }
     for (p in ln) {

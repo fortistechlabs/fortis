@@ -131,6 +131,8 @@ interface LnNodeApi {
     fun sweepTransit(toAddress: String): String? = null
     fun channelState(): LnChannelState
     /** The funding txid of the channel this node funds while it is unconfirmed. */
+    /** What a cooperative close pays, in sat per 1000 weight; null when not known. */
+    fun closingFeeRateSatPerKw(): ULong? = null
     fun pendingFundingTxid(): String? = null
     /** Confirmations so far and needed of the channel being opened. */
     fun openingProgress(): uniffi.wallet_ffi.LnOpeningProgress? = null
@@ -174,6 +176,7 @@ class FfiLnNode(private val inner: LnNode) : LnNodeApi {
     override fun forceCloseChannel() = inner.forceCloseChannel()
     override fun sweepTransit(toAddress: String): String? = inner.sweepTransit(toAddress)
     override fun channelState(): LnChannelState = inner.channelState()
+    override fun closingFeeRateSatPerKw(): ULong? = inner.closingFeeRateSatPerKw()
     override fun pendingFundingTxid(): String? = inner.pendingFundingTxid()
     override fun openingProgress(): uniffi.wallet_ffi.LnOpeningProgress? = inner.openingProgress()
     override fun close() = inner.close()
@@ -208,7 +211,8 @@ class LightningSession(
     private val sweepAddressProvider: (suspend (walletId: String) -> String?)? = null,
     /** Called after a transit sweep to the address [sweepAddressProvider] gave
      *  was broadcast, so the caller can move on to a fresh receive address. */
-    private val onSweepBroadcast: (suspend (walletId: String) -> Unit)? = null,
+    /** Called after a sweep to on-chain went out: the wallet, and how much it swept (0: not known). */
+    private val onSweepBroadcast: (suspend (walletId: String, sweptSat: Long) -> Unit)? = null,
     private val ensureAuthHeader: (suspend (walletId: String) -> String)? = null,
     /** The chain this session's node runs on; it starts only that chain's Lightning wallet and
      *  pays only that chain's invoices. No default: a session must say which chain it is. */
@@ -258,6 +262,14 @@ class LightningSession(
     @Volatile
     var sendableMsat: ULong = 0uL
         private set
+
+    /** What closing the channel will cost in network fee: the node's own close feerate on a close
+     *  transaction of [CLOSE_TX_WEIGHT] weight units (the one seen on XBT was 672); null when not known. */
+    fun closingFeeSat(): Long? {
+        val node = currentNode ?: return null
+        val rate = runCatching { node.closingFeeRateSatPerKw() }.getOrNull() ?: return null
+        return (rate.toLong() * CLOSE_TX_WEIGHT + 999L) / 1_000L
+    }
 
     /** The same figure as a flow, so a screen that judges a payment by it is redrawn when it changes
      *  (it changes without the balances changing, e.g. once the channel becomes usable after a start). */
@@ -382,10 +394,13 @@ class LightningSession(
         }
         // A deposit on its way to becoming a channel is not an orphan.
         if (activeTransfer(walletId) != null) return bal to ch
+        // Wait until nothing more is coming (the close output and any change are all spendable), so ONE sweep takes
+        // them together and the network fee is paid once, not once per piece.
+        if (bal.pendingCloseSat > 0uL || bal.pendingTransitSat > 0uL) return bal to ch
         val addr = runCatching { provider(walletId) }.getOrNull()
         if (addr.isNullOrBlank()) return bal to ch
         val swept = withContext(Dispatchers.IO) { runCatching { node.sweepTransit(addr) }.getOrNull() }
-        if (swept != null) runCatching { onSweepBroadcast?.invoke(walletId) }
+        if (swept != null) runCatching { onSweepBroadcast?.invoke(walletId, bal.onchainTransitSat.toLong()) }
         return withContext(Dispatchers.IO) {
             runCatching { node.balances() }.getOrDefault(bal) to runCatching { node.channelState() }.getOrDefault(ch)
         }
@@ -572,7 +587,7 @@ class LightningSession(
                 .getOrNull()
             if (_stuck.value) return
             logWarn("stuck channel cancelled automatically, swept=$txid", null)
-            if (txid != null) runCatching { onSweepBroadcast?.invoke(id) }
+            if (txid != null) runCatching { onSweepBroadcast?.invoke(id, 0L) }
             runCatching { onStuckCancelled?.invoke(id) }
         } finally {
             autoCancelBusy.set(false)
@@ -597,6 +612,27 @@ class LightningSession(
             _cancelling.value = false
         }
         if (currentNode === node) publish(node, bal, ch)
+    }
+
+    private val _lateOutcome = kotlinx.coroutines.flow.MutableSharedFlow<LateOutcome>(extraBufferCapacity = 4)
+
+    /** How a payment ended that we had stopped waiting for ("status still being confirmed"). */
+    val lateOutcome: kotlinx.coroutines.flow.SharedFlow<LateOutcome> = _lateOutcome
+
+    /** Watches [id] until it succeeds or fails (up to [LATE_WATCH_MS]) and reports it on [lateOutcome]. */
+    private fun watchLate(node: LnNodeApi, id: String) {
+        scope.launch(Dispatchers.IO) {
+            val end = System.currentTimeMillis() + LATE_WATCH_MS
+            while (System.currentTimeMillis() < end && currentNode === node) {
+                val p = runCatching { node.payments().firstOrNull { it.id == id } }.getOrNull()
+                if (p?.status == LnPaymentStatus.SUCCEEDED || p?.status == LnPaymentStatus.FAILED) {
+                    runCatching { refreshBalances() }
+                    _lateOutcome.emit(LateOutcome(id, p.status == LnPaymentStatus.SUCCEEDED, p.amountMsat))
+                    return@launch
+                }
+                kotlinx.coroutines.delay(1_000)
+            }
+        }
     }
 
     /** Pay [target] and wait until `PaymentSent` or `PaymentFailed` (or terminal payment status). */
@@ -624,15 +660,19 @@ class LightningSession(
             if (target !is LnTarget.LnurlPay && target !is LnTarget.LightningAddress) requireTargetChain(chain, target)
             val id = node.pay(target, amountMsat)
             drainImmediateEvents(node, unlockedWalletId ?: "")
+            // A BOLT12 offer asks the recipient for an invoice first, and the node waits up to ~90 s for the
+            // answer before it reports failure: wait longer than that, or the result arrives after we gave up.
+            val isOffer = target is LnTarget.Bolt12Offer
+            val failure = if (isOffer) OFFER_FAILED else "Payment failed"
             if (!node.blocksOnNextEvent) {
                 val p = runCatching { node.payments().firstOrNull { it.id == id } }.getOrNull()
                 refreshBalances()
                 if (p?.status == LnPaymentStatus.FAILED) {
-                    throw LnFfiException.Other("Payment failed")
+                    throw LnFfiException.Other(failure)
                 }
                 return@withContext id
             }
-            val deadline = System.currentTimeMillis() + 60_000L
+            val deadline = System.currentTimeMillis() + (if (isOffer) OFFER_WAIT_MS else 60_000L)
             while (System.currentTimeMillis() < deadline && currentNode === node) {
                 val p = runCatching { node.payments().firstOrNull { it.id == id } }.getOrNull()
                 if (p?.status == LnPaymentStatus.SUCCEEDED) {
@@ -641,13 +681,14 @@ class LightningSession(
                 }
                 if (p?.status == LnPaymentStatus.FAILED) {
                     refreshBalances()
-                    throw LnFfiException.Other("Payment failed")
+                    throw LnFfiException.Other(failure)
                 }
                 kotlinx.coroutines.delay(250)
             }
             // Neither succeeded nor failed within the deadline: the payment may
-            // still be in flight, so don't report it as sent.
+            // still be in flight, so don't report it as sent. Keep watching it, and say how it ended.
             refreshBalances()
+            watchLate(node, id)
             throw LnFfiException.PaymentStateUnknown()
         }
     }
@@ -902,3 +943,18 @@ class LightningSession(
  */
 fun effectiveLnEnabled(chain: LnChain, infoEnabled: Boolean, debug: Boolean): Boolean =
     infoEnabled || (debug && chain == LnChain.XBT)
+
+/** Weight units of a cooperative close with one input and two outputs (a real close was 168 vB). */
+private const val CLOSE_TX_WEIGHT = 672L
+
+/** A payment whose result came after the app had stopped waiting for it. */
+data class LateOutcome(val paymentId: String, val succeeded: Boolean, val amountMsat: ULong)
+
+/** Reason string of the error for a failed BOLT12 offer payment (no answer from the recipient, or no route). */
+const val OFFER_FAILED = "Offer payment failed"
+
+/** How long a BOLT12 offer payment is waited for: longer than the node's own ~90 s invoice-request wait. */
+private const val OFFER_WAIT_MS = 120_000L
+
+/** How long a payment we stopped waiting for is watched. */
+private const val LATE_WATCH_MS = 10 * 60_000L

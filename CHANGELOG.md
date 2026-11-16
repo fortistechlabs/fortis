@@ -2,6 +2,35 @@
 
 Fortis Wallet (Android). Versions are `versionName (versionCode)`.
 
+## 0.7.5 (32) — 2026-11-17
+
+- Move to on-chain has two buttons: "Move" for an amount you choose (the rest
+  stays in the channel) and "Move everything and close channel". Both ask
+  "Are you sure?" first, with a ledger of where your sats are, what happens to
+  them, the fees and what arrives. The close fee estimate uses the node's own
+  close feerate, so it is close to what is really paid.
+- Moving out costs the network fee plus a small Fortis share (0.5%, at least 150
+  sat), not a fixed 1,000 sat. If the channel cannot pay the share it is
+  waived, and History says so.
+- After a close, the change from opening the channel and the close output are
+  sent on-chain together in one transaction, so the network fee is paid once.
+- History shows every value on its own row, in both the Lightning and the
+  on-chain wallet: what was sent, the network or routing fee by name, what left
+  the wallet, the balance after, the time and the transaction. On-chain sends
+  show the total that left, fee included. A move out shows what left, each fee
+  and what arrives, and the sweep of leftover coins has its own entry.
+- The line shown while a channel closes says what will arrive, not the amount
+  before fees.
+- Messages about what you typed ("too small", "more than your balance", a wrong
+  address or network) no longer offer to send a report to support.
+- Paying a BOLT12 offer waits long enough for the recipient to answer (up to
+  two minutes). When a payment's result comes after the app stopped waiting, a
+  note under Send says how it ended. A failed offer payment says that nothing
+  was sent and why that can happen (the recipient is offline, or only reachable
+  over Tor, which Fortis does not support yet).
+- A Lightning address whose service returns an invoice that does not match its
+  own details is refused with a clear message that nothing was sent.
+
 ## 0.7.4 (31) — 2026-11-16
 
 - Lightning starts faster: the node's saved state is fetched from the backup

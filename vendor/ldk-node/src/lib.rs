@@ -827,6 +827,14 @@ impl Node {
 		})
 	}
 
+	/// The feerate (sat per 1000 weight units) this node proposes when it closes a channel
+	/// cooperatively: what a close will cost per weight unit. FORTIS: lets the app quote it.
+	pub fn closing_fee_rate_sat_per_kwu(&self) -> u64 {
+		let target: ConfirmationTarget =
+			lightning::chain::chaininterface::ConfirmationTarget::NonAnchorChannelFee.into();
+		self.fee_estimator.estimate_fee_rate(target).to_sat_per_kwu()
+	}
+
 	/// Returns our own node id
 	pub fn node_id(&self) -> PublicKey {
 		self.channel_manager.get_our_node_id()

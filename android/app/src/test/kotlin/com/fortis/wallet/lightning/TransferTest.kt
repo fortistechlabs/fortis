@@ -48,8 +48,29 @@ class TransferTest {
     fun `to onchain quote pays out the rest`() {
         val q = quoteToOnchain(200_000, feerateSatVb = 3)!!
         assertEquals(600L, q.networkFeeSat)
-        assertEquals(1_400L, q.shareSat)
-        assertEquals(198_000L, q.payoutSat)
+        assertEquals("0.5% of 200,000", 1_000L, q.shareSat)
+        assertEquals(198_400L, q.payoutSat)
+    }
+
+    @Test
+    fun `a small move out pays the network fee plus a small fixed share not a fixed 1000`() {
+        // 0.5% of 1,738 is 8 sat: the 150 sat minimum applies.
+        assertEquals(150L, transferOutShareSat(1_738))
+        assertEquals(150L, transferOutShareSat(30_000))
+        assertEquals(1_000L, transferOutShareSat(200_000))
+        val q = quoteToOnchain(5_000, feerateSatVb = 2, networkFeeSat = 1_171)!!
+        assertEquals(1_171L, q.networkFeeSat)
+        assertEquals(150L, q.shareSat)
+        assertEquals(5_000L - 1_171L - 150L, q.payoutSat)
+    }
+
+    @Test
+    fun `a close of a tiny channel still quotes the real small amount`() {
+        // 1,738 sat less 1,171 network and 150 share leaves 417: below dust, so a splice would refuse it...
+        assertNull(quoteToOnchain(1_738, feerateSatVb = 2, networkFeeSat = 1_171))
+        // ...but a close shows it.
+        val q = quoteToOnchain(1_738, feerateSatVb = 2, networkFeeSat = 1_171, allowDust = true)!!
+        assertEquals(417L, q.payoutSat)
     }
 
     @Test

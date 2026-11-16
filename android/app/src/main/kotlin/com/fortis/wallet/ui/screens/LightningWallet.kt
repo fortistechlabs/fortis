@@ -639,7 +639,7 @@ internal fun LightningSendTab(vm: WalletViewModel) {
         }
         if (wrongChain != null) {
             val (targetChain, isOffer) = wrongChain
-            ErrorText(com.fortis.wallet.lightning.wrongChainMessage(walletChain, targetChain, isOffer) { ctx.getString(it) })
+            ValidationText(com.fortis.wallet.lightning.wrongChainMessage(walletChain, targetChain, isOffer) { ctx.getString(it) })
             // The other chain's Lightning wallet can pay it: hand it over when the app has one.
             val other = if (walletChain == com.fortis.wallet.data.LN_XBT_CHAIN) LN_CHAIN else com.fortis.wallet.data.LN_XBT_CHAIN
             val otherChain = if (other == LN_CHAIN) uniffi.wallet_ffi.LnTargetChain.BTC else uniffi.wallet_ffi.LnTargetChain.XBT
@@ -649,7 +649,7 @@ internal fun LightningSendTab(vm: WalletViewModel) {
                 }
             }
         } else if (onchainOnly) {
-            ErrorText(stringResource(com.fortis.wallet.lightning.onchainTargetRes(walletChain)))
+            ValidationText(stringResource(com.fortis.wallet.lightning.onchainTargetRes(walletChain)))
         } else if (resolvingLnurl) {
             Text(stringResource(R.string.send_ln_resolving), style = FxType.meta, color = Fx.textDim)
         } else if (sendPlan != null) {
@@ -769,13 +769,14 @@ internal fun LightningSendTab(vm: WalletViewModel) {
                 }
                 is SendPlan.Invalid -> {
                     // Off / Starting already shows the node's status above. An error waits until the typing stops.
-                    if (lnState !is LnState.Off && lnState !is LnState.Starting && typingPaused) ErrorText(plan.reason)
+                    if (lnState !is LnState.Off && lnState !is LnState.Starting && typingPaused) ValidationText(plan.reason)
                 }
                 is SendPlan.OnChain -> {}
             }
         }
 
         ErrorText(vm.error)
+        vm.lnNotice?.let { Text(it, style = FxType.meta, color = Fx.textDim) }
         val focus = LocalFocusManager.current
         val lnReadyPlan = sendPlan as? SendPlan.Lightning
         PrimaryButton(
@@ -832,6 +833,9 @@ internal fun LightningHistory(vm: WalletViewModel) {
     LaunchedEffect(unaccounted, transferPending, settled, leaving) {
         if (!transferPending && settled && leaving <= 0L && unaccounted != 0L) vm.settleMoveInFee(unaccounted)
     }
+    // A closing transaction the node has seen pays this much to the wallet: the history settles against it.
+    val closePayoutSat = (lnState as? LnState.Ready)?.balances?.pendingCloseSat?.toLong() ?: 0L
+    LaunchedEffect(closePayoutSat) { if (closePayoutSat > 0L) vm.settleCloseMove(closePayoutSat) }
     val unit = lnUnit(vm)
     // The channel's funding transaction is pending until it confirms.
     val fundingNow by vm.lightning.fundingTxid.collectAsState()
@@ -1102,6 +1106,9 @@ fun lnErrorText(e: com.fortis.wallet.lightning.LnFfiError, get: (Int, Array<out 
             r == "no_channel" -> R.string.ln_err_no_channel
             r == "channel_opening" -> R.string.ln_err_channel_opening
             r == "Payment failed" -> R.string.ln_err_payment_failed
+            r == "lnurl_description_hash" -> R.string.ln_err_lnurl_hash
+            r.startsWith("lnurl ") -> R.string.ln_err_lnurl_service
+            r == com.fortis.wallet.lightning.OFFER_FAILED -> R.string.ln_err_offer_failed
             r == "splice_failed" -> R.string.transfer_splice_busy
             else -> null
         }

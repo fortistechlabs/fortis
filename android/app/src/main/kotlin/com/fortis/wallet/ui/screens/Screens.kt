@@ -135,14 +135,13 @@ internal fun amountToSat(text: String, sat: Boolean): Long? = runCatching {
 @Composable
 internal fun historyFeeLine(h: HistoryRow): String? {
     if (h.netSat == null) return null
-    val move = h.noteRes == R.string.history_moved_onchain || h.noteRes == R.string.history_moved_onchain_closed
+    val move = h.noteRes == R.string.history_moved_onchain || h.noteRes == R.string.history_moved_onchain_closed || h.noteRes == R.string.history_swept_change
     val parts = buildList {
         when {
             move -> {
                 val network = h.feeSat - h.transferFeeSat
                 if (network > 0L) add(stringResource(R.string.fee_network_miners, network))
                 if (h.transferFeeSat > 0L) add(stringResource(R.string.fee_transfer_fortis, h.transferFeeSat))
-                if (h.noteRes == R.string.history_moved_onchain_closed) add(stringResource(R.string.fee_close_paid_by_fortis))
             }
             h.noteRes == R.string.history_move_fee -> add(stringResource(R.string.fee_channel_fortis, -h.amountSat))
             h.noteRes == R.string.ln_account_withdrawn && h.feeSat > 0L -> add(stringResource(R.string.fee_withdraw_fortis, h.feeSat))
@@ -1364,7 +1363,7 @@ private fun SendTab(vm: WalletViewModel) {
             com.fortis.wallet.lightning.wrongChainMessage(
                 com.fortis.wallet.lightning.lightningChainForOnchain(c?.chain ?: "btc") ?: LN_CHAIN, wc,
                 isOffer = runCatching { parseScan(to.trim(), network) }.getOrNull()?.let { com.fortis.wallet.lightning.isOfferTarget(it) } == true,
-            ) { ctx.getString(it) }?.let { ErrorText(it) }
+            ) { ctx.getString(it) }?.let { ValidationText(it) }
         }
         if (lnChain != null) {
             val xbtLn = lnChain == LN_XBT_CHAIN
@@ -1378,7 +1377,7 @@ private fun SendTab(vm: WalletViewModel) {
                 ) { vm.addLightningWallet(lnChain) }
             }
         }
-        if (sendPlan is SendPlan.Invalid && !lightningTarget && com.fortis.wallet.ui.rememberTypingPaused(to)) ErrorText(sendPlan.reason)
+        if (sendPlan is SendPlan.Invalid && !lightningTarget && com.fortis.wallet.ui.rememberTypingPaused(to)) ValidationText(sendPlan.reason)
         // Only Lightning can pay it (an invoice, offer or Lightning address): no on-chain form.
         if (!lightningTarget || (offer.onchain && (isXbt || sendPlan is SendPlan.OnChain))) {
             val effectiveAddress = (sendPlan as? SendPlan.OnChain)?.address ?: addressFromScan(to)
@@ -1496,7 +1495,10 @@ private fun HistoryTab(vm: WalletViewModel, unit: String) {
     val rows = remember(vm.history, fromLn) {
         mergeHistory(vm.history, emptyList()).map { if (it.id in fromLn) it.copy(fromLightning = true) else it }
     }
-    HistoryList(vm, rows, unit, chain = c?.chain ?: "xbt", network = c?.network ?: "mainnet")
+    // The running balance after each row, from the wallet's current balance backwards (as in the Lightning wallet).
+    val total = vm.balances?.let { it.confirmedSat + it.pendingSat }
+    val after = remember(rows, total) { if (total == null) emptyMap() else ledgerBalances(rows, total).first }
+    HistoryList(vm, rows, unit, chain = c?.chain ?: "xbt", network = c?.network ?: "mainnet", balanceAfter = after)
 }
 
 /** A wallet's history rows (on-chain or Lightning): tap opens the explorer (or copies the id). */
@@ -1521,7 +1523,9 @@ internal fun HistoryList(
         rows.forEach { h ->
             val url = h.explorerTxid?.let { explorerTxUrl(chain.removeSuffix("-ln").let { c -> if (c == "ln-xbt") "xbt" else if (c == "ln") "btc" else c }, network, it) }
                 ?: if (!h.lightning) explorerTxUrl(chain, network, h.id) else null
-            Row(
+            // A move out of the Lightning wallet is a ledger shown across the whole card, below its heading.
+            val isMoveLedger = h.noteRes == R.string.history_moved_onchain || h.noteRes == R.string.history_moved_onchain_closed || h.noteRes == R.string.history_swept_change
+            Column(
                 Modifier
                     .fillMaxWidth()
                     .combinedClickable(
@@ -1529,8 +1533,12 @@ internal fun HistoryList(
                         onLongClick = { if (h.hasRealId) copyToClipboard(ctx, "txid", h.id) },
                     )
                     .padding(vertical = 10.dp),
+            ) {
+            Row(
+                Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
             ) {
+                // (the heading: amount, what it was, status)
                 Column(Modifier.weight(1f)) {
                     FlowRow(itemVerticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         val amtPrefix = when {
@@ -1564,13 +1572,6 @@ internal fun HistoryList(
                         h.send -> sendLabel
                         else -> receiveLabel
                     }
-                    val baseSubtitle = when {
-                        !h.hasRealId && h.feeSat > 0L -> label + " · " + stringResource(R.string.history_fee_incl_only, h.feeSat)
-                        !h.hasRealId -> label
-                        h.feeSat > 0L && (h.send || h.lightning) ->
-                            stringResource(if (h.netSat != null) R.string.history_row_subtitle_fee_incl else R.string.history_row_subtitle_fee, label, h.id.take(10), h.feeSat)
-                        else -> stringResource(R.string.history_row_subtitle, label, h.id.take(10))
-                    }
                     val notes = listOfNotNull(
                         // A close still waiting for its confirmation says "closing"; once done, "closed".
                         if (h.noteRes != 0) stringResource(
@@ -1581,17 +1582,13 @@ internal fun HistoryList(
                             },
                         ) else null,
                         h.description.takeIf { it.isNotBlank() },
-                        h.arrivedSat?.let { stringResource(R.string.history_arrived, fmt(it), unit) },
+                        if (isMoveLedger) null else h.arrivedSat?.let { stringResource(R.string.history_arrived, fmt(it), unit) },
                         if (h.viaFortis) stringResource(R.string.history_via_fortis) else null,
                         if (h.fromLightning) stringResource(R.string.history_from_lightning) else null,
                     )
-                    val subtitle = (listOf(baseSubtitle) + notes).joinToString(" · ")
+                    // The heading says what it is; every value (amounts, fees, balance, time, id) is its own row below.
+                    val subtitle = (listOf(label) + notes).joinToString(" \u00B7 ")
                     Text(subtitle, style = FxType.meta)
-                    historyFeeLine(h)?.let { Text(it, style = FxType.meta, color = Fx.textDim) }
-                    if (h.time > 0L) Text(historyTimeText(h.time), style = FxType.meta, color = Fx.textFaint)
-                    balanceAfter[h.id]?.let { bal ->
-                        Text(stringResource(R.string.history_balance_after, fmt(bal), unit), style = FxType.meta, color = Fx.textFaint)
-                    }
                 }
                 val statusText = when {
                     h.failed -> stringResource(R.string.history_failed)
@@ -1610,6 +1607,42 @@ internal fun HistoryList(
                     color = statusColor,
                     modifier = Modifier.padding(start = Fx.s3),
                 )
+            }
+            androidx.compose.foundation.layout.Spacer(Modifier.height(Fx.s2))
+            if (isMoveLedger) {
+                val left = kotlin.math.abs(h.amountSat)
+                val network = (h.feeSat - h.transferFeeSat).coerceAtLeast(0L)
+                LedgerLine(stringResource(if (h.noteRes == R.string.history_swept_change) R.string.history_ledger_left_change else R.string.history_ledger_left), satText(left))
+                if (network > 0L) LedgerLine(stringResource(R.string.history_ledger_network), "\u2212" + satText(network))
+                if (h.transferFeeSat > 0L) LedgerLine(stringResource(R.string.history_ledger_share), "\u2212" + satText(h.transferFeeSat))
+                else if (h.shareWaived) LedgerLine(stringResource(R.string.history_ledger_share), stringResource(R.string.history_ledger_share_waived))
+                LedgerLine(
+                    // A close settled against its own transaction ends in the wallet's on-chain coins; the sweep row
+                    // that follows shows the arrival in the destination wallet.
+                    if (h.noteRes == R.string.history_moved_onchain_closed && h.arrivedSat == null && h.feeSat > 0L) stringResource(R.string.history_ledger_to_coins)
+                    else stringResource(if (h.pending) R.string.history_ledger_arrives_est else R.string.history_ledger_arrives, h.description),
+                    satText(left - h.feeSat),
+                    total = true,
+                )
+            } else if (h.lightning && h.explorerTxid != null) {
+                // A channel's funding transaction moves no money of its own: only its id and time below.
+            } else if (h.send && !h.failed) {
+                val total = kotlin.math.abs(h.amountSat)
+                val fee = h.feeSat.coerceIn(0L, total)
+                LedgerLine(stringResource(R.string.history_row_sent), satText(total - fee))
+                if (fee > 0L) {
+                    LedgerLine(stringResource(if (h.lightning) R.string.history_row_fee_routing else R.string.history_ledger_network), "+" + satText(fee))
+                    LedgerLine(stringResource(R.string.history_row_left_wallet), satText(total), total = true)
+                }
+            } else if (h.send) {
+                LedgerLine(stringResource(R.string.history_row_sent), satText(kotlin.math.abs(h.amountSat)))
+            } else {
+                LedgerLine(stringResource(R.string.history_row_received), satText(h.amountSat))
+                if (h.feeSat > 0L) LedgerLine(stringResource(R.string.history_row_fees_taken), "\u2212" + satText(h.feeSat))
+            }
+            balanceAfter[h.id]?.let { bal -> LedgerLine(stringResource(R.string.history_row_balance_after), satText(bal)) }
+            if (h.time > 0L) LedgerLine(stringResource(R.string.history_row_time), historyTimeText(h.time))
+            if (h.hasRealId) LedgerLine(stringResource(if (h.lightning) R.string.history_row_payment_id else R.string.history_row_txid), h.id.take(10) + "\u2026")
             }
         }
         Text(
@@ -1909,6 +1942,34 @@ private fun LanguageCard() {
             },
             confirmButton = {},
             dismissButton = { TextButton({ open = false }) { Text(stringResource(R.string.action_cancel), color = Fx.text) } },
+        )
+    }
+}
+
+
+/** Whole sats with thousands separators, e.g. "1,738 sat". */
+private fun satText(sat: Long): String = "%,d sat".format(java.util.Locale.ROOT, sat)
+
+/** One line of a ledger: the label on the left (it may wrap), the amount on the right. [total] marks the sum. */
+@Composable
+private fun LedgerLine(label: String, value: String, total: Boolean = false) {
+    androidx.compose.foundation.layout.Row(
+        Modifier.fillMaxWidth().padding(top = if (total) Fx.s1 else 0.dp),
+        horizontalArrangement = Arrangement.spacedBy(Fx.s2),
+        verticalAlignment = Alignment.Top,
+    ) {
+        Text(
+            label,
+            style = FxType.meta,
+            color = if (total) Fx.text else Fx.textDim,
+            modifier = Modifier.weight(1f),
+        )
+        Text(
+            if (total) "= $value" else value,
+            style = FxType.meta,
+            color = Fx.text,
+            fontWeight = if (total) FontWeight.SemiBold else FontWeight.Normal,
+            textAlign = androidx.compose.ui.text.style.TextAlign.End,
         )
     }
 }

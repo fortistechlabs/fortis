@@ -163,7 +163,7 @@ class LightningHardeningTest {
                     nodeFactory = { Node(balances(70_000uL), swept = txid) },
                     info = LnInfoApi { info() },
                     sweepAddressProvider = { "bc1qexample" },
-                    onSweepBroadcast = { reported += it },
+                    onSweepBroadcast = { id, _ -> reported += id },
                     chain = uniffi.wallet_ffi.LnChain.BTC,
                 )
                 session.onUnlocked(wallet.id, seed).join()

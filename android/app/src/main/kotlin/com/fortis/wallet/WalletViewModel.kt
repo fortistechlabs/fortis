@@ -394,9 +394,12 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
                     ensureSession(w.id, quiet = true)?.receiveAddress(w.nextReceive)?.address
                 }
             },
-            onSweepBroadcast = { _ ->
+            onSweepBroadcast = { _, sweptSat ->
                 // The sweep paid the address at `nextReceive`: never hand it out again.
                 moveTargetWallet(walletChain)?.let { w -> updateConfig(w.id) { it.copy(nextReceive = it.nextReceive + 1) } }
+                // The history shows it: the change from opening the channel, sent on-chain (the payout and
+                // fee are filled in from the destination wallet's receive, as for any move).
+                if (sweptSat > 0L) recordLnMove(lnSide(walletChain), sweptSat, sweptSat, 0L, moveTargetWallet(walletChain)?.display ?: "", null, "sweep")
             },
             ensureAuthHeader = { walletId ->
                 val tok = runCatching { ensureWalletToken(walletId) }.getOrNull().orEmpty()
@@ -460,6 +463,23 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
 
     private val lnBtc = LnSide(LN_CHAIN, lnSessions.btc)
     private val lnXbt = LnSide(LN_XBT_CHAIN, lnSessions.xbt)
+
+    /** What to tell the user about a payment that ended after the app had stopped waiting for it. */
+    var lnNotice by mutableStateOf<String?>(null)
+        private set
+
+    init {
+        for (side in listOf(lnBtc, lnXbt)) {
+            viewModelScope.launch {
+                side.session.lateOutcome.collect { o ->
+                    val sat = com.fortis.wallet.ui.displaySatFromMsat(o.amountMsat)
+                    lnNotice = str(if (o.succeeded) R.string.ln_late_succeeded else R.string.ln_late_failed, sat)
+                }
+            }
+        }
+    }
+
+    fun clearLnNotice() { lnNotice = null }
     private val lnSides get() = listOf(lnBtc, lnXbt)
 
     /** The Lightning wallet on [walletChain] ("ln" or "ln-xbt"). */
@@ -667,6 +687,16 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
         val side = ln
         val id = side.wallet?.id ?: return@launch
         val fixed = com.fortis.wallet.lightning.adjustLatestMoveIn(store.lnMoves(id), deltaSat) ?: return@launch
+        runCatching { store.setLnMoves(id, fixed) }
+        side.lnMoves = fixed
+    }
+
+    /** The node now knows what the closing transaction pays this wallet ([payoutSat]): settles the newest
+     *  close record against it so the history shows the real fee and what arrives. */
+    fun settleCloseMove(payoutSat: Long) = viewModelScope.launch {
+        val side = ln
+        val id = side.wallet?.id ?: return@launch
+        val fixed = com.fortis.wallet.lightning.adjustLatestClose(store.lnMoves(id), payoutSat) ?: return@launch
         runCatching { store.setLnMoves(id, fixed) }
         side.lnMoves = fixed
     }
@@ -2607,9 +2637,13 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
     /** The quote for moving [amountSat] out of the Lightning wallet in view, at its destination
      *  chain's feerate ([refreshMoveFeerate]; 2 sat/vB, marked as a stand-in, until that is
      *  known). It carries its feerate: confirming it runs it at that rate ([moveToOnchain]). */
-    fun quoteMoveToOnchain(amountSat: Long): com.fortis.wallet.lightning.ToOnchainQuote? {
+    fun quoteMoveToOnchain(amountSat: Long, closing: Boolean = false): com.fortis.wallet.lightning.ToOnchainQuote? {
         val rate = ln.moveFeerate
-        return com.fortis.wallet.lightning.quoteToOnchain(amountSat, rate ?: 2L, fallbackFeerate = rate == null)
+        return com.fortis.wallet.lightning.quoteToOnchain(
+            amountSat, rate ?: 2L, fallbackFeerate = rate == null,
+            networkFeeSat = if (closing) ln.session.closingFeeSat() else null,
+            allowDust = closing,
+        )
     }
 
     /** Reads the feerate of the chain the wallet in view's funds move out to (its move target's). */
@@ -2681,7 +2715,7 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
                 side.closeError = null
                 val feeId = payTransferShare(side, q.shareSat)
                 closeLightningAndMoveToOnchain(
-                    feePaymentId = feeId,
+                    feePaymentId = feeId ?: if (q.shareSat > 0L) SHARE_WAIVED else null,
                     feeSat = if (feeId != null) q.shareSat else 0L,
                     walletChain = side.walletChain,
                     requireReauth = false,
@@ -2691,7 +2725,7 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
                     return@launch
                 }
                 if (error == null && side.closeError == null) {
-                    side.lastMoveToOnchain = MoveToOnchainResult(amountSat, 0L, 0L, dest.display, closing = true)
+                    side.lastMoveToOnchain = MoveToOnchainResult(amountSat, maxOf(0L, q.payoutSat), q.feeSat, dest.display, closing = true)
                 }
             } else {
                 val addr = s.receiveAddress(dest.nextReceive).address
@@ -2704,7 +2738,7 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
                 val drop = before - channelSatNow(side)
                 val estimate = q.payoutSat + q.networkFeeSat + (if (feeId != null) q.shareSat else 0L)
                 val left = if (drop > q.payoutSat) drop else estimate
-                recordLnMove(side, left, q.payoutSat, left - q.payoutSat, dest.display, feeId, "splice")
+                recordLnMove(side, left, q.payoutSat, left - q.payoutSat, dest.display, feeId ?: if (q.shareSat > 0L) SHARE_WAIVED else null, "splice")
                 side.lastMoveToOnchain = MoveToOnchainResult(left, q.payoutSat, left - q.payoutSat, dest.display, closing = false)
             }
             }
@@ -2734,7 +2768,8 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
             side.session.pay(uniffi.wallet_ffi.lnParse(inv, "bitcoin"), null)
         }.onFailure {
             if (it is CancellationException) throw it
-            reportError("transfer_fee", it)
+            // A channel that cannot send the share (a tiny one, nearly all reserve) waives it: expected, not an error.
+            if (it !is uniffi.wallet_ffi.LnFfiException.InsufficientLightning) reportError("transfer_fee", it)
         }.getOrNull()
     }
 
@@ -2758,6 +2793,7 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
         val side = ln
         val id = side.wallet?.id ?: return@launch
         if (side === lnBtc) importFirstMove(id)
+        if (side === lnXbt) importDevSweep(id)
         side.lnMoves = store.lnMoves(id)
         com.fortis.wallet.lightning.normalizeCancelMoves(side.lnMoves)?.let { fixed ->
             runCatching { store.setLnMoves(id, fixed) }
@@ -2772,6 +2808,19 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
         val m = com.fortis.wallet.lightning.LnMove(System.currentTimeMillis() / 1_000, amountSat, payoutSat, feeSat, to, feeId, kind)
         runCatching { store.addLnMove(id, m) }
         side.lnMoves = side.lnMoves + m
+    }
+
+    /**
+     * The change sweep of the first XBT channel close on the dev phone (2026-11-16, block 982292) ran
+     * before sweeps were recorded: 644 sat of the funding transaction d34c0b24… (output 1) went to the
+     * on-chain wallet as 532 sat (112 sat fee) in 74fea715…. Added once, debug builds only.
+     */
+    private suspend fun importDevSweep(walletId: String) {
+        if (!BuildConfig.DEBUG) return
+        val txid = "74fea715f9fcb02d44c91da2ccf3b8dfd16ca42255525987d036542326605b76"
+        if (store.lnMoves(walletId).any { it.txid == txid }) return
+        val to = moveTargetWallet(LN_XBT_CHAIN)?.display ?: return
+        store.addLnMove(walletId, com.fortis.wallet.lightning.LnMove(1794868037, 644, 532, 112, to, null, "sweep", txid))
     }
 
     /**
@@ -2896,6 +2945,7 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
     fun confirmLightningSend() {
         if (sending) return
         sending = true
+        lnNotice = null
         wrap {
             try {
                 // Nothing to confirm: leave the single-use re-authentication unspent.
@@ -3276,3 +3326,6 @@ data class MoveToOnchainResult(
     val toWallet: String,
     val closing: Boolean,
 )
+
+/** Stored as a move's fee-payment id when Fortis's share was quoted but could not be paid: shown as waived. */
+const val SHARE_WAIVED = "waived"

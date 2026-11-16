@@ -276,6 +276,13 @@ fun ErrorText(msg: String?) {
     SendToSupportLink(msg)
 }
 
+/** A message about what the user typed ("too small", "more than your balance"): not a fault, so no support link. */
+@Composable
+fun ValidationText(msg: String?) {
+    if (msg.isNullOrBlank()) return
+    Text(msg, color = Fx.bad, textAlign = TextAlign.Start)
+}
+
 @Composable
 fun BrandMark(tagline: String? = null) {
     Column(
