@@ -98,14 +98,23 @@ private fun lightningWalletLiveTotalSat(vm: WalletViewModel, walletChain: String
 @Composable
 internal fun lightningWalletBalance(vm: WalletViewModel, walletChain: String): HomeBalance? {
     val lnState by vm.lnSide(walletChain).session.state.collectAsState()
+    val stuck by vm.lnSide(walletChain).session.stuckChannel.collectAsState()
+    val cancelling by vm.lnSide(walletChain).session.cancelling.collectAsState()
     return when (lnState) {
-        is LnState.Ready, is LnState.Error -> homeBalance(0L, lnState)
+        is LnState.Ready, is LnState.Error -> homeBalance(0L, lnState, channelStuck = stuck || cancelling)
         LnState.Off, LnState.Starting -> null
     }
 }
 
 @Composable
-private fun lightningStatusText(st: LnState): String = when (st) {
+private fun lightningStatusText(st: LnState, stuck: Boolean = false, openFailed: Boolean = false): String = when {
+    st is LnState.Ready && stuck -> stringResource(R.string.settings_lightning_status_stuck)
+    st is LnState.Ready && openFailed -> stringResource(R.string.settings_lightning_status_open_failed)
+    else -> lightningStatusBase(st)
+}
+
+@Composable
+private fun lightningStatusBase(st: LnState): String = when (st) {
     LnState.Off -> stringResource(R.string.settings_lightning_status_off)
     LnState.Starting -> stringResource(R.string.settings_lightning_status_starting)
     is LnState.Ready -> stringResource(R.string.settings_lightning_status_ready)
@@ -197,23 +206,48 @@ fun LightningWalletTab(vm: WalletViewModel) {
                         Text(stringResource(R.string.ln_balance_held_by_fortis, fmt(accountSat)), style = FxType.fiatSmall)
                         Text(stringResource(R.string.ln_account_explainer), style = FxType.meta, color = Fx.textFaint)
                     }
-                    if (vm.lightning.transferPending.collectAsState().value) Text(
-                        stringResource(R.string.transfer_pending),
+                    val stuck = vm.lnSide(c.chain).session.stuckChannel.collectAsState().value
+                    val openError = vm.lnSide(c.chain).session.transferError.collectAsState().value
+                    val cancelling = vm.lnSide(c.chain).session.cancelling.collectAsState().value
+                    if (cancelling) Text(
+                        stringResource(R.string.ln_cancelling, vm.moveTargetWallet(c.chain)?.display ?: ""),
                         style = FxType.fiatSmall, color = Fx.warn,
                     )
+                    else if (stuck) StuckChannelNotice(vm, c.chain)
+                    else {
+                        if (vm.lightning.transferPending.collectAsState().value) Text(
+                            stringResource(R.string.transfer_pending),
+                            style = FxType.fiatSmall, color = Fx.warn,
+                        )
+                        if (openError != null) Text(
+                            stringResource(R.string.ln_open_failed, openError),
+                            style = FxType.fiatSmall, color = Fx.bad,
+                        )
+                    }
                     // Part of it is still on-chain: a channel opening or closing.
                     // Leaving: a close (or its sweep) on its way to an on-chain wallet of its chain. Say how much and where.
                     val leavingSat = (lnState as? LnState.Ready)?.let { leavingLightningSat(it) } ?: 0L
                     val leavingTo = vm.moveTargetWallet()
-                    if (leavingSat > 0L) Text(
+                    if (leavingSat > 0L && !cancelling) Text(
                         // No wallet of its chain to sweep to: say what to add, not an empty name.
-                        if (leavingTo != null) stringResource(R.string.ln_moving_to_wallet, fmt(leavingSat), leavingTo.display)
+                        if (leavingTo != null) stringResource(R.string.ln_moving_to_wallet, String.format(java.util.Locale.getDefault(), "%,d", leavingSat), leavingTo.display)
                         else stringResource(com.fortis.wallet.lightning.noOnchainWalletRes(c.chain)),
                         style = FxType.fiatSmall, color = Fx.warn,
-                    ) else if (hb?.moving == true) Text(
-                        stringResource(R.string.wallet_split_moving),
-                        style = FxType.fiatSmall, color = Fx.warn,
-                    )
+                    ) else if (!cancelling && !vm.lnSide(c.chain).session.transferPending.collectAsState().value) {
+                        // (A move into Lightning has its own line above: "waiting for 1 confirmation".)
+                        val prog = vm.lnSide(c.chain).session.openingProgress.collectAsState().value
+                        when ((lnState as? LnState.Ready)?.channel) {
+                            LnChannelState.OPENING -> Text(
+                                if (prog != null && prog.required > 0u) stringResource(R.string.ln_channel_opening_n, prog.confirmations.toInt(), prog.required.toInt())
+                                else stringResource(R.string.ln_channel_opening),
+                                style = FxType.fiatSmall, color = Fx.warn,
+                            )
+                            LnChannelState.CLOSING -> Text(
+                                stringResource(R.string.ln_channel_closing), style = FxType.fiatSmall, color = Fx.warn,
+                            )
+                            else -> {}
+                        }
+                    }
                     val dotColor = when (lnState) {
                         is LnState.Ready -> Fx.good
                         else -> Fx.warn
@@ -221,7 +255,7 @@ fun LightningWalletTab(vm: WalletViewModel) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Box(Modifier.size(7.dp).clip(CircleShape).background(dotColor))
                         Spacer(Modifier.width(6.dp))
-                        Text(lightningStatusText(lnState), style = FxType.meta)
+                        Text(lightningStatusText(lnState, stuck, openError != null), style = FxType.meta)
                     }
                     if (lnState is LnState.Error) com.fortis.wallet.ui.SendToSupportLink(lightningStatusText(lnState))
                 }
@@ -256,7 +290,7 @@ fun LightningWalletTab(vm: WalletViewModel) {
                             if (ready && vm.accountOffer == null) vm.loadAccountOffer()
                         }
                     }
-                    if (com.fortis.wallet.lightning.offerShown(c.chain, vm.accountOffer)) ReusableOfferCard(vm)
+                    if (com.fortis.wallet.lightning.offerShown(c.chain, vm.accountOffer)) ReusableOfferCard(vm, c.chain)
                 }
                 "send" -> key(vm.sentCount) { LightningSendTab(vm) } // a sent payment starts the form over
                 "move" -> key(vm.sentCount) { TransferToOnchainTab(vm) }
@@ -707,15 +741,32 @@ internal fun LightningHistory(vm: WalletViewModel) {
     val total = c?.let { lightningWalletTotalSat(vm, it.chain) }
     val shown = remember(rows, leaving) {
         if (leaving <= 0L) rows else {
-            val newestClose = rows.firstOrNull { it.noteRes == R.string.history_moved_onchain_closed }
-            rows.map { if (it === newestClose) it.copy(pending = true) else it }
+            // The newest move out (a close, or a splice out of an open channel) is still on its way.
+            val newestOut = rows.firstOrNull {
+                it.noteRes == R.string.history_moved_onchain_closed || it.noteRes == R.string.history_moved_onchain
+            }
+            rows.map { if (it === newestOut) it.copy(pending = true) else it }
         }
     }
-    val (after, unaccounted) = remember(shown, total) {
-        if (total == null) emptyMap<String, Long>() to 0L else ledgerBalances(shown, total)
+    val transferPending by vm.lightning.transferPending.collectAsState()
+    val withHeldFee = remember(shown, total, transferPending) {
+        if (total == null) shown else withPendingOpenFee(shown, total, transferPending)
+    }
+    val (after, unaccounted) = remember(withHeldFee, total) {
+        if (total == null) emptyMap<String, Long>() to 0L else ledgerBalances(withHeldFee, total)
+    }
+    // The channel opened: its real fee is known, so the move in is settled against it.
+    val settled = (lnState as? LnState.Ready)?.channel in listOf(uniffi.wallet_ffi.LnChannelState.OPENING, uniffi.wallet_ffi.LnChannelState.READY)
+    LaunchedEffect(unaccounted, transferPending, settled, leaving) {
+        if (!transferPending && settled && leaving <= 0L && unaccounted != 0L) vm.settleMoveInFee(unaccounted)
     }
     val unit = lnUnit(vm)
-    HistoryList(vm, shown, unit, chain = c?.chain ?: LN_CHAIN, network = c?.network ?: "bitcoin", balanceAfter = after)
+    // The channel's funding transaction is pending until it confirms.
+    val fundingNow by vm.lightning.fundingTxid.collectAsState()
+    val withOpen = remember(withHeldFee, fundingNow) {
+        withHeldFee.map { if (it.explorerTxid != null && it.explorerTxid == fundingNow) it.copy(pending = true) else it }
+    }
+    HistoryList(vm, withOpen, unit, chain = c?.chain ?: LN_CHAIN, network = c?.network ?: "bitcoin", balanceAfter = after)
     if (total != null && rows.isNotEmpty() && unaccounted != 0L) GlassCard {
         Text(stringResource(R.string.history_unaccounted, fmt(unaccounted), unit), style = FxType.meta, color = Fx.warn)
     }
@@ -1040,10 +1091,14 @@ private fun LightningTakeoverButton(session: com.fortis.wallet.lightning.Lightni
 }
 
 
+/** The help text under the reusable address: XBT's must not recommend a BTC wallet. */
+internal fun offerHelpRes(chain: String): Int =
+    if (chain == com.fortis.wallet.data.LN_XBT_CHAIN) R.string.ln_offer_help_xbt else R.string.ln_offer_help
+
 /** The wallet's reusable BOLT12 address: one QR to share, paid any number of times, even while
  *  this phone is off (the LSP receives it into the Fortis balance). */
 @Composable
-internal fun ReusableOfferCard(vm: WalletViewModel) {
+internal fun ReusableOfferCard(vm: WalletViewModel, chain: String) {
     val ctx = LocalContext.current
     val offer = vm.accountOffer
     GlassCard {
@@ -1051,7 +1106,7 @@ internal fun ReusableOfferCard(vm: WalletViewModel) {
             com.fortis.wallet.ui.LightningBoltIcon()
             Text(stringResource(R.string.ln_offer_title), color = Fx.text, fontWeight = FontWeight.SemiBold)
         }
-        Text(stringResource(R.string.ln_offer_help), style = FxType.meta, color = Fx.textDim)
+        Text(stringResource(offerHelpRes(chain)), style = FxType.meta, color = Fx.textDim)
         vm.accountOfferError?.let { Text(it, style = FxType.meta, color = Fx.warn) }
         if (offer == null) {
             GhostButton(stringResource(R.string.ln_offer_show)) { vm.loadAccountOffer() }
@@ -1103,4 +1158,26 @@ internal fun ReusableOfferCard(vm: WalletViewModel) {
 private fun XbtLightningCaption(vm: WalletViewModel, modifier: Modifier = Modifier) {
     if (vm.config?.chain != com.fortis.wallet.data.LN_XBT_CHAIN) return
     Text(stringResource(R.string.ln_qr_caption_xbt), style = FxType.label, color = Fx.signal, modifier = modifier)
+}
+
+/** A channel whose funding transaction never reached the network: say so and offer to cancel it. */
+@Composable
+internal fun StuckChannelNotice(vm: WalletViewModel, walletChain: String) {
+    val side = vm.lnSide(walletChain)
+    val gate = com.fortis.wallet.ui.rememberIdentityGate()
+    val gateAct = com.fortis.wallet.ui.rememberFragmentActivity()
+    val gateScope = rememberCoroutineScope()
+    Column(Modifier.padding(top = 6.dp)) {
+        Text(stringResource(R.string.ln_stuck_title), color = Fx.bad, fontWeight = FontWeight.SemiBold)
+        Text(stringResource(R.string.ln_stuck_body), style = FxType.fiatSmall, color = Fx.textDim)
+        Spacer(Modifier.height(6.dp))
+        GhostButton(
+            stringResource(if (side.closing) R.string.ln_stuck_working else R.string.ln_stuck_action),
+            enabled = !side.closing,
+            dense = true,
+        ) {
+            gate.require(vm, gateAct, gateScope) { vm.cancelStuckChannel(walletChain) }
+        }
+        ErrorText(side.closeError)
+    }
 }

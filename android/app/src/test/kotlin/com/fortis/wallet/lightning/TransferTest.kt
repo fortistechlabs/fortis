@@ -96,3 +96,80 @@ class TransferTest {
         assertEquals(MoveOutStep.Requote(4), moveOutStep(q, 300_000, all = false, freshFeerate = 4))
     }
 }
+
+/**
+ * 2026-11-16: moving a whole 148,832 sat balance failed with "insufficient funds: need 148950,
+ * have 148832": the Move guessed 150 sat of network fee, the planner needs 268 for two coins and
+ * the guess was never raised.
+ */
+class FeeRetryTest {
+    private class Short(msg: String) : Exception(msg)
+
+    @Test
+    fun theGuessRisesUntilThePlanFits() {
+        val tried = mutableListOf<Long>()
+        val got = withFeeRetry(startFee = 150, step = 50, attempts = 12) { fee ->
+            tried += fee
+            if (fee < 268) throw Short("need more") else fee
+        }
+        assertEquals(300L, got)
+        assertEquals(listOf(150L, 200L, 250L, 300L), tried)
+    }
+
+    @Test
+    fun aPlanThatFitsFirstTimeIsNotRetried() {
+        var calls = 0
+        assertEquals(150L, withFeeRetry(150, 50, 12) { calls++; it })
+        assertEquals(1, calls)
+    }
+
+    @Test
+    fun aPlanThatNeverFitsFailsWithTheLastErrorAfterTheLimit() {
+        var calls = 0
+        val e = runCatching { withFeeRetry(150, 50, 5) { calls++; throw Short("attempt $calls") } }.exceptionOrNull()
+        assertEquals(5, calls)
+        assertEquals("attempt 5", e?.message)
+    }
+}
+
+/** After moving everything on-chain → Lightning the wallet's confirmed balance is 0: the Move tab
+ *  must say the move is under way, not "Nothing to move yet". */
+class MoveInNoticeTest {
+    @Test
+    fun withBalanceThereIsNoNotice() {
+        assertEquals(MoveInNotice.None, moveInNotice(maxSat = 148_832, transferPending = false))
+        assertEquals(MoveInNotice.None, moveInNotice(maxSat = 148_832, transferPending = true))
+    }
+
+    @Test
+    fun noBalanceAndNothingUnderWayIsNothingToMove() {
+        assertEquals(MoveInNotice.NothingToMove, moveInNotice(maxSat = 0, transferPending = false))
+    }
+
+    @Test
+    fun noBalanceBecauseItJustMovedIsUnderWay() {
+        assertEquals(MoveInNotice.UnderWay, moveInNotice(maxSat = 0, transferPending = true))
+    }
+}
+
+class LightningMoveLabelTest {
+    @Test
+    fun aMoveInProgressIntoLightningHasItsOwnLabel() {
+        assertEquals(LnMoveLabel.MovingIn, lightningMoveLabel(transferPending = true, opening = false, closing = false))
+    }
+
+    @Test
+    fun anOpeningChannelSaysSo() {
+        assertEquals(LnMoveLabel.ChannelOpening, lightningMoveLabel(transferPending = false, opening = true, closing = false))
+    }
+
+    @Test
+    fun aClosingChannelSaysSo() {
+        assertEquals(LnMoveLabel.ChannelClosing, lightningMoveLabel(transferPending = false, opening = false, closing = true))
+    }
+
+    @Test
+    fun nothingGoingOnShowsNoLabelNeverABareMoving() {
+        assertNull(lightningMoveLabel(transferPending = false, opening = false, closing = false))
+    }
+}

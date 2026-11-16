@@ -111,6 +111,12 @@ pub struct LspConfig {
     /// Announced channels to routing nodes, opened at most once per run
     /// when missing (see `outbound.rs`).
     pub outbound: Vec<Outbound>,
+    /// Inbound channels of at most this many sat are accepted after `fast_inbound_depth`
+    /// confirmations instead of 6 (0: off, every channel waits for 6). A channel a user funds
+    /// can cost us at most what we forward out of it before its funding is final.
+    pub fast_inbound_max_sat: u64,
+    /// Confirmations for those small channels (1..=5).
+    pub fast_inbound_depth: u32,
     /// What this node charges to forward a payment, on every channel: base
     /// (msat per payment) and proportional (millionths). Both 0 by default,
     /// so a user's payment through the LSP costs nothing here (1 sat arrives
@@ -156,6 +162,8 @@ struct Raw {
     fcm_service_account: Option<String>,
     #[serde(default)]
     outbound: Vec<RawOutbound>,
+    fast_inbound_max_sat: Option<u64>,
+    fast_inbound_depth: Option<u32>,
     forwarding_fee_base_msat: Option<u32>,
     forwarding_fee_ppm: Option<u32>,
     account_max_sat: Option<u64>,
@@ -256,6 +264,8 @@ impl LspConfig {
                 .filter(|p| !p.is_empty())
                 .map(std::path::PathBuf::from),
             outbound,
+            fast_inbound_max_sat: raw.fast_inbound_max_sat.unwrap_or(0),
+            fast_inbound_depth: raw.fast_inbound_depth.unwrap_or(1),
             forwarding_fee_base_msat: raw.forwarding_fee_base_msat.unwrap_or(0),
             forwarding_fee_ppm: raw.forwarding_fee_ppm.unwrap_or(0),
             account_max_sat: raw.account_max_sat.unwrap_or(50_000),
@@ -341,6 +351,18 @@ impl LspConfig {
             return Err(
                 "announce_addresses needs an alias (ldk-node announces both together)".into(),
             );
+        }
+        if !(1..=5).contains(&self.fast_inbound_depth) {
+            return Err(format!(
+                "fast_inbound_depth ({}) must be 1..=5 (0 would be a zero-conf channel)",
+                self.fast_inbound_depth
+            ));
+        }
+        if self.fast_inbound_max_sat > 1_000_000 {
+            return Err(format!(
+                "fast_inbound_max_sat ({}) is above 1000000: the shorter wait is for small channels",
+                self.fast_inbound_max_sat
+            ));
         }
         if self.announce_addresses.len() > 10 {
             return Err("announce_addresses: at most 10".into());

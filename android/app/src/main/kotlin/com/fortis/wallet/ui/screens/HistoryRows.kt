@@ -56,6 +56,8 @@ data class HistoryRow(
     val fromLightning: Boolean = false,
     /** Of [feeSat]: the transfer fee paid to Fortis (the rest is the network fee). */
     val transferFeeSat: Long = 0L,
+    /** The on-chain transaction this row can be opened as in the explorer (a Lightning row: a channel's funding). */
+    val explorerTxid: String? = null,
 ) {
     /** A real payment or transaction id (worth showing and copying), not one made up here to
      *  tell rows apart (a move on-chain, an account entry without a payment). */
@@ -82,6 +84,28 @@ fun ledgerBalances(rows: List<HistoryRow>, currentSat: Long): Pair<Map<String, L
     return after to bal
 }
 
+/** The most a channel opening fee can come to (the gap the history explains as the held fee). */
+const val MAX_OPEN_FEE_SAT = 2_000L
+
+/**
+ * While a move into Lightning is pending its entry is net of the ESTIMATED channel opening fee,
+ * which the node only takes when the channel opens: until then the wallet holds that much more
+ * than the entries say. Shows it as its own entry (pending, just after the move) so the history
+ * adds up; once the channel is open the entry goes and the move is settled against the real fee.
+ */
+fun withPendingOpenFee(rows: List<HistoryRow>, totalSat: Long, transferPending: Boolean): List<HistoryRow> {
+    if (!transferPending) return rows
+    val held = ledgerBalances(rows, totalSat).second
+    if (held !in 1..MAX_OPEN_FEE_SAT) return rows
+    val move = rows.firstOrNull { it.noteRes == R.string.history_moved_in } ?: return rows
+    val entry = HistoryRow(
+        id = "${LOCAL_ID_MOVE}open-fee-${move.time}", lightning = true, send = false, amountSat = held, feeSat = 0L,
+        description = move.description, time = move.time + 1, confirmations = 0L, pending = true,
+        noteRes = R.string.history_open_fee_held, netSat = held,
+    )
+    return (rows + entry).sortedByDescending { it.time }
+}
+
 /**
  * The Lightning wallet's whole history in time order: its channel's payments and the
  * Fortis account's, as one list. Moving the account's balance into the channel is one
@@ -95,7 +119,15 @@ fun mergeLightningHistory(
     moves: List<com.fortis.wallet.lightning.LnMove> = emptyList(),
 ): List<HistoryRow> {
     val folded = moves.mapNotNull { it.feePaymentId }.toSet()
-    val moveRows = moves.map { m ->
+    val openRows = moves.filter { it.kind == "open" && it.txid != null }.map { m ->
+        HistoryRow(
+            id = m.txid!!, lightning = true, send = false, amountSat = 0L, feeSat = 0L,
+            description = "", time = m.atSecs, confirmations = 6L,
+            noteRes = com.fortis.wallet.R.string.history_channel_open, netSat = null,
+            explorerTxid = m.txid,
+        )
+    }
+    val moveRows = moves.filter { it.kind != "open" }.map { m ->
         val into = m.kind == "in"
         HistoryRow(
             id = "$LOCAL_ID_MOVE${m.atSecs}",
@@ -116,7 +148,7 @@ fun mergeLightningHistory(
             transferFeeSat = ln.firstOrNull { it.id == m.feePaymentId }?.let { displaySatFromMsat(it.amountMsat) } ?: 0L,
         )
     }
-    return (mergeLightningHistoryInner(ln.filterNot { it.id in folded }, account) + moveRows).sortedByDescending { it.time }
+    return (mergeLightningHistoryInner(ln.filterNot { it.id in folded }, account) + moveRows + openRows).sortedByDescending { it.time }
 }
 
 private fun mergeLightningHistoryInner(

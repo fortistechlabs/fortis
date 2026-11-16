@@ -326,15 +326,16 @@ fun CreateScreen(vm: WalletViewModel) {
     val lockFailed = stringResource(R.string.error_lock_setup_failed)
 
     Screen(scroll = true) {
+        // First, so it is clear which wallet is being made before the phrase is written down.
+        WalletTypePicker(
+            chain, createLightningTabs(lightningFlow, vm.lightningOnboardChoices(restoring = false)),
+            lightningOnly = lightningFlow,
+        ) { chain = it }
         Text(stringResource(R.string.create_phrase_title), style = MaterialTheme.typography.titleMedium, color = Fx.text)
         Text(stringResource(R.string.create_phrase_body, words.size), color = Fx.textDim)
         GlassCard { PhraseGrid(words) }
         Text(stringResource(R.string.lock_loss_warning), style = FxType.meta, color = Fx.warn)
         Field(name, { name = it }, stringResource(R.string.field_wallet_name), maxLen = MAX_WALLET_NAME)
-        ChainRow(
-            chain, createLightningTabs(lightningFlow, vm.lightningOnboardChoices(restoring = false)),
-            lightningOnly = lightningFlow,
-        ) { chain = it }
         Field(passphrase, { passphrase = it }, stringResource(R.string.field_passphrase), password = true)
         Text(stringResource(R.string.create_passphrase_hint), style = FxType.meta, color = Fx.textFaint)
         if (settingUp) LockChoiceFields(choice)
@@ -386,7 +387,7 @@ fun RestoreScreen(vm: WalletViewModel) {
         MnemonicField(phrase, { phrase = it })
         Field(passphrase, { passphrase = it }, stringResource(R.string.field_passphrase), password = true)
         // Lightning (XBT) is restorable whatever the edge says: its funds must be reachable.
-        ChainRow(chain, vm.lightningOnboardChoices(restoring = true)) { chain = it }
+        WalletTypePicker(chain, vm.lightningOnboardChoices(restoring = true)) { chain = it }
         // Only an on-chain wallet can also be listed on the other chain.
         if (!isLightningChain(chain)) Text(
             stringResource(R.string.restore_clone_hint, if (chain == "btc") "XBT" else "BTC"),
@@ -469,6 +470,30 @@ internal fun chainRowOptions(
     val named = mapOf(LN_CHAIN to lnLabel, LN_XBT_CHAIN to lnXbtLabel)
     if (lightningOnly) return lightning.mapNotNull { c -> if (c in named) c to (if (c == LN_XBT_CHAIN) "XBT" else "BTC") else null }
     return listOf("xbt" to "XBT", "btc" to "BTC") + lightning.mapNotNull { c -> named[c]?.let { c to it } }
+}
+
+/** The line saying which wallet the selected tab makes: on-chain or Lightning, BTC or XBT. */
+internal fun walletTypeSummaryRes(chain: String): Int = when (chain) {
+    LN_XBT_CHAIN -> R.string.create_type_ln_xbt
+    LN_CHAIN -> R.string.create_type_ln
+    "btc" -> R.string.create_type_btc
+    else -> R.string.create_type_xbt
+}
+
+/** The hint under the type picker: the Lightning flow offers BTC or XBT Lightning, the plain
+ *  flow offers XBT or BTC on-chain. Either way the choice is permanent. */
+internal fun walletTypeHintRes(lightningOnly: Boolean): Int =
+    if (lightningOnly) R.string.wallet_type_hint_lightning else R.string.wallet_type_hint_onchain
+
+/** "Wallet type": a label, the instruction (pick the coin; it can't be changed afterwards), the
+ *  BTC / XBT (or Lightning) tabs, then the exact wallet the selected tab makes. */
+@Composable
+private fun WalletTypePicker(chain: String, lightning: List<String>, lightningOnly: Boolean = false, onChain: (String) -> Unit) {
+    Text(caps(stringResource(R.string.field_wallet_type)), style = FxType.label)
+    // The instruction first, then the tabs it refers to, then what the current tab makes.
+    Text(stringResource(walletTypeHintRes(lightningOnly)), style = FxType.meta, color = Fx.textDim)
+    ChainRow(chain, lightning, lightningOnly, onChain)
+    Text(stringResource(walletTypeSummaryRes(chain)), style = FxType.meta, color = Fx.text)
 }
 
 /** The chain the create / restore screens open on: Lightning when that flow was asked for. */
@@ -757,10 +782,27 @@ private fun HomeTab(vm: WalletViewModel) {
                         modifier = Modifier.clickable { gate.require(vm, gateAct, gateScope) { vm.startReveal(w.id) } },
                     )
                     // Lightning funds still moving (a channel opening or closing).
-                    if (lnBal?.moving == true) Text(
-                        stringResource(R.string.wallet_split_moving),
-                        style = FxType.fiatSmall, color = Fx.warn,
-                    )
+                    if (w.isLightning) {
+                        val transferPending by vm.lnSide(w.chain).session.transferPending.collectAsState()
+                        val lnNow by vm.lnSide(w.chain).session.state.collectAsState()
+                        val ready = lnNow as? com.fortis.wallet.lightning.LnState.Ready
+                        val opening = ready?.channel == uniffi.wallet_ffi.LnChannelState.OPENING
+                        val closing = ready?.channel == uniffi.wallet_ffi.LnChannelState.CLOSING
+                        val leavingSat = ready?.let { leavingLightningSat(it) } ?: 0L
+                        val leavingTo = vm.moveTargetWallet(w.chain)
+                        val prog by vm.lnSide(w.chain).session.openingProgress.collectAsState()
+                        val lnLabel: String? = when (com.fortis.wallet.lightning.lightningMoveLabel(transferPending, opening, closing)) {
+                            com.fortis.wallet.lightning.LnMoveLabel.MovingIn -> stringResource(R.string.transfer_pending)
+                            com.fortis.wallet.lightning.LnMoveLabel.ChannelOpening ->
+                                prog?.takeIf { it.required > 0u }?.let { stringResource(R.string.ln_channel_opening_n, it.confirmations.toInt(), it.required.toInt()) }
+                                    ?: stringResource(R.string.ln_channel_opening)
+                            com.fortis.wallet.lightning.LnMoveLabel.ChannelClosing -> stringResource(R.string.ln_channel_closing)
+                            null -> if (leavingSat > 0L && leavingTo != null) {
+                                stringResource(R.string.ln_moving_to_wallet, String.format(java.util.Locale.getDefault(), "%,d", leavingSat), leavingTo.display)
+                            } else null
+                        }
+                        lnLabel?.let { Text(it, style = FxType.fiatSmall, color = Fx.warn) }
+                    }
                     // Incoming (or outgoing) coins not yet confirmed — as on the wallet screen.
                     vm.walletPending[w.id]?.takeIf { it != 0L }?.let { p ->
                         Text(
@@ -918,9 +960,16 @@ private fun SettingsTab(vm: WalletViewModel) {
         if (openSupport != null) com.fortis.wallet.ui.SupportCard { openSupport("") }
         GlassCard {
             Text(stringResource(R.string.settings_connection), color = Fx.text, fontWeight = FontWeight.SemiBold)
+            val lnWallet = vm.selectedIsLightning
+            val lnState by vm.lightning.state.collectAsState()
             kv(
                 stringResource(R.string.settings_status),
                 when {
+                    lnWallet -> when (lnState) {
+                        is com.fortis.wallet.lightning.LnState.Ready -> stringResource(R.string.status_connected)
+                        com.fortis.wallet.lightning.LnState.Starting -> stringResource(R.string.status_syncing)
+                        else -> stringResource(R.string.status_offline)
+                    }
                     st == null -> stringResource(R.string.status_offline)
                     st.scanningPct != null -> stringResource(R.string.status_rescanning, st.scanningPct)
                     st.degraded -> stringResource(R.string.status_limited)
@@ -928,12 +977,21 @@ private fun SettingsTab(vm: WalletViewModel) {
                     else -> stringResource(R.string.status_syncing)
                 },
             )
-            kv(stringResource(R.string.settings_chain_height), st?.blocks?.toString() ?: "—")
-            if (st?.degraded == true) Text(stringResource(R.string.settings_degraded_note), style = FxType.meta, color = Fx.textFaint)
+            if (!lnWallet) kv(stringResource(R.string.settings_chain_height), st?.blocks?.toString() ?: "—")
+            if (!lnWallet && st?.degraded == true) Text(stringResource(R.string.settings_degraded_note), style = FxType.meta, color = Fx.textFaint)
             Row(horizontalArrangement = Arrangement.spacedBy(Fx.s2)) {
-                GhostButton(stringResource(R.string.action_refresh), Modifier.weight(1f), dense = true) { vm.refresh() }
-                GhostButton(stringResource(R.string.action_reconnect), Modifier.weight(1f), dense = true) { vm.reconnect() }
+                val busy = vm.connBusy
+                GhostButton(
+                    if (busy == com.fortis.wallet.ConnBusy.Refreshing) com.fortis.wallet.connectionActivityLabel(busy) else stringResource(R.string.action_refresh),
+                    Modifier.weight(1f), enabled = busy == null, dense = true,
+                ) { vm.refreshWithFeedback() }
+                GhostButton(
+                    if (busy == com.fortis.wallet.ConnBusy.Reconnecting) com.fortis.wallet.connectionActivityLabel(busy) else stringResource(R.string.action_reconnect),
+                    Modifier.weight(1f), enabled = busy == null, dense = true,
+                ) { vm.reconnectWithFeedback() }
             }
+            (vm.connBusy?.let { com.fortis.wallet.connectionActivityLabel(it) } ?: vm.connDebug)
+                ?.let { Text(it, style = FxType.meta, color = Fx.textFaint) }
         }
 
         GhostButton(stringResource(R.string.action_lock_app), tint = Fx.bad, dense = true) { vm.lock() }
@@ -1467,7 +1525,8 @@ internal fun HistoryList(
     val lnReceiveLabel = stringResource(R.string.history_ln_receive)
     GlassCard {
         rows.forEach { h ->
-            val url = if (!h.lightning) explorerTxUrl(chain, network, h.id) else null
+            val url = h.explorerTxid?.let { explorerTxUrl(chain.removeSuffix("-ln").let { c -> if (c == "ln-xbt") "xbt" else if (c == "ln") "btc" else c }, network, it) }
+                ?: if (!h.lightning) explorerTxUrl(chain, network, h.id) else null
             Row(
                 Modifier
                     .fillMaxWidth()
@@ -1490,7 +1549,11 @@ internal fun HistoryList(
                             h.amountSat > 0 -> Fx.signal
                             else -> Fx.text
                         }
-                        Text(
+                        // A channel's funding transaction moves no money of its own (the move in did): no amount.
+                        if (h.lightning && h.explorerTxid != null) Text(
+                            "⚡ " + stringResource(if (h.pending) R.string.history_channel_open_title else R.string.history_channel_opened_title),
+                            style = FxType.amount, color = Fx.text,
+                        ) else Text(
                             amtPrefix + fmt(h.amountSat) + " " + unit,
                             style = FxType.amount,
                             color = amtColor,
@@ -1500,6 +1563,7 @@ internal fun HistoryList(
                         }
                     }
                     val label = when {
+                        h.lightning && h.explorerTxid != null -> stringResource(R.string.history_channel_open_label)
                         h.lightning && h.send -> lnSendLabel
                         h.lightning -> lnReceiveLabel
                         h.internal -> internalLabel
@@ -1514,7 +1578,14 @@ internal fun HistoryList(
                         else -> stringResource(R.string.history_row_subtitle, label, h.id.take(10))
                     }
                     val notes = listOfNotNull(
-                        if (h.noteRes != 0) stringResource(h.noteRes) else null,
+                        // A close still waiting for its confirmation says "closing"; once done, "closed".
+                        if (h.noteRes != 0) stringResource(
+                            when {
+                                h.pending && h.noteRes == R.string.history_moved_onchain_closed -> R.string.history_moved_onchain_closing
+                                h.pending && h.noteRes == R.string.history_moved_onchain -> R.string.history_moved_onchain_pending
+                                else -> h.noteRes
+                            },
+                        ) else null,
                         h.description.takeIf { it.isNotBlank() },
                         h.arrivedSat?.let { stringResource(R.string.history_arrived, fmt(it), unit) },
                         if (h.viaFortis) stringResource(R.string.history_via_fortis) else null,

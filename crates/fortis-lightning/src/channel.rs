@@ -241,6 +241,11 @@ pub(crate) struct BalanceInputs {
     pub monitors: Vec<MonitorBalance>,
     pub sweeps: Vec<SweepBalance>,
     pub wallet: WalletBalance,
+    /// The channel value of every channel we fund whose funding transaction the wallet has not
+    /// seen yet: ldk-node enters it in the wallet only when a wallet sync picks it up (up to a
+    /// minute and a half after the broadcast), until then its inputs still count as spendable
+    /// while the channel already counts as lightning balance: the same coins twice.
+    pub unseen_funding_sat: u64,
 }
 
 /// While a closed channel still has anything to resolve on chain other than
@@ -303,7 +308,11 @@ pub(crate) fn breakdown(i: &BalanceInputs) -> Balances {
         })
         .map(|s| s.amount_sat)
         .sum();
-    let w = i.wallet;
+    let w = WalletBalance {
+        total_sat: i.wallet.total_sat.saturating_sub(i.unseen_funding_sat),
+        spendable_sat: i.wallet.spendable_sat.saturating_sub(i.unseen_funding_sat),
+        ..i.wallet
+    };
     let not_spendable = w.total_sat.saturating_sub(w.spendable_sat);
     let reserved = w.reserve_sat.min(not_spendable);
     let unconfirmed = not_spendable - reserved;
@@ -736,6 +745,13 @@ impl Snapshot {
                 .filter_map(sweep_channel)
                 .map(|c| c.to_string()),
         );
+        let unseen_funding_sat: u64 = channels
+            .iter()
+            .filter_map(|c| {
+                let txid = pending_funding_txid(c)?;
+                (wallet_seen(node, &txid) == FundingSeen::Missing).then_some(c.channel_value_sats)
+            })
+            .sum();
         Snapshot {
             channels,
             closes,
@@ -749,6 +765,7 @@ impl Snapshot {
                     spendable_sat: b.spendable_onchain_balance_sats,
                     reserve_sat: b.total_anchor_channels_reserve_sats,
                 },
+                unseen_funding_sat,
             },
         }
     }
@@ -1242,6 +1259,32 @@ impl Node {
         snap.state()
     }
 
+    /// The funding txid of the channel this node funds while it is unconfirmed, `None`
+    /// otherwise (or when the node is not running). The app checks that the network knows
+    /// this transaction: ldk-node never rebroadcasts a funding whose broadcast failed, so a
+    /// channel can stay pending for ever.
+    pub fn pending_funding_txid(&self) -> Option<String> {
+        let running = self.running()?;
+        running
+            .node
+            .list_channels()
+            .iter()
+            .find_map(pending_funding_txid)
+    }
+
+    /// `(confirmations so far, confirmations needed)` of the channel being opened (not yet ready);
+    /// `None` when there is none or the node is not running. The first count is 0 while the funding
+    /// is unconfirmed.
+    pub fn opening_progress(&self) -> Option<(u32, u32)> {
+        let running = self.running()?;
+        running
+            .node
+            .list_channels()
+            .iter()
+            .find(|c| !c.is_channel_ready)
+            .map(|c| (c.confirmations.unwrap_or(0), c.confirmations_required.unwrap_or(0)))
+    }
+
     /// ldk-node forgets a peer (no reconnect while running) when its last
     /// channel is closed; the LSP stays a persisted peer for receives. Only
     /// when connected (then `connect` just re-persists, no network wait);
@@ -1340,6 +1383,7 @@ mod tests {
             monitors,
             sweeps,
             wallet,
+            unseen_funding_sat: 0,
         }
     }
 
@@ -1353,6 +1397,33 @@ mod tests {
 
     use BalanceKind::*;
     use CloseKind::*;
+
+    /// 2026-11-16: right after a Move's channel funding was broadcast the app showed double
+    /// (294,505 for 147,744): the node counts the new channel, and its wallet still lists the
+    /// funding's inputs as spendable until its next sync notices the transaction.
+    #[test]
+    fn a_funding_the_wallet_has_not_seen_is_not_counted_twice() {
+        let base = inputs(
+            146_761,
+            vec![mb(true, 146_761, OnClose, None)],
+            vec![],
+            wallet(147_744, 147_744, 0),
+        );
+        // Wallet unaware of the funding: 147,244 of its coins already went into the channel.
+        let unseen = BalanceInputs { unseen_funding_sat: 147_244, ..base };
+        let b = breakdown(&unseen);
+        assert_eq!(b.lightning_sat, 146_761, "{b:?}");
+        assert_eq!(b.onchain_transit_sat, 500, "{b:?}");
+        assert_eq!(sum(&b), 147_261, "{b:?}");
+        // Once the wallet has it (the coins are spent), the unseen part is 0 and nothing changes.
+        let seen = inputs(
+            146_761,
+            vec![mb(true, 146_761, OnClose, None)],
+            vec![],
+            wallet(500, 500, 0),
+        );
+        assert_eq!(sum(&breakdown(&seen)), 147_261);
+    }
 
     #[test]
     fn breakdown_open_channel_with_reserve() {

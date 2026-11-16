@@ -1780,12 +1780,10 @@ fn proxy_chain(req: &mut Request, st: &State, method: &Method, path: &str, query
                 _ => false,
             };
             if !swap_spend {
-                if let Err(msg) = p.check_tx_hex(&tx_hex) {
-                    // The wallet's Lightning node can't add a fee output: its
-                    // closes, sweeps and channel opens are let through (ln_fee.rs).
-                    if chain == "btc" && ln_fee_exempt(p, upstream, &tx_hex) {
-                        Metrics::inc(&st.metrics.fee_exempt_lightning);
-                    } else {
+                match fee_gate(p, upstream, &tx_hex) {
+                    FeeGate::Pays => {}
+                    FeeGate::LightningExempt => Metrics::inc(&st.metrics.fee_exempt_lightning),
+                    FeeGate::Refused(msg) => {
                         Metrics::inc(&st.metrics.fee_rejected);
                         return err(402, &msg);
                     }
@@ -2178,7 +2176,29 @@ fn respond(req: Request, reply: Reply, allow_origin: &str) -> std::io::Result<()
     req.respond(resp)
 }
 
-/// Whether a BTC transaction that pays no service fee is a Lightning one
+/// What the broadcast fee check makes of a transaction.
+#[derive(Debug, PartialEq, Eq)]
+enum FeeGate {
+    /// It pays the service fee.
+    Pays,
+    /// It pays none, but is the wallet's Lightning node's own (ln_fee.rs).
+    LightningExempt,
+    /// It pays none and is not exempt: refused with this message.
+    Refused(String),
+}
+
+/// The wallet's Lightning node can't add a fee output: its closes, sweeps and channel opens
+/// are let through when they spend coins that paid the fee or Lightning contract outputs.
+/// The same on both chains: XBT keeps standard transactions and txids (only its block headers differ).
+fn fee_gate(p: &pricing::Pricing, upstream: &Upstream, tx_hex: &str) -> FeeGate {
+    match p.check_tx_hex(tx_hex) {
+        Ok(()) => FeeGate::Pays,
+        Err(_) if ln_fee_exempt(p, upstream, tx_hex) => FeeGate::LightningExempt,
+        Err(msg) => FeeGate::Refused(msg),
+    }
+}
+
+/// Whether a transaction that pays no service fee is a Lightning one
 /// (`ln_fee::exempt`), looking its parents up on `upstream`.
 fn ln_fee_exempt(p: &pricing::Pricing, upstream: &Upstream, tx_hex: &str) -> bool {
     let Ok(bytes) = hex::decode(tx_hex.trim()) else { return false };
@@ -2343,6 +2363,46 @@ mod tests {
         assert!(!ln_fee_exempt(&p, &upstream, &hex(&plain_send)));
         assert!(!ln_fee_exempt(&p, &upstream, &hex(&lying_send)), "a txid mismatch is not trusted");
         assert!(!ln_fee_exempt(&p, &upstream, "not hex"));
+    }
+
+    /// Found live 2026-11-16: the phone's XBT channel funding transaction was refused with
+    /// "402 transaction must pay the service fee", so the channel stayed pending for ever.
+    /// The Lightning exemption must hold on both chains.
+    #[test]
+    fn a_channel_open_from_a_paid_deposit_is_let_through_on_xbt_as_on_btc() {
+        use bitcoin::hashes::Hash;
+        const FEE_ADDR: &str = "bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4";
+        let p = pricing::Pricing::new(FEE_ADDR.into(), bitcoin::Network::Bitcoin, 100, 400, 0).unwrap();
+        let fee_spk = FEE_ADDR
+            .parse::<bitcoin::Address<bitcoin::address::NetworkUnchecked>>()
+            .unwrap()
+            .assume_checked()
+            .script_pubkey();
+        let out = |sat: u64, spk: bitcoin::ScriptBuf| bitcoin::TxOut { value: bitcoin::Amount::from_sat(sat), script_pubkey: spk };
+        let wallet_witness = vec![vec![0x30; 72], vec![0x02; 33]];
+        let genesis = bitcoin::Txid::from_byte_array([1; 32]);
+        let deposit = fee_tx(vec![spend_of(genesis, wallet_witness.clone())],
+            vec![out(200_000, bitcoin::ScriptBuf::new()), out(2_000, fee_spk.clone())]);
+        let open = fee_tx(vec![spend_of(deposit.compute_txid(), wallet_witness.clone())],
+            vec![out(150_000, bitcoin::ScriptBuf::new())]);
+        let plain_parent = fee_tx(vec![spend_of(genesis, wallet_witness.clone())],
+            vec![out(200_000, bitcoin::ScriptBuf::new())]);
+        let plain_send = fee_tx(vec![spend_of(plain_parent.compute_txid(), wallet_witness)],
+            vec![out(150_000, bitcoin::ScriptBuf::new())]);
+        let hex = |t: &bitcoin::Transaction| ::hex::encode(bitcoin::consensus::serialize(t));
+        let base = fake_esplora(vec![
+            (deposit.compute_txid().to_string(), hex(&deposit)),
+            (plain_parent.compute_txid().to_string(), hex(&plain_parent)),
+        ]);
+        let upstream = Upstream::new(&base);
+
+        for chain in ["btc", "xbt"] {
+            assert_eq!(fee_gate(&p, &upstream, &hex(&open)), FeeGate::LightningExempt, "{chain}: the open");
+            assert!(
+                matches!(fee_gate(&p, &upstream, &hex(&plain_send)), FeeGate::Refused(_)),
+                "{chain}: an ordinary fee-less send is still refused"
+            );
+        }
     }
 
     // ---- chain proxy paths: no dot segments, no encoding, POST only to tx/scan ----

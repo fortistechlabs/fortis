@@ -130,6 +130,10 @@ interface LnNodeApi {
     fun forceCloseChannel() {}
     fun sweepTransit(toAddress: String): String? = null
     fun channelState(): LnChannelState
+    /** The funding txid of the channel this node funds while it is unconfirmed. */
+    fun pendingFundingTxid(): String? = null
+    /** Confirmations so far and needed of the channel being opened. */
+    fun openingProgress(): uniffi.wallet_ffi.LnOpeningProgress? = null
     fun close() {}
 }
 
@@ -170,6 +174,8 @@ class FfiLnNode(private val inner: LnNode) : LnNodeApi {
     override fun forceCloseChannel() = inner.forceCloseChannel()
     override fun sweepTransit(toAddress: String): String? = inner.sweepTransit(toAddress)
     override fun channelState(): LnChannelState = inner.channelState()
+    override fun pendingFundingTxid(): String? = inner.pendingFundingTxid()
+    override fun openingProgress(): uniffi.wallet_ffi.LnOpeningProgress? = inner.openingProgress()
     override fun close() = inner.close()
 }
 
@@ -177,10 +183,18 @@ class FfiLnNode(private val inner: LnNode) : LnNodeApi {
 private const val IDLE_POLL_MIN_NANOS = 50_000_000L
 private const val IDLE_POLL_BACKOFF_MS = 250L
 private const val START_RETRY_MS = 2_000L
+private const val POLL_INTERVAL_MS = 5_000L
+private const val AUTO_CANCEL_RETRY_MS = 30_000L
 
 /** Logcat, where there is one (not in JVM unit tests). */
 private fun logWarn(msg: String, e: Throwable?) {
     runCatching { android.util.Log.w("FortisLightning", msg, e) }
+}
+
+/** A node error as a line for the screen and the report. */
+internal fun describeLnError(e: Throwable): String = when (e) {
+    is LnFfiException.Other -> e.reason
+    else -> e.message?.takeIf { it.isNotBlank() } ?: e.javaClass.simpleName
 }
 
 /** The `reason` of the error `close_channel` gives for a channel that is already being closed. */
@@ -202,6 +216,22 @@ class LightningSession(
     /** True only in debug builds (the app passes BuildConfig.DEBUG): the XBT canary override of
      *  [effectiveLnEnabled]. Off by default so tests and release builds see `/ln/info` as is. */
     private val debugCanary: Boolean = false,
+    /** Whether the network knows a transaction (`null`: can't tell). Used to notice a channel
+     *  funding that was never broadcast; none: never checked. */
+    private val fundingOnNetwork: (suspend (txid: String) -> Boolean?)? = null,
+    private val nowMs: () -> Long = System::currentTimeMillis,
+    /** How often a running node's balances, pending channel and transfer are re-checked on the
+     *  session's own clock (0: never — tests that drive [refreshBalances] by hand). Nothing else
+     *  polls while the Lightning wallet is on screen: found live 2026-11-16, a stuck channel was
+     *  never noticed and a failed open never retried. */
+    private val pollIntervalMs: Long = POLL_INTERVAL_MS,
+    /** A stuck channel cancels itself and returns the funds (after [cancelStuckChannel]'s own
+     *  re-check of the network), without asking: the user's rule 2026-11-16. */
+    private val autoCancelStuck: Boolean = true,
+    /** Called after a stuck channel was cancelled by the session (to tidy what the app shows). */
+    private val onStuckCancelled: (suspend (walletId: String) -> Unit)? = null,
+    /** Called once per funding transaction of a channel this node opens (for the history). */
+    private val onFundingSeen: (suspend (walletId: String, txid: String) -> Unit)? = null,
 ) {
     private val mutex = Mutex()
 
@@ -233,6 +263,7 @@ class LightningSession(
     private var unlockedSeed: ByteArray? = null
     private var lastKnownBalances: LnBalances = ZERO_LN_BALANCES
     private var eventJob: Job? = null
+    private var refreshJob: Job? = null
     /** Where errors are reported (the app sends them to the server); set by the view model. */
     @Volatile
     var errorReporter: ((where: String, error: Throwable) -> Unit)? = null
@@ -368,6 +399,29 @@ class LightningSession(
     /** A transfer to Lightning is under way (its deposit not yet in the channel). */
     val transferPending: kotlinx.coroutines.flow.StateFlow<Boolean> = _transferPending
 
+    private val _transferError = kotlinx.coroutines.flow.MutableStateFlow<String?>(null)
+    /** Why opening the channel (or splicing in) failed on the last try; the try repeats. */
+    val transferError: StateFlow<String?> = _transferError
+    private var reportedTransferError: String? = null
+
+    private val _cancelling = kotlinx.coroutines.flow.MutableStateFlow(false)
+    /** A stuck channel was cancelled and its funds are on their way back to the on-chain wallet. */
+    val cancelling: StateFlow<Boolean> = _cancelling
+
+    private val _opening = kotlinx.coroutines.flow.MutableStateFlow<uniffi.wallet_ffi.LnOpeningProgress?>(null)
+    /** Confirmations so far and needed of the channel being opened, for "waiting for x of y". */
+    val openingProgress: StateFlow<uniffi.wallet_ffi.LnOpeningProgress?> = _opening
+
+    private val _fundingTxid = kotlinx.coroutines.flow.MutableStateFlow<String?>(null)
+    /** The funding transaction of the channel being opened, while it is unconfirmed. */
+    val fundingTxid: StateFlow<String?> = _fundingTxid
+    private var reportedFunding: String? = null
+
+    private val _stuck = kotlinx.coroutines.flow.MutableStateFlow(false)
+    /** A pending channel's funding transaction has not reached the network for [STUCK_AFTER_MS]. */
+    val stuckChannel: StateFlow<Boolean> = _stuck
+    private var missingSince: Long? = null
+
     /** The deposit of a transfer to Lightning was broadcast: once it confirms, the transit
      *  balance becomes channel funds (an open, or a splice-in). */
     suspend fun commitTransfer(feerateSatVb: Long) {
@@ -386,17 +440,80 @@ class LightningSession(
         if (t == null) return bal to ch
         val spendable = bal.onchainTransitSat.toLong()
         val amount = spendable - channelFeeMarginSat(t.feerateSatVb)
-        val done = when (transitAction(spendable, ch, t.feerateSatVb)) {
-            TransitAction.Wait -> false
-            TransitAction.Open -> runCatching { node.openChannel(amount.toULong()) }.isSuccess
-            TransitAction.SpliceIn -> runCatching { node.spliceIn(amount.toULong()) }.isSuccess
+        val action = transitAction(spendable, ch, t.feerateSatVb)
+        if (action == TransitAction.Wait) return bal to ch
+        // A failure is kept and reported, not swallowed: found live 2026-11-16, a failed open
+        // left "Moving…" on screen for ever with nothing logged.
+        val failure = runCatching {
+            when (action) {
+                TransitAction.Open -> node.openChannel(amount.toULong())
+                TransitAction.SpliceIn -> node.spliceIn(amount.toULong())
+                TransitAction.Wait -> Unit
+            }
+        }.exceptionOrNull()
+        if (failure != null) {
+            if (failure is CancellationException) throw failure
+            val text = describeLnError(failure)
+            _transferError.value = text
+            logWarn("channel $action failed: $text", failure)
+            if (text != reportedTransferError) {
+                reportedTransferError = text
+                runCatching { errorReporter?.invoke("channel_open", failure) }
+            }
+            return bal to ch
         }
-        if (!done) return bal to ch
+        _transferError.value = null
+        reportedTransferError = null
         runCatching { store.setPendingTransfer(walletId, null) }
         _transferPending.value = false
         return withContext(Dispatchers.IO) {
             runCatching { node.balances() }.getOrDefault(bal) to runCatching { node.channelState() }.getOrDefault(ch)
         }
+    }
+
+    /** Asks the network whether it has the pending channel's funding transaction and keeps the
+     *  stuck clock ([nextMissingSince]). */
+    private suspend fun watchFunding(node: LnNodeApi) {
+        _opening.value = runCatching { node.openingProgress() }.getOrNull()
+        val txid = runCatching { node.pendingFundingTxid() }.getOrNull()
+        _fundingTxid.value = txid
+        if (txid != null && txid != reportedFunding) {
+            reportedFunding = txid
+            unlockedWalletId?.let { id -> runCatching { onFundingSeen?.invoke(id, txid) } }
+        }
+        val check = fundingOnNetwork
+        val onNetwork = if (txid != null && check != null) runCatching { check(txid) }.getOrNull() else null
+        val now = nowMs()
+        missingSince = nextMissingSince(missingSince, txid, onNetwork, now)
+        _stuck.value = isChannelStuck(missingSince, now)
+        if (txid != null) logWarn("funding ${txid.take(12)} onNetwork=$onNetwork missingSince=$missingSince stuck=${_stuck.value}", null)
+    }
+
+    /** Gives up a stuck channel: drops the pending transfer (so the open is not retried), force
+     *  closes the channel (its funding never reached the network, so nothing is at stake in it)
+     *  and sweeps the coins the node still holds to [toAddress]. */
+    suspend fun cancelStuckChannel(toAddress: String): String? {
+        // The user's last chance to be wrong is ours: never close a channel whose funding the
+        // network does have (the index may only have been slow when the notice came up).
+        val node = currentNode
+        val txid = node?.let { runCatching { it.pendingFundingTxid() }.getOrNull() }
+        val check = fundingOnNetwork
+        if (txid != null && check != null && runCatching { check(txid) }.getOrNull() != false) {
+            missingSince = null
+            _stuck.value = false
+            throw LnFfiException.Other("channel_funding_is_on_the_network")
+        }
+        unlockedWalletId?.let { id -> runCatching { store.setPendingTransfer(id, null) } }
+        _transferPending.value = false
+        _transferError.value = null
+        reportedTransferError = null
+        // Right after the force close the node refuses the sweep ("closing") until it has proved the
+        // dead funding void: expected, not a failure. The orphan sweep finishes it.
+        _cancelling.value = true
+        val swept = closeAndSweep(toAddress, force = true, sweepFailureIsFatal = false)
+        missingSince = null
+        _stuck.value = false
+        return swept
     }
 
     /** Moves [payoutSat] out of the channel to [toAddress] (a splice-out). */
@@ -425,6 +542,35 @@ class LightningSession(
         } finally {
             mutex.unlock()
         }
+        maybeAutoCancel()
+    }
+
+    private val autoCancelBusy = java.util.concurrent.atomic.AtomicBoolean(false)
+    private var lastAutoCancelAttemptMs = 0L
+
+    /** Outside the lock (cancelling takes it): when the channel is stuck, cancels it and returns the
+     *  funds to the chain's on-chain wallet. Retried every [AUTO_CANCEL_RETRY_MS] if it fails; with no
+     *  wallet to pay, it does nothing and the notice stays for the user. */
+    private suspend fun maybeAutoCancel() {
+        if (!autoCancelStuck || !_stuck.value) return
+        val id = unlockedWalletId ?: return
+        val now = nowMs()
+        if (now - lastAutoCancelAttemptMs < AUTO_CANCEL_RETRY_MS && lastAutoCancelAttemptMs != 0L) return
+        if (!autoCancelBusy.compareAndSet(false, true)) return
+        try {
+            lastAutoCancelAttemptMs = now
+            val addr = runCatching { sweepAddressProvider?.invoke(id) }.getOrNull()
+            if (addr.isNullOrBlank()) return
+            val txid = runCatching { cancelStuckChannel(addr) }
+                .onFailure { if (it is CancellationException) throw it; logWarn("auto-cancel refused: ${describeLnError(it)}", null) }
+                .getOrNull()
+            if (_stuck.value) return
+            logWarn("stuck channel cancelled automatically, swept=$txid", null)
+            if (txid != null) runCatching { onSweepBroadcast?.invoke(id) }
+            runCatching { onStuckCancelled?.invoke(id) }
+        } finally {
+            autoCancelBusy.set(false)
+        }
     }
 
     private suspend fun refreshBalancesLocked() {
@@ -439,6 +585,10 @@ class LightningSession(
             val (b3, c3) = sweepOrphanTransit(node, id, b2, c2)
             bal = b3
             ch = c3
+        }
+        watchFunding(node)
+        if (_cancelling.value && ch == LnChannelState.NONE && bal.onchainTransitSat == 0uL && bal.pendingCloseSat == 0uL) {
+            _cancelling.value = false
         }
         if (currentNode === node) publish(node, bal, ch)
     }
@@ -503,7 +653,7 @@ class LightningSession(
      *  behind the LSP's `to_self_delay` and costs more in fees, so it is only done with
      *  `force = true`, which the app passes after the user has chosen it. A close that is already
      *  under way is not an error: the sweep below proceeds. */
-    suspend fun closeAndSweep(toAddress: String, force: Boolean = false): String? = mutex.withLock {
+    suspend fun closeAndSweep(toAddress: String, force: Boolean = false, sweepFailureIsFatal: Boolean = true): String? = mutex.withLock {
         val node = currentNode ?: throw LnFfiException.Other("lightning not ready")
         withContext(Dispatchers.IO) {
             val state = node.channelState()
@@ -519,7 +669,10 @@ class LightningSession(
                 }
             }
             val txid = if (node.balances().onchainTransitSat > 0uL) {
-                node.sweepTransit(toAddress)
+                if (sweepFailureIsFatal) node.sweepTransit(toAddress)
+                else runCatching { node.sweepTransit(toAddress) }
+                    .onFailure { logWarn("sweep after cancel deferred: ${describeLnError(it)}", null) }
+                    .getOrNull()
             } else {
                 null
             }
@@ -531,6 +684,8 @@ class LightningSession(
     private suspend fun stopCurrentNodeLocked() {
         eventJob?.cancel()
         eventJob = null
+        refreshJob?.cancel()
+        refreshJob = null
         val node = currentNode
         currentNode = null
         if (node != null) {
@@ -641,6 +796,7 @@ class LightningSession(
             if (node.blocksOnNextEvent && currentNode === node) {
                 startEventPoller(node, walletId)
             }
+            if (currentNode === node) startRefreshPoller(node)
         } catch (e: CancellationException) {
             createdNode?.let {
                 withContext(Dispatchers.IO) {
@@ -674,6 +830,18 @@ class LightningSession(
         while (currentNode === node) {
             val ev = node.nextEvent(0uL) ?: break
             handleEvent(node, walletId, ev)
+        }
+    }
+
+    /** Re-checks the running node every [pollIntervalMs] (balances, a pending channel's funding, a
+     *  pending transfer's open): see the parameter. */
+    private fun startRefreshPoller(node: LnNodeApi) {
+        refreshJob?.cancel()
+        refreshJob = if (pollIntervalMs <= 0L) null else scope.launch {
+            while (isActive && currentNode === node) {
+                kotlinx.coroutines.delay(pollIntervalMs)
+                runCatching { refreshBalances() }.onFailure { if (it is CancellationException) throw it }
+            }
         }
     }
 

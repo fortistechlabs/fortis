@@ -2,6 +2,35 @@
 
 Fortis Wallet (Android). Versions are `versionName (versionCode)`.
 
+## 0.7.0 (27) — 2026-11-16
+
+- **Lightning (XBT).** XBT now has a Lightning wallet beside the BTC one: add it
+  from Add wallet, move XBT from an on-chain wallet into it and back, send and
+  receive over Lightning, and keep small receives held by Fortis until they
+  are worth a channel. It has its own key and backup, separate from BTC
+  Lightning. Opening a channel takes a few block confirmations, which on XBT
+  can be an hour or more; the wallet says what it is waiting for ("Channel
+  opening: waiting for confirmation 2 of 6").
+- Moving your whole on-chain balance to Lightning no longer fails with
+  "insufficient funds" when the wallet holds several coins.
+- A channel whose opening transaction never reaches the network is noticed
+  within 20 seconds, cancelled, and its funds are returned to your on-chain
+  wallet. The wallet no longer shows such a channel as a second balance.
+- The Lightning wallet no longer counts a channel's funds twice while it opens.
+  A bare "Moving…" is gone: every state says what is happening and what it
+  waits for, or says nothing.
+- History: a channel's funding transaction is listed (tap it to open it in the
+  explorer), with "Channel opening" / "Channel opened", closes and moves out say
+  "waiting for confirmation" until they confirm, and the move's fee is settled
+  so the entries add up.
+- Settings → Connection: Refresh and Reconnect show what they are doing and the
+  result. For a Lightning wallet the card shows the node's status instead of a
+  chain height. "LSP connected" now reads "Lightning node running", because it
+  never proved a connection.
+- Add wallet and Restore ask clearly whether the wallet is BTC or XBT, on-chain
+  or Lightning.
+- Unlock errors after a screen-lock change are reported for diagnosis (issue #2).
+
 ## 0.6.3 (26) — 2026-11-05
 
 - After a move to on-chain, the Move tab confirms it: how much left

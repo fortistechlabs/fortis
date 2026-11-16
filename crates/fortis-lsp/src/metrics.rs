@@ -220,7 +220,7 @@ pub fn serve(
                 s.custody_sat = accounts.as_ref().map_or(0, |a| a.custody_sat());
                 tiny_http::Response::from_string(render(&s)).with_header(text.clone())
             }
-            (tiny_http::Method::Post, "/admin/pay" | "/admin/close" | "/admin/abandon") => {
+            (tiny_http::Method::Post, "/admin/pay" | "/admin/close" | "/admin/abandon" | "/admin/send" | "/admin/open") => {
                 let route = req.url().to_string();
                 let (status, body) = match &admin_token {
                     Some(token) => {
@@ -239,6 +239,8 @@ pub fn serve(
                             "/admin/abandon" => {
                                 crate::admin::abandon(&*node, auth.as_deref(), token, &buf)
                             }
+                            "/admin/send" => crate::admin::send(&*node, auth.as_deref(), token, &buf),
+                            "/admin/open" => crate::admin::open(&*node, auth.as_deref(), token, &buf),
                             _ => crate::admin::close(&*node, auth.as_deref(), token, &buf),
                         }
                     }

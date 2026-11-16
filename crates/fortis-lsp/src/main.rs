@@ -223,11 +223,20 @@ fn run() -> Result<(), String> {
     // Phones are persisted peers we can't dial (NAT, relay address): retry
     // them with back-off instead of every second; they reconnect to us.
     ldk_node::config::set_peer_reconnection_backoff(true);
+    let fast_inbound = (cfg.fast_inbound_max_sat > 0).then_some(ldk_node::config::FastInboundChannels {
+        max_channel_sat: cfg.fast_inbound_max_sat,
+        minimum_depth: cfg.fast_inbound_depth,
+    });
     let mut b = match cfg.chain {
-        config::Chain::Btc => Builder::new(),
+        config::Chain::Btc => {
+            let mut ldk = ldk_node::config::Config::default();
+            ldk.fast_inbound = fast_inbound;
+            Builder::from_config(ldk)
+        }
         // XBT mode: no anchor channels, replay-protected sighash, gossip floor.
         config::Chain::Xbt => {
             let mut ldk = ldk_node::config::Config::default();
+            ldk.fast_inbound = fast_inbound;
             ldk.xbt = Some(ldk_node::config::XbtConfig {
                 gossip_floor_height: cfg.xbt_gossip_floor_height,
                 splice_peers: vec![],

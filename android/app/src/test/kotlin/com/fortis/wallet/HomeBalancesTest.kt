@@ -120,4 +120,29 @@ class HomeBalancesTest {
         assertEquals(100_000L, hb.totalSat)
         assertTrue(hb.moving)
     }
+
+    /** 2026-11-16: a pending channel whose funding never reached the network is counted by the
+     *  node as channel balance while its coins still show as spendable: 144,590 sat showed as
+     *  288,197. Stuck, only the coins count, and nothing is "moving". */
+    @Test
+    fun a_stuck_channels_coins_are_counted_once() {
+        val ln = LnState.Ready(
+            balances = LnBalances(
+                lightningSat = 143_607uL,
+                onchainTransitSat = 144_590uL,
+                pendingCloseSat = 0uL,
+                reservedSat = 0uL,
+                pendingTransitSat = 0uL,
+                inboundSat = 0uL,
+            ),
+            channel = LnChannelState.OPENING,
+        )
+        val counted = homeBalance(0L, ln)
+        assertEquals("unchanged without the flag", 288_197L, counted.totalSat)
+        val stuck = homeBalance(0L, ln, channelStuck = true)
+        // A channel being cancelled is counted the same way: its dead balance is not real.
+        assertEquals(144_590L, stuck.totalSat)
+        assertEquals(144_590L, stuck.lightningSat)
+        assertFalse("stuck is not moving", stuck.moving)
+    }
 }

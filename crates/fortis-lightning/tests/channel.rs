@@ -277,6 +277,36 @@ fn fund_transit_then_open_channel_becomes_ready_after_one_conf() {
     );
 }
 
+/// The app asks the node which funding transaction a pending channel waits for, to check the
+/// network has it: on 2026-11-16 the edge refused an XBT funding broadcast and the channel
+/// stayed pending for ever, unnoticed (ldk-node never rebroadcasts a funding).
+#[test]
+#[ignore = "needs FORTIS_BTC_BITCOIND, FORTIS_VSS_SERVER and fortis-lsp built"]
+fn a_pending_channel_reports_its_funding_txid_until_it_confirms() {
+    if !have_binaries() {
+        return;
+    }
+    let env = Env::start();
+    env.fund_transit(TRANSIT_SAT);
+    assert_eq!(env.client.pending_funding_txid(), None, "no channel yet");
+
+    env.client.open_channel(CHANNEL_SAT).expect("open_channel");
+    let mempool = env.wait_mempool("funding transaction broadcast");
+    let txid = poll("the node names its funding txid", 30, || {
+        env.client.pending_funding_txid()
+    });
+    assert!(
+        mempool.contains(&txid),
+        "the funding txid {txid} is the transaction in the mempool: {mempool:?}"
+    );
+
+    env.rt.mine(6);
+    env.wait_event("ChannelReady", 90, |e| matches!(e, LnEvent::ChannelReady));
+    poll("no longer pending", 60, || {
+        (env.client.pending_funding_txid().is_none()).then_some(())
+    });
+}
+
 #[test]
 #[ignore = "needs FORTIS_BTC_BITCOIND, FORTIS_VSS_SERVER and fortis-lsp built"]
 fn open_below_channel_min_errors() {

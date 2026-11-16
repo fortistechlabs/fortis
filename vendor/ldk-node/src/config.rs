@@ -239,6 +239,22 @@ pub struct Config {
 	/// [`Config::anchor_channels_config`]), and every on-chain wallet spend is signed with
 	/// `SIGHASH_ALL | SIGHASH_UNIFIED` (`0x21`) for replay protection. `None` is plain Bitcoin.
 	pub xbt: Option<XbtConfig>,
+	/// FORTIS: ask for fewer confirmations on SMALL inbound channels. When `Some`, an inbound
+	/// channel of at most [`FastInboundChannels::max_channel_sat`] is accepted with
+	/// [`FastInboundChannels::minimum_depth`] confirmations instead of LDK's 6; larger channels keep 6.
+	/// The only money a reversed funding can cost us is what we forwarded out of such a channel, so
+	/// the size limit is the most we can lose per channel. `None`: LDK's default for every channel.
+	pub fast_inbound: Option<FastInboundChannels>,
+}
+
+/// FORTIS: see [`Config::fast_inbound`].
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub struct FastInboundChannels {
+	/// The largest inbound channel (sat) accepted with the shorter depth.
+	pub max_channel_sat: u64,
+	/// Confirmations required for such a channel (at least 1: 0 is a zero-conf channel, which needs
+	/// [`Config::trusted_peers_0conf`]).
+	pub minimum_depth: u32,
 }
 
 impl Default for Config {
@@ -254,6 +270,7 @@ impl Default for Config {
 			route_parameters: None,
 			node_alias: None,
 			xbt: None, // FORTIS XBT: plain Bitcoin by default
+			fast_inbound: None, // FORTIS: LDK's 6 confirmations for every inbound channel
 		}
 	}
 }

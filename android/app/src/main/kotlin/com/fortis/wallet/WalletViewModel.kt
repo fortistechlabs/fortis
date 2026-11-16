@@ -404,6 +404,19 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
             },
             chain = chain,
             debugCanary = BuildConfig.DEBUG,
+            // The session cancelled a stuck channel by itself: the "moved in" entry never happened.
+            onStuckCancelled = { _ -> recordCancelledChannel(lnSide(walletChain)) },
+            onFundingSeen = { _, txid -> recordChannelOpen(lnSide(walletChain), txid) },
+            // Does the network have the channel's funding transaction? (ldk-node never rebroadcasts
+            // one whose broadcast failed: found live 2026-11-16, an edge refusal left it pending.)
+            fundingOnNetwork = { txid ->
+                val wid = lnSide(walletChain).wallet?.id
+                if (wid == null) null else {
+                    val url = store.esploraUrl(wid, chain)
+                    val auth = if (url.startsWith(HOSTED_EDGE)) "Bearer ${lnToken(walletChain)}" else null
+                    com.fortis.wallet.lightning.txKnownToNetwork(http, url, txid, auth)
+                }
+            },
         )
     }
 
@@ -647,6 +660,76 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
     /** Set when the cooperative close failed because the LSP could not be reached: the
      *  settings screen then offers a force close, which the user has to choose. */
     val offerForceClose: Boolean get() = ln.offerForceClose
+
+    /** The wallet holds [deltaSat] more (less) than the newest move in counted: the channel opening fee was
+     *  an estimate. Settles that move against the real fee so the history adds up (fee-sized gaps only). */
+    fun settleMoveInFee(deltaSat: Long) = viewModelScope.launch {
+        val side = ln
+        val id = side.wallet?.id ?: return@launch
+        val fixed = com.fortis.wallet.lightning.adjustLatestMoveIn(store.lnMoves(id), deltaSat) ?: return@launch
+        runCatching { store.setLnMoves(id, fixed) }
+        side.lnMoves = fixed
+    }
+
+    /** Adds the history entry for a channel's funding transaction (once per transaction): the
+     *  user can see it and open it in the explorer. It moves no money of its own (the move in did). */
+    private suspend fun recordChannelOpen(side: LnSide, txid: String) {
+        val id = side.wallet?.id ?: return
+        val current = store.lnMoves(id)
+        if (current.any { it.kind == "open" && it.txid == txid }) return
+        val funded = current.lastOrNull { it.kind == "in" }?.amountSat ?: 0L
+        val entry = com.fortis.wallet.lightning.LnMove(System.currentTimeMillis() / 1_000, funded, funded, 0L, "", null, "open", txid)
+        runCatching { store.addLnMove(id, entry) }
+        side.lnMoves = current + entry
+    }
+
+    /** Adds the history entry for a cancelled stuck channel (once): its funds came back out. */
+    private suspend fun recordCancelledChannel(side: LnSide) {
+        val id = side.wallet?.id ?: return
+        val to = moveTargetWallet(side.walletChain)?.display ?: ""
+        val current = store.lnMoves(id)
+        val entry = com.fortis.wallet.lightning.cancelMoveFor(current, System.currentTimeMillis() / 1_000, to) ?: return
+        runCatching { store.addLnMove(id, entry) }
+        side.lnMoves = current + entry
+    }
+
+    /** Gives up a channel whose funding transaction never reached the network ([LightningSession.stuckChannel]):
+     *  the channel is force closed (nothing is at stake in it), its pending transfer dropped, the coins the
+     *  node still holds go back to an on-chain wallet of the chain, and the "moved in" history entry
+     *  that never happened is answered by a "close" entry. The session does this by itself; this is the manual button for when it could not. */
+    fun cancelStuckChannel(walletChain: String = ln.walletChain) = viewModelScope.launch {
+        val side = lnSide(walletChain)
+        if (side.closing) return@launch
+        if (!reauth.consume()) {
+            side.closeError = str(R.string.reauth_needed)
+            return@launch
+        }
+        side.closeError = null
+        val sweep = moveTargetWallet(side.walletChain)
+        if (sweep == null) {
+            side.closeError = noOnchainWalletText(side)
+            return@launch
+        }
+        val s = withContext(Dispatchers.Default) { ensureSession(sweep.id, quiet = true) }
+        if (s == null) {
+            side.closeError = str(R.string.error_open_wallet)
+            return@launch
+        }
+        side.closing = true
+        try {
+            val addr = s.receiveAddress(sweep.nextReceive).address
+            val txid = side.session.cancelStuckChannel(addr)
+            if (txid != null) updateConfig(sweep.id) { it.copy(nextReceive = it.nextReceive + 1) }
+            recordCancelledChannel(side)
+            refreshSoon()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            side.closeError = errorText(e, "cancel_stuck_channel")
+        } finally {
+            side.closing = false
+        }
+    }
 
     fun dismissForceCloseOffer(walletChain: String = ln.walletChain) { lnSide(walletChain).offerForceClose = false }
 
@@ -2096,6 +2179,64 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
         refresh()
     }
 
+    // --- Settings → Connection: Refresh and Reconnect say what they are doing and how it went ---
+
+    /** Which Connection action is running, for its label ("Refreshing…" / "Reconnecting…"). */
+    var connBusy by mutableStateOf<ConnBusy?>(null); private set
+
+    /** One debug line about the last Refresh or Reconnect (what ran, result, time, server, reason). */
+    var connDebug by mutableStateOf<String?>(null); private set
+
+    /** The selected wallet is a Lightning wallet: it has no chain status of its own. */
+    val selectedIsLightning: Boolean get() = config?.isLightning == true
+
+    private fun connAction(busy: ConnBusy, name: String, work: suspend () -> Unit) = viewModelScope.launch {
+        if (connBusy != null) return@launch
+        connBusy = busy
+        connDebug = null
+        val t0 = System.currentTimeMillis()
+        var failure: String? = null
+        try {
+            work()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            failure = e.message ?: e::class.simpleName
+        } finally {
+            connBusy = null
+        }
+        val lightning = selectedIsLightning
+        val error = failure ?: lastRefreshError
+            ?: if (!lightning && status == null) "no answer from the server" else null
+        val detail = if (lightning) {
+            val st = ln.session.state.value
+            val node = when (st) {
+                is com.fortis.wallet.lightning.LnState.Ready -> "node ready, channel ${st.channel}"
+                is com.fortis.wallet.lightning.LnState.Error -> "node error ${st.error::class.simpleName}"
+                else -> "node $st"
+            }
+            node + (if (ln.session.stuckChannel.value) ", channel stuck" else "")
+        } else status?.blocks?.let { "height $it" }
+        val server = if (usingOwnServer) "your server" else HOSTED_EDGE.removePrefix("https://")
+        connDebug = connectionDebugLine(
+            name, error == null, System.currentTimeMillis() - t0, error, server, detail,
+            java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.ROOT).format(java.util.Date()),
+        )
+    }
+
+    fun refreshWithFeedback() = connAction(ConnBusy.Refreshing, "Refresh") {
+        if (selectedIsLightning) ln.session.refreshBalances() else refresh().join()
+    }
+
+    fun reconnectWithFeedback() = connAction(ConnBusy.Reconnecting, "Reconnect") {
+        if (selectedIsLightning) {
+            ln.session.onConnectivityRestored().join()
+            ln.session.refreshBalances()
+        } else {
+            reconnect().join()
+        }
+    }
+
     /** The hosted fortis-edge as an Esplora backend at `{HOSTED_EDGE}/{chain}`. */
     private fun edgeBackend(token: String): EsploraBackend {
         val c = config!!
@@ -2448,9 +2589,12 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
             return s.view.planPayment(utxos, outs, feerate.toULong(), 1u, null, null, false)
         }
         // The deposit's own fee depends on the plan: plan, re-quote with it, plan again.
-        var q = quote(150 * feerate) ?: throw tooSmall()
-        val first = plan(q)
-        q = quote(first.feeSat.toLong()) ?: throw tooSmall()
+        // The first guess of the deposit fee can be short (it depends on how many coins the planner
+        // needs): raise it until a plan fits, then re-quote with that plan's real fee.
+        val first = com.fortis.wallet.lightning.withFeeRetry(150 * feerate, 50 * feerate, 12) { fee ->
+            plan(quote(fee) ?: throw tooSmall())
+        }
+        val q = quote(first.feeSat.toLong()) ?: throw tooSmall()
         val final = plan(q)
         pending = PlanPreview(
             final, feerate.toULong(), transit, sweep = false,
@@ -2613,6 +2757,12 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
         val id = side.wallet?.id ?: return@launch
         if (side === lnBtc) importFirstMove(id)
         side.lnMoves = store.lnMoves(id)
+        com.fortis.wallet.lightning.normalizeCancelMoves(side.lnMoves)?.let { fixed ->
+            runCatching { store.setLnMoves(id, fixed) }
+            side.lnMoves = fixed
+        }
+        // A stuck channel cancelled by an earlier build left a "moved in" with no close: add it.
+        if (com.fortis.wallet.lightning.needsCancelBackfill(side.lnMoves, side.session.state.value)) recordCancelledChannel(side)
     }
 
     private suspend fun recordLnMove(side: LnSide, amountSat: Long, payoutSat: Long, feeSat: Long, to: String, feeId: String?, kind: String) {
@@ -3011,6 +3161,9 @@ data class OverviewBalances(
     fun without(id: String) = OverviewBalances(confirmed - id, pending - id)
 }
 
+/** Transit (on-chain) amounts up to this are leftovers (a channel funding's change), not a move. */
+const val MOVING_DUST_SAT = 1_000L
+
 data class HomeBalance(
     val totalSat: Long,
     val onchainSat: Long,
@@ -3022,6 +3175,10 @@ fun homeBalance(
     onchainSat: Long,
     ln: LnState,
     lastKnownLightningSat: Long = 0L,
+    /** A pending channel whose funding transaction never reached the network: its balance is not
+     *  real (the node counts it while the same coins still show as spendable), so only the
+     *  coins count and nothing is moving. */
+    channelStuck: Boolean = false,
 ): HomeBalance = when (ln) {
     LnState.Off, LnState.Starting -> HomeBalance(
         totalSat = onchainSat,
@@ -3032,10 +3189,14 @@ fun homeBalance(
     is LnState.Ready -> {
         val b = ln.balances
         val movingSat = (b.onchainTransitSat + b.pendingCloseSat + b.pendingTransitSat).toLong()
-        val lnSat = b.lightningSat.toLong() + movingSat
-        val moving = movingSat > 0L ||
-            ln.channel == uniffi.wallet_ffi.LnChannelState.OPENING ||
-            ln.channel == uniffi.wallet_ffi.LnChannelState.CLOSING
+        val lnSat = (if (channelStuck) 0L else b.lightningSat.toLong()) + movingSat
+        // A few hundred sat of change from the channel's funding stay in the node wallet for good:
+        // that is not money on the move (2026-11-16: "Moving…" on a ready channel).
+        val moving = !channelStuck && (
+            movingSat > MOVING_DUST_SAT ||
+                ln.channel == uniffi.wallet_ffi.LnChannelState.OPENING ||
+                ln.channel == uniffi.wallet_ffi.LnChannelState.CLOSING
+            )
         HomeBalance(
             totalSat = onchainSat + lnSat,
             onchainSat = onchainSat,

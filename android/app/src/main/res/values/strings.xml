@@ -111,6 +111,13 @@
 
     <!-- shared fields -->
     <string name="field_wallet_name">Wallet name</string>
+    <string name="field_wallet_type">Wallet type</string>
+    <string name="wallet_type_hint_onchain">Choose XBT or BTC: the coin this wallet holds. It can\'t be changed after the wallet is created.</string>
+    <string name="wallet_type_hint_lightning">Choose the Lightning network for the coin you want: BTC or XBT. It can\'t be changed after the wallet is created.</string>
+    <string name="create_type_xbt">You are creating an on-chain XBT wallet.</string>
+    <string name="create_type_btc">You are creating an on-chain BTC wallet.</string>
+    <string name="create_type_ln">You are creating a Lightning (BTC) wallet.</string>
+    <string name="create_type_ln_xbt">You are creating a Lightning (XBT) wallet.</string>
     <string name="field_passphrase">BIP-39 passphrase (optional)</string>
     <string name="field_app_password">App password</string>
     <string name="field_confirm_password">Confirm password</string>
@@ -508,7 +515,9 @@
     <string name="settings_lightning_body">Send and receive instant Bitcoin payments over the Lightning Network.</string>
     <string name="settings_lightning_status_off">Off</string>
     <string name="settings_lightning_status_starting">Connecting to LSP…</string>
-    <string name="settings_lightning_status_ready">LSP connected · backup OK</string>
+    <string name="settings_lightning_status_ready">Lightning node running · backup OK</string>
+    <string name="settings_lightning_status_stuck">Channel could not be opened</string>
+    <string name="settings_lightning_status_open_failed">Channel open failed, retrying</string>
     <string name="settings_lightning_close_action">Close channel and move to on-chain</string>
     <string name="settings_lightning_close_title">Close Lightning channel?</string>
     <string name="settings_lightning_close_body">This closes your Lightning channel and moves your funds back to your on-chain BTC wallet.</string>
@@ -518,6 +527,9 @@
     <string name="settings_lightning_force_action">Force close</string>
     <string name="settings_lightning_closing">Closing…</string>
     <string name="wallet_split_moving">Moving…</string>
+    <string name="ln_channel_opening">Channel opening: waiting for confirmation</string>
+    <string name="ln_channel_closing">Closing channel: waiting for confirmation</string>
+    <string name="ln_channel_opening_n">Channel opening: waiting for confirmation %1$d of %2$d</string>
     <string name="receive_ln_needs_amount">Lightning needs an amount</string>
     <string name="receive_ln_fee_summary">Receiving %1$s %2$s · fee %3$s · you get %4$s</string>
     <string name="receive_ln_quoting">Getting Lightning invoice…</string>
@@ -609,6 +621,12 @@
     <string name="transfer_needs_lightning">Your Lightning wallet isn\'t running yet. Open it once, then try again.</string>
     <string name="transfer_splice_busy">Your channel is still settling an earlier change. Try again in a few minutes.</string>
     <string name="transfer_pending">Moving to Lightning: waiting for 1 confirmation</string>
+    <string name="ln_cancelling">Channel cancelled. Your funds are on their way back to %1$s.</string>
+    <string name="ln_stuck_title">Channel could not be opened</string>
+    <string name="ln_stuck_body">The transaction that funds your channel never reached the network, so the channel can\'t be completed. Your funds are safe in this wallet. Cancel the channel to send them back to your on-chain wallet, then move them again.</string>
+    <string name="ln_stuck_action">Cancel channel and return funds</string>
+    <string name="ln_stuck_working">Cancelling…</string>
+    <string name="ln_open_failed">Opening the channel failed: %1$s. Retrying.</string>
     <string name="confirm_transfer_fee">Transfer fee</string>
     <string name="confirm_transfer_arrives">Arrives in Lightning ≈</string>
     <string name="transfer_nothing_to_move">Nothing to move yet: this wallet has no confirmed bitcoin.</string>
@@ -621,6 +639,7 @@
     <string name="ln_receive_received">Received +%1$s ✓</string>
     <string name="ln_offer_title">Reusable address (BOLT12)</string>
     <string name="ln_offer_help">One address you can share and be paid any amount to, again and again — even while this phone is off. Payments are held by Fortis until they’re worth a channel of your own. Needs a wallet that supports BOLT12 (e.g. Phoenix).</string>
+    <string name="ln_offer_help_xbt">One address you can share and be paid any amount to, again and again — even while this phone is off. Payments are held by Fortis until they’re worth a channel of your own. Needs a wallet that supports BOLT12 offers.</string>
     <string name="ln_offer_show">Show my reusable address</string>
     <string name="ln_offer_unavailable">The reusable address isn’t available right now. Try again later.</string>
     <string name="ln_push_channel">Lightning payments</string>
@@ -652,7 +671,14 @@
     <string name="support_needs_wallet">Add a wallet first, so the app can reach the fortis servers.</string>
     <string name="history_moved_onchain">moved to on-chain</string>
     <string name="history_moved_onchain_closed">channel closed, moved to on-chain</string>
+    <string name="history_moved_onchain_pending">moving to on-chain: waiting for confirmation</string>
+    <string name="history_moved_onchain_closing">channel closing, moving to on-chain: waiting for confirmation</string>
+    <string name="history_channel_open">tap to view in the explorer</string>
+    <string name="history_channel_open_title">Channel opening</string>
+    <string name="history_channel_opened_title">Channel opened</string>
+    <string name="history_channel_open_label">funding transaction</string>
     <string name="history_moved_in">moved in from on-chain</string>
+    <string name="history_open_fee_held">held for the channel opening fee, taken when the channel opens</string>
     <string name="history_balance_after">balance %1$s %2$s</string>
     <string name="history_row_subtitle_fee_incl">%1$s · %2$s… · incl. fee %3$d sat</string>
     <string name="history_unaccounted">Not accounted for by the entries above: %1$s %2$s. Tell support if this isn\'t 0.</string>

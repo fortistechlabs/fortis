@@ -39,7 +39,14 @@ internal fun TransferToLightningTab(vm: WalletViewModel) {
         Column(verticalArrangement = Arrangement.spacedBy(Fx.s3)) {
             Text(stringResource(R.string.transfer_to_lightning_title), color = Fx.text, fontWeight = FontWeight.SemiBold)
             Text(stringResource(R.string.transfer_to_lightning_help), style = FxType.meta, color = Fx.textDim)
-            if (maxSat <= 0L) Text(stringResource(R.string.transfer_nothing_to_move), style = FxType.meta, color = Fx.warn)
+            val moving by vm.lightning.transferPending.collectAsState()
+            when (com.fortis.wallet.lightning.moveInNotice(maxSat, moving)) {
+                com.fortis.wallet.lightning.MoveInNotice.NothingToMove ->
+                    Text(stringResource(R.string.transfer_nothing_to_move), style = FxType.meta, color = Fx.warn)
+                com.fortis.wallet.lightning.MoveInNotice.UnderWay ->
+                    Text(stringResource(R.string.transfer_pending), style = FxType.meta, color = Fx.good)
+                com.fortis.wallet.lightning.MoveInNotice.None -> {}
+            }
             SwapAmount(amount, { amount = it }, chain, maxSat, hint = R.string.transfer_help_slider, inSat = inSat, onUnit = { inSat = it })
             val feerate = vm.feerates[6] ?: 2L
             val q = com.fortis.wallet.lightning.quoteToLightning(amountSat, 150 * feerate, feerate, 0L)

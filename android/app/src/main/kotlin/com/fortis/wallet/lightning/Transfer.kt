@@ -164,7 +164,8 @@ data class LnMove(
     val feeSat: Long,
     val toWallet: String,
     val feePaymentId: String?,
-    /** "splice" (the channel stays open), "close" (it was closed) or "in" (moved into Lightning). */
+    /** "splice" (the channel stays open), "close" (it was closed), "in" (moved into Lightning) or
+     *  "open" (the funding transaction of its channel: [txid] is that transaction; moves no money). */
     val kind: String,
     /** The on-chain transaction that delivered it to [toWallet], once matched in that wallet's
      *  history; then [payoutSat] is what actually arrived and [feeSat] = [amountSat] − [payoutSat]. */
@@ -198,3 +199,116 @@ fun settleMoves(moves: List<LnMove>, history: List<com.fortis.wallet.data.Histor
 
 /** The most a move's fees (network + transfer) can come to, for matching it to its transaction. */
 const val MOVE_MAX_FEE_SAT = 20_000L
+
+/**
+ * The history entry for a stuck channel that was cancelled: the latest move into Lightning came
+ * back out, so a "close" of exactly what the move in counted to [toWallet] (the ledger nets to zero). Null when
+ * there is no move in, or its cancel is already recorded. Once the sweep confirms,
+ * [settleMoves] fills in the exact payout.
+ */
+fun cancelMoveFor(moves: List<LnMove>, nowSecs: Long, toWallet: String): LnMove? {
+    val i = moves.indexOfLast { it.kind == "in" }
+    if (i < 0) return null
+    if (moves.drop(i + 1).any { it.kind == "close" }) return null
+    val m = moves[i]
+    return LnMove(nowSecs, m.amountSat, m.amountSat, 0L, toWallet, null, "close")
+}
+
+/**
+ * A move into Lightning is on record but its channel never existed: no channel, nothing in it or
+ * on its way, and no close entry. That is a stuck channel cancelled by an app version that did not
+ * write the close entry; it gets one now (see [cancelMoveFor]).
+ */
+fun needsCancelBackfill(moves: List<LnMove>, ln: LnState): Boolean {
+    val r = ln as? LnState.Ready ?: return false
+    val b = r.balances
+    if (r.channel != uniffi.wallet_ffi.LnChannelState.NONE) return false
+    if (b.lightningSat != 0uL || b.onchainTransitSat != 0uL || b.pendingCloseSat != 0uL || b.pendingTransitSat != 0uL) return false
+    return cancelMoveFor(moves, 0L, "") != null
+}
+
+/** An earlier build wrote the cancel's close as the deposit including its fee, which leaves the
+ *  ledger short by that fee. Corrects such an entry to what the move in counted; null when nothing
+ *  needs it. */
+fun normalizeCancelMoves(moves: List<LnMove>): List<LnMove>? {
+    var changed = false
+    val out = moves.mapIndexed { i, m ->
+        val prevIn = moves.take(i).lastOrNull { it.kind == "in" }
+        if (m.kind == "close" && m.txid == null && m.feePaymentId == null && m.feeSat == 0L && prevIn != null &&
+            m.amountSat == prevIn.amountSat + prevIn.feeSat && prevIn.feeSat > 0L
+        ) {
+            changed = true
+            m.copy(amountSat = prevIn.amountSat, payoutSat = prevIn.amountSat)
+        } else m
+    }
+    return if (changed) out else null
+}
+
+/**
+ * Plans with a network-fee guess that is raised by [step] after each failure, up to [attempts]
+ * tries; the last error when none fits. The planner's fee depends on how many coins it needs, which
+ * the guess cannot know: moving a whole balance of two coins failed (2026-11-16) because the first
+ * guess was 118 sat short and was never raised.
+ */
+inline fun <T> withFeeRetry(startFee: Long, step: Long, attempts: Int, plan: (fee: Long) -> T): T {
+    var fee = startFee
+    var last: Exception? = null
+    repeat(attempts) {
+        try {
+            return plan(fee)
+        } catch (e: Exception) {
+            last = e
+            fee += step
+        }
+    }
+    throw last ?: IllegalStateException("no attempts")
+}
+
+/** What the Move-to-Lightning tab says about the wallet's balance. */
+enum class MoveInNotice { None, NothingToMove, UnderWay }
+
+/** "Nothing to move yet" only when the wallet has nothing and no move is under way: right after
+ *  moving everything the confirmed balance is 0 too, and then the move is in progress. */
+fun moveInNotice(maxSat: Long, transferPending: Boolean): MoveInNotice = when {
+    maxSat > 0L -> MoveInNotice.None
+    transferPending -> MoveInNotice.UnderWay
+    else -> MoveInNotice.NothingToMove
+}
+
+/** What the Lightning wallet's tile says while funds are in motion. There is no bare "Moving…":
+ *  every state names what is happening and what it waits for (or shows nothing). */
+enum class LnMoveLabel { MovingIn, ChannelOpening, ChannelClosing }
+
+/**
+ * - [LnMoveLabel.MovingIn]: a move into Lightning whose deposit has not confirmed (the transfer is
+ *   pending): "Moving to Lightning: waiting for 1 confirmation";
+ * - [LnMoveLabel.ChannelOpening]: the deposit confirmed and the channel's funding is waiting for
+ *   confirmations: "Channel opening: waiting for confirmation x of y";
+ * - [LnMoveLabel.ChannelClosing]: "Closing channel: waiting for confirmation";
+ * - null: nothing to say. Funds on their way out to an on-chain wallet have their own line (with
+ *   the amount and the wallet); a few hundred sat of leftover change is not a move at all.
+ */
+fun lightningMoveLabel(transferPending: Boolean, opening: Boolean, closing: Boolean): LnMoveLabel? = when {
+    transferPending -> LnMoveLabel.MovingIn
+    opening -> LnMoveLabel.ChannelOpening
+    closing -> LnMoveLabel.ChannelClosing
+    else -> null
+}
+
+/** The most the estimate of a move's channel opening fee can be off by and still be settled. */
+const val MAX_OPEN_FEE_SETTLE_SAT = 2_000L
+
+/**
+ * After the channel opened, the wallet holds [deltaSat] more (or less) than the newest move in
+ * counted, because its channel opening fee was an estimate: that move becomes what really
+ * arrived, the fee what it really cost. Null unless the newest move is a move in and the gap is
+ * fee-sized (anything bigger is not a fee and stays visible as "not accounted for").
+ */
+fun adjustLatestMoveIn(moves: List<LnMove>, deltaSat: Long): List<LnMove>? {
+    val newest = moves.filter { it.kind != "open" }.maxByOrNull { it.atSecs } ?: return null
+    if (newest.kind != "in") return null
+    if (deltaSat == 0L || kotlin.math.abs(deltaSat) > MAX_OPEN_FEE_SETTLE_SAT) return null
+    if (newest.feeSat - deltaSat < 0L) return null
+    val fixed = newest.copy(amountSat = newest.amountSat + deltaSat, payoutSat = newest.payoutSat + deltaSat, feeSat = newest.feeSat - deltaSat)
+    return moves.map { if (it === newest) fixed else it }
+}

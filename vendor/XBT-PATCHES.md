@@ -262,3 +262,10 @@ fetching a new one, so the user would need to request again.
     No Fortis channel output uses these: channels are P2WSH only, with no
     taproot channels and anchors off on XBT.
 
+
+## Not XBT-specific: fewer confirmations for small inbound channels
+
+| Crate | File | Item | Reason |
+|---|---|---|---|
+| ldk-node | `src/config.rs` | `Config::fast_inbound`, `FastInboundChannels` | Accept small inbound channels after fewer confirmations than LDK's 6 (the LSP's `fast_inbound_max_sat` / `fast_inbound_depth`). `// FORTIS` |
+| ldk-node | `src/event.rs` | `OpenChannelRequest` handling | Per-channel `minimum_depth` override on accept when the channel is within the limit. `// FORTIS` |

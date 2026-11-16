@@ -9,7 +9,8 @@ import android.widget.Toast
 /** Public block-explorer URL for a transaction, or null when there isn't one
  *  (a non-mainnet network, or an unknown chain). */
 fun explorerTxUrl(chain: String, network: String, txid: String): String? {
-    if (network != "mainnet") return null
+    // "bitcoin" is how a Lightning wallet names mainnet.
+    if (network != "mainnet" && network != "bitcoin") return null
     val base = when (chain) {
         // Same host as PUBLIC_BTC_ESPLORA: mempool.emzy.de stopped taking
         // IPv4 connections (2026-10-22), mempool.space answers again.

@@ -827,6 +827,13 @@ pub fn ln_recover_sweep(
 // LnNode object
 // ---------------------------------------------------------------------------
 
+/// How far a channel being opened is: confirmations so far and the number it needs.
+#[derive(uniffi::Record, Debug, Clone, Copy, PartialEq, Eq)]
+pub struct LnOpeningProgress {
+    pub confirmations: u32,
+    pub required: u32,
+}
+
 #[derive(uniffi::Object)]
 pub struct LnNode {
     inner: Node,
@@ -979,6 +986,18 @@ impl LnNode {
 
     pub fn channel_state(&self) -> LnChannelState {
         self.inner.channel_state().into()
+    }
+
+    /// Confirmations so far and needed of the channel being opened, `None` when there is none.
+    pub fn opening_progress(&self) -> Option<LnOpeningProgress> {
+        self.inner
+            .opening_progress()
+            .map(|(confirmations, required)| LnOpeningProgress { confirmations, required })
+    }
+
+    /// The funding txid of the channel this node funds while it is unconfirmed.
+    pub fn pending_funding_txid(&self) -> Option<String> {
+        self.inner.pending_funding_txid()
     }
 }
 

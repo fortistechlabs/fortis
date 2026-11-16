@@ -236,6 +236,44 @@ curl -s -X POST http://127.0.0.1:9746/admin/abandon -H "Authorization: Bearer $T
 
 `/admin/abandon` refuses any channel whose funding has confirmed (it answers 400 and points to the cooperative `/admin/close`), so it cannot close a live channel by mistake. The restart-time rule "a peer with any channel is left alone" then frees that peer again.
 
+### 5.2 Sending on-chain from the LSP wallet (`/admin/send`)
+
+`POST /admin/send {"address": "<address>", "amount_sat": N}` on the loopback admin port, with the admin token, sends exactly N sat on-chain from the LSP's own wallet and answers `{"txid": ...}`. Guard rails: N must be a whole number of sat from 1,000 to 1,000,000 (no "send all"); the address must be for the node's own network (another network's address is refused before anything is built); the anchor reserve of open channels is kept, so a send that would dip into it is refused. Use it to put a small amount on a test wallet, for example the phone's on-chain XBT wallet:
+
+```sh
+T=$(sudo cat /var/lib/fortis/lsp-xbt/admin.token)      # lsp for the BTC LSP, port 9736
+curl -s -X POST http://127.0.0.1:9746/admin/send -H "Authorization: Bearer $T" \
+     -d '{"address":"<address>","amount_sat":100000}'     # → {"txid":"…"}
+```
+
+Check the address first. This moves real funds and a confirmed transaction cannot be undone.
+
+### 5.3 Getting inbound liquidity: an extra channel with a push (`/admin/open`)
+
+A channel the LSP funds gives the LSP all the balance, so the peer cannot pay it (it has no inbound on that channel). To get inbound, open another channel with part of it **pushed** to the peer's side. `POST /admin/open {"peer": "<node id>@<host>:<port>", "sat": N, "push_sat": M}` on the loopback admin port, with the admin token, opens one announced channel of N sat and hands M sat to the peer at once. Answers `{"user_channel_id": ...}`. Guard rails: N is 20,000 to 1,000,000; M is 1 to 90 % of N; the peer must be given with its address; and it is refused while any earlier channel's funding is unconfirmed (one funding at a time, see 5.1).
+
+**M is real money handed to the peer: it is theirs.** It is the price of the inbound. Start small, for example `sat` 150,000 and `push_sat` 50,000.
+
+```sh
+T=$(sudo cat /var/lib/fortis/lsp-xbt/admin.token)
+curl -s -X POST http://127.0.0.1:9746/admin/open -H "Authorization: Bearer $T" \
+     -d '{"peer":"<node id>@<host>:<port>","sat":150000,"push_sat":50000}'
+```
+
+Not `[[outbound]]`: the automatic opener leaves a peer alone once any channel with it exists, and it never pushes.
+
+### 5.4 Fewer confirmations for small inbound channels
+
+LDK makes the accepting side wait for 6 confirmations. On XBT (slow, irregular blocks) that is over an hour for a user's channel. The risk the wait covers: a user pays out through the channel, the funding is then reversed, and the LSP is out what it forwarded. So the LSP can shorten it for SMALL channels only, where that loss is capped by the channel size:
+
+```toml
+# top level of lsp.toml, before any [[outbound]] table
+fast_inbound_max_sat = 200000   # inbound channels up to this size ... (0 = off, the default)
+fast_inbound_depth   = 1        # ... are accepted after this many confirmations (1..=5)
+```
+
+Larger channels keep 6. Only channels opened TO the LSP are affected (the ones the LSP opens, such as `[[outbound]]` and `/admin/open`, take the peer's depth). Needs the vendored ldk-node patch (`vendor/XBT-PATCHES.md`). Verify with `cargo test -p fortis-lightning --test fast_inbound -- --ignored`.
+
 ### 6.1 Weekly backup to the encrypted USB drive (home host)
 
 For a host with no always-on off-site target, `linux-home/fortis-backup.sh` writes a verified backup to a LUKS-encrypted USB drive. It is a **weekly** job, not nightly, because the drive is unlocked by hand and is not always plugged in.

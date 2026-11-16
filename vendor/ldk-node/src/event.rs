@@ -1265,6 +1265,21 @@ where
 						});
 					}
 				}
+				// FORTIS: a small inbound channel needs fewer confirmations (see `Config::fast_inbound`).
+				if !allow_0conf {
+					if let Some(fast) = self.config.fast_inbound {
+						if funding_satoshis <= fast.max_channel_sat && fast.minimum_depth >= 1 {
+							let mut ov = channel_override_config.take().unwrap_or(ChannelConfigOverrides {
+								handshake_overrides: None,
+								update_overrides: None,
+							});
+							let mut h = ov.handshake_overrides.take().unwrap_or_default();
+							h.minimum_depth = Some(fast.minimum_depth);
+							ov.handshake_overrides = Some(h);
+							channel_override_config = Some(ov);
+						}
+					}
+				}
 				let res = if allow_0conf {
 					self.channel_manager.accept_inbound_channel_from_trusted_peer_0conf(
 						&temporary_channel_id,
