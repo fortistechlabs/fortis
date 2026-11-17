@@ -40,13 +40,12 @@ pub struct Withdrawal {
     pub fee_sat: u64,
 }
 
-/// The app's rule (`Transfer.kt`): fee `max(1 %, 1,000 sat, network fee)`,
-/// the operator's share (fee − network fee) dropped below dust. `None` when
-/// less than dust would arrive.
+/// The app's move-out rule (`transferOutShareSat` in `Transfer.kt`): the network fee plus
+/// the operator's share, 0.5 % of the amount (at least 150 sat). `None` when less than dust
+/// would arrive.
 pub fn withdrawal(amount_sat: u64, feerate_sat_vb: u64) -> Option<Withdrawal> {
     let net = WITHDRAW_TX_VBYTES * feerate_sat_vb.max(1);
-    let fee = (amount_sat / 100).max(1_000).max(net);
-    let share = if fee - net < DUST_SAT { 0 } else { fee - net };
+    let share = (amount_sat / 200).max(150);
     let fee_sat = net + share;
     amount_sat
         .checked_sub(fee_sat)
@@ -336,7 +335,7 @@ impl AccountService {
 
     /// Moves `amount_msat` (everything leaving the account) to an on-chain
     /// `address`: the LSP sends `amount − fee` from its wallet, fee
-    /// `max(1 %, 1,000 sat, network fee)` with the network fee estimated as
+    /// the network fee plus 0.5 % (at least 150 sat), with the network fee estimated as
     /// [`WITHDRAW_TX_VBYTES`] at the caller's `feerate_sat_vb` (spec §2).
     fn withdraw(&self, node: &PublicKey, p: &Value, nonce: &str) -> Result<Reply, LedgerError> {
         let (Some(amount_msat), Some(address), Some(feerate)) = (
@@ -820,14 +819,13 @@ mod tests {
     }
 
     #[test]
-    fn withdrawal_fee_follows_the_transfer_rule() {
-        // 1 % wins; network 400 sat, operator keeps 600.
-        assert_eq!(withdrawal(100_000, 2), Some(Withdrawal { payout_sat: 99_000, fee_sat: 1_000 }));
-        // The network fee wins: the operator keeps nothing.
-        assert_eq!(withdrawal(100_000, 10), Some(Withdrawal { payout_sat: 98_000, fee_sat: 2_000 }));
-        // A share below dust is dropped: only the network fee.
-        assert_eq!(withdrawal(50_000, 3), Some(Withdrawal { payout_sat: 49_400, fee_sat: 600 }));
-        assert_eq!(withdrawal(1_500, 2), None, "too little would arrive");
+    fn withdrawal_fee_is_network_plus_half_a_percent() {
+        // Network 400 sat (200 vB at 2); 0.5 % of 100,000 is 500.
+        assert_eq!(withdrawal(100_000, 2), Some(Withdrawal { payout_sat: 99_100, fee_sat: 900 }));
+        // The 150 sat minimum share on a small amount.
+        assert_eq!(withdrawal(20_000, 3), Some(Withdrawal { payout_sat: 19_250, fee_sat: 750 }));
+        assert_eq!(withdrawal(400_000, 10), Some(Withdrawal { payout_sat: 396_000, fee_sat: 4_000 }));
+        assert_eq!(withdrawal(900, 2), None, "too little would arrive");
     }
 
     #[test]
@@ -839,12 +837,12 @@ mod tests {
         assert!(svc.on_payment_received(hash, 60_000_000).unwrap(), "{v}");
         let p = r#"{"amount_msat":50000000,"address":"bc1qexample","feerate_sat_vb":2}"#;
         let (s, v) = call(&svc, 1, "withdraw", p, &nonce(2));
-        assert_eq!((s, v["payout_sat"].as_u64(), v["fee_sat"].as_u64()), (200, Some(49_000), Some(1_000)), "{v}");
-        assert_eq!(node.sent.lock().unwrap().last().unwrap(), &("bc1qexample@2".to_string(), Some(49_000)));
+        assert_eq!((s, v["payout_sat"].as_u64(), v["fee_sat"].as_u64()), (200, Some(49_350), Some(650)), "{v}");
+        assert_eq!(node.sent.lock().unwrap().last().unwrap(), &("bc1qexample@2".to_string(), Some(49_350)));
         let (_, b) = call(&svc, 1, "balance", "{}", &nonce(3));
         assert_eq!((b["balance_msat"].as_u64(), b["held_msat"].as_u64()), (Some(10_000_000), Some(0)));
         let (_, h) = call(&svc, 1, "history", r#"{"limit":1}"#, &nonce(4));
-        assert_eq!((h[0]["kind"].as_str(), h[0]["fee_msat"].as_u64()), (Some("withdrawn"), Some(1_000_000)), "{h}");
+        assert_eq!((h[0]["kind"].as_str(), h[0]["fee_msat"].as_u64()), (Some("withdrawn"), Some(650_000)), "{h}");
         // More than is left; a foreign address; a failed send releases the hold.
         assert_eq!(call(&svc, 1, "withdraw", p, &nonce(5)).0, 402);
         let bad = r#"{"amount_msat":5000000,"address":"tb1qwrong","feerate_sat_vb":2}"#;

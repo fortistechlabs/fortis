@@ -9,10 +9,10 @@ import uniffi.wallet_ffi.LnChannelState
 
 class TransferTest {
     @Test
-    fun `fee is max of 1 percent, 1000 sat and the network fee`() {
+    fun `fee is max of 0.5 percent, 1000 sat and the network fee`() {
         assertEquals(1_000L, transferFeeSat(50_000, 300))
         assertEquals(2_000L, transferFeeSat(50_000, 2_000))
-        assertEquals(5_000L, transferFeeSat(500_000, 300))
+        assertEquals(2_500L, transferFeeSat(500_000, 300))
     }
 
     @Test

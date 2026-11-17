@@ -26,8 +26,8 @@ description: |
   - Get paid while the app is closed: the Fortis Lightning provider holds the payment and notifies you; open Fortis and it arrives.
   - A reusable BOLT12 address you share once and get paid to again and again.
   - Move sats between on-chain and Lightning in a couple of taps, and choose which on-chain wallet receives them. A channel needs a few block confirmations to open (on XBT it can take an hour or more) and the wallet shows what it is waiting for, for example "Channel opening: waiting for confirmation 2 of 6". If a channel's opening transaction never reaches the network, the app notices, cancels it and returns your funds.
-  - A history that works like a ledger: every payment, move and fee (network, transfer, routing) with the balance after each, so every sat reconciles.
-  - Your first channel opens with a payment: on BTC 11,000 sat or more (fee 0.5%, minimum 1,000 sat), on XBT 51,000 sat or more (fee 1%, minimum 1,000 sat). The fee is shown before you share the invoice.
+  - A history that works like a ledger: every payment, move and fee (network, Fortis share, routing) with the balance after each, so every sat reconciles.
+  - Your first channel opens with a payment: on BTC 11,000 sat or more (fee 0.5%, minimum 1,000 sat), on XBT 51,000 sat or more (fee 0.5%, minimum 1,000 sat). The fee is shown before you share the invoice.
   - Honest about custody: smaller payments, and payments you don't collect within a few hours, are held by Fortis on your Fortis balance until they add up to more than 50,000 sat and move into a channel of your own. The app shows that balance separately. Details: https://fortistechlabs.com/lightning
   - Encrypted channel backup, restored from the wallet's phrase. A cooperative close sends everything on-chain; a force close is offered if the provider can't be reached.
 

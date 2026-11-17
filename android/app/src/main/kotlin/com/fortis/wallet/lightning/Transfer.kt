@@ -3,7 +3,7 @@ package com.fortis.wallet.lightning
 /**
  * Moving funds between an on-chain wallet and the Lightning wallet (spec §2).
  *
- * Fee: `max(1 % of the amount, 1,000 sat, network fee)`, the network fee
+ * Fee: `max(0.5 % of the amount, 1,000 sat, network fee)`, the network fee
  * included, never charged twice. The operator's share is the fee less the
  * network fees.
  *
@@ -41,7 +41,7 @@ fun transferOutShareSat(amountSat: Long): Long =
     maxOf(amountSat * TRANSFER_OUT_SHARE_BPS / 10_000L, TRANSFER_OUT_SHARE_MIN_SAT)
 
 fun transferFeeSat(amountSat: Long, networkFeeSat: Long): Long =
-    maxOf(amountSat / 100, TRANSFER_FEE_FLOOR_SAT, networkFeeSat)
+    maxOf(amountSat / 200, TRANSFER_FEE_FLOOR_SAT, networkFeeSat)
 
 /**
  * The operator's share: the fee less [networkFeeSat]. On-chain ([floorSat] > 0: the edge's

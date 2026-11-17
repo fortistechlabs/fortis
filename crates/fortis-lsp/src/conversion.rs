@@ -10,9 +10,9 @@ use std::time::Duration;
 /// How often accounts over the cap are looked at.
 pub const CHECK: Duration = Duration::from_secs(60);
 
-/// The fee for a conversion: 1 % of the amount moved, at least 1,000 sat.
+/// The fee for a conversion: 0.5 % of the amount moved, at least 1,000 sat.
 pub fn conversion_fee_msat(moved_msat: u64) -> u64 {
-    (moved_msat / 100).max(1_000_000)
+    (moved_msat / 200).max(1_000_000)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -65,9 +65,10 @@ mod tests {
     const CAP: u64 = 50_000_000;
 
     #[test]
-    fn fee_is_one_percent_with_a_1000_sat_floor() {
+    fn fee_is_half_a_percent_with_a_1000_sat_floor() {
         assert_eq!(conversion_fee_msat(55_000_000), 1_000_000);
-        assert_eq!(conversion_fee_msat(150_000_000), 1_500_000);
+        assert_eq!(conversion_fee_msat(150_000_000), 1_000_000);
+        assert_eq!(conversion_fee_msat(400_000_000), 2_000_000);
     }
 
     #[test]

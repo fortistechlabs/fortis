@@ -2,6 +2,15 @@
 
 Fortis Wallet (Android). Versions are `versionName (versionCode)`.
 
+## 0.7.6 (33) — 2026-11-17
+
+- Fees: moving funds into Lightning from an on-chain wallet costs 0.5% (at least
+  1,000 sat, or the network fee if higher), was 1%. The Fortis LSP charges 0.5%
+  (at least 1,000 sat) to move a Fortis balance into your channel, was 1%, and
+  XBT channel opening is 0.5%, was 1%.
+- Withdrawing a Fortis balance on-chain costs the network fee plus 0.5% (at least
+  150 sat), the same as moving out of a channel, was 1% (at least 1,000 sat).
+
 ## 0.7.5 (32) — 2026-11-17
 
 - Move to on-chain has two buttons: "Move" for an amount you choose (the rest

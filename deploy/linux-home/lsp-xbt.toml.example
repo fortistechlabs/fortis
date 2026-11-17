@@ -26,8 +26,8 @@ xbt_gossip_floor_height = 961640
 # Holds keys_seed (mode 0400 — back this up!), SQLite store and logs.
 data_dir = "/var/lib/fortis/lsp-xbt"
 
-# JIT channel-open fee: 1% (10 000 ppm), minimum 1 000 sat.
-open_fee_ppm = 10000
+# JIT channel-open fee: 0.5% (5 000 ppm), minimum 1 000 sat.
+open_fee_ppm = 5000
 open_fee_min_sat = 1000
 
 # Payment bounds narrowed so every JIT channel lands in channel_min_sat..channel_max_sat

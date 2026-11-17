@@ -45,7 +45,7 @@
     <dl class="facts">
       <div>
         <dt>Receive</dt>
-        <dd>Enter an amount and tap <strong>Create invoice</strong>. Your first payment opens a channel with the Fortis Lightning provider (LSP). The fee for that (0.5% of the payment, minimum 1,000&nbsp;sat) is shown before you share the invoice. After that, payments that fit in your channel cost nothing to receive.</dd>
+        <dd>Enter an amount and tap <strong>Create invoice</strong>. Your first payment opens a channel with the Fortis Lightning provider (LSP). The fee for that is shown before you share the invoice: 0.5% of the payment, minimum 1,000&nbsp;sat, on both BTC and XBT. After that, payments that fit in your channel cost nothing to receive.</dd>
       </div>
       <div>
         <dt>Get paid while the app is closed</dt>
@@ -61,11 +61,11 @@
       </div>
       <div>
         <dt>Move between on-chain and Lightning</dt>
-        <dd>A BTC wallet's <strong>Move</strong> tab puts funds into Lightning, either opening your channel or adding to it. The Lightning wallet's Move tab sends funds back, and you choose which BTC wallet receives them. <strong>Move all</strong> closes the channel cooperatively and sends everything on-chain. The fees are shown before you confirm.</dd>
+        <dd>An on-chain wallet's <strong>Move</strong> tab puts funds into Lightning, either opening your channel or adding to it. The Lightning wallet's Move tab sends funds back, and you choose which wallet receives them. <strong>Move</strong> takes the amount you choose and leaves the rest in your channel; <strong>Move everything and close channel</strong> closes it cooperatively and sends all of it on-chain. Moving into Lightning costs 0.5% of the amount (minimum 1,000&nbsp;sat, or the network fee if that is higher), and that includes the network fee. Moving out costs the network fee plus a Fortis share of 0.5% (minimum 150&nbsp;sat); if your channel can't pay that share, Fortis waives it and the history shows it as waived. Both moves show a confirmation with every sat accounted for before anything is sent.</dd>
       </div>
       <div>
         <dt>A history that works like a ledger</dt>
-        <dd>Every payment, every move in or out and every fee, in time order, with the balance after each entry. Fees are itemised: the network fee (paid to miners), the Fortis transfer fee and the routing fee. A move shows what left Lightning and what arrived on-chain, so you can reconcile both sides to the sat. If the entries ever don't add up to the balance, the history says so.</dd>
+        <dd>Every payment, every move in or out and every fee, in time order, with the balance after each entry. Fees are itemised: the network fee (paid to miners), the Fortis share and the routing fee. A move shows what left Lightning and what arrived on-chain, so you can reconcile both sides to the sat. If the entries ever don't add up to the balance, the history says so.</dd>
       </div>
       <div>
         <dt>Backed up, one phone at a time</dt>
@@ -94,14 +94,14 @@
       </div>
       <div>
         <dt>What it costs and how much</dt>
-        <dd>The provider currently opens a channel for you for 1% of the payment (minimum 1,000&nbsp;sat), for payments from 51,000 up to 250,000&nbsp;sat. As on BTC, smaller payments are held by Fortis on your balance (up to 50,000&nbsp;sat each) until they are worth a channel of your own.</dd>
+        <dd>The provider currently opens a channel for you for 0.5% of the payment (minimum 1,000&nbsp;sat), for payments from 51,000 up to 250,000&nbsp;sat, and a channel you fund yourself can be up to 500,000&nbsp;sat. As on BTC, smaller payments are held by Fortis on your balance (up to 50,000&nbsp;sat each) until they are worth a channel of your own.</dd>
       </div>
       <div>
         <dt>Paying people</dt>
         <dd>You can pay XBT invoices and LNURL-pay codes, and BOLT&nbsp;12 offers and Lightning addresses where the person or service you pay supports XBT. An address that hands out BTC invoices is refused, safely.</dd>
       </div>
     </dl>
-    <p class="warn" style="font-size:14px; margin-top:26px">XBT Lightning is early. Moving funds in, opening a channel and paying invoices and LNURL codes from it are tested and work; BOLT&nbsp;12 offers are not yet. Fewer nodes and services support XBT, so fewer people can pay you than on BTC Lightning. Start with small amounts.</p>
+    <p class="warn" style="font-size:14px; margin-top:26px">XBT Lightning is early. Moving funds in, opening a channel and paying invoices and LNURL codes from it are tested and work. BOLT&nbsp;12 offers often fail: the offer's issuer must be reachable over the XBT Lightning network (an offer that is only reachable over Tor can't be paid), and a payment with no answer gives up after two minutes. Fewer nodes and services support XBT, so fewer people can pay you than on BTC Lightning. Start with small amounts.</p>
   </div>
 </section>
 
@@ -112,7 +112,7 @@
     <p>A channel only makes sense above a minimum size. Below it, the network fee to open the channel would eat the payment. So small payments that arrive before you have a channel are held by Fortis on your <strong>Fortis balance</strong>. So are payments to your BOLT12 address, and payments you didn't collect within a few hours. Fortis holds this money, not your phone, so you're trusting us with it.</p>
     <ul>
       <li>The Lightning wallet shows the Fortis balance separately from your own channel.</li>
-      <li>Once it adds up to more than 50,000&nbsp;sat, Fortis moves it into a channel of your own, minus a fee of 1% (at least 1,000&nbsp;sat).</li>
+      <li>Once it adds up to more than 50,000&nbsp;sat, Fortis moves it into a channel of your own, minus a fee of 0.5% (at least 1,000&nbsp;sat).</li>
       <li>Fortis holds at most 300,000&nbsp;sat for all users together. Above that, you're asked to receive enough to open your own channel.</li>
       <li>You can pay from it. Every movement in and out appears in your history.</li>
     </ul>
