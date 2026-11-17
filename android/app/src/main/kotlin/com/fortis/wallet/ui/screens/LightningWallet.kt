@@ -769,7 +769,10 @@ internal fun LightningSendTab(vm: WalletViewModel) {
                 }
                 is SendPlan.Invalid -> {
                     // Off / Starting already shows the node's status above. An error waits until the typing stops.
-                    if (lnState !is LnState.Off && lnState !is LnState.Starting && typingPaused) ValidationText(plan.reason)
+                    if (lnState !is LnState.Off && lnState !is LnState.Starting && typingPaused) {
+                        // A failed address lookup is not a typing mistake: offer the report link with it.
+                        if (plan.reason == lnurlError) ErrorText(plan.reason) else ValidationText(plan.reason)
+                    }
                 }
                 is SendPlan.OnChain -> {}
             }
@@ -1108,6 +1111,11 @@ fun lnErrorText(e: com.fortis.wallet.lightning.LnFfiError, get: (Int, Array<out 
             r == "Payment failed" -> R.string.ln_err_payment_failed
             r == "lnurl_description_hash" -> R.string.ln_err_lnurl_hash
             r.startsWith("lnurl ") -> R.string.ln_err_lnurl_service
+            r.startsWith("http:") -> {
+                // The address's own website could not be reached (name not found, refused, timed out, an error page).
+                val host = Regex("""https?://([^/\s):]+)""").find(r)?.groupValues?.get(1)
+                return get(R.string.ln_err_lnurl_unreachable, arrayOf(host ?: ""))
+            }
             r == com.fortis.wallet.lightning.OFFER_FAILED -> R.string.ln_err_offer_failed
             r == "splice_failed" -> R.string.transfer_splice_busy
             else -> null

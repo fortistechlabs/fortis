@@ -2,6 +2,14 @@
 
 Fortis Wallet (Android). Versions are `versionName (versionCode)`.
 
+## 0.7.7 (34) — 2026-11-17
+
+- When the website behind a Lightning address cannot be reached (the domain does
+  not exist, is down, or refuses the connection), Send now says so by name
+  ("Could not reach example.com, so nothing was sent") instead of a cut-off
+  technical string and "try again shortly", and it offers the report link again.
+  Messages about what you typed still have no report link.
+
 ## 0.7.6 (33) — 2026-11-17
 
 - Fees: moving funds into Lightning from an on-chain wallet costs 0.5% (at least
