@@ -1,0 +1,12 @@
+Fortis Wallet 0.7 adds XBT Lightning.
+
+One Android app now has BTC Lightning and XBT Lightning: a wallet of each, each with its own recovery phrase, keys generated on your phone. Your phone runs its own Lightning node. Fortis opens the channel and relays payments, but can't spend what's in it.
+
+Move XBT in from an on-chain wallet and back out, pay invoices and LNURL, and read a history that itemises every fee. XBT channels need a few block confirmations, so the wallet shows what it's waiting for. If a channel's opening transaction never reaches the network, the app cancels it and returns your coins.
+
+XBT Lightning is new and in beta. Start small.
+
+https://fortistechlabs.com
+https://zapstore.dev/apps/com.fortistechlabs.wallet
+
+#xbt #lightning #bitcoin #zapstore

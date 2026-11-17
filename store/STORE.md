@@ -57,7 +57,7 @@ detail: https://fortistechlabs.com/privacy
 
 FEES
 The Bitcoin network fee is set by you (fast / normal / slow, or a custom
-sat/vB rate). Payments made through the hosted backend also carry a 1% service
+sat/vB rate). Payments made through the hosted backend also carry a 0.5% service
 fee (minimum 400 sat) that funds it, added as a transaction output and shown
 before you sign.
 

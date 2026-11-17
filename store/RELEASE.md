@@ -203,7 +203,7 @@ section. Declare:
   **not** custody user funds, operate an exchange, or offer trading.
 - You are **not** a licensed financial entity, and the app doesn't require one
   for a non-custodial wallet (confirm per your jurisdiction).
-- **Caveat:** the hosted backend charges a **1% service fee (min 400 sat)** on
+- **Caveat:** the hosted backend charges a **0.5% service fee (min 400 sat)** on
   payments. A wallet taking a cut of transactions can raise a "crypto-asset
   service provider for consideration?" question under MiCA / FINTRAC / some Gulf
   regimes — get advice before submitting to Play, or run the public backend

@@ -1,0 +1,7 @@
+Looking for inbound liquidity on XBT Lightning. If you run an XBT node, please open a channel (100k+ sat) to the Fortis LSP:
+
+0202ff40ad45e9ed4d672986611c66f4fb9147437c2dd4f7b197952459ccd50e35@lsp.fortistechlabs.com:9835
+
+Thank you!
+
+#xbt #lightning
