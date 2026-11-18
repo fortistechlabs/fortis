@@ -647,6 +647,9 @@ fn account_event(
             }
             accounts.on_payment_resolved(payment_hash.0, Some(fee_paid_msat.unwrap_or(0)))?;
             if let Some(id) = payment_id {
+                accounts.on_offer_resolved(id.0, Some(payment_hash.0), Some(fee_paid_msat.unwrap_or(0)))?;
+            }
+            if let Some(id) = payment_id {
                 let hold = format!("conv:pay:{}", hex::encode(id.0));
                 if let Some((_, held)) = ledger.hold_owner(&hold)? {
                     ledger.finish_conversion(&hold, conversion::conversion_fee_msat(held))?;
@@ -665,6 +668,9 @@ fn account_event(
             }
             if let Some(h) = payment_hash {
                 accounts.on_payment_resolved(h.0, None)?;
+            }
+            if let Some(id) = payment_id {
+                accounts.on_offer_resolved(id.0, payment_hash.map(|h| h.0), None)?;
             }
             if let Some(id) = payment_id {
                 let hold = format!("conv:pay:{}", hex::encode(id.0));

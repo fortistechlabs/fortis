@@ -23,6 +23,9 @@ class AccountRoutingTest {
         assertEquals(PayRoute.Channel, payRoute(1_000uL, 50_000uL, 100_000uL, 0uL))
         assertEquals(PayRoute.Channel, payRoute(1_000uL, 50_000uL, 100_000uL, 999_999uL))
         assertEquals(PayRoute.Insufficient, payRoute(1_000uL, 50_000uL, 0uL, 10_000uL))
+        // A BOLT12 offer goes through the account when it can cover it, even if the channel could too.
+        assertEquals(PayRoute.Account, payRoute(1_000uL, 50_000uL, 100_000uL, 200_000uL, isOffer = true))
+        assertEquals(PayRoute.Channel, payRoute(1_000uL, 50_000uL, 100_000uL, 0uL, isOffer = true))
     }
 
     private class Signer : AccountSigner {

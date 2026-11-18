@@ -2,6 +2,19 @@
 
 Fortis Wallet (Android). Versions are `versionName (versionCode)`.
 
+## 0.7.8 (35) — 2026-11-18
+
+- A BOLT12 offer is now paid from the Fortis balance when it covers the amount:
+  the Fortis server asks the recipient for the invoice and pays it, which works
+  for recipients your phone cannot reach by itself (for example a node that is
+  connected to the Fortis server but not routable from the phone). New server
+  operations `pay_offer` and `pay_status` (BTC and XBT).
+- Paying a BOLT12 offer whose recipient can only be reached over Tor (which
+  Fortis cannot use yet) is refused at once with a clear message and nothing is
+  sent, instead of waiting two minutes for an answer that cannot come.
+- A BOLT12 offer payment is now waited for about two and a half minutes, so the
+  real result is shown instead of "still waiting" just before it arrives.
+
 ## 0.7.7 (34) — 2026-11-17
 
 - When the website behind a Lightning address cannot be reached (the domain does

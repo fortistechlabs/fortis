@@ -17,8 +17,13 @@ fun receiveRoute(amountMsat: ULong, inboundRoomMsat: ULong, jitMinMsat: ULong): 
 
 enum class PayRoute { Channel, Account, Insufficient }
 
-/** Channel first, then the account; each must cover the amount plus the fee cap. */
-fun payRoute(amountMsat: ULong, feeCapMsat: ULong, sendableMsat: ULong, accountFreeMsat: ULong): PayRoute = when {
+/** Channel first, then the account; each must cover the amount plus the fee cap. A BOLT12 offer
+ *  ([isOffer]) goes through the account first: its LSP asks the recipient for the invoice, which the
+ *  phone often cannot (no route, or a recipient only reachable over Tor). */
+fun payRoute(
+    amountMsat: ULong, feeCapMsat: ULong, sendableMsat: ULong, accountFreeMsat: ULong, isOffer: Boolean = false,
+): PayRoute = when {
+    isOffer && accountFreeMsat >= amountMsat + feeCapMsat -> PayRoute.Account
     sendableMsat >= amountMsat + feeCapMsat -> PayRoute.Channel
     accountFreeMsat >= amountMsat + feeCapMsat -> PayRoute.Account
     else -> PayRoute.Insufficient

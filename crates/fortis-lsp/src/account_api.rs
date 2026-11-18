@@ -83,6 +83,14 @@ pub trait AccountNode: Send + Sync {
     fn invoice_details(&self, invoice: &str) -> Result<(Option<u64>, [u8; 32]), String>;
     /// Starts paying `invoice` (`amount_msat` for an amountless one).
     fn send_bolt11(&self, invoice: &str, amount_msat: Option<u64>) -> Result<(), String>;
+    /// The amount (msat) a BOLT12 offer fixes, `None` for an any-amount offer.
+    fn offer_amount_msat(&self, _offer: &str) -> Result<Option<u64>, String> {
+        Err("offers not supported".into())
+    }
+    /// Starts paying a BOLT12 offer (the node asks the issuer for an invoice first); the payment id.
+    fn send_offer(&self, _offer: &str, _amount_msat: Option<u64>, _note: Option<&str>) -> Result<[u8; 32], String> {
+        Err("offers not supported".into())
+    }
     /// What the node could pay out now: spendable on-chain + outbound (sat).
     fn backing_sat(&self) -> u64;
     /// Sends `amount_sat` on-chain to `address` at `feerate_sat_vb`; the txid.
@@ -114,6 +122,11 @@ pub struct AccountService {
     pub fcm: Option<crate::push::Fcm>,
     /// `btc` or `xbt`: named in push data.
     pub chain: &'static str,
+    /// Serialises starting an offer send against its result, which names the payment id only once started.
+    offer_gate: std::sync::Mutex<()>,
+    /// How recent offer sends ended (payment id → (account, paid)); in memory only, so an answer
+    /// can be "unknown" after a restart.
+    offer_results: std::sync::Mutex<std::collections::HashMap<[u8; 32], (PublicKey, bool)>>,
     /// Receipt notices decided on (sent, or only logged without push), for tests and logs.
     notices: std::sync::atomic::AtomicU64,
 }
@@ -123,6 +136,10 @@ pub type Reply = (u16, Value);
 
 fn err(status: u16, error: &str) -> Reply {
     (status, json!({ "error": error }))
+}
+
+fn offer_hold_id(payment_id: &[u8; 32]) -> String {
+    format!("o12:{}", hex::encode(payment_id))
 }
 
 fn send_hold_id(payment_hash: &[u8; 32]) -> String {
@@ -146,6 +163,8 @@ impl AccountService {
             min_channel_receive_sat,
             fcm: None,
             chain: chain.as_str(),
+            offer_gate: std::sync::Mutex::new(()),
+            offer_results: std::sync::Mutex::new(std::collections::HashMap::new()),
             notices: std::sync::atomic::AtomicU64::new(0),
         }
     }
@@ -187,6 +206,8 @@ impl AccountService {
             "balance" => self.balance(&node),
             "invoice" => self.invoice(&node, &req.params, now),
             "pay" => self.pay(&node, &req.params),
+            "pay_offer" => self.pay_offer(&node, &req.params, &req.nonce),
+            "pay_status" => Ok(self.pay_status(&node, &req.params)),
             "history" => self.history(&node, &req.params),
             "fee_invoice" => Ok(self.fee_invoice(&node, &req.params)),
             "withdraw" => self.withdraw(&node, &req.params, &req.nonce),
@@ -438,6 +459,85 @@ impl AccountService {
         ))
     }
 
+    /// Pays a BOLT12 offer from the account: this node (reachable by the issuer, unlike a phone) asks
+    /// for the invoice and pays it; the hold settles on the payment's result ([`Self::on_offer_resolved`]).
+    fn pay_offer(&self, node: &PublicKey, p: &Value, nonce: &str) -> Result<Reply, LedgerError> {
+        let Some(offer) = p["offer"].as_str() else {
+            return Ok(err(400, "offer"));
+        };
+        let fixed = match self.node.offer_amount_msat(offer) {
+            Ok(v) => v,
+            Err(_) => return Ok(err(400, "offer")),
+        };
+        let asked = p["amount_msat"].as_u64();
+        let amount = match (fixed, asked) {
+            (Some(a), None) => a,
+            (Some(a), Some(b)) if a == b => a,
+            (Some(_), Some(_)) => return Ok(err(400, "amount_mismatch")),
+            (None, Some(b)) if b > 0 => b,
+            _ => return Ok(err(400, "amount_required")),
+        };
+        if amount == 0 || amount > MAX_MONEY_MSAT {
+            return Ok(err(400, "amount_msat"));
+        }
+        let note = p["note"].as_str().map(|n| n.chars().take(200).collect::<String>());
+        let _gate = self.offer_gate.lock().unwrap_or_else(|e| e.into_inner());
+        let temp = format!("o12tmp:{node}:{nonce}");
+        match self.ledger.hold_send(node, &temp, amount, amount.saturating_add(fee_cap_msat(amount))) {
+            Ok(()) => {}
+            Err(LedgerError::InsufficientBalance) => return Ok(err(402, "insufficient")),
+            Err(LedgerError::DuplicatePayment) => return Ok(err(409, "duplicate_payment")),
+            Err(e) => return Err(e),
+        }
+        let pay_amount = if fixed.is_none() { Some(amount) } else { None };
+        match self.node.send_offer(offer, pay_amount, note.as_deref()) {
+            Ok(id) => {
+                self.ledger.rename_hold(&temp, &offer_hold_id(&id))?;
+                Ok((200, json!({ "internal": false, "payment_id": hex::encode(id) })))
+            }
+            Err(e) => {
+                eprintln!("fortis-lsp: account pay_offer: {e}");
+                self.ledger.settle_hold(&temp, 0, 0, None)?;
+                Ok(err(502, "send_failed"))
+            }
+        }
+    }
+
+    /// An offer payment resolved (`fee_msat` `None`: it failed): settles its hold. True when it was one.
+    pub fn on_offer_resolved(&self, payment_id: [u8; 32], payment_hash: Option<[u8; 32]>, fee_msat: Option<u64>) -> Result<bool, LedgerError> {
+        let _gate = self.offer_gate.lock().unwrap_or_else(|e| e.into_inner());
+        let id = offer_hold_id(&payment_id);
+        let Some((owner, _)) = self.ledger.hold_owner(&id)? else {
+            return Ok(false);
+        };
+        match fee_msat {
+            Some(fee) => self.ledger.settle_send(&id, fee, payment_hash)?,
+            None => self.ledger.settle_hold(&id, 0, 0, None)?,
+        }
+        let mut done = self.offer_results.lock().unwrap_or_else(|e| e.into_inner());
+        if done.len() >= 1_000 {
+            done.clear();
+        }
+        done.insert(payment_id, (owner, fee_msat.is_some()));
+        Ok(true)
+    }
+
+    /// How an offer send of this account is going: `pending`, `succeeded`, `failed`, or `unknown`.
+    fn pay_status(&self, node: &PublicKey, p: &Value) -> Reply {
+        let Some(id) = p["payment_id"].as_str().and_then(|h| hex::decode(h).ok()).and_then(|v| <[u8; 32]>::try_from(v).ok()) else {
+            return err(400, "payment_id");
+        };
+        let status = if matches!(self.ledger.hold_owner(&offer_hold_id(&id)), Ok(Some((n, _))) if &n == node) {
+            "pending"
+        } else {
+            match self.offer_results.lock().unwrap_or_else(|e| e.into_inner()).get(&id) {
+                Some((n, paid)) if n == node => if *paid { "succeeded" } else { "failed" },
+                _ => "unknown",
+            }
+        };
+        (200, json!({ "status": status }))
+    }
+
     fn history(&self, node: &PublicKey, p: &Value) -> Result<Reply, LedgerError> {
         let limit = p["limit"]
             .as_u64()
@@ -662,6 +762,28 @@ impl AccountNode for LdkAccountNode {
         }
     }
 
+    fn offer_amount_msat(&self, offer: &str) -> Result<Option<u64>, String> {
+        use ldk_node::lightning::offers::offer::Amount;
+        let o = offer.trim().parse::<ldk_node::lightning::offers::offer::Offer>().map_err(|e| format!("{e:?}"))?;
+        match o.amount() {
+            None => Ok(None),
+            Some(Amount::Bitcoin { amount_msats }) => Ok(Some(amount_msats)),
+            Some(_) => Err("offer is priced in a currency".into()),
+        }
+    }
+
+    fn send_offer(&self, offer: &str, amount_msat: Option<u64>, note: Option<&str>) -> Result<[u8; 32], String> {
+        let o = offer.trim().parse::<ldk_node::lightning::offers::offer::Offer>().map_err(|e| format!("{e:?}"))?;
+        let p = self.0.bolt12_payment();
+        let note = note.map(str::to_string);
+        match amount_msat {
+            Some(a) => p.send_using_amount(&o, a, None, note, None),
+            None => p.send(&o, None, note, None),
+        }
+        .map(|id| id.0)
+        .map_err(|e| e.to_string())
+    }
+
     fn backing_sat(&self) -> u64 {
         let outbound: u64 = self
             .0
@@ -740,6 +862,20 @@ mod tests {
                 .unwrap()
                 .push((invoice.into(), amount_msat));
             Ok(())
+        }
+        fn offer_amount_msat(&self, offer: &str) -> Result<Option<u64>, String> {
+            match offer {
+                "lno-any" => Ok(None),
+                "lno-fixed" => Ok(Some(40_000)),
+                _ => Err("bad offer".into()),
+            }
+        }
+        fn send_offer(&self, offer: &str, amount_msat: Option<u64>, _note: Option<&str>) -> Result<[u8; 32], String> {
+            if self.fail_send {
+                return Err("no route".into());
+            }
+            self.sent.lock().unwrap().push((offer.into(), amount_msat));
+            Ok([77; 32])
         }
         fn backing_sat(&self) -> u64 {
             self.backing
@@ -972,6 +1108,46 @@ mod tests {
             (b["balance_msat"].as_u64(), b["held_msat"].as_u64()),
             (Some(200_000 - 31_000), Some(0))
         );
+    }
+
+    #[test]
+    fn pay_offer_holds_then_debits_the_actual_fee_by_payment_id() {
+        let (svc, node) = service("offer-pay", FakeNode::with_backing(1_000_000), 1_000_000);
+        call(&svc, 1, "invoice", r#"{"amount_msat":200000}"#, &nonce(1));
+        svc.on_payment_received([1; 32], 200_000).unwrap();
+        let (s, v) = call(&svc, 1, "pay_offer", r#"{"offer":"lno-any","amount_msat":121000}"#, &nonce(2));
+        assert_eq!((s, v["payment_id"].as_str().map(str::len)), (200, Some(64)));
+        assert_eq!(node.sent.lock().unwrap().as_slice(), &[("lno-any".to_string(), Some(121_000))]);
+        let (_, b) = call(&svc, 1, "balance", "{}", &nonce(3));
+        assert_eq!(b["held_msat"], 121_000 + 1_210 + 50_000);
+        assert!(svc.on_offer_resolved([77; 32], Some([5; 32]), Some(2_000)).unwrap());
+        let (_, b) = call(&svc, 1, "balance", "{}", &nonce(4));
+        assert_eq!((b["balance_msat"].as_u64(), b["held_msat"].as_u64()), (Some(200_000 - 123_000), Some(0)));
+        assert!(!svc.on_offer_resolved([77; 32], None, None).unwrap(), "only once");
+        let pid = hex::encode([77u8; 32]);
+        assert_eq!(call(&svc, 1, "pay_status", &format!(r#"{{"payment_id":"{pid}"}}"#), &nonce(5)).1["status"], "succeeded");
+        assert_eq!(call(&svc, 2, "pay_status", &format!(r#"{{"payment_id":"{pid}"}}"#), &nonce(6)).1["status"], "unknown", "not another account's");
+    }
+
+    #[test]
+    fn pay_offer_failures_release_the_hold_and_bad_amounts_are_refused() {
+        let (svc, _) = service("offer-fail", FakeNode::with_backing(1_000_000), 1_000_000);
+        call(&svc, 1, "invoice", r#"{"amount_msat":200000}"#, &nonce(1));
+        svc.on_payment_received([1; 32], 200_000).unwrap();
+        call(&svc, 1, "pay_offer", r#"{"offer":"lno-fixed"}"#, &nonce(2));
+        assert!(svc.on_offer_resolved([77; 32], None, None).unwrap());
+        let (_, b) = call(&svc, 1, "balance", "{}", &nonce(3));
+        assert_eq!((b["balance_msat"].as_u64(), b["held_msat"].as_u64()), (Some(200_000), Some(0)));
+        assert_eq!(call(&svc, 1, "pay_offer", r#"{"offer":"lno-fixed","amount_msat":1000}"#, &nonce(4)).1["error"], "amount_mismatch");
+        assert_eq!(call(&svc, 1, "pay_offer", r#"{"offer":"lno-any"}"#, &nonce(5)).1["error"], "amount_required");
+        assert_eq!(call(&svc, 1, "pay_offer", r#"{"offer":"junk"}"#, &nonce(6)).1["error"], "offer");
+        assert_eq!(call(&svc, 1, "pay_offer", r#"{"offer":"lno-any","amount_msat":900000}"#, &nonce(7)).1["error"], "insufficient");
+        let (svc, _) = service("offer-fail2", FakeNode { fail_send: true, backing: 1_000_000, ..Default::default() }, 1_000_000);
+        call(&svc, 1, "invoice", r#"{"amount_msat":200000}"#, &nonce(1));
+        svc.on_payment_received([1; 32], 200_000).unwrap();
+        assert_eq!(call(&svc, 1, "pay_offer", r#"{"offer":"lno-fixed"}"#, &nonce(2)).1["error"], "send_failed");
+        let (_, b) = call(&svc, 1, "balance", "{}", &nonce(3));
+        assert_eq!((b["balance_msat"].as_u64(), b["held_msat"].as_u64()), (Some(200_000), Some(0)));
     }
 
     #[test]

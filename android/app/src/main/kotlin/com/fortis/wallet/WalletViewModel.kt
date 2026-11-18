@@ -654,6 +654,13 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
     private suspend fun payFromAccount(side: LnSide, p: LnPlanPreview): String {
         val s = accountSigner(side) ?: throw com.fortis.wallet.lightning.AccountError.Network("not started")
         val node = side.session.currentNode ?: throw com.fortis.wallet.lightning.AccountError.Network("not started")
+        val offer = when (val t = p.target) {
+            is uniffi.wallet_ffi.LnTarget.Bolt12Offer -> t.offer
+            is uniffi.wallet_ffi.LnTarget.Unified ->
+                (t.lightning as? uniffi.wallet_ffi.LnUnifiedLightning.Bolt12Offer)?.offer
+            else -> null
+        }
+        if (offer != null) return payOfferFromAccount(side, s, p, offer)
         val (invoice, amount) = when (val t = p.target) {
             is uniffi.wallet_ffi.LnTarget.Bolt11 -> t.invoice to (if (t.amountMsat == null) p.amountMsat else null)
             is uniffi.wallet_ffi.LnTarget.Unified -> when (val l = t.lightning) {
@@ -673,6 +680,37 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
         side.accountSendUntilMs = System.currentTimeMillis() + 90_000L
         side.accountSending = true
         return r.paymentHash
+    }
+
+    /** A BOLT12 offer from the Fortis balance: the LSP fetches the invoice and pays; waits for how it ended. */
+    private suspend fun payOfferFromAccount(
+        side: LnSide, s: com.fortis.wallet.lightning.AccountSigner, p: LnPlanPreview, offer: String,
+    ): String {
+        com.fortis.wallet.lightning.requireTargetChain(side.session.chain, p.target)
+        val id = withContext(Dispatchers.IO) { side.account.payOffer(s, offer, p.amountMsat) }
+        side.accountSendBase = side.accountBalance?.balanceMsat ?: 0uL
+        side.accountSendUntilMs = System.currentTimeMillis() + 180_000L
+        side.accountSending = true
+        val end = System.currentTimeMillis() + 170_000L
+        while (System.currentTimeMillis() < end) {
+            val st = try {
+                withContext(Dispatchers.IO) { side.account.payStatus(s, id) }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                "pending" // a lost reply is not a result: ask again
+            }
+            when (st) {
+                "succeeded" -> return id
+                "failed" -> {
+                    side.accountSending = false
+                    throw uniffi.wallet_ffi.LnFfiException.Other(com.fortis.wallet.lightning.OFFER_FAILED)
+                }
+                "unknown" -> break
+            }
+            kotlinx.coroutines.delay(2_000)
+        }
+        throw uniffi.wallet_ffi.LnFfiException.PaymentStateUnknown()
     }
 
     val closingLightningChannel: Boolean get() = ln.closing
@@ -2929,6 +2967,9 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
         }
         val route = com.fortis.wallet.lightning.payRoute(
             amountMsat, feeMsat, side.session.sendableMsat, side.accountBalance?.freeMsat ?: 0uL,
+            isOffer = target is uniffi.wallet_ffi.LnTarget.Bolt12Offer ||
+                (target is uniffi.wallet_ffi.LnTarget.Unified &&
+                    target.lightning is uniffi.wallet_ffi.LnUnifiedLightning.Bolt12Offer),
         )
         pendingLn = LnPlanPreview(
             target = target,

@@ -136,6 +136,18 @@ class FortisAccount(
         return AccountPayResult(o.optBoolean("internal"), o.optString("payment_hash"))
     }
 
+    /** Pays a BOLT12 [offer] from this account: the LSP asks the recipient for the invoice (it can be
+     *  reached where this phone cannot) and pays it. Returns the payment id to follow with [payStatus]. */
+    suspend fun payOffer(signer: AccountSigner, offer: String, amountMsat: ULong?): String {
+        val p = JSONObject().put("offer", offer)
+        if (amountMsat != null) p.put("amount_msat", amountMsat.toLong())
+        return JSONObject(call(signer, "pay_offer", p)).getString("payment_id")
+    }
+
+    /** How an offer payment is going: `pending`, `succeeded`, `failed` or `unknown`. */
+    suspend fun payStatus(signer: AccountSigner, paymentId: String): String =
+        JSONObject(call(signer, "pay_status", JSONObject().put("payment_id", paymentId))).optString("status")
+
     /** An invoice into this wallet's own channel that the LSP holds until the phone can take it. */
     suspend fun channelInvoice(signer: AccountSigner, amountMsat: ULong, description: String): String {
         val p = JSONObject().put("amount_msat", amountMsat.toLong()).put("description", description)

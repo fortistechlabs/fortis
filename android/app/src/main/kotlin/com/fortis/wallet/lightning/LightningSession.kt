@@ -953,8 +953,8 @@ data class LateOutcome(val paymentId: String, val succeeded: Boolean, val amount
 /** Reason string of the error for a failed BOLT12 offer payment (no answer from the recipient, or no route). */
 const val OFFER_FAILED = "Offer payment failed"
 
-/** How long a BOLT12 offer payment is waited for: longer than the node's own ~90 s invoice-request wait. */
-private const val OFFER_WAIT_MS = 120_000L
+/** How long a BOLT12 offer payment is waited for: longer than the node's own invoice-request wait (observed ~130 s). */
+private const val OFFER_WAIT_MS = 150_000L
 
 /** How long a payment we stopped waiting for is watched. */
 private const val LATE_WATCH_MS = 10 * 60_000L

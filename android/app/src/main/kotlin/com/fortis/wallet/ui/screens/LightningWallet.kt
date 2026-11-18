@@ -1117,6 +1117,7 @@ fun lnErrorText(e: com.fortis.wallet.lightning.LnFfiError, get: (Int, Array<out 
                 return get(R.string.ln_err_lnurl_unreachable, arrayOf(host ?: ""))
             }
             r == com.fortis.wallet.lightning.OFFER_FAILED -> R.string.ln_err_offer_failed
+            r == "offer_tor_only" -> R.string.ln_err_offer_tor_only
             r == "splice_failed" -> R.string.transfer_splice_busy
             else -> null
         }

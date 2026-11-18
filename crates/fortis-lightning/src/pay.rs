@@ -53,7 +53,9 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use ldk_node::bitcoin::constants::ChainHash;
 use ldk_node::bitcoin::hashes::Hash;
 use ldk_node::lightning::ln::channelmanager::PaymentId;
+use ldk_node::lightning::ln::msgs::SocketAddress;
 use ldk_node::lightning::offers::offer::{Amount, Offer};
+use ldk_node::lightning::routing::gossip::NodeId;
 use ldk_node::lightning_invoice::{Bolt11Invoice, Bolt11InvoiceDescriptionRef};
 use ldk_node::payment::{PaymentDetails, PaymentDirection, PaymentKind, PaymentStatus};
 use ldk_node::NodeError;
@@ -267,6 +269,12 @@ impl Node {
                 description,
                 ..
             } => {
+                // An offer without a blinded path is answered only by a direct connection to its
+                // issuer. If the network graph says that node is reachable only over Tor, which
+                // this node cannot use, say so now rather than after two minutes of waiting.
+                if issuer_tor_only(node, &offer) {
+                    return Err(LnError::Other("offer_tor_only".into()));
+                }
                 self.liquidity_and_gate(node, amount)?;
                 // Same ordering as BOLT11 (invoice request out, then the
                 // store insert), so the same error mapping. No attempt
@@ -756,9 +764,51 @@ impl Attempts {
     }
 }
 
+/// True when every announced address is a Tor (onion) address, and there is at least one.
+fn all_onion(addresses: &[SocketAddress]) -> bool {
+    !addresses.is_empty()
+        && addresses
+            .iter()
+            .all(|a| matches!(a, SocketAddress::OnionV2(_) | SocketAddress::OnionV3 { .. }))
+}
+
+/// Whether paying `offer` needs a direct connection to an issuer that the network graph shows is
+/// reachable only over Tor (and that this node is not already connected to). False when unknown.
+fn issuer_tor_only(node: &ldk_node::Node, offer: &Offer) -> bool {
+    if !offer.paths().is_empty() {
+        return false;
+    }
+    let Some(key) = offer.issuer_signing_pubkey() else {
+        return false;
+    };
+    if crate::node::peer_connected(node, &key) {
+        return false;
+    }
+    let graph = node.network_graph();
+    graph
+        .node(&NodeId::from_pubkey(&key))
+        .and_then(|n| n.announcement_info.map(|a| all_onion(a.addresses())))
+        .unwrap_or(false)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn an_issuer_with_only_onion_addresses_is_tor_only() {
+        let onion = SocketAddress::OnionV3 {
+            ed25519_pubkey: [7; 32],
+            checksum: 0,
+            version: 3,
+            port: 9735,
+        };
+        let v4 = SocketAddress::TcpIpV4 { addr: [1, 2, 3, 4], port: 9735 };
+        assert!(all_onion(&[onion.clone()]));
+        assert!(!all_onion(&[onion, v4.clone()]), "a clearnet address makes it reachable");
+        assert!(!all_onion(&[v4]));
+        assert!(!all_onion(&[]), "no known address is not Tor-only");
+    }
     use crate::lnurl::tests::signed_invoice;
     use crate::{ChainSource, LspInfo, LspLimits, NodeConfig, VssConfig};
     use ldk_node::bitcoin::Network;
