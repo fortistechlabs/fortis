@@ -2654,6 +2654,8 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
 
     /** Sign & send is signing and broadcasting: the button shows it. */
     var sending by mutableStateOf(false); private set
+    /** A line under "Sending…" saying what is being waited for (an offer's invoice), or null. */
+    var sendingNote by mutableStateOf<String?>(null); private set
 
     fun buildPayment(
         to: String, amountSat: Long, sweep: Boolean,
@@ -3078,6 +3080,9 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
                 val p = pendingLn ?: return@wrap
                 if (!reauth.consume()) throw Exception(str(R.string.reauth_needed))
                 val side = lnSide(p.walletChain)
+                if (p.target is uniffi.wallet_ffi.LnTarget.Bolt12Offer ||
+                    (p.target as? uniffi.wallet_ffi.LnTarget.Unified)?.lightning is uniffi.wallet_ffi.LnUnifiedLightning.Bolt12Offer
+                ) sendingNote = str(R.string.ln_offer_working)
                 val id = try {
                     when {
                         p.viaAccountTopUp -> payOfferViaTopUp(side, p)
@@ -3099,6 +3104,7 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
                 lastSentTxid = id
                 sentCount++
             } finally {
+                sendingNote = null
                 sending = false
             }
         }

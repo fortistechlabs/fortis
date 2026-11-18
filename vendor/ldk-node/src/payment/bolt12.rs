@@ -69,6 +69,18 @@ impl Bolt12Payment {
 		Self { channel_manager, payment_store, config, is_running, logger, async_payments_role }
 	}
 
+	/// FORTIS: gives up on `payment_id` if it is still only waiting for the recipient's invoice (no payment
+	/// has been sent, so nothing can be in flight); the payment then fails as usual. Returns whether it did.
+	pub fn abandon_if_awaiting_invoice(&self, payment_id: &PaymentId) -> bool {
+		let waiting = self.channel_manager.list_recent_payments().into_iter().any(|p| {
+			matches!(p, lightning::ln::channelmanager::RecentPaymentDetails::AwaitingInvoice { payment_id: id } if id == *payment_id)
+		});
+		if waiting {
+			self.channel_manager.abandon_payment(*payment_id);
+		}
+		waiting
+	}
+
 	/// Send a payment given an offer.
 	///
 	/// If `payer_note` is `Some` it will be seen by the recipient and reflected back in the invoice

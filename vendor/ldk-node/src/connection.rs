@@ -80,7 +80,7 @@ where
 						proxy.as_str(),
 						(host.as_str(), port),
 					);
-					match tokio::time::timeout(Duration::from_secs(60), connect).await {
+					match tokio::time::timeout(Duration::from_secs(30), connect).await {
 						Ok(Ok(stream)) => match stream.into_inner().into_std() {
 							Ok(std_stream) => {
 								let fut: Closed = Box::pin(lightning_net_tokio::setup_outbound(

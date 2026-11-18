@@ -705,10 +705,11 @@
     <string name="ln_err_no_channel">You don\'t have a Lightning channel yet.</string>
     <string name="ln_err_channel_opening">Your channel is still opening — try again once it\'s ready.</string>
     <string name="ln_err_lnurl_hash">The service behind this address returned an invoice that does not match its own details, so Fortis refused it for your safety. Nothing was sent. This is a problem with the service, not your wallet.</string>
-    <string name="ln_err_offer_tor_only">This offer\'s recipient can only be reached over Tor, which Fortis cannot use yet, so nothing was sent. Ask them for a regular invoice, or to add a normal (non-Tor) address to their node.</string>
+    <string name="ln_err_offer_tor_only">This offer\'s recipient can only be reached over Tor, which this phone cannot use, so nothing was sent. An offer paid from your Fortis balance goes through the Fortis server, which can try Tor. Otherwise ask them for a regular invoice.</string>
     <string name="ln_err_lnurl_unreachable">Could not reach %1$s, so nothing was sent. The address may be mistyped, or that website is down, does not exist or does not offer Lightning payments. Check the address and try again later, or ask the recipient for an invoice.</string>
     <string name="ln_err_lnurl_service">The service behind this address did not answer correctly, so nothing was sent. Check the address, try again later, or ask the recipient for a regular invoice.</string>
-    <string name="ln_err_offer_failed">The payment to this offer failed and nothing was sent. The recipient may be offline, or reachable only over Tor, which Fortis does not support yet.</string>
+    <string name="ln_offer_working">Asking the recipient for an invoice. This can take up to a minute, longer if they are only reachable over Tor.</string>
+    <string name="ln_err_offer_failed">The payment to this offer failed and nothing was sent. The recipient may be offline or not answering, which happens often with nodes that are only reachable over Tor.</string>
     <string name="ln_late_succeeded">Your payment of %1$d sat went through.</string>
     <string name="ln_late_failed">Your payment of %1$d sat did not go through. Nothing was sent. You can try again.</string>
     <string name="ln_err_payment_failed">The payment didn\'t go through. Try again, or try a smaller amount.</string>

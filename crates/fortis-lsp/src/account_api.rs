@@ -91,6 +91,11 @@ pub trait AccountNode: Send + Sync {
     fn send_offer(&self, _offer: &str, _amount_msat: Option<u64>, _note: Option<&str>) -> Result<[u8; 32], String> {
         Err("offers not supported".into())
     }
+    /// Gives up on an offer payment that is still only waiting for the recipient's invoice; true if it did
+    /// (the payment then fails like any other and its hold is released).
+    fn abandon_offer_if_waiting(&self, _payment_id: [u8; 32]) -> bool {
+        false
+    }
     /// What the node could pay out now: spendable on-chain + outbound (sat).
     fn backing_sat(&self) -> u64;
     /// Sends `amount_sat` on-chain to `address` at `feerate_sat_vb`; the txid.
@@ -122,6 +127,9 @@ pub struct AccountService {
     pub fcm: Option<crate::push::Fcm>,
     /// `btc` or `xbt`: named in push data.
     pub chain: &'static str,
+    /// How long an offer payment may wait for the recipient's invoice before it is given up (s): long
+    /// enough for a Tor dial (30 s) and the answer, short of the node's own two-minute timer.
+    pub offer_invoice_wait_secs: u64,
     /// Serialises starting an offer send against its result, which names the payment id only once started.
     offer_gate: std::sync::Mutex<()>,
     /// How recent offer sends ended (payment id → (account, paid)); in memory only, so an answer
@@ -163,6 +171,7 @@ impl AccountService {
             min_channel_receive_sat,
             fcm: None,
             chain: chain.as_str(),
+            offer_invoice_wait_secs: 45,
             offer_gate: std::sync::Mutex::new(()),
             offer_results: std::sync::Mutex::new(std::collections::HashMap::new()),
             notices: std::sync::atomic::AtomicU64::new(0),
@@ -493,6 +502,16 @@ impl AccountService {
         match self.node.send_offer(offer, pay_amount, note.as_deref()) {
             Ok(id) => {
                 self.ledger.rename_hold(&temp, &offer_hold_id(&id))?;
+                // If the recipient has not answered with an invoice by then, it never will: fail the payment
+                // now (releasing the hold) instead of waiting for the node's own timer.
+                let node = Arc::clone(&self.node);
+                let wait = self.offer_invoice_wait_secs;
+                std::thread::spawn(move || {
+                    std::thread::sleep(std::time::Duration::from_secs(wait));
+                    if node.abandon_offer_if_waiting(id) {
+                        eprintln!("fortis-lsp: offer payment {} gave up: no invoice from the recipient", hex::encode(id));
+                    }
+                });
                 Ok((200, json!({ "internal": false, "payment_id": hex::encode(id) })))
             }
             Err(e) => {
@@ -784,6 +803,10 @@ impl AccountNode for LdkAccountNode {
         .map_err(|e| e.to_string())
     }
 
+    fn abandon_offer_if_waiting(&self, payment_id: [u8; 32]) -> bool {
+        self.0.bolt12_payment().abandon_if_awaiting_invoice(&ldk_node::lightning::ln::channelmanager::PaymentId(payment_id))
+    }
+
     fn backing_sat(&self) -> u64 {
         let outbound: u64 = self
             .0
@@ -811,6 +834,7 @@ mod tests {
         fail_send: bool,
         backing: u64,
         invoices: Mutex<Vec<FakeInvoice>>,
+        abandoned: Mutex<Vec<[u8; 32]>>,
     }
 
     impl FakeNode {
@@ -862,6 +886,10 @@ mod tests {
                 .unwrap()
                 .push((invoice.into(), amount_msat));
             Ok(())
+        }
+        fn abandon_offer_if_waiting(&self, payment_id: [u8; 32]) -> bool {
+            self.abandoned.lock().unwrap().push(payment_id);
+            true
         }
         fn offer_amount_msat(&self, offer: &str) -> Result<Option<u64>, String> {
             match offer {
@@ -1127,6 +1155,22 @@ mod tests {
         let pid = hex::encode([77u8; 32]);
         assert_eq!(call(&svc, 1, "pay_status", &format!(r#"{{"payment_id":"{pid}"}}"#), &nonce(5)).1["status"], "succeeded");
         assert_eq!(call(&svc, 2, "pay_status", &format!(r#"{{"payment_id":"{pid}"}}"#), &nonce(6)).1["status"], "unknown", "not another account's");
+    }
+
+    #[test]
+    fn an_offer_still_waiting_for_its_invoice_is_given_up_after_the_wait() {
+        let (mut svc, node) = service("offer-wait", FakeNode::with_backing(1_000_000), 1_000_000);
+        svc.offer_invoice_wait_secs = 0;
+        call(&svc, 1, "invoice", r#"{"amount_msat":200000}"#, &nonce(1));
+        svc.on_payment_received([1; 32], 200_000).unwrap();
+        call(&svc, 1, "pay_offer", r#"{"offer":"lno-any","amount_msat":121000}"#, &nonce(2));
+        for _ in 0..100 {
+            if !node.abandoned.lock().unwrap().is_empty() {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+        assert_eq!(node.abandoned.lock().unwrap().as_slice(), &[[77u8; 32]]);
     }
 
     #[test]

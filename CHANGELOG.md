@@ -2,6 +2,16 @@
 
 Fortis Wallet (Android). Versions are `versionName (versionCode)`.
 
+## 0.7.11 (38) — 2026-11-18
+
+- A BOLT12 offer whose recipient never answers is given up after about 45
+  seconds (the Fortis server's Tor connection to a recipient gives up after 30),
+  instead of waiting about two and a half minutes. Your money is released at
+  once.
+- While an offer is being paid, the screen says what is being waited for.
+- The failure messages for offers no longer say that Fortis does not support
+  Tor: the Fortis server does try Tor recipients; it is this phone that cannot.
+
 ## 0.7.10 (37) — 2026-11-18
 
 - An offer paid from the Lightning balance (through the Fortis balance) is now

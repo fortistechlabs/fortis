@@ -1068,6 +1068,7 @@ internal fun LnConfirmSheet(vm: WalletViewModel, p: com.fortis.wallet.LnPlanPrev
             )
             if (vm.sending) {
                 Text(stringResource(R.string.send_ln_sending), style = FxType.meta, color = Fx.textDim)
+                vm.sendingNote?.let { Text(it, style = FxType.meta, color = Fx.textDim) }
             }
             ErrorText(vm.error)
             Row(horizontalArrangement = Arrangement.spacedBy(Fx.s2)) {
