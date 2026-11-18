@@ -237,6 +237,9 @@ version = "1.0.128"
 features = ["std"]
 default-features = false
 
+[dependencies.tokio-socks]
+version = "0.5"
+
 [dependencies.tokio]
 version = "1.37"
 features = [

@@ -57,7 +57,7 @@
       </div>
       <div>
         <dt>Send</dt>
-        <dd>Scan or paste a BOLT&nbsp;11 invoice, a BOLT&nbsp;12 offer, an LNURL-pay code, a Lightning address (<code>name@domain</code>) or a <code>bitcoin:</code> link that carries an invoice. The most you could pay in routing fees is shown before you confirm, and a payment is never sent twice. Scan a Lightning invoice in a BTC wallet and Fortis offers to pay it from your Lightning wallet.</dd>
+        <dd>Scan or paste a BOLT&nbsp;11 invoice, a BOLT&nbsp;12 offer, an LNURL-pay code, a Lightning address (<code>name@domain</code>) or a <code>bitcoin:</code> link that carries an invoice. The most you could pay in routing fees is shown before you confirm, and a payment is never sent twice. A BOLT&nbsp;12 offer is paid through your Fortis balance (see below). Scan a Lightning invoice in a BTC wallet and Fortis offers to pay it from your Lightning wallet.</dd>
       </div>
       <div>
         <dt>Move between on-chain and Lightning</dt>
@@ -101,7 +101,7 @@
         <dd>You can pay XBT invoices and LNURL-pay codes, and BOLT&nbsp;12 offers and Lightning addresses where the person or service you pay supports XBT. An address that hands out BTC invoices is refused, safely.</dd>
       </div>
     </dl>
-    <p class="warn" style="font-size:14px; margin-top:26px">XBT Lightning is early. Moving funds in, opening a channel and paying invoices and LNURL codes from it are tested and work. BOLT&nbsp;12 offers often fail: the offer's issuer must be reachable over the XBT Lightning network (an offer that is only reachable over Tor can't be paid), and a payment with no answer gives up after about two and a half minutes, and one to a recipient that is only reachable over Tor is refused straight away. Fewer nodes and services support XBT, so fewer people can pay you than on BTC Lightning. Start with small amounts.</p>
+    <p class="warn" style="font-size:14px; margin-top:26px">XBT Lightning is early. Moving funds in, opening a channel and paying invoices and LNURL codes from it are tested and work. BOLT&nbsp;12 offers can fail: the recipient has to be reachable and answer. Fortis pays an offer through your Fortis balance. If the money is in your channel, the amount plus a small routing-fee reserve moves to your Fortis balance first, and whatever the payment does not use stays there. This lets Fortis reach recipients your phone cannot, such as nodes that are only reachable over Tor. A payment with no answer gives up after about two and a half minutes. Fewer nodes and services support XBT, so fewer people can pay you than on BTC Lightning. Start with small amounts.</p>
   </div>
 </section>
 

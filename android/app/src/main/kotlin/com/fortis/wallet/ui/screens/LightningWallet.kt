@@ -1042,6 +1042,15 @@ internal fun LnConfirmSheet(vm: WalletViewModel, p: com.fortis.wallet.LnPlanPrev
             }
             kv(stringResource(R.string.confirm_amount), amountLine(amountSat))
             if (p.viaAccount) kv(stringResource(R.string.ln_confirm_from), stringResource(R.string.ln_confirm_from_account))
+            if (p.viaAccountTopUp) {
+                val reserveSat = (com.fortis.wallet.lightning.offerReserveMsat(p.amountMsat) + 999uL) / 1_000uL
+                kv(stringResource(R.string.ln_confirm_from), stringResource(R.string.ln_confirm_from_topup))
+                Text(
+                    stringResource(R.string.ln_confirm_topup_note, fmt(amountSat + reserveSat.toLong()), unit, fmt(reserveSat.toLong())),
+                    style = FxType.body,
+                    color = Fx.textDim,
+                )
+            }
             if (p.description.isNotBlank()) {
                 kv(stringResource(R.string.confirm_ln_description), p.description)
             }

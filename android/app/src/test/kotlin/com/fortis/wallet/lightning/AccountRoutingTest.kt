@@ -18,6 +18,38 @@ class AccountRoutingTest {
     }
 
     @Test
+    fun anOfferFromTheChannelMovesToTheAccountFirstWithinTheCap() {
+        // 121,000 msat: the reserve is 1 % plus 50 sat.
+        assertEquals(51_210uL, offerReserveMsat(121_000uL))
+        val max = 50_000_000uL
+        // The channel can pay it, the account cannot: via the account.
+        assertEquals(
+            PayRoute.ChannelViaAccount,
+            payRoute(121_000uL, 5_000uL, 63_000_000uL, 0uL, isOffer = true, accountMaxMsat = max, accountBalanceMsat = 0uL),
+        )
+        // Not for a plain invoice.
+        assertEquals(
+            PayRoute.Channel,
+            payRoute(121_000uL, 5_000uL, 63_000_000uL, 0uL, isOffer = false, accountMaxMsat = max, accountBalanceMsat = 0uL),
+        )
+        // Over the account's cap: the channel route (as before).
+        assertEquals(
+            PayRoute.Channel,
+            payRoute(49_800_000uL, 5_000uL, 63_000_000uL, 0uL, isOffer = true, accountMaxMsat = max, accountBalanceMsat = 0uL),
+        )
+        // The channel cannot cover amount + reserve: not via the account.
+        assertEquals(
+            PayRoute.Channel,
+            payRoute(121_000uL, 5_000uL, 150_000uL, 0uL, isOffer = true, accountMaxMsat = max, accountBalanceMsat = 0uL),
+        )
+        // The account already covers it: straight from the account.
+        assertEquals(
+            PayRoute.Account,
+            payRoute(121_000uL, 5_000uL, 63_000_000uL, 1_000_000uL, isOffer = true, accountMaxMsat = max, accountBalanceMsat = 1_000_000uL),
+        )
+    }
+
+    @Test
     fun sendsUseTheChannelFirstThenTheAccount() {
         assertEquals(PayRoute.Account, payRoute(1_000uL, 50_000uL, 0uL, 200_000uL))
         assertEquals(PayRoute.Channel, payRoute(1_000uL, 50_000uL, 100_000uL, 0uL))

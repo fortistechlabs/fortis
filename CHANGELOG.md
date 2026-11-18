@@ -2,6 +2,15 @@
 
 Fortis Wallet (Android). Versions are `versionName (versionCode)`.
 
+## 0.7.9 (36) — 2026-11-18
+
+- A BOLT12 offer paid from the Lightning (channel) balance now goes through the
+  Fortis balance: the amount plus a routing-fee reserve moves there first, then
+  the Fortis server asks the recipient for the invoice and pays it. This reaches
+  recipients the phone cannot (for example Tor-only nodes). The confirmation
+  screen says so; what the payment does not use stays in the Fortis balance.
+- The Fortis server can reach Tor-only nodes (server side, no update needed).
+
 ## 0.7.8 (35) — 2026-11-18
 
 - A BOLT12 offer is now paid from the Fortis balance when it covers the amount:

@@ -110,6 +110,9 @@ data class LnPlanPreview(
     val recipientLabel: String,
     /** Paid from the Fortis account (spec §7) instead of the channel. */
     val viaAccount: Boolean = false,
+    /** An offer paid from the channel by first moving the amount (plus a fee reserve) to the Fortis
+     *  balance, from where the LSP pays it. */
+    val viaAccountTopUp: Boolean = false,
     /** The Lightning wallet ("ln" / "ln-xbt") that pays it. */
     val walletChain: String = LN_CHAIN,
 )
@@ -711,6 +714,46 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
             kotlinx.coroutines.delay(2_000)
         }
         throw uniffi.wallet_ffi.LnFfiException.PaymentStateUnknown()
+    }
+
+    /** An offer from the channel: pays the LSP an invoice for the amount plus the fee reserve (it lands
+     *  in the Fortis balance), waits for that credit, then has the LSP pay the offer from it. If the
+     *  offer then fails, the money is in the Fortis balance and the message says so. */
+    private suspend fun payOfferViaTopUp(side: LnSide, p: LnPlanPreview): String {
+        val s = accountSigner(side) ?: throw com.fortis.wallet.lightning.AccountError.Network("not started")
+        val offer = when (val t = p.target) {
+            is uniffi.wallet_ffi.LnTarget.Bolt12Offer -> t.offer
+            is uniffi.wallet_ffi.LnTarget.Unified ->
+                (t.lightning as? uniffi.wallet_ffi.LnUnifiedLightning.Bolt12Offer)?.offer
+            else -> null
+        } ?: throw Exception(str(R.string.ln_account_offer_unsupported))
+        com.fortis.wallet.lightning.requireTargetChain(side.session.chain, p.target)
+        val total = p.amountMsat + com.fortis.wallet.lightning.offerReserveMsat(p.amountMsat)
+        // Nothing has moved until this payment succeeds: its errors are shown as they are.
+        val inv = withContext(Dispatchers.IO) { side.account.invoice(s, total, "") }
+        side.session.pay(uniffi.wallet_ffi.lnParse(inv, "bitcoin"), null)
+        val end = System.currentTimeMillis() + 45_000L
+        var credited = false
+        while (System.currentTimeMillis() < end) {
+            val b = withContext(Dispatchers.IO) { runCatching { side.account.balance(s) }.getOrNull() }
+            if (b != null) {
+                side.accountBalance = b
+                if (b.freeMsat >= total) { credited = true; break }
+            }
+            kotlinx.coroutines.delay(1_000)
+        }
+        // Paid but not credited yet: the money is on its way, so do not say it failed.
+        if (!credited) throw uniffi.wallet_ffi.LnFfiException.PaymentStateUnknown()
+        return try {
+            payOfferFromAccount(side, s, p, offer)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: uniffi.wallet_ffi.LnFfiException.PaymentStateUnknown) {
+            throw e
+        } catch (e: Exception) {
+            runCatching { refreshAccount(side) }
+            throw Exception(str(R.string.ln_offer_topup_kept, errorText(e, "offer_topup")))
+        }
     }
 
     val closingLightningChannel: Boolean get() = ln.closing
@@ -2970,6 +3013,8 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
             isOffer = target is uniffi.wallet_ffi.LnTarget.Bolt12Offer ||
                 (target is uniffi.wallet_ffi.LnTarget.Unified &&
                     target.lightning is uniffi.wallet_ffi.LnUnifiedLightning.Bolt12Offer),
+            accountMaxMsat = side.accountBalance?.maxMsat ?: 0uL,
+            accountBalanceMsat = side.accountBalance?.balanceMsat ?: 0uL,
         )
         pendingLn = LnPlanPreview(
             target = target,
@@ -2979,6 +3024,7 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
             expirySecs = expiry,
             recipientLabel = recipient,
             viaAccount = route == com.fortis.wallet.lightning.PayRoute.Account,
+            viaAccountTopUp = route == com.fortis.wallet.lightning.PayRoute.ChannelViaAccount,
             walletChain = side.walletChain,
         )
     }
@@ -2994,7 +3040,11 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
                 if (!reauth.consume()) throw Exception(str(R.string.reauth_needed))
                 val side = lnSide(p.walletChain)
                 val id = try {
-                    if (p.viaAccount) payFromAccount(side, p) else side.session.pay(p.target, p.amountMsat)
+                    when {
+                        p.viaAccountTopUp -> payOfferViaTopUp(side, p)
+                        p.viaAccount -> payFromAccount(side, p)
+                        else -> side.session.pay(p.target, p.amountMsat)
+                    }
                 } catch (e: com.fortis.wallet.lightning.AccountError.Insufficient) {
                     throw Exception(str(R.string.ln_err_insufficient_lightning))
                 } catch (e: uniffi.wallet_ffi.LnFfiException.WrongChain) {

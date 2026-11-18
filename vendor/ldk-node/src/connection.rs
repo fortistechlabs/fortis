@@ -64,25 +64,66 @@ where
 
 		log_info!(self.logger, "Connecting to peer: {}@{}", node_id, addr);
 
-		let socket_addr = addr
-			.to_socket_addrs()
-			.map_err(|e| {
-				log_error!(self.logger, "Failed to resolve network address {}: {}", addr, e);
-				self.propagate_result_to_subscribers(&node_id, Err(Error::InvalidSocketAddress));
-				Error::InvalidSocketAddress
-			})?
-			.next()
-			.ok_or_else(|| {
-				log_error!(self.logger, "Failed to resolve network address {}", addr);
-				self.propagate_result_to_subscribers(&node_id, Err(Error::InvalidSocketAddress));
-				Error::InvalidSocketAddress
-			})?;
-
-		let connection_future = lightning_net_tokio::connect_outbound(
-			Arc::clone(&self.peer_manager),
-			node_id,
-			socket_addr,
-		);
+		type Closed = std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send>>;
+		let connection_future: std::pin::Pin<Box<dyn std::future::Future<Output = Option<Closed>> + Send>> =
+			if let Some((host, port)) = onion_target(&addr) {
+				// FORTIS: a Tor peer is reached through the Tor SOCKS proxy, if there is one.
+				let Some(proxy) = tor_socks_proxy() else {
+					log_error!(self.logger, "Cannot connect to {}: no Tor proxy configured", addr);
+					self.propagate_result_to_subscribers(&node_id, Err(Error::InvalidSocketAddress));
+					return Err(Error::InvalidSocketAddress);
+				};
+				let pm = Arc::clone(&self.peer_manager);
+				let logger = self.logger.clone();
+				Box::pin(async move {
+					let connect = tokio_socks::tcp::Socks5Stream::connect(
+						proxy.as_str(),
+						(host.as_str(), port),
+					);
+					match tokio::time::timeout(Duration::from_secs(60), connect).await {
+						Ok(Ok(stream)) => match stream.into_inner().into_std() {
+							Ok(std_stream) => {
+								let fut: Closed = Box::pin(lightning_net_tokio::setup_outbound(
+									pm, node_id, std_stream,
+								));
+								Some(fut)
+							},
+							Err(e) => {
+								log_error!(logger, "Tor stream for {}: {}", node_id, e);
+								None
+							},
+						},
+						Ok(Err(e)) => {
+							log_error!(logger, "Tor connection to {}@{}:{} failed: {}", node_id, host, port, e);
+							None
+						},
+						Err(_) => {
+							log_error!(logger, "Tor connection to {}@{}:{} timed out", node_id, host, port);
+							None
+						},
+					}
+				})
+			} else {
+				let socket_addr = addr
+					.to_socket_addrs()
+					.map_err(|e| {
+						log_error!(self.logger, "Failed to resolve network address {}: {}", addr, e);
+						self.propagate_result_to_subscribers(&node_id, Err(Error::InvalidSocketAddress));
+						Error::InvalidSocketAddress
+					})?
+					.next()
+					.ok_or_else(|| {
+						log_error!(self.logger, "Failed to resolve network address {}", addr);
+						self.propagate_result_to_subscribers(&node_id, Err(Error::InvalidSocketAddress));
+						Error::InvalidSocketAddress
+					})?;
+				let pm = Arc::clone(&self.peer_manager);
+				Box::pin(async move {
+					lightning_net_tokio::connect_outbound(pm, node_id, socket_addr)
+						.await
+						.map(|f| -> Closed { Box::pin(f) })
+				})
+			};
 
 		let res = match connection_future.await {
 			Some(connection_closed_future) => {
@@ -149,5 +190,46 @@ where
 				});
 			}
 		}
+	}
+}
+
+/// FORTIS: the host and port of a Tor (`.onion`) address, which cannot be resolved here but can be
+/// handed to a Tor SOCKS proxy; `None` for any other kind of address.
+pub(crate) fn onion_target(addr: &SocketAddress) -> Option<(String, u16)> {
+	match addr {
+		SocketAddress::OnionV2(_) | SocketAddress::OnionV3 { .. } => {
+			let s = addr.to_string();
+			let (host, port) = s.rsplit_once(':')?;
+			Some((host.to_string(), port.parse().ok()?))
+		},
+		_ => None,
+	}
+}
+
+/// FORTIS: the Tor SOCKS5 proxy (`host:port`) to reach `.onion` peers through, from the
+/// `FORTIS_TOR_SOCKS` environment variable. Unset (the phone app): such peers are not dialled.
+pub(crate) fn tor_socks_proxy() -> Option<String> {
+	std::env::var("FORTIS_TOR_SOCKS").ok().map(|v| v.trim().to_string()).filter(|v| !v.is_empty())
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+
+	#[test]
+	fn onion_addresses_become_a_host_and_port_for_the_proxy() {
+		let a: SocketAddress =
+			"43kfa6qd2c6lqntjzhhn5qdjjbez5sp4e5nkbyr6f26eiia5ye43jiyd.onion:9735".parse().unwrap();
+		assert_eq!(
+			onion_target(&a),
+			Some((
+				"43kfa6qd2c6lqntjzhhn5qdjjbez5sp4e5nkbyr6f26eiia5ye43jiyd.onion".to_string(),
+				9735
+			))
+		);
+		let ip: SocketAddress = "1.2.3.4:9735".parse().unwrap();
+		assert_eq!(onion_target(&ip), None);
+		let host: SocketAddress = "lsp.example.com:9735".parse().unwrap();
+		assert_eq!(onion_target(&host), None);
 	}
 }

@@ -615,6 +615,9 @@
     <string name="ln_account_internal">Fortis to Fortis</string>
     <string name="ln_account_fee">fee %1$s</string>
     <string name="ln_confirm_from">From</string>
+    <string name="ln_confirm_from_topup">Lightning balance, via your Fortis balance</string>
+    <string name="ln_confirm_topup_note">%1$s %2$s moves to your Fortis balance first, so the Fortis server can reach this recipient. Whatever the payment does not use (up to %3$s %2$s, for the routing fee) stays in your Fortis balance.</string>
+    <string name="ln_offer_topup_kept">%1$s Your sats are safe in your Fortis balance, and nothing was lost.</string>
     <string name="ln_confirm_from_account">Fortis balance</string>
     <string name="transfer_tab">Move</string>
     <string name="transfer_to_lightning_title">Move to Lightning</string>
