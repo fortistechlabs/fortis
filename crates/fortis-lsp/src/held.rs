@@ -171,6 +171,32 @@ pub fn on_forward_result(
     Ok(())
 }
 
+/// How long after its newest ledger entry an account's balance is left alone by `deliver_balances`.
+pub const DELIVER_GRACE_SECS: u64 = 30;
+
+/// Whether an account whose newest ledger entry is at `newest_at` (seconds) was active within the
+/// grace period before `now`.
+pub fn recently_active(newest_at: Option<u64>, now: u64) -> bool {
+    newest_at.is_some_and(|t| now.saturating_sub(t) < DELIVER_GRACE_SECS)
+}
+
+#[cfg(test)]
+mod grace_tests {
+    use super::*;
+
+    #[test]
+    fn a_balance_credited_a_moment_ago_is_not_swept_back_yet() {
+        assert!(recently_active(Some(1_000), 1_002));
+        assert!(recently_active(Some(1_000), 1_029));
+    }
+
+    #[test]
+    fn an_older_balance_is_delivered_and_an_empty_history_never_blocks() {
+        assert!(!recently_active(Some(1_000), 1_030));
+        assert!(!recently_active(None, 1_000));
+    }
+}
+
 /// Moves every Fortis balance whose phone is connected and has a channel with
 /// room into that channel (keysend, free): an offer payment, or a held one
 /// settled into the account, reaches the user's own channel as soon as the
@@ -201,6 +227,13 @@ pub fn deliver_balances(node: &ldk_node::Node, accounts: &AccountService) {
             .unwrap_or(0);
         if room < free {
             continue; // no channel, or too small: the cap conversion handles it
+        }
+        // A balance that just changed may be one the phone is about to spend (an offer top-up
+        // credited a moment ago): leave it a while, or this sweeps it back before the app's
+        // `pay_offer` can hold it.
+        let newest = ledger.history(&pk, 1).ok().and_then(|h| h.first().map(|e| e.at_secs));
+        if recently_active(newest, std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0)) {
+            continue;
         }
         let tmp = format!("deliver:pending:{pk}");
         let Ok(amount) = ledger.start_conversion(&pk, &tmp) else { continue };

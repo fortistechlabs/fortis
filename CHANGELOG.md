@@ -2,6 +2,19 @@
 
 Fortis Wallet (Android). Versions are `versionName (versionCode)`.
 
+## 0.7.12 (39) — 2026-11-18
+
+- Fixed the "Lightning error (already_running)" that kept coming back after you
+  left the app and returned: a Lightning node left running by the screen that
+  was closed kept the wallet claimed, so the new start was refused until the app
+  was force-stopped. The app now stops that node when the screen is closed, and a
+  new start stops any node left behind, then carries on by itself.
+- The message for an offer that was not paid now says your sats are back in
+  your balance.
+- Fortis server (not in the app): a balance that has just been credited is no
+  longer moved back to your channel for 30 seconds, so an offer payment from the
+  channel could not be paid when the move back came first.
+
 ## 0.7.11 (38) — 2026-11-18
 
 - A BOLT12 offer whose recipient never answers is given up after about 45

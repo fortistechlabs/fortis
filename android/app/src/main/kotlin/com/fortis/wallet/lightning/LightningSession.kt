@@ -186,6 +186,11 @@ class FfiLnNode(private val inner: LnNode) : LnNodeApi {
 private const val IDLE_POLL_MIN_NANOS = 50_000_000L
 private const val IDLE_POLL_BACKOFF_MS = 250L
 private const val START_RETRY_MS = 2_000L
+
+/** The node each chain runs in this process, whichever session started it. A session thrown away
+ *  with its ViewModel can leave one running; the next session stops it before starting its own,
+ *  otherwise the wallet stays claimed and every start fails with `already_running`. */
+private val liveNodes = java.util.concurrent.ConcurrentHashMap<LnChain, LnNodeApi>()
 private const val POLL_INTERVAL_MS = 5_000L
 private const val AUTO_CANCEL_RETRY_MS = 30_000L
 
@@ -728,6 +733,23 @@ class LightningSession(
         }
     }
 
+    /** For a session being thrown away (its ViewModel was cleared while the process lives on): stops
+     *  and closes the running node on the calling thread, which must not be the main one. Without
+     *  this the node keeps the process-wide claim on its wallet, and the next session's start fails
+     *  with `already_running` until the garbage collector happens to free the old node. */
+    fun shutdownBlocking() {
+        eventJob?.cancel()
+        refreshJob?.cancel()
+        retryJob?.cancel()
+        val node = currentNode
+        currentNode = null
+        if (node != null) {
+            liveNodes.remove(chain, node)
+            runCatching { node.stop() }
+            runCatching { node.close() }
+        }
+    }
+
     private suspend fun stopCurrentNodeLocked() {
         eventJob?.cancel()
         eventJob = null
@@ -736,6 +758,7 @@ class LightningSession(
         val node = currentNode
         currentNode = null
         if (node != null) {
+            liveNodes.remove(chain, node)
             withContext(Dispatchers.IO) {
                 runCatching { node.stop() }
                 runCatching { node.close() }
@@ -770,6 +793,13 @@ class LightningSession(
 
     private suspend fun startOnceLocked(walletId: String, seed: ByteArray, takeover: Boolean) {
         stopCurrentNodeLocked()
+        liveNodes.remove(chain)?.let { orphan ->
+            logWarn("stopping a node left running by an earlier session", null)
+            withContext(Dispatchers.IO) {
+                runCatching { orphan.stop() }
+                runCatching { orphan.close() }
+            }
+        }
         _state.value = LnState.Starting
         val t0 = System.nanoTime()
         fun lap(what: String) = logWarn("start +${(System.nanoTime() - t0) / 1_000_000}ms $what", null)
@@ -820,6 +850,7 @@ class LightningSession(
                     cfg.bip39Seed.fill(0)
                 }
                 createdNode = n
+                liveNodes[chain] = n
                 if (takeover) {
                     if (effectiveLnEnabled(chain, lnInfo.enabled, debugCanary)) n.takeover() else n.takeoverWith(LnStartMode.EXIT)
                 } else {

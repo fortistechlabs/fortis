@@ -1792,6 +1792,10 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
         // The engine outlives this ViewModel; with no unlocked wallet it gets
         // `null` from the funder (→ NEED_FUNDING) until the next unlock.
         if (fortis.unlockedFunder === funder) fortis.unlockedFunder = null
+        // The Lightning nodes live in this process, not in the ViewModel: a node left running keeps
+        // its wallet claimed, and the next ViewModel's start then fails with "already_running".
+        val sessions = lnSessions.all
+        Thread({ sessions.forEach { runCatching { it.shutdownBlocking() } } }, "fortis-ln-shutdown").start()
         super.onCleared()
     }
 
