@@ -693,6 +693,8 @@
     <string name="ln_push_channel_desc">A payment is waiting for you to open Fortis</string>
     <string name="ln_create_invoice">Create invoice</string>
     <string name="history_via_fortis">via Fortis</string>
+    <string name="history_topup_fee">fee for moving to your Fortis balance</string>
+    <string name="history_offer_via_fortis">paid through your Fortis balance; the fee includes moving it there</string>
     <string name="history_move_fee">fee for your channel</string>
     <string name="history_today">Today</string>
     <string name="history_yesterday">Yesterday</string>

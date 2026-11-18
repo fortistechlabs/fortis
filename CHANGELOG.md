@@ -2,6 +2,18 @@
 
 Fortis Wallet (Android). Versions are `versionName (versionCode)`.
 
+## 0.7.10 (37) — 2026-11-18
+
+- An offer paid from the Lightning balance (through the Fortis balance) is now
+  ONE record in the History: the payment, with what moving the money to the
+  Fortis balance cost added to its fee. The move is no longer shown as separate
+  "sent" and "received" rows.
+- No "received" message appears for the move to the Fortis balance that an
+  offer payment needs. Real receipts from anyone else are still announced, also
+  while you are sending.
+- If the Fortis server cannot take the move (for example when its balance
+  limit is full), an offer is paid over your channel as before.
+
 ## 0.7.9 (36) — 2026-11-18
 
 - A BOLT12 offer paid from the Lightning (channel) balance now goes through the

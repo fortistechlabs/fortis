@@ -40,3 +40,12 @@ fun payRoute(
         else -> PayRoute.Insufficient
     }
 }
+
+/** True when the account receipt [e] is the credit of a move to the Fortis balance that this phone's own offer
+ *  payment made: its invoice was paid ([topUps], by payment hash), or one for exactly [inFlightMsat] is being
+ *  paid right now. Every other receipt, even during a send, is a real one and is announced. */
+fun isOwnTopUpReceipt(e: AccountEntry, topUps: Set<String>, inFlightMsat: ULong?): Boolean =
+    e.kind == "received" && (
+        (e.paymentHash != null && e.paymentHash in topUps) ||
+            (inFlightMsat != null && e.amountMsat == inFlightMsat.toLong())
+        )

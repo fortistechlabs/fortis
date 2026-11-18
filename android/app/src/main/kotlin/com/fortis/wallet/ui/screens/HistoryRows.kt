@@ -119,7 +119,34 @@ fun mergeLightningHistory(
     ln: List<LnPayment>,
     account: List<com.fortis.wallet.lightning.AccountEntry>,
     moves: List<com.fortis.wallet.lightning.LnMove> = emptyList(),
+    topUps: Set<String> = emptySet(),
 ): List<HistoryRow> {
+    // An offer paid from the channel first moves money to the Fortis balance (an invoice the phone paid,
+    // by id). The three legs (out of the channel, into the balance, the payment) are ONE record: the
+    // payment's, with what the move cost added to its fee. A move with no payment after it keeps its fee as a row.
+    val sentFromFortis = account.filter { it.kind == "sent" && it.paymentHash !in topUps }.sortedBy { it.atSecs }.toMutableList()
+    val foldedInto = HashMap<com.fortis.wallet.lightning.AccountEntry, ULong>()
+    val topUpFees = ArrayList<HistoryRow>()
+    for (p in ln.filter { it.id in topUps && it.feeMsat > 0uL }.sortedBy { it.timestamp }) {
+        val t = p.timestamp.toLong()
+        val pay = sentFromFortis.firstOrNull { it.atSecs >= t && it.atSecs <= t + TOP_UP_PAYMENT_SECS }
+        if (pay != null) {
+            sentFromFortis.remove(pay)
+            foldedInto[pay] = p.feeMsat
+        } else {
+            val fee = displaySatFromMsat(p.feeMsat)
+            topUpFees += HistoryRow(
+                id = "topupfee:${p.id}", lightning = true, send = true, amountSat = -fee, feeSat = 0L,
+                description = "", time = t, confirmations = 6L,
+                noteRes = com.fortis.wallet.R.string.history_topup_fee, netSat = -fee,
+            )
+        }
+    }
+    val accountFolded = account.filterNot { it.paymentHash in topUps }.map { e ->
+        val fee = foldedInto[e]
+        if (fee == null) e else e.copy(amountMsat = e.amountMsat - fee.toLong(), feeMsat = e.feeMsat + fee.toLong())
+    }
+    val foldedIds = foldedInto.keys.mapNotNull { it.paymentHash }.toSet()
     val folded = moves.mapNotNull { it.feePaymentId }.toSet()
     val openRows = moves.filter { it.kind == "open" && it.txid != null }.map { m ->
         HistoryRow(
@@ -152,7 +179,10 @@ fun mergeLightningHistory(
             shareWaived = m.feePaymentId == com.fortis.wallet.SHARE_WAIVED,
         )
     }
-    return (mergeLightningHistoryInner(ln.filterNot { it.id in folded }, account) + moveRows + openRows).sortedByDescending { it.time }
+    val inner = mergeLightningHistoryInner(ln.filterNot { it.id in folded || it.id in topUps }, accountFolded).map { r ->
+        if (r.id in foldedIds) r.copy(noteRes = com.fortis.wallet.R.string.history_offer_via_fortis) else r
+    }
+    return (inner + moveRows + openRows + topUpFees).sortedByDescending { it.time }
 }
 
 private fun mergeLightningHistoryInner(
@@ -218,6 +248,9 @@ private fun mergeLightningHistoryInner(
     }
     return (channel + fortis).sortedByDescending { it.time }
 }
+
+/** How long after a move to the Fortis balance its offer payment may be recorded (s), to be one record. */
+private const val TOP_UP_PAYMENT_SECS = 900L
 
 /** How far apart (s) a move's ledger entry and its channel payment may be, to be paired. */
 private const val MOVE_MATCH_SECS = 120L

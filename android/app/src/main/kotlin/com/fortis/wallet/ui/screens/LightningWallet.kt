@@ -809,7 +809,7 @@ internal fun LightningHistory(vm: WalletViewModel) {
         value = vm.lightning.payments()
     }
     LaunchedEffect(lnState is LnState.Ready, vm.sentCount) { vm.loadLnMoves() }
-    val rows = remember(lnPayments, vm.accountHistory, vm.lnMoves) { mergeLightningHistory(lnPayments, vm.accountHistory, vm.lnMoves) }
+    val rows = remember(lnPayments, vm.accountHistory, vm.lnMoves, vm.lnTopUps) { mergeLightningHistory(lnPayments, vm.accountHistory, vm.lnMoves, vm.lnTopUps) }
     // A ledger: each row's balance after it, worked back from the balance now.
     // Money already on its way out (a close confirming, then its sweep) was moved by the
     // ledger's move row: it is not in the balance the rows add up to, and that row is pending.

@@ -97,4 +97,17 @@ class AccountRoutingTest {
         try { acct(401, """{"error":"auth","reason":"replayed"}""").balance(Signer()); fail() } catch (_: AccountError.Auth) {}
         try { acct(502, "{}").balance(Signer()); fail() } catch (_: AccountError.Network) {}
     }
+
+    private fun rcv(sat: Long, hash: String?) =
+        AccountEntry(atSecs = 1, kind = "received", amountMsat = sat * 1_000, feeMsat = 0, paymentHash = hash)
+
+    @Test
+    fun onlyTheCreditOfOurOwnMoveIsHiddenNotOtherReceiptsDuringASend() {
+        // Our move: known by its payment hash, or by its exact amount while it is being paid.
+        assertEquals(true, isOwnTopUpReceipt(rcv(172, "top"), setOf("top"), null))
+        assertEquals(true, isOwnTopUpReceipt(rcv(172, "x"), emptySet(), 172_000uL))
+        // Someone else paying us, even at that moment, is announced.
+        assertEquals(false, isOwnTopUpReceipt(rcv(500, "other"), setOf("top"), 172_000uL))
+        assertEquals(false, isOwnTopUpReceipt(rcv(172, "other"), emptySet(), null))
+    }
 }

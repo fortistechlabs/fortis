@@ -17,6 +17,47 @@ class LightningHistoryMergeTest {
     private fun entry(kind: String, sat: Long, at: Long, hash: String? = null, feeSat: Long = 0) =
         AccountEntry(atSecs = at, kind = kind, amountMsat = sat * 1_000, feeMsat = feeSat * 1_000, paymentHash = hash)
 
+    private fun tx(id: String, sat: Long, feeSat: Long, at: Long) = LnPayment(
+        id = id, direction = LnDirection.OUT, amountMsat = (sat * 1_000).toULong(), feeMsat = (feeSat * 1_000).toULong(),
+        status = LnPaymentStatus.SUCCEEDED, description = "", timestamp = at.toULong(),
+    )
+
+    @Test
+    fun an_offer_paid_through_the_fortis_balance_is_one_row_with_the_move_fee_included() {
+        // 172 sat moved to the Fortis balance (1 sat routing fee), then 121 sat + 2 sat paid from it.
+        val rows = mergeLightningHistory(
+            ln = listOf(tx("top", 172, 1, 100)),
+            account = listOf(entry("received", 172, 101, "top"), entry("sent", -123, 120, "offerhash", feeSat = 2)),
+            topUps = setOf("top"),
+        )
+        assertEquals(1, rows.size)
+        // The whole of what left the wallet, the fee of moving it included.
+        assertEquals(-124L, rows[0].amountSat)
+        assertEquals(-124L, rows[0].netSat)
+        assertEquals(3L, rows[0].feeSat)
+        assertTrue(rows[0].send && rows[0].viaFortis)
+    }
+
+    @Test
+    fun a_move_whose_payment_never_followed_shows_its_fee_as_its_own_row() {
+        val rows = mergeLightningHistory(
+            ln = listOf(tx("top", 172, 1, 100)),
+            account = listOf(entry("received", 172, 101, "top")),
+            topUps = setOf("top"),
+        )
+        assertEquals(listOf(-1L), rows.map { it.amountSat })
+    }
+
+    @Test
+    fun a_move_to_the_fortis_balance_without_a_fee_adds_no_row() {
+        val rows = mergeLightningHistory(
+            ln = listOf(tx("top", 172, 0, 100)),
+            account = listOf(entry("received", 172, 101, "top")),
+            topUps = setOf("top"),
+        )
+        assertTrue(rows.isEmpty())
+    }
+
     @Test
     fun account_receipts_show_and_the_move_into_the_channel_does_not() {
         val rows = mergeLightningHistory(

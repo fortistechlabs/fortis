@@ -437,6 +437,11 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
         )
         var accountBalance by mutableStateOf<com.fortis.wallet.lightning.AccountBalance?>(null)
         var accountHistory by mutableStateOf<List<com.fortis.wallet.lightning.AccountEntry>>(emptyList())
+        /** Payment ids of the invoices this wallet paid to move money to its Fortis balance before an
+         *  offer (see [payOfferViaTopUp]): History lists no row for either side of such a move. */
+        var topUps by mutableStateOf(loadTopUps(walletChain))
+        /** The amount (msat) of the move to the Fortis balance being paid right now, until it is recorded in [topUps]. */
+        @Volatile var topUpInFlightMsat: ULong? = null
         /** A send from the account is settling: the balance shows "Updating…" until it has. */
         var accountSending by mutableStateOf(false)
         var accountSendBase = 0uL
@@ -594,11 +599,16 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
     private fun announceNewReceipts(nodeId: String, entries: List<com.fortis.wallet.lightning.AccountEntry>) {
         val received = entries.filter { it.kind == "received" }
         val newest = received.maxOfOrNull { it.atSecs } ?: return
+        // Not announced: the credit of the move to the Fortis balance that our own offer payment made
+        // (it is part of that payment). Receipts from anyone else are, also during a send.
+        val topUps = lnBtc.topUps + lnXbt.topUps
+        val inFlight = listOfNotNull(lnBtc.topUpInFlightMsat, lnXbt.topUpInFlightMsat).firstOrNull()
         val prefs = getApplication<Application>().getSharedPreferences("lightning_receipts", android.content.Context.MODE_PRIVATE)
         val key = "seen_$nodeId"
         val seen = prefs.getLong(key, -1L)
         if (seen >= 0L) {
-            received.filter { it.atSecs > seen }.sortedBy { it.atSecs }.forEach { _accountReceived.tryEmit(it.amountMsat / 1_000) }
+            received.filter { it.atSecs > seen && !com.fortis.wallet.lightning.isOwnTopUpReceipt(it, topUps, inFlight) }
+                .sortedBy { it.atSecs }.forEach { _accountReceived.tryEmit(it.amountMsat / 1_000) }
         }
         if (newest > seen) prefs.edit().putLong(key, newest).apply()
     }
@@ -716,6 +726,20 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
         throw uniffi.wallet_ffi.LnFfiException.PaymentStateUnknown()
     }
 
+    private val topUpPrefs get() = getApplication<Application>().getSharedPreferences("lightning_topups", android.content.Context.MODE_PRIVATE)
+
+    private fun loadTopUps(walletChain: String): Set<String> =
+        topUpPrefs.getStringSet("t_$walletChain", null)?.toSet() ?: emptySet()
+
+    /** Remembers [id] (a payment to the LSP that moved money to the Fortis balance); before it is paid, so that
+     *  no History row can appear for it unexplained. */
+    private fun rememberTopUp(side: LnSide, id: String) {
+        side.topUps = side.topUps + id
+        topUpPrefs.edit().putStringSet("t_${side.walletChain}", side.topUps).apply()
+    }
+
+    val lnTopUps: Set<String> get() = ln.topUps
+
     /** An offer from the channel: pays the LSP an invoice for the amount plus the fee reserve (it lands
      *  in the Fortis balance), waits for that credit, then has the LSP pay the offer from it. If the
      *  offer then fails, the money is in the Fortis balance and the message says so. */
@@ -730,8 +754,22 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
         com.fortis.wallet.lightning.requireTargetChain(side.session.chain, p.target)
         val total = p.amountMsat + com.fortis.wallet.lightning.offerReserveMsat(p.amountMsat)
         // Nothing has moved until this payment succeeds: its errors are shown as they are.
-        val inv = withContext(Dispatchers.IO) { side.account.invoice(s, total, "") }
-        side.session.pay(uniffi.wallet_ffi.lnParse(inv, "bitcoin"), null)
+        val inv = try {
+            withContext(Dispatchers.IO) { side.account.invoice(s, total, "") }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: com.fortis.wallet.lightning.AccountError) {
+            // The server cannot take the move now (its custody is full, or it is unreachable): nothing has
+            // moved, so pay the offer over the channel as before rather than fail a payment that could work.
+            return side.session.pay(p.target, p.amountMsat)
+        }
+        side.topUpInFlightMsat = total
+        val topUpId = try {
+            side.session.pay(uniffi.wallet_ffi.lnParse(inv, "bitcoin"), null).also { rememberTopUp(side, it) }
+        } catch (e: Throwable) {
+            side.topUpInFlightMsat = null
+            throw e
+        }
         val end = System.currentTimeMillis() + 45_000L
         var credited = false
         while (System.currentTimeMillis() < end) {
@@ -742,6 +780,7 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
             }
             kotlinx.coroutines.delay(1_000)
         }
+        side.topUpInFlightMsat = null
         // Paid but not credited yet: the money is on its way, so do not say it failed.
         if (!credited) throw uniffi.wallet_ffi.LnFfiException.PaymentStateUnknown()
         return try {
