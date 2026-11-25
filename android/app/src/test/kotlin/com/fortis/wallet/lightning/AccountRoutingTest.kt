@@ -101,6 +101,29 @@ class AccountRoutingTest {
     private fun rcv(sat: Long, hash: String?) =
         AccountEntry(atSecs = 1, kind = "received", amountMsat = sat * 1_000, feeMsat = 0, paymentHash = hash)
 
+    private fun out(id: String, sat: Long, at: Long, status: uniffi.wallet_ffi.LnPaymentStatus) = uniffi.wallet_ffi.LnPayment(
+        id = id, direction = uniffi.wallet_ffi.LnDirection.OUT, amountMsat = (sat * 1_000).toULong(), feeMsat = 0uL,
+        status = status, description = "", timestamp = at.toULong(),
+    )
+
+    @Test
+    fun aTopUpWhoseOutcomeWasUnknownIsFoundByAmountAndStartTime() {
+        val pending = uniffi.wallet_ffi.LnPaymentStatus.PENDING
+        val ok = uniffi.wallet_ffi.LnPaymentStatus.SUCCEEDED
+        val failed = uniffi.wallet_ffi.LnPaymentStatus.FAILED
+        val pay = listOf(
+            out("older", 172, 50, ok),            // same amount, before this move started
+            out("other-amount", 173, 101, ok),
+            out("failed", 172, 101, failed),      // moved nothing: not remembered
+            out("known", 172, 102, ok),           // already remembered
+            out("mine", 172, 103, pending),
+        )
+        assertEquals("mine", findTopUpPayment(pay, 172_000uL, sinceSecs = 100L, known = setOf("known")))
+        assertEquals(null, findTopUpPayment(pay, 999_000uL, sinceSecs = 100L, known = emptySet()))
+        // Of several candidates the newest.
+        assertEquals("known", findTopUpPayment(pay.dropLast(1), 172_000uL, sinceSecs = 100L, known = emptySet()))
+    }
+
     @Test
     fun onlyTheCreditOfOurOwnMoveIsHiddenNotOtherReceiptsDuringASend() {
         // Our move: known by its payment hash, or by its exact amount while it is being paid.

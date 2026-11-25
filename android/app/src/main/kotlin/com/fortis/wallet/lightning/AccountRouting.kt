@@ -41,6 +41,23 @@ fun payRoute(
     }
 }
 
+/** The channel payment of a move to the Fortis balance whose outcome the app never got (the wait ended, or the
+ *  payment was still pending): the newest outgoing payment of exactly [amountMsat] started at or after
+ *  [sinceSecs], not failed (a failed one moved nothing) and not already in [known]. Its id is then remembered,
+ *  so History explains both sides of the move instead of showing a send and a receipt nobody can account for. */
+fun findTopUpPayment(
+    payments: List<uniffi.wallet_ffi.LnPayment>,
+    amountMsat: ULong,
+    sinceSecs: Long,
+    known: Set<String>,
+): String? = payments
+    .filter {
+        it.direction == uniffi.wallet_ffi.LnDirection.OUT && it.amountMsat == amountMsat &&
+            it.status != uniffi.wallet_ffi.LnPaymentStatus.FAILED &&
+            it.timestamp.toLong() >= sinceSecs && it.id !in known
+    }
+    .maxByOrNull { it.timestamp }?.id
+
 /** True when the account receipt [e] is the credit of a move to the Fortis balance that this phone's own offer
  *  payment made: its invoice was paid ([topUps], by payment hash), or one for exactly [inFlightMsat] is being
  *  paid right now. Every other receipt, even during a send, is a real one and is announced. */

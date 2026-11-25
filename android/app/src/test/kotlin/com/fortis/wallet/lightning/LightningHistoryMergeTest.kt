@@ -49,6 +49,30 @@ class LightningHistoryMergeTest {
     }
 
     @Test
+    fun a_top_up_that_the_server_sweeps_back_leaves_only_its_fee_and_the_ledger_reconciles() {
+        // Offer failed: 172 sat went to the Fortis balance (1 sat fee), then the server sent it all back
+        // into the channel as a keysend (id "ret"), recorded as a conversion with that id.
+        val rows = mergeLightningHistory(
+            ln = listOf(tx("top", 172, 1, 100), rx("ret", 172, 140)),
+            account = listOf(entry("received", 172, 101, "top"), entry("converted", -172, 141, "ret")),
+            topUps = setOf("top"),
+        )
+        assertEquals(listOf(-1L), rows.map { it.amountSat })
+        // The wallet is 1 sat down overall, and the rows explain exactly that.
+        assertEquals(0L, com.fortis.wallet.ui.screens.ledgerBalances(rows, -1L).second)
+    }
+
+    @Test
+    fun a_top_up_whose_return_has_not_arrived_yet_still_shows_its_fee_only() {
+        val rows = mergeLightningHistory(
+            ln = listOf(tx("top", 172, 1, 100)),
+            account = listOf(entry("received", 172, 101, "top")),
+            topUps = setOf("top"),
+        )
+        assertEquals(listOf(-1L), rows.map { it.amountSat })
+    }
+
+    @Test
     fun a_move_to_the_fortis_balance_without_a_fee_adds_no_row() {
         val rows = mergeLightningHistory(
             ln = listOf(tx("top", 172, 0, 100)),

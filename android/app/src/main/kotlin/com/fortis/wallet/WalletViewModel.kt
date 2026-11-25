@@ -731,7 +731,7 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
     private fun loadTopUps(walletChain: String): Set<String> =
         topUpPrefs.getStringSet("t_$walletChain", null)?.toSet() ?: emptySet()
 
-    /** Remembers [id] (a payment to the LSP that moved money to the Fortis balance); before it is paid, so that
+    /** Remembers [id] (a payment to the LSP that moved money to the Fortis balance), as soon as it is known, so that
      *  no History row can appear for it unexplained. */
     private fun rememberTopUp(side: LnSide, id: String) {
         side.topUps = side.topUps + id
@@ -764,9 +764,15 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
             return side.session.pay(p.target, p.amountMsat)
         }
         side.topUpInFlightMsat = total
-        val topUpId = try {
+        val startedSecs = System.currentTimeMillis() / 1_000
+        try {
             side.session.pay(uniffi.wallet_ffi.lnParse(inv, "bitcoin"), null).also { rememberTopUp(side, it) }
         } catch (e: Throwable) {
+            // The wait can end with the outcome unknown while the payment is still going through (or has
+            // gone through): remember it now, or its send and its credit show in History unexplained.
+            runCatching {
+                com.fortis.wallet.lightning.findTopUpPayment(side.session.payments(), total, startedSecs - 2, side.topUps)
+            }.getOrNull()?.let { rememberTopUp(side, it) }
             side.topUpInFlightMsat = null
             throw e
         }
