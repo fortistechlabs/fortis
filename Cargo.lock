@@ -990,6 +990,7 @@ dependencies = [
  "native-tls",
  "proptest",
  "rocksdb",
+ "rusqlite",
  "serde",
  "serde_json",
  "sha2",

@@ -510,8 +510,8 @@
         <item quantity="other">%1$d swaps need both wallets: add the other chain\'s wallet (Also add on…), then search again.</item>
     </plurals>
 
-    <!-- Lightning (beta) -->
-    <string name="settings_lightning_title">Lightning (beta)</string>
+    <!-- Lightning -->
+    <string name="settings_lightning_title">Lightning</string>
     <string name="settings_lightning_body">Send and receive instant Bitcoin payments over the Lightning Network.</string>
     <string name="settings_lightning_status_off">Off</string>
     <string name="settings_lightning_status_starting">Connecting to LSP…</string>
@@ -536,6 +536,8 @@
     <string name="send_ln_resolving">Resolving Lightning payment…</string>
     <string name="send_ln_amount_range">Amount (%1$s–%2$s sat)</string>
     <string name="send_ln_amount_range_unit">Amount (%1$s–%2$s %3$s)</string>
+    <string name="send_ln_all">Send all (%1$s sat)</string>
+    <string name="send_ln_all_note">Send all keeps back what the route may charge: 1% of the amount, at least 1 sat. What the route does not use stays yours.</string>
     <string name="send_ln_amount_up_to">Amount (up to %1$s %2$s)</string>
     <string name="send_ln_reserve_note">About %1$s sat of your balance is the channel\'s reserve and can\'t be spent while the channel is open.</string>
     <string name="send_ln_sending">Sending…</string>
@@ -689,6 +691,30 @@
     <string name="ln_offer_help_xbt">One address you can share and be paid any amount to, again and again — even while this phone is off. Payments are held by Fortis until they’re worth a channel of your own. Needs a wallet that supports BOLT12 offers.</string>
     <string name="ln_offer_show">Show my reusable address</string>
     <string name="ln_offer_unavailable">The reusable address isn’t available right now. Try again later.</string>
+    <string name="ln_address_title">%1$s Lightning address</string>
+    <string name="ln_address_help">Choose a name and people can pay you at name@%1$s from any Lightning wallet. The address is fixed to this wallet’s chain (%2$s): only a %2$s Lightning wallet can pay it. If this wallet is ever lost, payments to the address wait on the Fortis server until the wallet is restored.</string>
+    <string name="ln_address_field">Name</string>
+    <string name="ln_address_checking">Checking…</string>
+    <string name="ln_address_available">Available</string>
+    <string name="ln_address_taken">Already taken</string>
+    <string name="ln_address_unknown">Can’t check right now. Try again in a moment.</string>
+    <string name="ln_address_not_allowed">Not allowed: %1$s</string>
+    <string name="ln_address_rule_length">use 3 to 32 characters</string>
+    <string name="ln_address_rule_characters">only lowercase letters, digits, dot, underscore and hyphen</string>
+    <string name="ln_address_rule_edges">it must start and end with a letter or digit</string>
+    <string name="ln_address_rule_double_dot">no two dots in a row</string>
+    <string name="ln_address_rule_reserved">this name is reserved</string>
+    <string name="ln_address_claim">Claim</string>
+    <string name="ln_address_claiming">Working…</string>
+    <string name="ln_address_release">Release</string>
+    <string name="ln_address_release_title">Release this %1$s Lightning address?</string>
+    <string name="ln_address_release_body">%1$s will stop working for you, and anyone can take the name afterwards. Payments sent to it after that go to them.</string>
+    <string name="ln_address_load">Show my Lightning address</string>
+    <string name="ln_address_err_taken">That name is already taken.</string>
+    <string name="ln_address_err_has_name">This wallet already has a Lightning address.</string>
+    <string name="ln_address_err_invalid">That name isn’t allowed: %1$s.</string>
+    <string name="ln_address_err_invalid_other">That name isn’t allowed.</string>
+    <string name="ln_address_err_network">Couldn’t reach the Fortis server. Try again later.</string>
     <string name="ln_push_channel">Lightning payments</string>
     <string name="ln_push_channel_desc">A payment is waiting for you to open Fortis</string>
     <string name="ln_create_invoice">Create invoice</string>

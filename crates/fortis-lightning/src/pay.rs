@@ -254,8 +254,8 @@ impl Node {
                     || node.payment(&pid).is_some(),
                     || self.liquidity_and_gate(node, amount),
                     || match amount_override {
-                        Some(a) => p.send_using_amount(&invoice, a, None),
-                        None => p.send(&invoice, None),
+                        Some(a) => p.send_using_amount(&invoice, a, route_params(amount)),
+                        None => p.send(&invoice, route_params(amount)),
                     },
                 );
                 if matches!(res, Ok(_) | Err(LnError::PaymentStateUnknown)) {
@@ -282,8 +282,8 @@ impl Node {
                 // paid more than once on purpose.
                 let p = node.bolt12_payment();
                 let id = match amount_override {
-                    Some(a) => p.send_using_amount(&offer, a, None, None, None),
-                    None => p.send(&offer, None, None, None),
+                    Some(a) => p.send_using_amount(&offer, a, None, None, route_params(amount)),
+                    None => p.send(&offer, None, None, route_params(amount)),
                 }
                 .map_err(map_send_error)?;
                 let id_hex = hex::encode(id.0);
@@ -450,10 +450,20 @@ pub fn estimate_routing_fee_msat(target: &PaymentTarget, amount_msat: u64) -> u6
     routing_fee_cap_msat(target_amount_msat(target).unwrap_or(amount_msat))
 }
 
-/// LDK's default maximum total routing fee for a payment of `amount_msat`:
-/// 1 % + 50 sat.
-fn routing_fee_cap_msat(amount_msat: u64) -> u64 {
-    amount_msat / 100 + 50_000
+/// The most routing fee a payment of `amount_msat` may cost: 1 % of it, at least 1 sat. The same rule
+/// the Fortis LSP holds back for an account send (`fee_cap_msat`) and the app reserves
+/// (`offerReserveMsat`), so every side agrees on what a payment needs.
+pub fn routing_fee_cap_msat(amount_msat: u64) -> u64 {
+    (amount_msat / 100).max(1_000)
+}
+
+/// Route parameters that enforce [`routing_fee_cap_msat`] (LDK's own default would be 1 % + 50 sat, far
+/// above what the balance was checked against).
+fn route_params(amount_msat: u64) -> Option<ldk_node::lightning::routing::router::RouteParametersConfig> {
+    Some(ldk_node::lightning::routing::router::RouteParametersConfig {
+        max_total_routing_fee_msat: Some(routing_fee_cap_msat(amount_msat)),
+        ..Default::default()
+    })
 }
 
 /// The amount the target itself fixes, if any.
@@ -816,11 +826,16 @@ mod tests {
     use std::collections::HashMap;
 
     #[test]
-    fn routing_fee_cap_is_one_percent_plus_50_sat() {
-        assert_eq!(routing_fee_cap_msat(0), 50_000);
-        assert_eq!(routing_fee_cap_msat(1_000_000), 60_000);
-        assert_eq!(routing_fee_cap_msat(100_000_000), 1_050_000);
-        assert_eq!(routing_fee_cap_msat(199), 50_001);
+    fn routing_fee_cap_is_one_percent_at_least_one_sat() {
+        assert_eq!(routing_fee_cap_msat(0), 1_000);
+        assert_eq!(routing_fee_cap_msat(2_000), 1_000);
+        assert_eq!(routing_fee_cap_msat(99_999), 1_000);
+        assert_eq!(routing_fee_cap_msat(100_000), 1_000);
+        assert_eq!(routing_fee_cap_msat(199_999), 1_999);
+        assert_eq!(routing_fee_cap_msat(1_000_000), 10_000);
+        assert_eq!(routing_fee_cap_msat(100_000_000), 1_000_000);
+        // What the node hands LDK is the same number.
+        assert_eq!(route_params(5_000_000).unwrap().max_total_routing_fee_msat, Some(50_000));
     }
 
     #[test]

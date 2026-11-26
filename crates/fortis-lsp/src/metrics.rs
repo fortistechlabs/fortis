@@ -275,6 +275,43 @@ pub fn serve(
                     .with_status_code(status)
                     .with_header(json.clone())
             }
+            // Lightning addresses (LUD-16): the edge asks for the limits and for invoices on this
+            // loopback listener. Phones never reach it (the edge's `/ln/account` forwards `/account` only).
+            // They are served only on a loopback listener (`admin_token` exists only then, as for `/admin/*`):
+            // on a public one anyone could mint invoices, so they 404.
+            (tiny_http::Method::Get, "/lnurl/limits") => {
+                let (status, body) = match accounts.as_ref().and_then(|a| a.lnurl_limits()) {
+                    Some((min, max)) if admin_token.is_some() => (200, serde_json::json!({ "min_msat": min, "max_msat": max })),
+                    _ => (404, serde_json::json!({ "error": "accounts_disabled" })),
+                };
+                tiny_http::Response::from_string(body.to_string())
+                    .with_status_code(status)
+                    .with_header(json.clone())
+            }
+            (tiny_http::Method::Post, "/lnurl/invoice") => {
+                let mut buf = Vec::new();
+                let _ = std::io::Read::read_to_end(&mut std::io::Read::take(req.as_reader(), 4097), &mut buf);
+                let (status, body) = match &accounts {
+                    _ if admin_token.is_none() => (404, serde_json::json!({ "error": "disabled" })),
+                    Some(a) if buf.len() <= 4096 => {
+                        let v: serde_json::Value = serde_json::from_slice(&buf).unwrap_or_default();
+                        let now = std::time::SystemTime::now()
+                            .duration_since(std::time::UNIX_EPOCH)
+                            .map_or(0, |d| d.as_secs());
+                        a.invoice_for(
+                            v["node_id"].as_str().unwrap_or(""),
+                            v["amount_msat"].as_u64().unwrap_or(0),
+                            v["description_hash"].as_str().unwrap_or(""),
+                            now,
+                        )
+                    }
+                    Some(_) => (413, serde_json::json!({ "error": "too_large" })),
+                    None => (404, serde_json::json!({ "error": "accounts_disabled" })),
+                };
+                tiny_http::Response::from_string(body.to_string())
+                    .with_status_code(status)
+                    .with_header(json.clone())
+            }
             (tiny_http::Method::Get, "/info") => {
                 tiny_http::Response::from_string(info.clone()).with_header(json.clone())
             }

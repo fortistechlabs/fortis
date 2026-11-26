@@ -198,6 +198,10 @@ fun BiometricAppUnlock(vm: WalletViewModel) {
                 KeyTrace.unlockOk()
             } catch (e: BiometricCancelled) {
                 // stay put — the button retries
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                // The screen left the composition (or the scope was cancelled): not a failure, and its
+                // message ("rememberCoroutineScope left the composition") must never reach the user.
+                throw e
             } catch (e: Throwable) {
                 val d = diagnoseUnlockFailure(e, keyPresent = !SeedKeystore.keyMissing())
                 detail = d.detail
@@ -269,6 +273,9 @@ fun IdentityGate.require(vm: WalletViewModel, act: FragmentActivity?, scope: kot
                 if (vm.confirmIdentity(SeedKeystore.unwrap(cipher, wrapped).toHex())) action()
             } catch (e: BiometricCancelled) {
                 // stays as it was
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                // The screen left the composition: not a failure, nothing to show.
+                throw e
             } catch (e: Throwable) {
                 KeyTrace.failure(e, diagnoseUnlockFailure(e, keyPresent = !SeedKeystore.keyMissing()).detail)
                 CrashReporter.reportCaught("identity_gate", e)

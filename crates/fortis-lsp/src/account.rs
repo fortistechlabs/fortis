@@ -546,6 +546,29 @@ impl Ledger {
         Ok(())
     }
 
+    /// How many invoices for `node` can still be paid and have not been (live, not credited).
+    pub fn pending_invoice_count(&self, node: &PublicKey, now: u64) -> Result<u64> {
+        let c = self.conn();
+        let n: i64 = c.query_row(
+            "SELECT COUNT(*) FROM invoices WHERE node = ?1 AND expires_at > ?2
+               AND payment_hash NOT IN (SELECT payment_hash FROM entries WHERE payment_hash IS NOT NULL)",
+            params![key(node), now as i64],
+            |r| r.get(0),
+        )?;
+        Ok(n as u64)
+    }
+
+    /// Forgets invoices that expired before `before` (seconds) and were never paid; returns how many.
+    /// A paid invoice stays: it is the record of whose payment it was.
+    pub fn prune_invoices(&self, before: u64) -> Result<usize> {
+        let c = self.conn();
+        Ok(c.execute(
+            "DELETE FROM invoices WHERE expires_at < ?1
+               AND payment_hash NOT IN (SELECT payment_hash FROM entries WHERE payment_hash IS NOT NULL)",
+            params![before as i64],
+        )?)
+    }
+
     /// The account an invoice of ours pays into.
     /// The account's reusable BOLT12 offer, if it has one.
     pub fn offer_of(&self, node: &PublicKey) -> Result<Option<String>> {
@@ -1152,6 +1175,37 @@ mod tests {
         assert!(l.use_nonce(&pk(1), "old", 1).unwrap());
         // The next call prunes "old" (expired), so it can be inserted again.
         assert!(l.use_nonce(&pk(1), "old", 1).unwrap());
+    }
+
+    #[test]
+    fn pending_invoices_are_counted_per_node_and_paid_or_expired_ones_do_not_count() {
+        let (l, _) = ledger("pending");
+        let now = now_secs();
+        l.pending_invoice([1; 32], &pk(3), 100, now + 600).unwrap();
+        l.pending_invoice([2; 32], &pk(3), 100, now + 600).unwrap();
+        l.pending_invoice([3; 32], &pk(3), 100, now + 600).unwrap(); // will be paid
+        l.pending_invoice([4; 32], &pk(3), 100, now - 5).unwrap(); // expired
+        l.pending_invoice([5; 32], &pk(4), 100, now + 600).unwrap(); // someone else's
+        assert_eq!(l.pending_invoice_count(&pk(3), now).unwrap(), 4 - 1);
+        l.credit(&pk(3), [3; 32], 100).unwrap();
+        assert_eq!(l.pending_invoice_count(&pk(3), now).unwrap(), 2);
+        assert_eq!(l.pending_invoice_count(&pk(4), now).unwrap(), 1);
+    }
+
+    #[test]
+    fn expired_unpaid_invoices_are_pruned_and_paid_ones_are_kept() {
+        let (l, _) = ledger("prune");
+        let now = now_secs();
+        l.pending_invoice([1; 32], &pk(3), 100, now - 7_200).unwrap(); // long expired, unpaid
+        l.pending_invoice([2; 32], &pk(3), 100, now - 7_200).unwrap(); // long expired, paid
+        l.pending_invoice([3; 32], &pk(3), 100, now - 10).unwrap(); // expired a moment ago
+        l.pending_invoice([4; 32], &pk(3), 100, now + 600).unwrap(); // live
+        l.credit(&pk(3), [2; 32], 100).unwrap();
+        assert_eq!(l.prune_invoices(now - 3_600).unwrap(), 1);
+        assert_eq!(l.invoice_owner([1; 32]).unwrap(), None);
+        for h in [2u8, 3, 4] {
+            assert_eq!(l.invoice_owner([h; 32]).unwrap(), Some(pk(3)), "{h}");
+        }
     }
 
     #[test]

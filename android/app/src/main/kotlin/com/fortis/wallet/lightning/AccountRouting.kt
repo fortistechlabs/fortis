@@ -17,9 +17,23 @@ fun receiveRoute(amountMsat: ULong, inboundRoomMsat: ULong, jitMinMsat: ULong): 
 
 enum class PayRoute { Channel, Account, Insufficient, ChannelViaAccount }
 
-/** What the LSP keeps back from the Fortis balance for the routing fee of an offer payment (the
- *  server's own cap, `fee_cap_msat`): 1 % of the amount plus 50 sat. */
-fun offerReserveMsat(amountMsat: ULong): ULong = amountMsat / 100uL + 50_000uL
+/** The most routing fee a payment of [amountMsat] may cost: 1 % of it, at least 1 sat. One rule for all three
+ *  sides: the LSP holds this back for an account send (`fee_cap_msat`), the node hands it to LDK as the payment's
+ *  limit (`routing_fee_cap_msat`), and the app checks the balance against it. */
+fun routingFeeCapMsat(amountMsat: ULong): ULong = maxOf(amountMsat / 100uL, 1_000uL)
+
+/** What the LSP keeps back from the Fortis balance for the routing fee of an offer payment (its own cap). */
+fun offerReserveMsat(amountMsat: ULong): ULong = routingFeeCapMsat(amountMsat)
+
+/** The most that one payment can carry out of [availableMsat]: the largest whole-sat amount whose own fee cap
+ *  ([routingFeeCapMsat]) still fits beside it. Zero when not even 1 sat plus its 1 sat cap fits. This is what a
+ *  "send all" button sends: the balance less the most the route may charge, so nothing is refused for fees. */
+fun sendAllSat(availableMsat: ULong): ULong {
+    // From 100 sat up the cap is 1 %, so amount * 1.01 must fit; below that the cap is its 1 sat minimum.
+    val byPercent = availableMsat / 1_010uL
+    if (byPercent >= 100uL) return byPercent
+    return if (availableMsat >= 2_000uL) (availableMsat - 1_000uL) / 1_000uL else 0uL
+}
 
 /** Channel first, then the account; each must cover the amount plus the fee cap. A BOLT12 offer
  *  ([isOffer]) goes through the account first: its LSP asks the recipient for the invoice, which the

@@ -299,7 +299,7 @@ fun planSend(
         }
         is LnTarget.Bolt11 -> {
             if (ln is LnState.Off) {
-                return SendPlan.Invalid("Lightning is disabled — enable it in Settings → Lightning (beta)")
+                return SendPlan.Invalid("Lightning is disabled — enable it in Settings → Lightning")
             }
             // The LSP's payment bounds are for what it forwards to us; they do not limit what we send.
             planLightningWithAmount(
@@ -314,7 +314,7 @@ fun planSend(
         }
         is LnTarget.Bolt12Offer -> {
             if (ln is LnState.Off) {
-                return SendPlan.Invalid("Lightning is disabled — enable it in Settings → Lightning (beta)")
+                return SendPlan.Invalid("Lightning is disabled — enable it in Settings → Lightning")
             }
             // The LSP's payment bounds are for what it forwards to us; they do not limit what we send.
             planLightningWithAmount(
@@ -329,7 +329,7 @@ fun planSend(
         }
         is LnTarget.LnurlPay, is LnTarget.LightningAddress -> {
             if (ln is LnState.Off) {
-                return SendPlan.Invalid("Lightning is disabled — enable it in Settings → Lightning (beta)")
+                return SendPlan.Invalid("Lightning is disabled — enable it in Settings → Lightning")
             }
             val params = try {
                 lnurlResolver(target)

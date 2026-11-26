@@ -741,7 +741,7 @@ pub fn ln_bip39_seed(mnemonic: String, passphrase: String) -> Result<Vec<u8>, Ln
     Ok(seed.to_vec())
 }
 
-/// Upper-bound routing fee estimate (`1 % + 50 sat`) for `target` / `amount_msat`:
+/// Upper-bound routing fee estimate (1 %, at least 1 sat) for `target` / `amount_msat`:
 /// the rule `LnNode::pay` enforces, from `fortis_lightning` (not a copy of it).
 #[uniffi::export]
 pub fn ln_estimate_fee_msat(target: LnTarget, amount_msat: u64) -> u64 {

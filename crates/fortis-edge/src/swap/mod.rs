@@ -4291,6 +4291,12 @@ mod tests {
             vss: None,
             lsp_admin: None,
             lsp_xbt_admin: None,
+            lnurl_domain: None,
+            names: None,
+            lnurl_limiter: crate::RateLimiter::new(60, 20),
+            lnurl_global_limiter: crate::RateLimiter::new(1_200, 100),
+            names_limiter: crate::RateLimiter::new(10, 5),
+            lnurl_inflight: std::sync::atomic::AtomicUsize::new(0),
             vss_limiter: crate::RateLimiter::new(600, 300),
         };
         (st, dir)

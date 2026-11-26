@@ -202,9 +202,9 @@ fn wait_sent(node: &Node, id: &str) -> u64 {
     }
 }
 
-/// The routing-fee cap ldk-node applies by default: 1 % + 50 sat.
+/// The routing-fee cap the node enforces: 1 % of the amount, at least 1 sat.
 fn fee_cap(amount_msat: u64) -> u64 {
-    amount_msat / 100 + 50_000
+    (amount_msat / 100).max(1_000)
 }
 
 /// A signed BOLT11 invoice from a throwaway key (for the target checks).
@@ -347,7 +347,7 @@ fn estimate_fee_is_the_routing_fee_cap() {
         fee_cap(1_000_000 * SAT)
     );
     let open = foreign_invoice(Currency::Regtest, None);
-    assert_eq!(node.estimate_fee_msat(&bolt11(&open), 0), 50_000);
+    assert_eq!(node.estimate_fee_msat(&bolt11(&open), 0), 1_000);
     assert_eq!(
         node.estimate_fee_msat(&bolt11(&open), 20_000 * SAT),
         fee_cap(20_000 * SAT)

@@ -19,8 +19,8 @@ class AccountRoutingTest {
 
     @Test
     fun anOfferFromTheChannelMovesToTheAccountFirstWithinTheCap() {
-        // 121,000 msat: the reserve is 1 % plus 50 sat.
-        assertEquals(51_210uL, offerReserveMsat(121_000uL))
+        // 121,000 msat: the reserve is 1 % (1,210 msat), which is above the 1 sat minimum.
+        assertEquals(1_210uL, offerReserveMsat(121_000uL))
         val max = 50_000_000uL
         // The channel can pay it, the account cannot: via the account.
         assertEquals(
@@ -37,10 +37,10 @@ class AccountRoutingTest {
             PayRoute.Channel,
             payRoute(49_800_000uL, 5_000uL, 63_000_000uL, 0uL, isOffer = true, accountMaxMsat = max, accountBalanceMsat = 0uL),
         )
-        // The channel cannot cover amount + reserve: not via the account.
+        // The channel cannot cover amount + reserve + fee cap (127,210): not via the account, but it can pay directly.
         assertEquals(
             PayRoute.Channel,
-            payRoute(121_000uL, 5_000uL, 150_000uL, 0uL, isOffer = true, accountMaxMsat = max, accountBalanceMsat = 0uL),
+            payRoute(121_000uL, 5_000uL, 127_000uL, 0uL, isOffer = true, accountMaxMsat = max, accountBalanceMsat = 0uL),
         )
         // The account already covers it: straight from the account.
         assertEquals(
@@ -132,5 +132,43 @@ class AccountRoutingTest {
         // Someone else paying us, even at that moment, is announced.
         assertEquals(false, isOwnTopUpReceipt(rcv(500, "other"), setOf("top"), 172_000uL))
         assertEquals(false, isOwnTopUpReceipt(rcv(172, "other"), emptySet(), null))
+    }
+
+    @Test
+    fun theFeeCapIsOnePercentAndAtLeastOneSat() {
+        assertEquals(1_000uL, routingFeeCapMsat(0uL))
+        assertEquals(1_000uL, routingFeeCapMsat(2_000uL))
+        assertEquals(1_000uL, routingFeeCapMsat(100_000uL))
+        assertEquals(1_999uL, routingFeeCapMsat(199_999uL))
+        assertEquals(10_000uL, routingFeeCapMsat(1_000_000uL))
+        assertEquals(1_000_000uL, routingFeeCapMsat(100_000_000uL))
+        // The offer reserve is the same number: the LSP holds exactly this.
+        assertEquals(routingFeeCapMsat(121_000uL), offerReserveMsat(121_000uL))
+    }
+
+    @Test
+    fun sendAllIsTheLargestAmountThatFitsWithItsOwnFeeCap() {
+        // Brute force: for every balance from 0 to 300 000 msat-ish steps, the answer fits and one sat more does not.
+        val balances = (0L..400_000L step 7L).map { it.toULong() } + listOf(101_000uL, 101_009uL, 101_010uL, 2_000uL, 1_999uL, 3_000uL, 2_500_000uL, 100_000_000_000uL)
+        for (b in balances) {
+            val a = sendAllSat(b)
+            if (a > 0uL) {
+                val amount = a * 1_000uL
+                assertTrue("fits: balance $b amount $amount", amount + routingFeeCapMsat(amount) <= b)
+            }
+            val more = (a + 1uL) * 1_000uL
+            assertTrue("one sat more does not fit: balance $b", more + routingFeeCapMsat(more) > b)
+        }
+        assertEquals(0uL, sendAllSat(1_999uL))
+        assertEquals(1uL, sendAllSat(2_000uL))   // 1 sat + its 1 sat cap
+        assertEquals(2uL, sendAllSat(3_000uL))   // the 2 sat the user had
+        assertEquals(100uL, sendAllSat(101_000uL))
+    }
+
+    @Test
+    fun aTwoSatBalanceCanPayOneSatNowAndATinyBalanceIsNoLongerStuck() {
+        // Was refused: 2 sat needed 2 + 51. Now 1 sat + its 1 sat cap fits in 2 sat.
+        assertEquals(PayRoute.Account, payRoute(1_000uL, routingFeeCapMsat(1_000uL), 0uL, 2_000uL))
+        assertEquals(PayRoute.Insufficient, payRoute(2_000uL, routingFeeCapMsat(2_000uL), 0uL, 2_000uL))
     }
 }

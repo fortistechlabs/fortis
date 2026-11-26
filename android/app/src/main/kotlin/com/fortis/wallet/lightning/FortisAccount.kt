@@ -40,6 +40,11 @@ sealed class AccountError(msg: String) : Exception(msg) {
     class Auth(reason: String) : AccountError("auth: $reason")
     class Rejected(reason: String) : AccountError(reason)
     class Network(msg: String) : AccountError(msg)
+    /** The server's reason (`length`, `characters`, `edges`, `double_dot`, `reserved`, `missing`). */
+    class NameInvalid(val reason: String) : AccountError("name_invalid: $reason")
+    class NameTaken : AccountError("name_taken")
+    /** This wallet already has a Lightning address. */
+    class HasName : AccountError("has_name")
 }
 
 /** The node's identity and signature over a request body. */
@@ -106,6 +111,9 @@ class FortisAccount(
         val o = runCatching { JSONObject(text) }.getOrNull()
         throw when {
             status == 409 && o?.optString("error") == "custody_full" -> AccountError.CustodyFull(o.optLong("min_channel_sat"))
+            status == 409 && o?.optString("error") == "name_taken" -> AccountError.NameTaken()
+            status == 409 && o?.optString("error") == "has_name" -> AccountError.HasName()
+            status == 400 && o?.optString("error") == "name_invalid" -> AccountError.NameInvalid(o.optString("reason"))
             status == 402 -> AccountError.Insufficient()
             status == 401 -> AccountError.Auth(o?.optString("reason").orEmpty())
             status in 400..499 -> AccountError.Rejected(o?.optString("error")?.ifBlank { null } ?: "http $status")
@@ -162,6 +170,24 @@ class FortisAccount(
     /** The account's reusable BOLT12 offer (`lno1…`), hosted by the LSP. */
     suspend fun offer(signer: AccountSigner): String =
         JSONObject(call(signer, "offer", JSONObject())).getString("offer")
+
+    /** This wallet's Lightning address name (`name@fortis.cash`), or null when it has none. [chain] is the
+     *  wallet's chain on the wire (`btc` or `xbt`); it is signed with the request, and the edge refuses a
+     *  name operation whose signed chain is not the one it was sent to. */
+    suspend fun myName(signer: AccountSigner, chain: String): String? {
+        val o = JSONObject(call(signer, "my_name", JSONObject().put("chain", chain)))
+        return if (o.isNull("name")) null else o.optString("name").ifBlank { null }
+    }
+
+    /** Claims [name] (already normalised) for this wallet; the name as the server holds it. */
+    suspend fun claimName(signer: AccountSigner, chain: String, name: String): String =
+        JSONObject(call(signer, "claim_name", JSONObject().put("chain", chain).put("name", name))).getString("name")
+
+    /** Gives up this wallet's name (anyone may take it afterwards); the name released, or null if it had none. */
+    suspend fun releaseName(signer: AccountSigner, chain: String): String? {
+        val o = JSONObject(call(signer, "release_name", JSONObject().put("chain", chain)))
+        return if (o.isNull("released")) null else o.optString("released").ifBlank { null }
+    }
 
     /** Moves [amountMsat] (fee included) out of the account to the on-chain [address]; the txid. */
     suspend fun withdraw(signer: AccountSigner, amountMsat: ULong, address: String, feerateSatVb: Long): String {

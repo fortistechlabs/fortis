@@ -10,6 +10,7 @@ import androidx.lifecycle.viewModelScope
 import com.fortis.wallet.data.*
 import com.fortis.wallet.lightning.EdgeLnInfoApi
 import com.fortis.wallet.lightning.LightningSession
+import com.fortis.wallet.lightning.wire
 import com.fortis.wallet.lightning.LnState
 import com.fortis.wallet.lightning.canAddLightningWallet
 import com.fortis.wallet.lightning.lightningWalletOf
@@ -449,6 +450,12 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
         /** The wallet's reusable BOLT12 offer, once fetched. */
         var accountOffer by mutableStateOf<String?>(null)
         var accountOfferError by mutableStateOf<String?>(null)
+        /** The wallet's Lightning address name (`name@fortis.cash`); null = none, or not read yet ([lnNameLoaded]). */
+        var lnName by mutableStateOf<String?>(null)
+        var lnNameLoaded by mutableStateOf(false)
+        /** A claim, release or read of the name is running. */
+        var lnNameBusy by mutableStateOf(false)
+        var lnNameError by mutableStateOf<String?>(null)
         /** The wallet's moves on-chain (shown in its history). */
         var lnMoves by mutableStateOf<List<com.fortis.wallet.lightning.LnMove>>(emptyList())
         var closing by mutableStateOf(false)
@@ -643,6 +650,105 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
         } catch (e: Exception) {
             side.accountOfferError = str(R.string.ln_offer_unavailable)
         }
+    }
+
+    /** Reads [walletChain]'s Lightning address name from its LSP into its side's state. */
+    fun loadMyName(walletChain: String) = viewModelScope.launch {
+        val side = lnSide(walletChain)
+        if (side.lnNameBusy) return@launch
+        side.lnNameError = null
+        val s = accountSigner(side) ?: run { side.lnNameError = str(R.string.transfer_needs_lightning); return@launch }
+        side.lnNameBusy = true
+        try {
+            side.lnName = withContext(Dispatchers.IO) { side.account.myName(s, side.session.chain.wire()) }
+            side.lnNameLoaded = true
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            side.lnNameError = lnNameErrorText(e)
+        } finally {
+            side.lnNameBusy = false
+        }
+    }
+
+    /** Whether [name] (as typed) is free, from the public lookup; the UI debounces. [NameAvailability.Unknown]
+     *  when it cannot be told (offline, odd answer) or the name breaks a rule: never claims it is free then. */
+    suspend fun checkNameAvailable(name: String): com.fortis.wallet.lightning.NameAvailability {
+        val n = com.fortis.wallet.lightning.normalizeName(name)
+        if (com.fortis.wallet.lightning.checkName(n) != null) return com.fortis.wallet.lightning.NameAvailability.Unknown
+        val req = okhttp3.Request.Builder()
+            .url("https://${com.fortis.wallet.lightning.LN_ADDRESS_DOMAIN}/.well-known/lnurlp/$n")
+            .get().build()
+        return try {
+            val (code, body) = http.send(req) { r -> r.code to (r.body?.string().orEmpty()) }
+            com.fortis.wallet.lightning.parseAvailability(code, body)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            com.fortis.wallet.lightning.NameAvailability.Unknown
+        }
+    }
+
+    /** Claims [name] (as typed; lowercased here) for [walletChain]'s wallet. */
+    fun claimName(walletChain: String, name: String) = viewModelScope.launch {
+        val side = lnSide(walletChain)
+        if (side.lnNameBusy) return@launch
+        side.lnNameError = null
+        val n = com.fortis.wallet.lightning.normalizeName(name)
+        com.fortis.wallet.lightning.checkName(n)?.let { side.lnNameError = nameRuleText(it); return@launch }
+        val s = accountSigner(side) ?: run { side.lnNameError = str(R.string.transfer_needs_lightning); return@launch }
+        side.lnNameBusy = true
+        try {
+            side.lnName = withContext(Dispatchers.IO) { side.account.claimName(s, side.session.chain.wire(), n) }
+            side.lnNameLoaded = true
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            side.lnNameError = lnNameErrorText(e)
+        } finally {
+            side.lnNameBusy = false
+        }
+    }
+
+    /** Gives up [walletChain]'s Lightning address name; anyone may take it afterwards. */
+    fun releaseName(walletChain: String) = viewModelScope.launch {
+        val side = lnSide(walletChain)
+        if (side.lnNameBusy) return@launch
+        side.lnNameError = null
+        val s = accountSigner(side) ?: run { side.lnNameError = str(R.string.transfer_needs_lightning); return@launch }
+        side.lnNameBusy = true
+        try {
+            withContext(Dispatchers.IO) { side.account.releaseName(s, side.session.chain.wire()) }
+            side.lnName = null
+            side.lnNameLoaded = true
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            side.lnNameError = lnNameErrorText(e)
+        } finally {
+            side.lnNameBusy = false
+        }
+    }
+
+    /** The words for a rule a name breaks. */
+    fun nameRuleText(p: com.fortis.wallet.lightning.NameProblem): String = str(
+        when (p) {
+            com.fortis.wallet.lightning.NameProblem.Length -> R.string.ln_address_rule_length
+            com.fortis.wallet.lightning.NameProblem.Characters -> R.string.ln_address_rule_characters
+            com.fortis.wallet.lightning.NameProblem.Edges -> R.string.ln_address_rule_edges
+            com.fortis.wallet.lightning.NameProblem.DoubleDot -> R.string.ln_address_rule_double_dot
+            com.fortis.wallet.lightning.NameProblem.Reserved -> R.string.ln_address_rule_reserved
+        },
+    )
+
+    private fun lnNameErrorText(e: Exception): String = when (e) {
+        is com.fortis.wallet.lightning.AccountError.NameTaken -> str(R.string.ln_address_err_taken)
+        is com.fortis.wallet.lightning.AccountError.HasName -> str(R.string.ln_address_err_has_name)
+        is com.fortis.wallet.lightning.AccountError.NameInvalid -> {
+            val p = com.fortis.wallet.lightning.NameProblem.fromServer(e.reason)
+            if (p != null) str(R.string.ln_address_err_invalid, nameRuleText(p)) else str(R.string.ln_address_err_invalid_other)
+        }
+        else -> str(R.string.ln_address_err_network)
     }
 
     /** An invoice into the wallet in view's own channel, issued and held by its LSP so the phone

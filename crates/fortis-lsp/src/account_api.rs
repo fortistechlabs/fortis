@@ -16,6 +16,13 @@ use crate::account_auth::{self, AuthError};
 
 /// How long an account invoice is valid.
 pub const INVOICE_EXPIRY_SECS: u32 = 3600;
+/// Smallest Lightning address payment (msat) and how long its invoice lives (s).
+pub const LNURL_MIN_MSAT: u64 = 1_000;
+pub const LNURL_INVOICE_EXPIRY_SECS: u32 = 600;
+/// Most unpaid, unexpired Lightning address invoices one wallet may have at a time.
+pub const MAX_PENDING_LNURL_INVOICES: u64 = 20;
+/// How long after expiry an unpaid invoice's record is kept before it is forgotten (s).
+const PRUNE_AFTER_SECS: u64 = 3_600;
 /// Largest request body.
 pub const MAX_BODY: usize = 16 * 1024;
 /// Most history entries one request returns.
@@ -56,9 +63,19 @@ pub fn withdrawal(amount_sat: u64, feerate_sat_vb: u64) -> Option<Withdrawal> {
 /// 21 million BTC in msat.
 pub const MAX_MONEY_MSAT: u64 = 21_000_000 * 100_000_000 * 1_000;
 
-/// 1 % + 50 sat.
+/// The most routing fee an account send of `amount_msat` may cost: 1 %, at least 1 sat. Held back from the
+/// balance with the amount, and handed to LDK as the payment's limit ([`route_params`]), so the LSP can never
+/// spend more on fees than it held. The app and the phone's own payments use the same rule.
 pub fn fee_cap_msat(amount_msat: u64) -> u64 {
-    (amount_msat / 100).saturating_add(50_000)
+    (amount_msat / 100).max(1_000)
+}
+
+/// Route parameters enforcing [`fee_cap_msat`] for a payment of `amount_msat`.
+fn route_params(amount_msat: u64) -> Option<ldk_node::lightning::routing::router::RouteParametersConfig> {
+    Some(ldk_node::lightning::routing::router::RouteParametersConfig {
+        max_total_routing_fee_msat: Some(fee_cap_msat(amount_msat)),
+        ..Default::default()
+    })
 }
 
 /// What the account service needs from the node (a trait so the handlers
@@ -79,6 +96,16 @@ pub trait AccountNode: Send + Sync {
         description: &str,
         expiry_secs: u32,
     ) -> Result<(String, [u8; 32]), String>;
+    /// A BOLT11 invoice paying this node whose description is only the hash `description_hash` (LUD-06:
+    /// the payer checks it against the metadata it was shown); its payment hash.
+    fn receive_invoice_hashed(
+        &self,
+        _amount_msat: u64,
+        _description_hash: [u8; 32],
+        _expiry_secs: u32,
+    ) -> Result<(String, [u8; 32]), String> {
+        Err("hash descriptions not supported".into())
+    }
     /// Parses a BOLT11 invoice: its amount (if any) and payment hash.
     fn invoice_details(&self, invoice: &str) -> Result<(Option<u64>, [u8; 32]), String>;
     /// Starts paying `invoice` (`amount_msat` for an amountless one).
@@ -223,6 +250,12 @@ impl AccountService {
             "offer" => self.offer(&node),
             "channel_invoice" => self.channel_invoice(&node, &req.params, now),
             "push_register" => self.push_register(&node, &req.params, now),
+            // Lightning address names live on the edge: this only proves who is asking (signature,
+            // expiry, single-use nonce) and says so; the edge does the rest.
+            "claim_name" | "release_name" | "my_name" => Ok((
+                200,
+                json!({ "node_id": node.to_string(), "op": req.op, "params": req.params }),
+            )),
             _ => Ok(err(400, "unknown_op")),
         };
         r.unwrap_or_else(|e| {
@@ -277,6 +310,70 @@ impl AccountService {
         self.ledger
             .pending_invoice(hash, node, amount, now + INVOICE_EXPIRY_SECS as u64)?;
         Ok((200, json!({ "invoice": invoice })))
+    }
+
+    /// Whether `amount` more msat fits the custody limit and what the node could pay out.
+    fn custody_allows(&self, amount: u64) -> Result<bool, LedgerError> {
+        if self.custody_max_msat == 0 {
+            return Ok(false);
+        }
+        let after = self.ledger.total_custody_msat()?.saturating_add(amount);
+        Ok(after <= self.custody_max_msat && after / 1_000 <= self.node.backing_sat())
+    }
+
+    /// The most and least (msat) a Lightning address payment may be for; `None` while custody is off.
+    pub fn lnurl_limits(&self) -> Option<(u64, u64)> {
+        (self.custody_max_msat > 0).then_some((LNURL_MIN_MSAT, self.account_max_msat))
+    }
+
+    /// An invoice for `node_hex`'s account (a Lightning address payment, LUD-16) whose description is the
+    /// hash `description_hash_hex` of the metadata the payer was shown. Called by the edge only, which has
+    /// checked that the node holds a name; it credits the account exactly as an account invoice does.
+    pub fn invoice_for(&self, node_hex: &str, amount_msat: u64, description_hash_hex: &str, now: u64) -> Reply {
+        let Ok(node) = node_hex.parse::<PublicKey>() else {
+            return err(400, "node_id");
+        };
+        let hash = match hex::decode(description_hash_hex) {
+            Ok(b) if b.len() == 32 => <[u8; 32]>::try_from(b.as_slice()).unwrap(),
+            _ => return err(400, "description_hash"),
+        };
+        if amount_msat < LNURL_MIN_MSAT || amount_msat > self.account_max_msat {
+            return err(400, "amount_msat");
+        }
+        // Anyone may ask for these (the edge only checks that the name exists), so what is left behind is
+        // bounded: unpaid invoices long expired are forgotten, and a wallet holds only a few live ones.
+        let pending = self
+            .ledger
+            .prune_invoices(now.saturating_sub(PRUNE_AFTER_SECS))
+            .and_then(|_| self.ledger.pending_invoice_count(&node, now));
+        match pending {
+            Ok(n) if n >= MAX_PENDING_LNURL_INVOICES => return err(429, "too_many_pending"),
+            Ok(_) => {}
+            Err(e) => {
+                eprintln!("fortis-lsp: lightning address invoice: {e}");
+                return err(500, "ledger");
+            }
+        }
+        match self.custody_allows(amount_msat) {
+            Ok(true) => {}
+            Ok(false) => return self.custody_full(),
+            Err(e) => {
+                eprintln!("fortis-lsp: lightning address invoice: {e}");
+                return err(500, "ledger");
+            }
+        }
+        let (invoice, payment_hash) = match self.node.receive_invoice_hashed(amount_msat, hash, LNURL_INVOICE_EXPIRY_SECS) {
+            Ok(v) => v,
+            Err(e) => {
+                eprintln!("fortis-lsp: lightning address invoice: {e}");
+                return err(502, "node");
+            }
+        };
+        if let Err(e) = self.ledger.pending_invoice(payment_hash, &node, amount_msat, now + LNURL_INVOICE_EXPIRY_SECS as u64) {
+            eprintln!("fortis-lsp: lightning address invoice not recorded: {e}");
+            return err(500, "ledger");
+        }
+        (200, json!({ "invoice": invoice }))
     }
 
     /// An invoice for the operator's share of a transfer fee (spec §2): paid
@@ -682,6 +779,26 @@ impl AccountNode for LdkAccountNode {
         Ok((inv.to_string(), inv.payment_hash().to_byte_array()))
     }
 
+    fn receive_invoice_hashed(
+        &self,
+        amount_msat: u64,
+        description_hash: [u8; 32],
+        expiry_secs: u32,
+    ) -> Result<(String, [u8; 32]), String> {
+        use ldk_node::bitcoin::hashes::Hash;
+        use ldk_node::lightning_invoice::{Bolt11InvoiceDescription, Sha256};
+        let inv = self
+            .0
+            .bolt11_payment()
+            .receive(
+                amount_msat,
+                &Bolt11InvoiceDescription::Hash(Sha256(Hash::from_byte_array(description_hash))),
+                expiry_secs,
+            )
+            .map_err(|e| e.to_string())?;
+        Ok((inv.to_string(), inv.payment_hash().to_byte_array()))
+    }
+
     fn is_our_invoice(&self, invoice: &str) -> bool {
         invoice
             .trim()
@@ -721,9 +838,11 @@ impl AccountNode for LdkAccountNode {
             .parse::<ldk_node::lightning_invoice::Bolt11Invoice>()
             .map_err(|e| e.to_string())?;
         let p = self.0.bolt11_payment();
+        // The amount the hold was taken for: the one given, else the invoice's own.
+        let paid = amount_msat.or(inv.amount_milli_satoshis()).ok_or("amount_required")?;
         match amount_msat {
-            Some(a) => p.send_using_amount(&inv, a, None),
-            None => p.send(&inv, None),
+            Some(a) => p.send_using_amount(&inv, a, route_params(paid)),
+            None => p.send(&inv, route_params(paid)),
         }
         .map(|_| ())
         .map_err(|e| e.to_string())
@@ -795,9 +914,16 @@ impl AccountNode for LdkAccountNode {
         let o = offer.trim().parse::<ldk_node::lightning::offers::offer::Offer>().map_err(|e| format!("{e:?}"))?;
         let p = self.0.bolt12_payment();
         let note = note.map(str::to_string);
+        // The amount the hold was taken for: the one given, else the offer's own.
+        use ldk_node::lightning::offers::offer::Amount;
+        let fixed = match o.amount() {
+            Some(Amount::Bitcoin { amount_msats }) => Some(amount_msats),
+            _ => None,
+        };
+        let paid = amount_msat.or(fixed).ok_or("amount_required")?;
         match amount_msat {
-            Some(a) => p.send_using_amount(&o, a, None, note, None),
-            None => p.send(&o, None, note, None),
+            Some(a) => p.send_using_amount(&o, a, None, note, route_params(paid)),
+            None => p.send(&o, None, note, route_params(paid)),
         }
         .map(|id| id.0)
         .map_err(|e| e.to_string())
@@ -835,6 +961,7 @@ mod tests {
         backing: u64,
         invoices: Mutex<Vec<FakeInvoice>>,
         abandoned: Mutex<Vec<[u8; 32]>>,
+        desc_hashes: Mutex<Vec<[u8; 32]>>,
     }
 
     impl FakeNode {
@@ -853,6 +980,15 @@ mod tests {
     }
 
     impl AccountNode for FakeNode {
+        fn receive_invoice_hashed(
+            &self,
+            amount_msat: u64,
+            description_hash: [u8; 32],
+            _expiry_secs: u32,
+        ) -> Result<(String, [u8; 32]), String> {
+            self.desc_hashes.lock().unwrap().push(description_hash);
+            self.receive_invoice(amount_msat, "", 0)
+        }
         fn receive_invoice(
             &self,
             amount_msat: u64,
@@ -1117,6 +1253,93 @@ mod tests {
     }
 
     #[test]
+    fn name_ops_only_verify_and_answer_with_the_signer() {
+        let (svc, _) = service("names", FakeNode::with_backing(1_000_000), 1_000_000);
+        let (_, pk) = key(3);
+        for op in ["claim_name", "release_name", "my_name"] {
+            let (s, v) = call(&svc, 3, op, r#"{"name":"donal"}"#, &nonce(op.len() as u32));
+            assert_eq!(s, 200, "{op}");
+            assert_eq!(v["node_id"], pk.to_string());
+            assert_eq!(v["op"], op);
+            assert_eq!(v["params"]["name"], "donal");
+        }
+        // A replayed body is refused like any other request, so a claim cannot be re-sent.
+        let (sk, pk) = key(3);
+        let b = body(&pk, "claim_name", r#"{"name":"donal"}"#, &nonce(77), NOW + 60);
+        let sig = signed(&sk, &b);
+        assert_eq!(svc.handle(b.as_bytes(), Some(&sig), NOW).0, 200);
+        let (s, v) = svc.handle(b.as_bytes(), Some(&sig), NOW);
+        assert_eq!((s, v["reason"].as_str()), (401, Some("replayed")));
+        // And a signature by another key is refused.
+        let (other, _) = key(4);
+        let bad = signed(&other, &b);
+        assert_eq!(svc.handle(b.as_bytes(), Some(&bad), NOW).0, 401);
+    }
+
+    #[test]
+    fn a_lightning_address_invoice_credits_the_named_account_and_carries_the_description_hash() {
+        let (svc, node) = service("lud16", FakeNode::with_backing(1_000_000), 1_000_000);
+        let (_, pk) = key(5);
+        let h = "ab".repeat(32);
+        let (s, v) = svc.invoice_for(&pk.to_string(), 100_000, &h, NOW);
+        assert_eq!((s, v["invoice"].as_str()), (200, Some("inv-1")));
+        assert_eq!(node.desc_hashes.lock().unwrap().as_slice(), &[[0xab; 32]]);
+        assert!(svc.on_payment_received([1; 32], 100_000).unwrap());
+        let (_, b) = call(&svc, 5, "balance", "{}", &nonce(1));
+        assert_eq!(b["balance_msat"], 100_000);
+    }
+
+    #[test]
+    fn a_lightning_address_invoice_refuses_bad_input_and_a_full_custody() {
+        let (svc, node) = service("lud16bad", FakeNode::with_backing(1_000_000), 1_000);
+        let (_, pk) = key(5);
+        let id = pk.to_string();
+        let h = "ab".repeat(32);
+        // Amount: below 1 sat, above one account's maximum, absent.
+        assert_eq!(svc.invoice_for(&id, 999, &h, NOW).0, 400);
+        assert_eq!(svc.invoice_for(&id, 50_000_001, &h, NOW).0, 400);
+        assert_eq!(svc.invoice_for(&id, 0, &h, NOW).0, 400);
+        // Hash: not 64 hex characters, or not hex.
+        assert_eq!(svc.invoice_for(&id, 5_000, &"ab".repeat(31), NOW).0, 400);
+        assert_eq!(svc.invoice_for(&id, 5_000, &"zz".repeat(32), NOW).0, 400);
+        // Node id: not a public key.
+        assert_eq!(svc.invoice_for("nope", 5_000, &h, NOW).0, 400);
+        // Custody is 1,000 sat: 2,000 sat does not fit.
+        let (s, v) = svc.invoice_for(&id, 2_000_000, &h, NOW);
+        assert_eq!((s, v["error"].as_str()), (409, Some("custody_full")));
+        assert!(node.desc_hashes.lock().unwrap().is_empty(), "nothing was issued");
+    }
+
+    #[test]
+    fn a_wallet_cannot_have_more_than_the_allowed_unpaid_lightning_address_invoices_at_once() {
+        let (svc, node) = service("lud16cap", FakeNode::with_backing(10_000_000), 10_000_000);
+        let (_, pk) = key(5);
+        let id = pk.to_string();
+        let h = "ab".repeat(32);
+        for i in 0..MAX_PENDING_LNURL_INVOICES {
+            assert_eq!(svc.invoice_for(&id, 5_000, &h, NOW).0, 200, "invoice {i}");
+        }
+        let (s, v) = svc.invoice_for(&id, 5_000, &h, NOW);
+        assert_eq!((s, v["error"].as_str()), (429, Some("too_many_pending")));
+        assert_eq!(node.desc_hashes.lock().unwrap().len() as u64, MAX_PENDING_LNURL_INVOICES, "none issued past the cap");
+        // Another wallet is unaffected.
+        assert_eq!(svc.invoice_for(&key(6).1.to_string(), 5_000, &h, NOW).0, 200);
+        // A paid one frees a place.
+        assert!(svc.on_payment_received([1; 32], 5_000).unwrap());
+        assert_eq!(svc.invoice_for(&id, 5_000, &h, NOW).0, 200);
+        // And so does time: the others have expired ten minutes later.
+        assert_eq!(svc.invoice_for(&id, 5_000, &h, NOW + 601).0, 200);
+    }
+
+    #[test]
+    fn lightning_address_limits_follow_the_account_cap_and_custody_off_means_none() {
+        let (svc, _) = service("lud16lim", FakeNode::with_backing(1_000_000), 1_000_000);
+        assert_eq!(svc.lnurl_limits(), Some((1_000, 50_000_000)));
+        let (off, _) = service("lud16off", FakeNode::with_backing(1_000_000), 0);
+        assert_eq!(off.lnurl_limits(), None);
+    }
+
+    #[test]
     fn pay_holds_amount_plus_fee_cap_and_debits_the_actual_fee() {
         let (svc, node) = service("pay", FakeNode::with_backing(1_000_000), 1_000_000);
         call(&svc, 1, "invoice", r#"{"amount_msat":200000}"#, &nonce(1));
@@ -1129,13 +1352,43 @@ mod tests {
             &[("lnbc-out".to_string(), None)]
         );
         let (_, b) = call(&svc, 1, "balance", "{}", &nonce(3));
-        assert_eq!(b["held_msat"], 30_000 + 300 + 50_000);
+        assert_eq!(b["held_msat"], 30_000 + 1_000);
         svc.on_payment_resolved([50; 32], Some(1_000)).unwrap();
         let (_, b) = call(&svc, 1, "balance", "{}", &nonce(4));
         assert_eq!(
             (b["balance_msat"].as_u64(), b["held_msat"].as_u64()),
             (Some(200_000 - 31_000), Some(0))
         );
+    }
+
+    #[test]
+    fn the_fee_cap_is_one_percent_and_at_least_one_sat() {
+        assert_eq!(fee_cap_msat(0), 1_000);
+        assert_eq!(fee_cap_msat(2_000), 1_000);
+        assert_eq!(fee_cap_msat(100_000), 1_000);
+        assert_eq!(fee_cap_msat(199_999), 1_999);
+        assert_eq!(fee_cap_msat(1_000_000), 10_000);
+        assert_eq!(fee_cap_msat(100_000_000), 1_000_000);
+        // What LDK is told is the same number, so the LSP cannot spend more than it held.
+        assert_eq!(route_params(5_000_000).unwrap().max_total_routing_fee_msat, Some(50_000));
+    }
+
+    #[test]
+    fn a_tiny_balance_can_pay_a_tiny_amount_but_not_more_than_amount_plus_the_cap() {
+        let (svc, node) = service("tiny", FakeNode::with_backing(1_000_000), 1_000_000);
+        call(&svc, 1, "invoice", r#"{"amount_msat":3000}"#, &nonce(1));
+        svc.on_payment_received([1; 32], 3_000).unwrap();
+        // 2 sat + the 1 sat minimum cap = 3 sat: exactly the balance.
+        node.foreign("lnbc-two", Some(2_000), [60; 32]);
+        let (s, _) = call(&svc, 1, "pay", r#"{"invoice":"lnbc-two"}"#, &nonce(2));
+        assert_eq!(s, 200);
+        svc.on_payment_resolved([60; 32], Some(0)).unwrap();
+        let (_, b) = call(&svc, 1, "balance", "{}", &nonce(3));
+        assert_eq!((b["balance_msat"].as_u64(), b["held_msat"].as_u64()), (Some(1_000), Some(0)), "a free route returns the unused cap");
+        // 1 sat more than can be covered with its cap is refused, not sent.
+        node.foreign("lnbc-too-big", Some(1_001), [61; 32]);
+        let (s, _) = call(&svc, 1, "pay", r#"{"invoice":"lnbc-too-big"}"#, &nonce(4));
+        assert_eq!(s, 402);
     }
 
     #[test]
@@ -1147,10 +1400,11 @@ mod tests {
         assert_eq!((s, v["payment_id"].as_str().map(str::len)), (200, Some(64)));
         assert_eq!(node.sent.lock().unwrap().as_slice(), &[("lno-any".to_string(), Some(121_000))]);
         let (_, b) = call(&svc, 1, "balance", "{}", &nonce(3));
-        assert_eq!(b["held_msat"], 121_000 + 1_210 + 50_000);
-        assert!(svc.on_offer_resolved([77; 32], Some([5; 32]), Some(2_000)).unwrap());
+        assert_eq!(b["held_msat"], 121_000 + 1_210);
+        assert!(svc.on_offer_resolved([77; 32], Some([5; 32]), Some(1_000)).unwrap());
         let (_, b) = call(&svc, 1, "balance", "{}", &nonce(4));
-        assert_eq!((b["balance_msat"].as_u64(), b["held_msat"].as_u64()), (Some(200_000 - 123_000), Some(0)));
+        // 121 000 paid + the 1 000 fee (within the 1 210 cap); the rest of the hold comes back.
+        assert_eq!((b["balance_msat"].as_u64(), b["held_msat"].as_u64()), (Some(200_000 - 122_000), Some(0)));
         assert!(!svc.on_offer_resolved([77; 32], None, None).unwrap(), "only once");
         let pid = hex::encode([77u8; 32]);
         assert_eq!(call(&svc, 1, "pay_status", &format!(r#"{{"payment_id":"{pid}"}}"#), &nonce(5)).1["status"], "succeeded");

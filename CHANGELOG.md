@@ -2,6 +2,29 @@
 
 Fortis Wallet (Android). Versions are `versionName (versionCode)`.
 
+## 0.7.14 (40) — 2026-11-26
+
+- Lightning addresses: claim a short address like `name@fortis.cash` and anyone
+  can pay it from any Lightning wallet. Claim it on the Receive tab (or in
+  Settings): the card shows its QR, with Copy and Share. Each Lightning wallet
+  (BTC and XBT) has its own address, and a name is unique across both. Release
+  it in Settings and anyone can take the name.
+- Smaller routing fees to reserve: a payment may now cost at most 1% in routing
+  fees, at least 1 sat (it was 1% plus 50 sat). Small balances can be spent: 2
+  sats can pay 1 sat. The confirm screen says "up to" because it is a ceiling,
+  not the price. What the route does not use stays in your balance.
+- Send all: on the Send tab, a button fills in the most one payment can carry
+  (your balance less the routing-fee ceiling) for an address, LNURL or an
+  invoice without an amount.
+- History: a move to the Fortis balance that ends with nothing paid now has its
+  own row, so both sides of it add up.
+- Settings no longer says "Lightning (beta)".
+- Fixed a red "rememberCoroutineScope left the composition" message that could
+  appear after leaving the app open and coming back to the lock screen.
+- Fortis server (not in the app): Lightning addresses on fortis.cash, and the
+  server holds back and enforces the same 1% (at least 1 sat) routing-fee limit
+  for payments from your Fortis balance.
+
 ## 0.7.12 (39) — 2026-11-18
 
 - Fixed the "Lightning error (already_running)" that kept coming back after you

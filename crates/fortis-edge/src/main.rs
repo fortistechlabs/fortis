@@ -14,9 +14,11 @@ mod haskoin;
 mod fx;
 mod limit;
 mod ln;
+mod lnurl;
 mod ln_fee;
 mod mempool_ws;
 mod metrics;
+mod names;
 mod price;
 mod pricing;
 mod proxy;
@@ -416,6 +418,17 @@ struct Args {
     /// Unset → that 404s.
     #[arg(long)]
     lsp_xbt_admin_url: Option<String>,
+    /// Lightning addresses (LUD-16): the domain they live on (e.g. `fortis.cash`). Needs `--names-db`
+    /// and an LSP admin URL; unset → `/.well-known/lnurlp/*`, `/lnurlp/callback/*` and the name
+    /// operations on `/ln/account` all 404.
+    #[arg(long)]
+    lnurl_domain: Option<String>,
+    /// Test only: how long the edge keeps the LSP's Lightning address limits, seconds (default 30).
+    #[arg(long, default_value_t = 30, hide = true)]
+    lnurl_limits_cache_secs: u64,
+    /// The SQLite file of Lightning address names (created owner-only; back it up).
+    #[arg(long)]
+    names_db: Option<PathBuf>,
     /// Test only: the VSS upstream read timeout, seconds (default 30).
     #[arg(long, default_value_t = ln::VSS_READ_TIMEOUT_SECS, hide = true)]
     vss_read_timeout_secs: u64,
@@ -470,6 +483,15 @@ struct State {
     lsp_admin: Option<LspAdmin>,
     /// `POST /ln/account?chain=xbt`; `None` unless `--lsp-xbt-admin-url`.
     lsp_xbt_admin: Option<LspAdmin>,
+    /// Lightning addresses: the domain and the names; both set or both `None`.
+    lnurl_domain: Option<String>,
+    names: Option<names::Names>,
+    /// Lookups and invoices per client IP, and all callbacks together; name operations per client IP.
+    lnurl_limiter: RateLimiter,
+    lnurl_global_limiter: RateLimiter,
+    names_limiter: RateLimiter,
+    /// Lightning address requests waiting on an LSP right now (bounded, so a flood cannot take every worker).
+    lnurl_inflight: std::sync::atomic::AtomicUsize,
     /// `limiter`'s settings, but VSS's own buckets: a node's write bursts
     /// must not starve the same install's swaps or chain reads, nor they VSS.
     vss_limiter: RateLimiter,
@@ -688,6 +710,20 @@ fn run() -> Result<()> {
         (sw, _) => sw,
     };
 
+    let (lnurl_domain, names) = match (&args.lnurl_domain, &args.names_db) {
+        (None, None) => (None, None),
+        (Some(d), Some(db)) => {
+            let label_ok = |l: &str| !l.is_empty() && !l.starts_with('-') && !l.ends_with('-') && l.len() <= 63;
+            if !d.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'.' || b == b'-') || !d.split('.').all(label_ok) {
+                return Err(anyhow!("--lnurl-domain must be a bare host name (lowercase letters, digits, hyphens, dots between labels)"));
+            }
+            if args.lsp_admin_url.is_none() && args.lsp_xbt_admin_url.is_none() {
+                return Err(anyhow!("--lnurl-domain needs --lsp-admin-url or --lsp-xbt-admin-url (the LSP issues the invoices)"));
+            }
+            (Some(d.clone()), Some(names::Names::open(db).map_err(|e| anyhow!("{e}"))?))
+        }
+        _ => return Err(anyhow!("--lnurl-domain and --names-db go together")),
+    };
     let state = Arc::new(State {
         secret,
         require_token: args.require_token,
@@ -748,8 +784,14 @@ fn run() -> Result<()> {
         ln_info,
         ln_info_xbt,
         vss,
-        lsp_admin: args.lsp_admin_url.as_deref().map(LspAdmin::new),
-        lsp_xbt_admin: args.lsp_xbt_admin_url.as_deref().map(LspAdmin::new),
+        lsp_admin: args.lsp_admin_url.as_deref().map(|u| LspAdmin::new(u).with_limits_ttl(args.lnurl_limits_cache_secs)),
+        lsp_xbt_admin: args.lsp_xbt_admin_url.as_deref().map(|u| LspAdmin::new(u).with_limits_ttl(args.lnurl_limits_cache_secs)),
+        lnurl_domain,
+        names,
+        lnurl_limiter: RateLimiter::new(60, 20),
+        lnurl_global_limiter: RateLimiter::new(1_200, 100),
+        names_limiter: RateLimiter::new(10, 5),
+        lnurl_inflight: std::sync::atomic::AtomicUsize::new(0),
         vss_limiter: RateLimiter::new(args.rate_per_min, args.rate_burst),
     });
 
@@ -1108,6 +1150,8 @@ fn handle(req: &mut Request, st: &State) -> Reply {
             }
         }
         (Method::Post, "/crash") => crash_report(req, st),
+        (Method::Get, p) if p.starts_with("/.well-known/lnurlp/") => lnurl_pay_request(req, st, &p["/.well-known/lnurlp/".len()..]),
+        (Method::Get, p) if p.starts_with("/lnurlp/callback/") => lnurl_callback(req, st, &p["/lnurlp/callback/".len()..], query),
         (_, p) if p == "/swap" || p.starts_with("/swap/") => swap_route(req, st, &method, p),
         _ if raw_path == "/ln/info" => ln_info_route(req, st, &method),
         _ if raw_path.starts_with("/ln/vss/") => ln_vss_route(req, st, &method, &raw_path["/ln/vss/".len()..]),
@@ -1367,18 +1411,80 @@ const ACCOUNT_MAX_BODY: usize = 16 * 1024;
 /// fortis-lsp's loopback admin API, for Fortis accounts.
 struct LspAdmin {
     url: String,
+    /// The listener's base (`url` is its `/account`).
+    base: String,
     agent: ureq::Agent,
+    /// Lightning address calls: a shorter wait than `agent`'s, so a slow LSP cannot hold a worker long.
+    lnurl_agent: ureq::Agent,
+    /// The last limits the LSP gave and when (Lightning address lookups are public: not one LSP call each).
+    limits: std::sync::Mutex<Option<(std::time::Instant, (u64, u64))>>,
+    limits_ttl: std::time::Duration,
 }
 
 impl LspAdmin {
     fn new(base: &str) -> LspAdmin {
         LspAdmin {
             url: format!("{}/account", base.trim_end_matches('/')),
+            base: base.trim_end_matches('/').to_string(),
             agent: ureq::AgentBuilder::new()
                 .timeout_connect(std::time::Duration::from_secs(3))
                 .timeout(std::time::Duration::from_secs(20))
                 .build(),
+            lnurl_agent: ureq::AgentBuilder::new()
+                .timeout_connect(std::time::Duration::from_secs(2))
+                .timeout(std::time::Duration::from_secs(8))
+                .build(),
+            limits: std::sync::Mutex::new(None),
+            limits_ttl: std::time::Duration::from_secs(30),
         }
+    }
+
+    fn with_limits_ttl(mut self, secs: u64) -> LspAdmin {
+        self.limits_ttl = std::time::Duration::from_secs(secs);
+        self
+    }
+
+    /// The least and most (msat) a Lightning address payment may be for.
+    fn lnurl_limits(&self) -> std::result::Result<(u64, u64), String> {
+        let mut cached = self.limits.lock().unwrap_or_else(|p| p.into_inner());
+        if let Some((at, l)) = *cached {
+            if at.elapsed() < self.limits_ttl {
+                return Ok(l);
+            }
+        }
+        let l = self.fetch_lnurl_limits()?;
+        *cached = Some((std::time::Instant::now(), l));
+        Ok(l)
+    }
+
+    fn fetch_lnurl_limits(&self) -> std::result::Result<(u64, u64), String> {
+        let v: serde_json::Value = self
+            .lnurl_agent
+            .get(&format!("{}/lnurl/limits", self.base))
+            .call()
+            .map_err(|e| e.to_string())?
+            .into_json()
+            .map_err(|e| e.to_string())?;
+        match (v["min_msat"].as_u64(), v["max_msat"].as_u64()) {
+            (Some(min), Some(max)) if min <= max => Ok((min, max)),
+            _ => Err("bad limits".into()),
+        }
+    }
+
+    /// An invoice for `node_id`'s account whose description hash is `description_hash` (hex); the LSP's
+    /// status and JSON body, whatever the status.
+    fn lnurl_invoice(&self, node_id: &str, amount_msat: u64, description_hash: &str) -> std::result::Result<(u16, serde_json::Value), String> {
+        let r = self
+            .lnurl_agent
+            .post(&format!("{}/lnurl/invoice", self.base))
+            .send_json(json!({ "node_id": node_id, "amount_msat": amount_msat, "description_hash": description_hash }));
+        let resp = match r {
+            Ok(r) => r,
+            Err(ureq::Error::Status(_, r)) => r,
+            Err(e) => return Err(e.to_string()),
+        };
+        let status = resp.status();
+        Ok((status, resp.into_json().unwrap_or(serde_json::Value::Null)))
     }
 
     /// Posts `body` with `sig`; the LSP's status and JSON body, whatever the status.
@@ -1411,9 +1517,9 @@ fn ln_account_route(req: &mut Request, st: &State, method: &Method, query: &str)
     // `chain` is in the query, not the body: the body stays exactly as the
     // phone signed it. Absent or `btc` → the BTC LSP; `xbt` → the XBT LSP.
     let chains: Vec<&str> = query.split('&').filter_map(|kv| kv.strip_prefix("chain=")).collect();
-    let admin = match chains.as_slice() {
-        [] | ["btc"] => &st.lsp_admin,
-        ["xbt"] => &st.lsp_xbt_admin,
+    let (admin, chain) = match chains.as_slice() {
+        [] | ["btc"] => (&st.lsp_admin, names::Chain::Btc),
+        ["xbt"] => (&st.lsp_xbt_admin, names::Chain::Xbt),
         _ => return err(400, "unknown chain"),
     };
     let Some(admin) = admin else {
@@ -1447,12 +1553,167 @@ fn ln_account_route(req: &mut Request, st: &State, method: &Method, query: &str)
     if sig.len() > 256 || sig.chars().any(|c| !c.is_ascii_alphanumeric()) {
         return err(400, "bad X-Fortis-Sig");
     }
+    // Lightning address names live here, not on the LSP: the LSP only proves who signed (and spends the
+    // nonce), and the name operation is carried out for exactly the node id it answers with.
+    let request = serde_json::from_slice::<serde_json::Value>(&body).unwrap_or(serde_json::Value::Null);
+    let name_op = request["op"].as_str().map(str::to_string).filter(|op| names::NAME_OPS.contains(&op.as_str()));
+    if let Some(op) = &name_op {
+        if st.names.is_none() {
+            return err(404, "no such route");
+        }
+        if op == "claim_name" && !st.names_limiter.check(&client_ip(req, st.trust_forwarded_for)) {
+            Metrics::inc(&st.metrics.rate_limited);
+            return err(429, "rate limit exceeded");
+        }
+    }
     match admin.forward(&body, &sig) {
+        Ok((200, out)) if name_op.is_some() => {
+            let (Some(names), Some(op)) = (&st.names, &name_op) else { return err(404, "no such route") };
+            let verified: serde_json::Value = serde_json::from_slice(&out).unwrap_or(serde_json::Value::Null);
+            let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs());
+            let (status, v) = names::apply(names, chain, op, &request, &verified, now);
+            Reply::NoStore(status, "application/json".into(), v.to_string().into_bytes())
+        }
         Ok((status, out)) => Reply::NoStore(status, "application/json".into(), out),
         Err(e) => {
             Metrics::inc(&st.metrics.upstream_errors);
             eprintln!("fortis-edge: lsp admin: {e}");
             err(502, "the Lightning service is unavailable")
+        }
+    }
+}
+
+/// Most Lightning address requests waiting on an LSP at once.
+const LNURL_MAX_INFLIGHT: usize = 8;
+
+/// One of the `LNURL_MAX_INFLIGHT` places; given back when dropped.
+struct LnurlSlot<'a>(&'a std::sync::atomic::AtomicUsize);
+
+impl<'a> LnurlSlot<'a> {
+    fn take(st: &'a State) -> Option<LnurlSlot<'a>> {
+        use std::sync::atomic::Ordering::SeqCst;
+        if st.lnurl_inflight.fetch_add(1, SeqCst) >= LNURL_MAX_INFLIGHT {
+            st.lnurl_inflight.fetch_sub(1, SeqCst);
+            return None;
+        }
+        Some(LnurlSlot(&st.lnurl_inflight))
+    }
+}
+
+impl Drop for LnurlSlot<'_> {
+    fn drop(&mut self) {
+        self.0.fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
+    }
+}
+
+fn lnurl_busy() -> Reply {
+    lnurl_reply(200, lnurl::error("temporarily unavailable"))
+}
+
+/// A LUD-06 reply: JSON, never cached (limits and names change), status as given.
+fn lnurl_reply(status: u16, v: serde_json::Value) -> Reply {
+    Reply::NoStore(status, "application/json".into(), v.to_string().into_bytes())
+}
+
+/// What a Lightning address lookup needs: its name's chain and wallet, and that chain's LSP.
+/// `Err` is the reply to give instead (LUD-06 error JSON, status 200 so wallets show the reason).
+fn lnurl_target<'a>(st: &'a State, name: &str) -> std::result::Result<(names::Chain, String, &'a LspAdmin), Reply> {
+    let Some(names) = &st.names else { return Err(err(404, "no such route")) };
+    // Only a well-formed name can exist: nothing else reaches the database.
+    if names::check_name(name).is_err() {
+        return Err(lnurl_reply(200, lnurl::error("no such address")));
+    }
+    let (chain, node) = match names.lookup(name) {
+        Ok(Some(hit)) => hit,
+        Ok(None) => return Err(lnurl_reply(200, lnurl::error("no such address"))),
+        Err(e) => {
+            eprintln!("fortis-edge: names: {e}");
+            return Err(lnurl_reply(200, lnurl::error("temporarily unavailable")));
+        }
+    };
+    let admin = match chain {
+        names::Chain::Btc => &st.lsp_admin,
+        names::Chain::Xbt => &st.lsp_xbt_admin,
+    };
+    match admin {
+        Some(a) => Ok((chain, node, a)),
+        None => Err(lnurl_reply(200, lnurl::error("temporarily unavailable"))),
+    }
+}
+
+/// `GET /.well-known/lnurlp/<name>` — LUD-16 / LUD-06: how to pay `name@<domain>`.
+fn lnurl_pay_request(req: &Request, st: &State, name: &str) -> Reply {
+    let Some(domain) = &st.lnurl_domain else { return err(404, "no such route") };
+    // Names are lowercase; a payer's wallet may keep the case it was typed in.
+    let name = &name.to_ascii_lowercase();
+    if !st.lnurl_limiter.check(&client_ip(req, st.trust_forwarded_for)) {
+        Metrics::inc(&st.metrics.rate_limited);
+        return lnurl_reply(429, lnurl::error("slow down"));
+    }
+    let (chain, _, admin) = match lnurl_target(st, name) {
+        Ok(t) => t,
+        Err(r) => return r,
+    };
+    let Some(_busy) = LnurlSlot::take(st) else { return lnurl_busy() };
+    match admin.lnurl_limits() {
+        Ok((min, max)) => lnurl_reply(200, lnurl::pay_request(name, chain, domain, min, max)),
+        Err(e) => {
+            Metrics::inc(&st.metrics.upstream_errors);
+            eprintln!("fortis-edge: lnurl limits: {e}");
+            lnurl_reply(200, lnurl::error("temporarily unavailable"))
+        }
+    }
+}
+
+/// `GET /lnurlp/callback/<name>?amount=<msat>` — the invoice, its description the hash of the metadata
+/// the payer was shown (LUD-06).
+fn lnurl_callback(req: &Request, st: &State, name: &str, query: &str) -> Reply {
+    let Some(domain) = &st.lnurl_domain else { return err(404, "no such route") };
+    let name = &name.to_ascii_lowercase();
+    if !st.lnurl_limiter.check(&client_ip(req, st.trust_forwarded_for)) {
+        Metrics::inc(&st.metrics.rate_limited);
+        return lnurl_reply(429, lnurl::error("slow down"));
+    }
+    let Some(amount) = lnurl::parse_amount(query) else {
+        return lnurl_reply(200, lnurl::error("amount (in millisatoshi) required"));
+    };
+    let (chain, node, admin) = match lnurl_target(st, name) {
+        Ok(t) => t,
+        Err(r) => return r,
+    };
+    // Only a request for a real name, with a real amount, counts against everyone's shared allowance.
+    if !st.lnurl_global_limiter.check("all") {
+        Metrics::inc(&st.metrics.rate_limited);
+        return lnurl_reply(429, lnurl::error("slow down"));
+    }
+    let Some(_busy) = LnurlSlot::take(st) else { return lnurl_busy() };
+    match admin.lnurl_limits() {
+        Ok((min, max)) if (min..=max).contains(&amount) => {}
+        Ok(_) => return lnurl_reply(200, lnurl::error("amount out of range")),
+        Err(e) => {
+            Metrics::inc(&st.metrics.upstream_errors);
+            eprintln!("fortis-edge: lnurl limits: {e}");
+            return lnurl_reply(200, lnurl::error("temporarily unavailable"));
+        }
+    }
+    let hash = lnurl::description_hash_hex(&lnurl::metadata(name, chain, domain));
+    match admin.lnurl_invoice(&node, amount, &hash) {
+        Ok((200, v)) => match v["invoice"].as_str() {
+            Some(pr) => lnurl_reply(200, lnurl::invoice_response(pr)),
+            None => lnurl_reply(200, lnurl::error("temporarily unavailable")),
+        },
+        Ok((409, _)) => lnurl_reply(200, lnurl::error("this address cannot receive that payment right now")),
+        Ok((429, _)) => lnurl_reply(200, lnurl::error("too many payments are being set up for this address; try again in a few minutes")),
+        Ok((400, _)) => lnurl_reply(200, lnurl::error("amount out of range")),
+        Ok((status, _)) => {
+            Metrics::inc(&st.metrics.upstream_errors);
+            eprintln!("fortis-edge: lnurl invoice: lsp answered {status}");
+            lnurl_reply(200, lnurl::error("temporarily unavailable"))
+        }
+        Err(e) => {
+            Metrics::inc(&st.metrics.upstream_errors);
+            eprintln!("fortis-edge: lnurl invoice: {e}");
+            lnurl_reply(200, lnurl::error("temporarily unavailable"))
         }
     }
 }
@@ -2147,6 +2408,12 @@ fn scan_chain(req: &mut Request, st: &State, chain: &str, tok: Option<&str>, aut
 }
 
 fn respond(req: Request, reply: Reply, allow_origin: &str) -> std::io::Result<()> {
+    // Lightning address wallets in a browser fetch these from any origin, whatever `--allow-origin` says.
+    let allow_origin = if req.url().starts_with("/.well-known/lnurlp/") || req.url().starts_with("/lnurlp/callback/") {
+        "*"
+    } else {
+        allow_origin
+    };
     let mut no_store = false;
     let (status, ctype, data): (u16, String, Vec<u8>) = match reply {
         Reply::Empty(s) => (s, "text/plain".into(), Vec::new()),

@@ -494,7 +494,7 @@
     <string name="settings_lightning_status_off">关闭</string>
     <string name="settings_lightning_status_ready">已连接 LSP · 备份正常</string>
     <string name="settings_lightning_status_starting">正在连接 LSP…</string>
-    <string name="settings_lightning_title">闪电网络（测试版）</string>
+    <string name="settings_lightning_title">闪电网络</string>
     <string name="settings_own_server">你的服务器</string>
     <string name="toast_ln_received">已收到 ⚡ %1$s sat</string>
     <string name="wallet_own_server_unreachable">无法连接你的服务器（%1$s）· 将重试</string>

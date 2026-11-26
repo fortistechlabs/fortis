@@ -497,7 +497,7 @@
     <string name="settings_lightning_status_off">Desativado</string>
     <string name="settings_lightning_status_ready">LSP conectado · backup OK</string>
     <string name="settings_lightning_status_starting">Conectando ao LSP…</string>
-    <string name="settings_lightning_title">Lightning (beta)</string>
+    <string name="settings_lightning_title">Lightning</string>
     <string name="settings_own_server">Seu servidor</string>
     <string name="toast_ln_received">Recebido ⚡ %1$s sat</string>
     <string name="wallet_own_server_unreachable">não foi possível acessar seu servidor (%1$s) · tentará de novo</string>

@@ -58,7 +58,7 @@ class LnBindingTest {
         }
 
         val fee = lnEstimateFeeMsat(parsedBolt11, 0uL)
-        assertEquals(25_050_000uL, fee)
+        assertEquals(25_000_000uL, fee)
 
         val seed = lnBip39Seed(
             "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about",

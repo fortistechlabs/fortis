@@ -803,3 +803,177 @@ fn account_chain_xbt_upstream_down_502() {
     assert_eq!(s, 502);
     assert!(btc.seen().is_empty());
 }
+
+// --------------------------------------------------------------------------
+// Lightning addresses (LUD-16): names, the pay request and the invoice
+// --------------------------------------------------------------------------
+
+/// A fake LSP: `/account` verifies nothing and echoes `{node_id, op, params}` as the real one does for the
+/// name operations; `/lnurl/limits` and `/lnurl/invoice` answer fixed values.
+fn lsp_stub(url: &str, body: &[u8]) -> Reply {
+    let json = |v: Value| (200, "application/json", v.to_string().into_bytes());
+    let b: Value = serde_json::from_slice(body).unwrap_or(Value::Null);
+    match url {
+        "/vss/account" => json(json!({ "node_id": b["node_id"], "op": b["op"], "params": b["params"] })),
+        "/vss/lnurl/limits" => json(json!({ "min_msat": 1_000, "max_msat": 50_000_000 })),
+        "/vss/lnurl/invoice" => json(json!({ "invoice": format!("lnbc-fake-{}", b["amount_msat"]) })),
+        _ => (404, "application/json", b"{}".to_vec()),
+    }
+}
+
+/// A fake LSP that refuses every signed request.
+fn lsp_refusing(url: &str, _body: &[u8]) -> Reply {
+    match url {
+        "/vss/account" => (401, "application/json", br#"{"error":"auth","reason":"bad_signature"}"#.to_vec()),
+        _ => (404, "application/json", b"{}".to_vec()),
+    }
+}
+
+fn name_op(edge: &Edge, tok: &str, chain: &str, node: &str, op: &str, name: Option<&str>) -> (u16, Value) {
+    let mut params = json!({ "chain": chain });
+    if let Some(n) = name {
+        params["name"] = json!(n);
+    }
+    let body = json!({ "node_id": node, "op": op, "params": params, "nonce": "n".repeat(20), "expires_at": 1 });
+    let (s, out) = account(edge, tok, &format!("?chain={chain}"), body.to_string().as_bytes());
+    (s, serde_json::from_slice(&out).unwrap_or(Value::Null))
+}
+
+fn get_json(edge: &Edge, path: &str) -> (u16, Vec<(String, String)>, Value) {
+    let (s, h, b) = http(&format!("{}{path}", edge.url), "GET", &[], None);
+    (s, h, serde_json::from_slice(&b).unwrap_or(Value::Null))
+}
+
+const OTHER_NODE: &str = "02c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5";
+
+#[test]
+fn a_lightning_address_is_claimed_looked_up_paid_and_released() {
+    use sha2::{Digest, Sha256};
+    let dir = TempDir::new("lnurl-e2e");
+    let (btc, xbt) = (Stub::start(Duration::ZERO, lsp_stub), Stub::start(Duration::ZERO, lsp_stub));
+    let names = dir.path("names.sqlite").to_string_lossy().into_owned();
+    let edge = Edge::start(&dir, &[
+        "--lsp-admin-url", &btc.url, "--lsp-xbt-admin-url", &xbt.url,
+        "--lnurl-domain", "fortis.cash", "--names-db", &names,
+    ]);
+    let tok = edge.token();
+
+    // Claimed from the XBT wallet: an XBT address.
+    assert_eq!(name_op(&edge, &tok, "xbt", NODE_ID, "my_name", None), (200, json!({ "name": null })));
+    assert_eq!(name_op(&edge, &tok, "xbt", NODE_ID, "claim_name", Some("donal")), (200, json!({ "name": "donal" })));
+    assert_eq!(name_op(&edge, &tok, "xbt", NODE_ID, "my_name", None), (200, json!({ "name": "donal" })));
+    // The same wallet key on the BTC side is another wallet.
+    assert_eq!(name_op(&edge, &tok, "btc", NODE_ID, "my_name", None).1, json!({ "name": null }));
+    // Taken, a second name, a bad name.
+    assert_eq!(name_op(&edge, &tok, "btc", OTHER_NODE, "claim_name", Some("donal")), (409, json!({ "error": "name_taken" })));
+    assert_eq!(name_op(&edge, &tok, "xbt", NODE_ID, "claim_name", Some("second")), (409, json!({ "error": "has_name" })));
+    assert_eq!(name_op(&edge, &tok, "btc", OTHER_NODE, "claim_name", Some("Admin")).0, 400);
+
+    // The pay request, as any wallet fetches it.
+    let (s, h, v) = get_json(&edge, "/.well-known/lnurlp/donal");
+    assert_eq!(s, 200);
+    assert!(header(&h, "access-control-allow-origin").is_some(), "CORS on the lookup");
+    assert_eq!(v["tag"], "payRequest");
+    assert_eq!(v["callback"], "https://fortis.cash/lnurlp/callback/donal");
+    assert_eq!((v["minSendable"].as_u64(), v["maxSendable"].as_u64()), (Some(1_000), Some(50_000_000)));
+    let metadata = v["metadata"].as_str().unwrap().to_string();
+    assert!(metadata.contains("donal@fortis.cash") && metadata.contains("XBT Lightning"), "{metadata}");
+
+    // The invoice: asked of the XBT LSP, for the owner, with the metadata's hash.
+    let (s, h, v) = get_json(&edge, "/lnurlp/callback/donal?amount=5000");
+    assert_eq!(s, 200);
+    assert!(header(&h, "access-control-allow-origin").is_some(), "CORS on the callback");
+    assert_eq!(v, json!({ "pr": "lnbc-fake-5000", "routes": [] }));
+    let asked: Vec<Value> = xbt
+        .seen()
+        .iter()
+        .filter(|r| r.url == "/vss/lnurl/invoice")
+        .map(|r| serde_json::from_slice(&r.body).unwrap())
+        .collect();
+    assert_eq!(asked.len(), 1);
+    assert_eq!(asked[0]["node_id"], NODE_ID);
+    assert_eq!(asked[0]["amount_msat"], 5_000);
+    assert_eq!(asked[0]["description_hash"], hex::encode(Sha256::digest(metadata.as_bytes())));
+    assert!(btc.seen().iter().all(|r| r.url != "/vss/lnurl/invoice"), "the BTC LSP is not asked");
+
+    // A wallet may keep the case it was typed in: the lookup is on the lowercase name.
+    assert_eq!(get_json(&edge, "/.well-known/lnurlp/Donal").2["callback"], "https://fortis.cash/lnurlp/callback/donal");
+    assert_eq!(get_json(&edge, "/lnurlp/callback/DONAL?amount=5000").2["pr"], "lnbc-fake-5000");
+
+    // Wrong requests answer LUD-06 errors with status 200.
+    for path in [
+        "/.well-known/lnurlp/nobody",
+        "/lnurlp/callback/nobody?amount=5000",
+        "/lnurlp/callback/donal",
+        "/lnurlp/callback/donal?amount=0",
+        "/lnurlp/callback/donal?amount=999",
+        "/lnurlp/callback/donal?amount=50000001",
+        "/lnurlp/callback/donal?amount=1.5",
+    ] {
+        let (s, _, v) = get_json(&edge, path);
+        assert_eq!((s, v["status"].as_str()), (200, Some("ERROR")), "{path}: {v}");
+    }
+    // Two invoices so far (the first callback and the uppercase one); the bad requests added none.
+    assert_eq!(xbt.seen().iter().filter(|r| r.url == "/vss/lnurl/invoice").count(), 2, "no invoice for a bad request");
+
+    // Only the owner releases; afterwards the name is free and the lookup says so.
+    assert_eq!(name_op(&edge, &tok, "xbt", OTHER_NODE, "release_name", None), (200, json!({ "released": null })));
+    assert_eq!(get_json(&edge, "/.well-known/lnurlp/donal").2["tag"], "payRequest");
+    assert_eq!(name_op(&edge, &tok, "xbt", NODE_ID, "release_name", None), (200, json!({ "released": "donal" })));
+    assert_eq!(get_json(&edge, "/.well-known/lnurlp/donal").2["status"], "ERROR");
+    assert_eq!(name_op(&edge, &tok, "btc", OTHER_NODE, "claim_name", Some("donal")), (200, json!({ "name": "donal" })));
+}
+
+#[test]
+fn a_refused_signature_writes_no_name_and_the_refusal_is_relayed() {
+    let dir = TempDir::new("lnurl-refused");
+    let btc = Stub::start(Duration::ZERO, lsp_refusing);
+    let names = dir.path("names.sqlite").to_string_lossy().into_owned();
+    let edge = Edge::start(&dir, &["--lsp-admin-url", &btc.url, "--lnurl-domain", "fortis.cash", "--names-db", &names]);
+    let tok = edge.token();
+    let (s, v) = name_op(&edge, &tok, "btc", NODE_ID, "claim_name", Some("donal"));
+    assert_eq!((s, v["reason"].as_str()), (401, Some("bad_signature")));
+    assert_eq!(get_json(&edge, "/.well-known/lnurlp/donal").2["status"], "ERROR");
+}
+
+#[test]
+fn lightning_addresses_are_off_unless_configured() {
+    let dir = TempDir::new("lnurl-off");
+    let btc = Stub::start(Duration::ZERO, lsp_stub);
+    let edge = Edge::start(&dir, &["--lsp-admin-url", &btc.url]);
+    let tok = edge.token();
+    assert_eq!(get_json(&edge, "/.well-known/lnurlp/donal").0, 404);
+    assert_eq!(get_json(&edge, "/lnurlp/callback/donal?amount=5000").0, 404);
+    // A name operation is not relayed as if it had worked.
+    assert_eq!(name_op(&edge, &tok, "btc", NODE_ID, "claim_name", Some("donal")).0, 404);
+    assert!(btc.seen().is_empty());
+}
+
+#[test]
+fn a_bad_lnurl_domain_stops_the_edge_at_startup() {
+    let dir = TempDir::new("lnurl-domain");
+    let port = free_port();
+    let mut args = base_args(&dir, port);
+    let names = dir.path("names.sqlite").to_string_lossy().into_owned();
+    args.extend(["--lnurl-domain".into(), "fortis.cash/evil".into(), "--names-db".into(), names]);
+    let out = Command::new(bin("fortis-edge")).args(&args).stdin(Stdio::null()).output().unwrap();
+    assert!(!out.status.success(), "a domain with a path must be refused");
+}
+
+#[test]
+fn a_name_operation_signed_for_one_chain_is_refused_by_the_other() {
+    let dir = TempDir::new("lnurl-wrong-chain");
+    let (btc, xbt) = (Stub::start(Duration::ZERO, lsp_stub), Stub::start(Duration::ZERO, lsp_stub));
+    let names = dir.path("names.sqlite").to_string_lossy().into_owned();
+    let edge = Edge::start(&dir, &["--lsp-admin-url", &btc.url, "--lsp-xbt-admin-url", &xbt.url, "--lnurl-domain", "fortis.cash", "--names-db", &names]);
+    let tok = edge.token();
+    // A body signed for BTC, sent to the XBT server (the stub LSP, like the real one, only echoes it).
+    let body = json!({ "node_id": NODE_ID, "op": "claim_name", "params": { "chain": "btc", "name": "donal" }, "nonce": "n".repeat(20), "expires_at": 1 });
+    let (s, out) = account(&edge, &tok, "?chain=xbt", body.to_string().as_bytes());
+    assert_eq!(s, 400, "{}", String::from_utf8_lossy(&out));
+    assert_eq!(serde_json::from_slice::<Value>(&out).unwrap()["error"], "wrong_chain");
+    assert_eq!(get_json(&edge, "/.well-known/lnurlp/donal").2["status"], "ERROR");
+    // Unsigned chain: refused too.
+    let bare = json!({ "node_id": NODE_ID, "op": "claim_name", "params": { "name": "donal" }, "nonce": "n".repeat(20), "expires_at": 1 });
+    assert_eq!(account(&edge, &tok, "?chain=btc", bare.to_string().as_bytes()).0, 400);
+}

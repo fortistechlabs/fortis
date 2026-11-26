@@ -285,6 +285,7 @@ fun LightningWalletTab(vm: WalletViewModel) {
         ) {
             when (tab) {
                 "receive" -> {
+                    if (lnState is LnState.Ready) LightningAddressReceiveCard(vm, c.chain)
                     LightningReceiveTab(vm)
                     // BTC's offer card always shows (its offer on a tap). XBT's shows only once
                     // its LSP returned an offer, which it refuses while it holds no custody: ask
@@ -702,6 +703,18 @@ internal fun LightningSendTab(vm: WalletViewModel) {
                     )
                     AmountUnitPicker(amountInSat, unit) { amountInSat = it }
                 }
+                // Send all: the most one payment can carry (the channel's sendable or the Fortis balance,
+                // whichever is larger, since one payment uses one of them) less its own routing-fee cap,
+                // within what the recipient accepts. The unused part of the cap stays in the balance.
+                val availableMsat = maxOf(sendableNow, vm.accountBalance?.freeMsat ?: 0uL)
+                val allSat = minOf(com.fortis.wallet.lightning.sendAllSat(availableMsat), maxSat.toULong()).toLong()
+                if (allSat >= minSat && allSat > 0L) {
+                    GhostButton(stringResource(R.string.send_ln_all, fmtSat(allSat))) {
+                        amountInSat = true
+                        amount = allSat.toString()
+                    }
+                    Text(stringResource(R.string.send_ln_all_note), style = FxType.meta, color = Fx.textDim)
+                }
             }
 
             when (val plan = sendPlan) {
@@ -879,7 +892,7 @@ internal fun CreateLightningWalletDialog(vm: WalletViewModel) {
     )
 }
 
-/** Settings → Lightning (beta), one card per Lightning wallet the app has ([walletChain]
+/** Settings → Lightning, one card per Lightning wallet the app has ([walletChain]
  *  "ln" or "ln-xbt"): the node's status, the takeover from another device, and "Close channel
  *  and move to on-chain" to a wallet of its own chain (with the force-close offer when the LSP
  *  cannot be reached). */
@@ -938,6 +951,8 @@ internal fun LightningWalletSettingsCard(vm: WalletViewModel, walletChain: Strin
         }
         ErrorText(side.closeError)
     }
+
+    if (lnState is LnState.Ready) LightningAddressCard(vm, walletChain)
 
     if (side.offerForceClose) {
         AlertDialog(
@@ -1189,6 +1204,112 @@ private fun LightningTakeoverButton(session: com.fortis.wallet.lightning.Lightni
 }
 
 
+/** Settings → a Lightning wallet's `name@fortis.cash` address: claim one (checked live), or show,
+ *  copy, share and release the one it has. The chain is fixed by the wallet. */
+@Composable
+internal fun LightningAddressCard(vm: WalletViewModel, walletChain: String) {
+    val ctx = LocalContext.current
+    val side = vm.lnSide(walletChain)
+    val chainName = if (walletChain == com.fortis.wallet.data.LN_XBT_CHAIN) "XBT" else "BTC"
+    val domain = com.fortis.wallet.lightning.LN_ADDRESS_DOMAIN
+    var input by remember { mutableStateOf("") }
+    var availability by remember { mutableStateOf<com.fortis.wallet.lightning.NameAvailability?>(null) }
+    var confirmRelease by remember { mutableStateOf(false) }
+    val name = com.fortis.wallet.lightning.normalizeName(input)
+    val problem = com.fortis.wallet.lightning.checkName(name)
+
+    LaunchedEffect(walletChain) { if (!side.lnNameLoaded) vm.loadMyName(walletChain) }
+    // Debounced; a newer keystroke cancels this one, so a late answer never labels another name.
+    LaunchedEffect(name) {
+        availability = null
+        if (name.isNotEmpty() && problem == null) {
+            kotlinx.coroutines.delay(500)
+            availability = vm.checkNameAvailable(name)
+        }
+    }
+
+    GlassCard {
+        Text(stringResource(R.string.ln_address_title, chainName), color = Fx.text, fontWeight = FontWeight.SemiBold)
+        val mine = side.lnName
+        when {
+            mine != null -> {
+                val address = "$mine@$domain"
+                Text(address, style = FxType.amount, color = Fx.text)
+                Row(horizontalArrangement = Arrangement.spacedBy(Fx.s2)) {
+                    GhostButton(stringResource(R.string.action_copy), Modifier.weight(1f)) {
+                        copyToClipboard(ctx, "lightning address", address)
+                    }
+                    GhostButton(stringResource(R.string.action_share), Modifier.weight(1f)) {
+                        ctx.startActivity(
+                            Intent.createChooser(
+                                Intent(Intent.ACTION_SEND).apply { type = "text/plain"; putExtra(Intent.EXTRA_TEXT, address) },
+                                null,
+                            ),
+                        )
+                    }
+                }
+                GhostButton(stringResource(R.string.ln_address_release), tint = Fx.warn, dense = true, enabled = !side.lnNameBusy) {
+                    confirmRelease = true
+                }
+            }
+            !side.lnNameLoaded -> {
+                // Not read yet (or the read failed): no claim form, which would guess at what the server holds.
+                if (side.lnNameError != null && !side.lnNameBusy) {
+                    GhostButton(stringResource(R.string.ln_address_load), dense = true) { vm.loadMyName(walletChain) }
+                } else {
+                    Text(stringResource(R.string.ln_address_checking), style = FxType.meta, color = Fx.textDim)
+                }
+            }
+            else -> {
+                Text(stringResource(R.string.ln_address_help, domain, chainName), style = FxType.meta, color = Fx.textDim)
+                Field(
+                    value = input,
+                    onValueChange = { input = it.lowercase(java.util.Locale.ROOT) },
+                    label = stringResource(R.string.ln_address_field),
+                    maxLen = 64,
+                )
+                val (status, color) = when {
+                    name.isEmpty() -> null to Fx.textDim
+                    problem != null -> stringResource(R.string.ln_address_not_allowed, vm.nameRuleText(problem)) to Fx.warn
+                    availability == null -> stringResource(R.string.ln_address_checking) to Fx.textDim
+                    availability == com.fortis.wallet.lightning.NameAvailability.Available ->
+                        stringResource(R.string.ln_address_available) to Fx.good
+                    availability == com.fortis.wallet.lightning.NameAvailability.Taken ->
+                        stringResource(R.string.ln_address_taken) to Fx.warn
+                    else -> stringResource(R.string.ln_address_unknown) to Fx.textDim
+                }
+                status?.let { Text(it, style = FxType.meta, color = color) }
+                GhostButton(
+                    stringResource(if (side.lnNameBusy) R.string.ln_address_claiming else R.string.ln_address_claim),
+                    enabled = problem == null && name.isNotEmpty() &&
+                        availability == com.fortis.wallet.lightning.NameAvailability.Available && !side.lnNameBusy,
+                ) { vm.claimName(walletChain, name) }
+            }
+        }
+        ErrorText(side.lnNameError)
+    }
+
+    if (confirmRelease) {
+        AlertDialog(
+            onDismissRequest = { confirmRelease = false },
+            containerColor = Fx.panel,
+            title = { Text(stringResource(R.string.ln_address_release_title, chainName), color = Fx.text) },
+            text = {
+                Text(stringResource(R.string.ln_address_release_body, "${side.lnName.orEmpty()}@$domain"), color = Fx.textDim)
+            },
+            confirmButton = {
+                TextButton({
+                    confirmRelease = false
+                    vm.releaseName(walletChain)
+                }) { Text(stringResource(R.string.ln_address_release), color = Fx.warn) }
+            },
+            dismissButton = {
+                TextButton({ confirmRelease = false }) { Text(stringResource(R.string.action_cancel), color = Fx.text) }
+            },
+        )
+    }
+}
+
 /** The help text under the reusable address: XBT's must not recommend a BTC wallet. */
 internal fun offerHelpRes(chain: String): Int =
     if (chain == com.fortis.wallet.data.LN_XBT_CHAIN) R.string.ln_offer_help_xbt else R.string.ln_offer_help
@@ -1245,6 +1366,64 @@ internal fun ReusableOfferCard(vm: WalletViewModel, chain: String) {
                         ),
                     )
                 }
+            }
+        }
+    }
+}
+
+/** The wallet's Lightning address (`name@fortis.cash`) on the Receive tab: QR, copy and share. A wallet
+ *  with no name gets the same claim form as Settings (and its retry while the name can't be read). */
+@Composable
+internal fun LightningAddressReceiveCard(vm: WalletViewModel, walletChain: String) {
+    val ctx = LocalContext.current
+    val side = vm.lnSide(walletChain)
+    val chainName = if (walletChain == com.fortis.wallet.data.LN_XBT_CHAIN) "XBT" else "BTC"
+    val domain = com.fortis.wallet.lightning.LN_ADDRESS_DOMAIN
+    val mine = side.lnName
+    if (mine == null) {
+        LightningAddressCard(vm, walletChain)
+        return
+    }
+    GlassCard {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            com.fortis.wallet.ui.LightningBoltIcon()
+            Text(stringResource(R.string.ln_address_title, chainName), color = Fx.text, fontWeight = FontWeight.SemiBold)
+        }
+        val address = "$mine@$domain"
+        val qr = remember(address) { qrBitmap(address.uppercase()) }
+        val copyQr = { copyImageToClipboard(ctx, qr) }
+        Image(
+            bitmap = qr.asImageBitmap(),
+            contentDescription = stringResource(R.string.cd_address_qr),
+            modifier = Modifier
+                .align(Alignment.CenterHorizontally)
+                .size(224.dp)
+                .clip(RoundedCornerShape(Fx.rSm))
+                .background(Color.White)
+                .combinedClickable(onClick = copyQr, onLongClick = copyQr, onDoubleClick = copyQr)
+                .padding(10.dp),
+        )
+        XbtLightningCaption(vm, Modifier.align(Alignment.CenterHorizontally))
+        val copy = { copyToClipboard(ctx, "lightning address", address) }
+        Text(
+            address,
+            style = FxType.amount,
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(Fx.rSm))
+                .background(Fx.panelRaised)
+                .clickable { copy() }
+                .padding(Fx.s4),
+        )
+        Row(horizontalArrangement = Arrangement.spacedBy(Fx.s2)) {
+            GhostButton(stringResource(R.string.action_copy), Modifier.weight(1f)) { copy() }
+            GhostButton(stringResource(R.string.action_share), Modifier.weight(1f)) {
+                ctx.startActivity(
+                    Intent.createChooser(
+                        Intent(Intent.ACTION_SEND).apply { type = "text/plain"; putExtra(Intent.EXTRA_TEXT, address) },
+                        null,
+                    ),
+                )
             }
         }
     }
