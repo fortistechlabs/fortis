@@ -79,6 +79,42 @@
   </div>
 </section>
 
+<section id="address">
+  <div class="wrap">
+    <h2>Lightning addresses</h2>
+    <p class="lead">Claim a short name and get paid at <code>name@fortis.cash</code>. Each Lightning wallet, BTC and XBT, can have one address of its own.</p>
+
+    <div class="shots">
+      <img src="/img/android-lnaddr-btc-be9cec29.jpg" data-full="/img/android-lnaddr-btc-full-fe382fa6.jpg" alt="BTC Lightning wallet, Receive tab: the BTC Lightning address with its QR code, Copy and Share buttons" loading="lazy" width="540" height="1104">
+      <img src="/img/android-lnaddr-xbt-bdb5c4ba.jpg" data-full="/img/android-lnaddr-xbt-full-21daebf7.jpg" alt="XBT Lightning wallet, Receive tab: the XBT Lightning address with its QR code, Copy and Share buttons" loading="lazy" width="540" height="1104">
+      <img src="/img/android-lnaddr-send-46a5c21e.jpg" data-full="/img/android-lnaddr-send-full-8038a452.jpg" alt="XBT Lightning wallet, Send tab: paying a Lightning address, with the amount limit fetched from fortis.cash" loading="lazy" width="540" height="868">
+    </div>
+
+    <dl class="facts">
+      <div>
+        <dt>Claim one</dt>
+        <dd>In a Lightning wallet, open <strong>Receive</strong> (or <strong>Settings → Lightning address</strong>), type a name, and the app tells you whether it is free. A name has 3 to 32 characters: lowercase letters, digits, dot, underscore and hyphen, starting and ending with a letter or digit. Names are first come, first served, and a few words are reserved.</dd>
+      </div>
+      <div>
+        <dt>One name, one chain</dt>
+        <dd>A name belongs to one wallet on one chain, and no two wallets can hold the same name, on either chain. If <code>donal</code> is an XBT address, nobody can claim <code>donal</code> on BTC. The invoice an address hands out is for its own chain, so a BTC address is paid from a BTC Lightning wallet and an XBT address from an XBT Lightning wallet. The Fortis app refuses to pay an address of the other chain instead of sending anything.</dd>
+      </div>
+      <div>
+        <dt>Paying it</dt>
+        <dd>Type or scan the address in a wallet that supports Lightning addresses (the LUD-16 standard). A payment can be from 1 sat up to 50,000&nbsp;sat. The wallet that pays sees the name you chose and the amount limits.</dd>
+      </div>
+      <div>
+        <dt>Where the money goes</dt>
+        <dd>A payment to your address is received by the Fortis server and credited to your <a href="#fortis-balance">Fortis balance</a>, the same as payments to your BOLT12 address. Until it is in your own channel, Fortis holds it. If your wallet is ever lost, payments wait on the server until you restore it from its phrase.</dd>
+      </div>
+      <div>
+        <dt>What we store</dt>
+        <dd>The name, its chain, your Lightning node ID and when you claimed it. Anyone can look up whether a name exists, but the lookup does not show the node ID. <strong>Release</strong> in Settings gives the name up, and anyone can claim it afterwards. Payments sent to it after that go to them.</dd>
+      </div>
+    </dl>
+  </div>
+</section>
+
 <section id="xbt">
   <div class="wrap">
     <h2>XBT Lightning</h2>
@@ -153,5 +189,6 @@
   </div>
 </footer>
 
+<script src="/gallery.js" defer></script>
 </body>
 </html>

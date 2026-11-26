@@ -37,7 +37,7 @@
 <div class="wrap legal">
 
   <h1>Privacy Policy</h1>
-  <p class="meta">Effective 17 Nov 2026 · applies to the Fortis&nbsp;Wallet mobile app and its backend service, operated by Fortis&nbsp;Tech&nbsp;Labs.</p>
+  <p class="meta">Effective 26 Nov 2026 · applies to the Fortis&nbsp;Wallet mobile app and its backend service, operated by Fortis&nbsp;Tech&nbsp;Labs.</p>
 
   <p>Fortis Wallet is a wallet for Bitcoin&nbsp;XBT, Bitcoin&nbsp;BTC and
   Lightning. Your keys and recovery phrases are generated on your device, encrypted
@@ -209,6 +209,12 @@
       payment records, plus a random device-lock token so two phones do not run the same
       channel at once. They're encrypted on your phone, with keys derived from the
       wallet's phrase, before upload. VSS and the backend cannot decrypt them.</li>
+    <li><strong>Your Lightning address:</strong> if you claim one (<code>name@fortis.cash</code>),
+      our servers store the name, its chain (BTC or XBT), your Lightning node ID and the time
+      you claimed it, until you release it. Anyone can look up a name to see whether it
+      exists and what chain it is for; the lookup does not return your node ID. Payments
+      to the address are credited to your Fortis balance. Requests to the address service
+      are rate-limited by IP address, which is not stored with the name.</li>
     <li><strong>LNURL and Lightning addresses:</strong> when you pay an LNURL or a
       Lightning address (<code>name@domain</code>), your phone connects directly over
       HTTPS to the recipient's domain to fetch the invoice. That server sees your IP
