@@ -2,6 +2,19 @@
 
 Fortis Wallet (Android). Versions are `versionName (versionCode)`.
 
+## 0.7.15 (41) — 2026-11-28
+
+- Add wallet now has two Lightning buttons of their own, "⚡ Create XBT Lightning
+  wallet" and "⚡ Create BTC Lightning wallet", each opening the create screen on
+  that chain. A button goes away once you have that wallet.
+- Lightning Send: "Paste from clipboard" fills the To field from a copied
+  invoice, offer, LNURL or Lightning address, or from a copied picture of its QR
+  code. "Read QR from an image" does the same from a picture you choose (a
+  screenshot, a file in Downloads). Nothing is paid by pasting: the usual checks
+  and the review step still come first.
+- Send all is now a tick box above the amount instead of a button. Ticked, the
+  amount follows what one payment can carry; typing an amount unticks it.
+
 ## 0.7.14 (40) — 2026-11-26
 
 - Lightning addresses: claim a short address like `name@fortis.cash` and anyone
