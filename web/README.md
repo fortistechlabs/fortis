@@ -117,22 +117,25 @@ in ~75 languages, a QR code on the receive address. Not yet: RBF fee-bump, coin 
 
 ### Lightning (Fortis account)
 
-Software BTC and XBT wallets on mainnet with the hosted edge get a **Lightning** tab: the *Fortis account* — a
-balance the LSP holds for the wallet, keyed by its Lightning node id. Balance and activity; receive (a BOLT11
-invoice, the reusable BOLT12 offer, and your `name@fortis.cash` address with QR/copy/share); send (BOLT11, BOLT12,
-LNURL-pay, Lightning addresses, **Send all**); withdraw to an on-chain address.
+A Lightning wallet is a wallet of its own, as on Android: **⚡ Create XBT Lightning wallet** and **⚡ Create BTC
+Lightning wallet** are buttons on the Add wallet screen (each until the browser has that one; Restore offers them
+too). It has its own recovery phrase and no on-chain part. It uses the *Fortis account* — a balance the LSP holds
+for the wallet, keyed by its Lightning node id (mainnet, the hosted edge). Screens: Account (balance and activity),
+Receive (a BOLT11 invoice, the reusable BOLT12 offer, and your `name@fortis.cash` address with QR/copy/share), Send
+(BOLT11, BOLT12, LNURL-pay, Lightning addresses, **Send all** as a checkbox above the amount) and Withdraw to an
+on-chain address.
 
 - **Same account as the phone.** The node key is derived from the recovery phrase exactly as the Android app does
   (BIP-85, then LDK's key path), inside wasm; the same phrase has the same node id, balance and address on both.
   Pinned by `crates/fortis-lightning/tests/web_account_identity.rs`. Funds in a Lightning *channel* on the phone are
   not shown here, and the browser cannot open channels (no raw TCP).
-- **Custody.** Fortis holds this balance, up to a limit shown on the tab. Paying, withdrawing, and claiming or
+- **Custody.** Fortis holds this balance, up to a limit shown on the Account screen. Paying, withdrawing, and claiming or
   releasing a name ask for the app password (or passkey) again.
 - **Fees.** Routing fee at most 1 % of the amount, at least 1 sat — the same rule as the phone and the LSP.
 - **Deploy needs.** The edge must allow the `X-Fortis-Sig` header in CORS (added in `fortis-edge`; deploy the edge
   before the web app). The page's CSP (`_headers`) lets it reach `https://fortis.cash` only, so a Lightning address
   on another domain says "paste an invoice instead" until that list is widened.
-- Browser tests of the tab: `tools/ln-browser-test/README.md`.
+- Browser tests of the Lightning screens: `tools/ln-browser-test/README.md`.
 
 
 ### Multi-wallet & app lock

@@ -1,12 +1,15 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { lightningEligible, reconcile } from './lnlogic.js';
+import { lightningEligible, reconcile, isLnWallet, lnChainOf, lightningCreateButtons } from './lnlogic.js';
 
-const soft = { watchOnly: false, hwType: null, network: 'mainnet', chain: 'btc', backend: { kind: 'edge', url: 'https://e' } };
+const soft = { watchOnly: false, hwType: null, network: 'mainnet', chain: 'ln', backend: { kind: 'edge', url: 'https://e' } };
 
-test('only software wallets on mainnet with the hosted edge get Lightning', () => {
+test('only Lightning wallets on mainnet with the hosted edge use the account', () => {
   assert.equal(lightningEligible(soft), true);
-  assert.equal(lightningEligible({ ...soft, chain: 'xbt' }), true);
+  assert.equal(lightningEligible({ ...soft, chain: 'ln-xbt' }), true);
+  // An on-chain wallet has no Lightning part: Lightning is a wallet of its own.
+  assert.equal(lightningEligible({ ...soft, chain: 'btc' }), false);
+  assert.equal(lightningEligible({ ...soft, chain: 'xbt' }), false);
   assert.equal(lightningEligible({ ...soft, watchOnly: true }), false);
   assert.equal(lightningEligible({ ...soft, hwType: 'bitbox02' }), false);
   assert.equal(lightningEligible({ ...soft, network: 'regtest' }), false);
@@ -14,6 +17,25 @@ test('only software wallets on mainnet with the hosted edge get Lightning', () =
   assert.equal(lightningEligible({ ...soft, backend: null }), false);
   assert.equal(lightningEligible(null), false);
   assert.equal(lightningEligible({ ...soft, chain: 'ltc' }), false);
+});
+
+test('a Lightning wallet says which coin its account is on', () => {
+  assert.equal(isLnWallet({ chain: 'ln' }), true);
+  assert.equal(isLnWallet({ chain: 'ln-xbt' }), true);
+  assert.equal(isLnWallet({ chain: 'btc' }), false);
+  assert.equal(isLnWallet(null), false);
+  assert.equal(lnChainOf({ chain: 'ln' }), 'btc');
+  assert.equal(lnChainOf({ chain: 'ln-xbt' }), 'xbt');
+  assert.equal(lnChainOf({ chain: 'btc' }), null);
+  assert.equal(lnChainOf(undefined), null);
+});
+
+test('home offers one create button per Lightning chain, XBT first, until the wallet exists', () => {
+  assert.deepEqual(lightningCreateButtons([]), ['ln-xbt', 'ln']);
+  assert.deepEqual(lightningCreateButtons([{ chain: 'btc' }, { chain: 'xbt' }]), ['ln-xbt', 'ln']);
+  assert.deepEqual(lightningCreateButtons([{ chain: 'ln-xbt' }]), ['ln']);
+  assert.deepEqual(lightningCreateButtons([{ chain: 'ln' }]), ['ln-xbt']);
+  assert.deepEqual(lightningCreateButtons([{ chain: 'ln' }, { chain: 'ln-xbt' }]), []);
 });
 
 const e = (kind, amountMsat, feeMsat = 0) => ({ atSecs: 1, kind, amountMsat, feeMsat, paymentHash: null });

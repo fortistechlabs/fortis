@@ -5,7 +5,7 @@
 import { el, copy, toast, qrCode } from './ui.js';
 import { t, currentTag } from './i18n.js';
 import { FortisAccount, edgeTransport } from './lnaccount.js';
-import { reconcile, planSend, planWithdraw, receiveErrorKey, judgePayment, fmtSatMsat, checkFetchedInvoice } from './lnlogic.js';
+import { reconcile, planSend, planWithdraw, receiveErrorKey, judgePayment, fmtSatMsat, checkFetchedInvoice, lnChainOf } from './lnlogic.js';
 import { sendAllSat } from './lnmath.js';
 import { LN_ADDRESS_DOMAIN, normalizeName, checkName, parseAvailability } from './lnname.js';
 import { parseTarget, resolvePay, fetchInvoice, LnurlError } from './lnurl.js';
@@ -75,7 +75,7 @@ function accountFor(w) {
   const signer = { nodeId: () => session.lnNodeId(), sign: (body) => session.lnSign(body) };
   const account = new FortisAccount(edgeTransport({
     base: w.backend.url,
-    chain: w.chain,
+    chain: lnChainOf(w),
     getToken: () => ctx.token.get(w),
     refreshToken: () => ctx.token.refresh(w),
   }));
@@ -109,7 +109,7 @@ async function load(w, { quiet = false } = {}) {
     if (reconcile(hist, bal.balanceMsat, hist.length >= HISTORY_LIMIT).unexplainedMsat !== 0) ({ bal, hist } = await fetchBoth());
     // The address lookup is not worth hiding the balance for: if it fails the address card says so.
     let name;
-    try { name = await account.myName(signer, w.chain); } catch { name = undefined; }
+    try { name = await account.myName(signer, lnChainOf(w)); } catch { name = undefined; }
     const gainedMsat = s.bal ? bal.balanceMsat - s.bal.balanceMsat : 0;
     s.bal = bal;
     s.hist = hist;
@@ -185,7 +185,7 @@ function accountView(w, s) {
   });
   return el('div', { class: 'stack', style: 'gap:.9rem' },
     el('div', { class: 'card stack' },
-      el('h2', {}, t('wln_title', CHAIN_LABEL[w.chain])),
+      el('h2', {}, t('wln_title', CHAIN_LABEL[lnChainOf(w)])),
       el('div', { class: 'ln-bal' }, el('span', { class: 'num' }, fm(b.freeMsat)), el('span', { class: 'unit' }, ' sat')),
       usd ? el('div', { class: 'fiat' }, t('fiat_approx', usd)) : null,
       b.heldMsat ? el('div', { class: 'hint' }, t('wln_held', fm(b.heldMsat))) : null,
@@ -210,7 +210,7 @@ function receiveView(w, s) {
 }
 
 function addressCard(w, s) {
-  const chain = CHAIN_LABEL[w.chain];
+  const chain = CHAIN_LABEL[lnChainOf(w)];
   if (s.name === undefined) {
     return el('div', { class: 'card stack' },
       el('h2', {}, t('wln_addr_title', chain)),
@@ -277,7 +277,7 @@ function claimName(w, s) {
   ctx.confirm(async () => {
     try {
       const { account, signer } = accountFor(w);
-      s.name = await account.claimName(signer, w.chain, name);
+      s.name = await account.claimName(signer, lnChainOf(w), name);
       s.addr = { input: '', hint: '', avail: null };
       toast(t('wln_addr_claimed', `${s.name}@${LN_ADDRESS_DOMAIN}`));
     } catch (e) {
@@ -295,7 +295,7 @@ function releaseName(w, s) {
     ctx.confirm(async () => {
       try {
         const { account, signer } = accountFor(w);
-        await account.releaseName(signer, w.chain);
+        await account.releaseName(signer, lnChainOf(w));
         s.name = null;
       } catch (e) { toast(errText(e)); }
       ctx.rerender();
@@ -447,7 +447,7 @@ async function reviewSend(w, s) {
     d.err = e instanceof LnurlError ? t(`wln_lnurl_${e.kind}`) : t('wln_send_err_unreadable');
     return ctx.rerender();
   }
-  const plan = planSend({ chain: w.chain, kind, info, typedMsat: typed, freeMsat: free, nowSecs });
+  const plan = planSend({ chain: lnChainOf(w), kind, info, typedMsat: typed, freeMsat: free, nowSecs });
   if (!plan.ok) { d.err = t(`wln_send_err_${plan.error}`); return ctx.rerender(); }
   Object.assign(d, { step: 'review', plan, target, info, kindText: kindText || '', kind });
   ctx.rerender();
@@ -497,7 +497,7 @@ async function doPay(w, s) {
     let amountForPay = d.info.amountMsat == null ? d.plan.amountMsat : null;
     if (d.kind === 'lnurl') {
       invoice = await fetchInvoice(d.pay, d.plan.amountMsat, { sha256Hex, decodeInvoice });
-      const bad = checkFetchedInvoice(w.chain, decodeInvoice(invoice), nowSecs());
+      const bad = checkFetchedInvoice(lnChainOf(w), decodeInvoice(invoice), nowSecs());
       if (bad) return finish(false, `${t(`wln_send_err_${bad}`)} ${t('wln_pay_failed')}`);
       amountForPay = null;
     }

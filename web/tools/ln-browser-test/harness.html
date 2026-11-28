@@ -2,7 +2,7 @@
 <script src="/vendor/qrcode.js"></script>
 <script type="module">
 import { init as i18nInit } from '/src/i18n.js';
-import { ensureWasm, Session } from '/src/wallet.js';
+import { ensureWasm, LnSession } from '/src/wallet.js';
 import { initLightning, renderLightningTab, resetLightning, lightningBusy } from '/src/lightning-ui.js';
 window.__held = [];
 const out = []; const ok = (n, c, extra = '') => out.push(`${c ? 'PASS' : 'FAIL'} ${n}${c ? '' : ' ' + extra}`);
@@ -17,8 +17,8 @@ const state = async () => (await fetch('/__state')).json();
 try {
   await i18nInit();
   await ensureWasm();
-  const session = new Session('btc', 'mainnet', 'abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about', '');
-  const w = { id: 'w1', chain: 'btc', network: 'mainnet', backend: { kind: 'edge', url: location.origin, token: 't1' } };
+  const session = new LnSession('btc', 'mainnet', 'abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about', '');
+  const w = { id: 'w1', chain: 'ln', network: 'mainnet', backend: { kind: 'edge', url: location.origin, token: 't1' } };
   let mount = () => app().replaceChildren(renderLightningTab(w));
   initLightning({
     session: () => session, wallet: () => w, confirm: (cb) => (window.__manual ? window.__held.push(cb) : setTimeout(cb, 0)), askConfirm: (_t, _b, y) => y(),

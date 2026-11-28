@@ -46,7 +46,8 @@ export function newMnemonic(extra, words = 24) {
 export function validateMnemonic(chain, network, mnemonic, passphrase) {
   setNetwork(network);
   const w = new Wallet(mnemonic.trim(), passphrase || '');
-  const xpub = w.accountXpub(chain, 0);
+  // A Lightning wallet has no on-chain account: checking the phrase builds the same wallet and derives any one.
+  const xpub = w.accountXpub(chain === 'ln' || chain === 'ln-xbt' ? 'btc' : chain, 0);
   w.free();
   return xpub;
 }
@@ -211,6 +212,35 @@ export class Session {
     try {
       this.view.free();
       this.wallet?.free();
+    } catch {
+      /* already freed */
+    }
+  }
+}
+
+/** A Lightning wallet's session: the seed's Lightning node key and nothing on-chain (no xpub, no addresses).
+ *  `lightning` is `btc` or `xbt`, the coin its account is on. Same two calls the Fortis account needs as
+ *  `Session` — the node id and the signature over a request body — and the key never leaves wasm. */
+export class LnSession {
+  constructor(lightning, network, mnemonic, passphrase) {
+    setNetwork(network);
+    this.chain = lightning;
+    this.wallet = new Wallet(mnemonic, passphrase || '');
+  }
+  setIndices() {} // no addresses: ensureSession treats every session alike
+  lnNodeId() { return this.wallet.lnNodeId(this.chain); }
+  lnSign(body) { return this.wallet.lnSignAccount(this.chain, body); }
+  /** Whether `address` is a valid on-chain address for this coin (a withdrawal goes to one). Public data
+   *  only: it builds the same read-only address checker an on-chain wallet of that coin has, from the
+   *  account's xpub, and never uses a private key. Throws if it is not valid. */
+  checkAddress(address) {
+    this.checker ||= new WalletView(this.chain, this.wallet.accountXpub(this.chain, 0));
+    return this.checker.checkAddress(address);
+  }
+  free() {
+    try {
+      this.checker?.free();
+      this.wallet.free();
     } catch {
       /* already freed */
     }

@@ -2,14 +2,32 @@
 
 import { routingFeeCapMsat } from './lnmath.js';
 
-/** Lightning on the web is for software wallets on mainnet that use the hosted edge (the account lives
- *  behind it): not watch-only, not hardware, not regtest. */
+/** A Lightning wallet is a wallet of its own (chain `ln` = BTC Lightning, `ln-xbt` = XBT Lightning), as on
+ *  Android: its own seed, no on-chain part. */
+export function isLnWallet(w) {
+  return !!w && (w.chain === 'ln' || w.chain === 'ln-xbt');
+}
+
+/** The coin a Lightning wallet's account is on: `btc` or `xbt` (what the node key and the edge call it). */
+export function lnChainOf(w) {
+  if (!w) return null;
+  return w.chain === 'ln' ? 'btc' : w.chain === 'ln-xbt' ? 'xbt' : null;
+}
+
+/** Lightning on the web: a Lightning wallet on mainnet that uses the hosted edge (the account lives behind
+ *  it): not watch-only, not hardware, not regtest. */
 export function lightningEligible(w) {
-  if (!w) return false;
+  if (!isLnWallet(w)) return false;
   if (w.watchOnly || w.hwType) return false;
   if (w.network !== 'mainnet') return false;
-  if (w.chain !== 'btc' && w.chain !== 'xbt') return false;
   return w.backend?.kind === 'edge';
+}
+
+/** The home screen's "⚡ Create … Lightning wallet" buttons: XBT first, then BTC, each only while the
+ *  browser has no Lightning wallet on that chain (one per chain, as on Android). */
+export function lightningCreateButtons(wallets) {
+  const has = (c) => (wallets || []).some((w) => w.chain === c);
+  return ['ln-xbt', 'ln'].filter((c) => !has(c));
 }
 
 /** Itemises account history and compares it with the balance. A debit's amount already includes its

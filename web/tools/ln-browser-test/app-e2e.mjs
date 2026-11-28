@@ -35,20 +35,24 @@ try {
   ` });
   await send('Page.navigate', { url: 'http://localhost:8199/index.html' });
   ok('onboarding shows', await waitFor(`/restore from a recovery phrase/i.test(document.body.innerText)`), await text());
+  // Home offers the two Lightning wallets as buttons of their own, XBT first, each with its chain and the bolt.
+  const lnButtons = await ev(`[...document.querySelectorAll('button')].map(b=>b.textContent.trim()).filter(x=>x.includes('Lightning'))`);
+  ok('two create buttons, XBT first, with the bolt', JSON.stringify(lnButtons) === JSON.stringify(['⚡ Create XBT Lightning wallet', '⚡ Create BTC Lightning wallet']), JSON.stringify(lnButtons));
   await click('Restore from a recovery phrase');
   await waitFor(`!!document.querySelector('#phrase')`);
   await setv('#phrase', 'abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about');
-  await ev(`document.querySelector('#chain').value='btc'`);
+  const opts = await ev(`[...document.querySelectorAll('#chain option')].map(o=>o.value)`);
+  ok('restore also offers both Lightning wallets', opts.includes('ln') && opts.includes('ln-xbt'), JSON.stringify(opts));
+  await ev(`document.querySelector('#chain').value='ln'`);
   await click('Restore');
   ok('lock setup shows', await waitFor(`!!document.querySelector('#pw')`));
   await setv('#pw', 'password123'); await setv('#pw2', 'password123');
   await click('Continue');
   ok('wallet created and shell shown', await waitFor(`!![...document.querySelectorAll('.tabs button')].length`), await text());
-  // Open the wallet from Home.
-  await ev(`(()=>{const t=document.querySelector('.tile');if(t)t.click();return true})()`);
-  ok('wallet screen has a Lightning tab', await waitFor(`[...document.querySelectorAll('.tabs button')].some(b=>b.textContent.trim()==='Lightning')`), await text());
-  await click('Lightning');
-  ok('the account loads in the real app', await waitFor(`document.body.innerText.includes('500,000')`), await text());
+  // The Lightning wallet opens on its own screen, not on a tab of an on-chain wallet.
+  ok('it opens on the Lightning account', await waitFor(`document.body.innerText.includes('500,000')`), await text());
+  const walletTabs = await ev(`[...document.querySelectorAll('.tabs button, [data-ln] .seg button')].map(b=>b.textContent.trim())`);
+  ok('no on-chain tabs and no Lightning tab', !walletTabs.includes('History') && !walletTabs.includes('Lightning') && walletTabs.includes('Account') && walletTabs.includes('Withdraw'), JSON.stringify(walletTabs));
   await send('Page.captureScreenshot', { format: 'png' }).then((r) => fs.writeFileSync(`${OUT}/ln-account.png`, Buffer.from(r.result.data, 'base64')));
   // Pay with the password re-ask.
   await ev(`[...document.querySelectorAll('[data-ln] .seg button')].find(b=>b.textContent.trim()==='Send').click()`);
@@ -66,6 +70,30 @@ try {
   ok('the right password pays once', await waitFor(`document.body.innerText.includes('Paid.')`, 10000), await text());
   ok('exactly one payment reached the server', (await (await fetch('http://localhost:8199/__state')).json()).pays === pays0 + 1);
   await send('Page.captureScreenshot', { format: 'png' }).then((r) => fs.writeFileSync(`${OUT}/ln-paid.png`, Buffer.from(r.result.data, 'base64')));
+  // Adding another wallet: the BTC Lightning wallet exists, so only the XBT button is left.
+  await ev(`[...document.querySelectorAll('.tabs button')].find(b=>b.textContent.trim()==='Home').click()`);
+  await waitFor(`[...document.querySelectorAll('button')].some(b=>b.textContent.trim()==='Add wallet')`);
+  await click('Add wallet');
+  await waitFor(`!![...document.querySelectorAll('button')].find(b=>b.textContent.includes('Create XBT Lightning'))`);
+  const left = await ev(`[...document.querySelectorAll('button')].map(b=>b.textContent.trim()).filter(x=>x.includes('Lightning'))`);
+  ok('with BTC Lightning made only the XBT button is left', JSON.stringify(left) === JSON.stringify(['⚡ Create XBT Lightning wallet']), JSON.stringify(left));
+  await click('⚡ Create XBT Lightning wallet');
+  await waitFor(`!![...document.querySelectorAll('button')].find(b=>b.textContent.includes('Generate'))`);
+  await ev(`[...document.querySelectorAll('button')].find(b=>b.textContent.includes('Generate')).click()`);
+  ok('the create screen says which wallet it makes and has no chain choice', await waitFor(`document.body.innerText.includes('You are creating an XBT Lightning wallet.') && !document.querySelector('#chain')`), await text());
+  // Finish creating it: the phrase is acknowledged, the wallet is added and opens on its own XBT account.
+  await ev(`document.querySelector('#ack').click()`);
+  await click('Continue');
+  ok('the new XBT Lightning wallet opens on its own account', await waitFor(`document.body.innerText.includes('XBT Lightning') && !!document.querySelector('[data-ln]')`, 10000), await text());
+  await ev(`[...document.querySelectorAll('.tabs button')].find(b=>b.textContent.trim()==='Home').click()`);
+  await waitFor(`document.querySelectorAll('.tile').length === 2`);
+  const tiles = await ev(`[...document.querySelectorAll('.tile')].map(t=>t.innerText.replace(/\s+/g,' ').trim())`);
+  ok('home lists both Lightning wallets with their chain', tiles.length === 2 && tiles.some((x) => x.includes('⚡ BTC Lightning')) && tiles.some((x) => x.includes('⚡ XBT Lightning')), JSON.stringify(tiles));
+  await waitFor(`!![...document.querySelectorAll('button')].some(b=>b.textContent.trim()==='Add wallet')`);
+  await click('Add wallet');
+  await waitFor(`!![...document.querySelectorAll('button')].find(b=>b.textContent.includes('Restore from'))`);
+  const none = await ev(`[...document.querySelectorAll('button')].map(b=>b.textContent.trim()).filter(x=>x.includes('Lightning'))`);
+  ok('with both made there is no Lightning create button', none.length === 0, JSON.stringify(none));
   // Locking forgets the Lightning state; unlocking and coming back reloads it.
   ok('no script errors in the page', errors.length === 0, errors.join('\n'));
 } catch (e) { results.push('ERROR ' + e.stack); }

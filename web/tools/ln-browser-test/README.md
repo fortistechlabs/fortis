@@ -7,7 +7,7 @@ node tests cannot see the DOM, the re-ask-password gate or the double-click guar
 ```sh
 node mock.mjs &                                   # http://localhost:8199 (restart it between runs: it keeps a fake clock)
 chromium --headless=new --no-sandbox --disable-gpu --virtual-time-budget=60000 \
-  --dump-dom http://localhost:8199/__harness.html | grep -A40 'id="results"'   # the tab on its own, 37 checks
+  --dump-dom http://localhost:8199/__harness.html | grep -A40 'id="results"'   # the Lightning screen on its own, 38 checks
 node app-e2e.mjs /tmp/ln-e2e                      # the real app: restore a wallet, pay with the password re-ask
 ```
 

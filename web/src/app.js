@@ -8,14 +8,15 @@ import { loadRaw, saveState, wipeState, finishMigration, MAX_WALLETS } from './s
 import { Gateway } from './gateway.js';
 import { EsploraBackend, edgeRegister } from './esplora.js';
 import {
-  ensureWasm, newMnemonic, validateMnemonic, unseal, Session, activateNetwork,
+  ensureWasm, newMnemonic, validateMnemonic, unseal, Session, LnSession, activateNetwork,
   newAppSecret, sealWithAppSecret, unsealWithAppSecret,
   wrapAppSecretWithPassword, unwrapAppSecretWithPassword,
   wrapAppSecretWithKey, unwrapAppSecretWithKey,
   finalizeHardwareSignedPsbt,
 } from './wallet.js';
 import * as bitbox from './bitbox.js';
-import { initLightning, resetLightning, renderLightningTab, lightningEligible, lightningBusy } from './lightning-ui.js';
+import { initLightning, resetLightning, renderLightningTab, lightningBusy } from './lightning-ui.js';
+import { isLnWallet, lnChainOf, lightningCreateButtons } from './lnlogic.js';
 import { EntropyPool } from './entropy.js';
 import { registerPrf, unlockPrf, prfPossible } from './webauthn.js';
 import { AutoLock, AUTO_LOCK_MS, sameSecret } from './relock.js';
@@ -29,9 +30,9 @@ import {
   SAT,
 } from './ui.js';
 
-const UNIT = { xbt: 'XBT', btc: 'BTC' };
+const UNIT = { xbt: 'XBT', btc: 'BTC', ln: 'BTC', 'ln-xbt': 'XBT' };
 const DEFAULT_ESPLORA = { xbt: 'https://mempool.guide/api', btc: 'https://blockstream.info/api' };
-const EXPLORER = { btc: 'https://blockstream.info', xbt: 'https://mempool.guide' };
+const EXPLORER = { btc: 'https://blockstream.info', xbt: 'https://mempool.guide', ln: 'https://blockstream.info', 'ln-xbt': 'https://mempool.guide' };
 // The hosted fortis-edge. Override for a local instance (http://127.0.0.1:8098).
 const DEFAULT_EDGE = 'https://api.fortistechlabs.com';
 // Supplementary entropy target — see the comment above renderGen().
@@ -45,6 +46,7 @@ let bootError = false;
 
 const sessions = new Map(); // walletId -> Session (wasm), unsealed lazily, freed on removal
 const backends = new Map(); // walletId -> Gateway | EsploraBackend
+const lnFeeds = new Map(); // Lightning walletId -> EsploraBackend with no session: prices and fee rates only
 
 let ui = { screen: 'main', nav: 'home', tab: 'receive' };
 const overview = { balances: new Map(), prices: {} }; // walletId->sat, chain->{code: price} (Home list)
@@ -82,8 +84,8 @@ initLightning({
     ui.dialog = { kind: 'confirm', title, body, confirmLabel: t('wln_addr_release'), danger: true, onConfirm: onYes };
     renderDialogSheet();
   },
-  rerender: () => { if (ui.nav === 'wallet' && ui.tab === 'lightning' && !ui.dialog) renderShell(); },
-  fiat: (sat) => fiatText(detail.prices, sat),
+  rerender: () => { if (ui.nav === 'wallet' && isLnWallet(currentWallet()) && !ui.dialog) renderShell(); },
+  fiat: (sat) => fiatText(overview.prices[currentWallet()?.chain], sat),
   feerate: () => detail.feerate,
   txUrl: (w, txid) => explorerTxUrl(w, txid),
   idle: () => { if (lockWhenIdle) { lockWhenIdle = false; if (appSecret) onLock(); } },
@@ -91,23 +93,47 @@ initLightning({
     get: (w) => w.backend.token,
     // One refresh at a time per wallet: several account calls that all meet a stale token must not each
     // register (the edge limits registrations per IP) or race on saving.
-    refresh: (w) => {
-      let p = tokenRefreshes.get(w.id);
-      if (!p) {
-        p = (async () => {
-          w.backend.token = await edgeRegister(w.backend.url);
-          const be = backends.get(w.id);
-          if (be?.auth) be.auth.token = w.backend.token; // the on-chain backend shares the install token
-          await saveState(state);
-          return w.backend.token;
-        })().finally(() => tokenRefreshes.delete(w.id));
-        tokenRefreshes.set(w.id, p);
-      }
-      return p;
-    },
+    refresh: (w) => refreshInstallToken(w),
   },
-  isActive: (id) => ui.nav === 'wallet' && ui.tab === 'lightning' && state?.selected === id,
+  isActive: (id) => ui.nav === 'wallet' && state?.selected === id && isLnWallet(currentWallet()),
 });
+
+/** One refresh at a time per wallet: several calls that all meet a stale token must not each register
+ *  (the edge limits registrations per IP) or race on saving. */
+function refreshInstallToken(w) {
+  let p = tokenRefreshes.get(w.id);
+  if (!p) {
+    p = (async () => {
+      w.backend.token = await edgeRegister(w.backend.url);
+      const be = backends.get(w.id);
+      if (be?.auth) be.auth.token = w.backend.token; // the on-chain backend shares the install token
+      const feed = lnFeeds.get(w.id);
+      if (feed?.auth) feed.auth.token = w.backend.token;
+      await saveState(state);
+      return w.backend.token;
+    })().finally(() => tokenRefreshes.delete(w.id));
+    tokenRefreshes.set(w.id, p);
+  }
+  return p;
+}
+
+/** A Lightning wallet has no on-chain backend, but its screens still show ≈ fiat and offer on-chain fee
+ *  rates for a withdrawal: both come from the edge, with the wallet's install token. Looked at when the
+ *  wallet is opened, at most once a minute. */
+function ensureLnFeed(w) {
+  let feed = lnFeeds.get(w.id);
+  if (!feed) {
+    const root = w.backend.url.replace(/\/+$/, '');
+    feed = new EsploraBackend(`${root}/${lnChainOf(w)}`, null, w.network, { token: w.backend.token, refresh: () => refreshInstallToken(w) }, null);
+    lnFeeds.set(w.id, feed);
+  }
+  if (Date.now() - (feed.lnFedAt || 0) < 60_000) return;
+  feed.lnFedAt = Date.now();
+  feed.prices().then((p) => { if (p) { overview.prices[w.chain] = p; renderShellIfIdle(); } }).catch(() => {});
+  for (const target of [1, 6, 144]) {
+    feed.feerate(target).then((r) => { detail.feerate[target] = r.sat_vb; renderShellIfIdle(); }).catch(() => {});
+  }
+}
 
 async function start() {
   try {
@@ -173,7 +199,9 @@ function ensureSession(wallet) {
       session = Session.watchOnly(wallet.chain, wallet.network, wallet.xpub, wallet.fingerprint);
     } else {
       const { mnemonic, passphrase } = unsealWithAppSecret(wallet.sealed, wallet.salt, appSecret);
-      session = new Session(wallet.chain, wallet.network, mnemonic, passphrase);
+      session = isLnWallet(wallet)
+        ? new LnSession(lnChainOf(wallet), wallet.network, mnemonic, passphrase) // the Lightning key only
+        : new Session(wallet.chain, wallet.network, mnemonic, passphrase);
     }
     sessions.set(wallet.id, session);
   }
@@ -184,6 +212,7 @@ function ensureSession(wallet) {
 function buildBackend(wallet) {
   const b = wallet.backend;
   if (!b) return null;
+  if (isLnWallet(wallet)) return null; // a Lightning wallet has no on-chain backend (its account is the edge's)
   if (b.kind === 'esplora' || b.kind === 'edge') {
     const session = ensureSession(wallet);
     if (b.kind === 'edge') {
@@ -251,7 +280,11 @@ function renderOnboard() {
     el('div', { class: 'spacer' }),
     brand(ui.addingWallet ? undefined : t('onboard_tagline')),
     el('div', { class: 'spacer' }),
-    el('button', { class: 'primary wide', onclick: () => go('gen') }, t('onboard_create')),
+    el('button', { class: 'primary wide', onclick: () => { ui.lnCreate = null; go('gen'); } }, t('onboard_create')),
+    // One button per Lightning chain, XBT first, each with its chain in its name (as on Android).
+    lightningCreateButtons(state?.wallets).map((c) =>
+      el('button', { class: 'ghost wide', onclick: () => { ui.lnCreate = c; go('gen'); } },
+        t(c === 'ln-xbt' ? 'wln_onboard_create_xbt' : 'wln_onboard_create_btc'))),
     el('button', { class: 'ghost wide', onclick: () => go('restore') }, t('onboard_restore')),
     el('button', { class: 'ghost wide', onclick: () => go('watch') }, t('onboard_watch')),
     el('button', { class: 'ghost wide', onclick: goBitbox }, t('onboard_connect_bitbox')),
@@ -323,7 +356,7 @@ function renderGen() {
     label,
     el('div', { id: 'err', class: 'err' }),
     el('div', { class: 'row' },
-      el('button', { class: 'ghost', onclick: () => { ui.entropyPool = null; ui.jitterStarted = false; go('main'); } }, t('action_back')),
+      el('button', { class: 'ghost', onclick: () => { ui.entropyPool = null; ui.jitterStarted = false; ui.lnCreate = null; go('main'); } }, t('action_back')),
       el('button', { class: 'primary', onclick: onGenerate }, t('gen_generate')))));
   paintBar();
 }
@@ -352,10 +385,16 @@ async function onGenerate() {
   }
 }
 
-function chainPicker(current = 'xbt') {
+function chainPicker(current = 'xbt', withLightning = false) {
+  // Restore also offers the Lightning wallets the browser does not have yet; creating one has its own buttons.
+  const lightning = withLightning
+    ? lightningCreateButtons(state?.wallets).map((c) =>
+        el('option', { value: c, selected: current === c }, t(c === 'ln-xbt' ? 'wln_chain_ln_xbt' : 'wln_chain_ln')))
+    : [];
   return el('select', { id: 'chain' },
     el('option', { value: 'xbt', selected: current === 'xbt' }, 'Bitcoin XBT'),
-    el('option', { value: 'btc', selected: current === 'btc' }, 'Bitcoin BTC'));
+    el('option', { value: 'btc', selected: current === 'btc' }, 'Bitcoin BTC'),
+    lightning);
 }
 
 function renderCreate() {
@@ -366,8 +405,10 @@ function renderCreate() {
     el('p', {}, t('create_phrase_body', words.length)),
     el('ol', { class: 'words card' }, words.map((wd, i) => el('li', {}, el('b', {}, i + 1), wd))),
     el('label', {}, t('field_wallet_name')),
-    el('input', { id: 'name', value: nextWalletName(), maxlength: MAX_WALLET_NAME_LEN, autocomplete: 'off' }),
-    el('label', {}, t('field_chain')), chainPicker(),
+    el('input', { id: 'name', value: ui.lnCreate ? t(ui.lnCreate === 'ln-xbt' ? 'wln_chain_ln_xbt' : 'wln_chain_ln') : nextWalletName(), maxlength: MAX_WALLET_NAME_LEN, autocomplete: 'off' }),
+    ui.lnCreate
+      ? el('p', { class: 'hint' }, t(ui.lnCreate === 'ln-xbt' ? 'wln_create_type_xbt' : 'wln_create_type_btc'))
+      : [el('label', {}, t('field_chain')), chainPicker()],
     el('label', {}, t('field_passphrase')),
     el('input', { id: 'bip39pass', type: 'password', autocomplete: 'off' }),
     el('div', { class: 'hint' }, t('create_passphrase_hint')),
@@ -376,7 +417,7 @@ function renderCreate() {
       el('span', {}, t('create_ack'))),
     el('div', { id: 'err', class: 'err' }),
     el('div', { class: 'row' },
-      el('button', { id: 'backBtn', class: 'ghost', onclick: () => { ui.draftMnemonic = null; go('main'); } }, t('action_back')),
+      el('button', { id: 'backBtn', class: 'ghost', onclick: () => { ui.draftMnemonic = null; ui.lnCreate = null; go('main'); } }, t('action_back')),
       el('button', { id: 'createBtn', class: 'primary', onclick: onCreate }, t('action_continue')))));
 }
 
@@ -391,7 +432,7 @@ async function onCreate() {
   } catch (e) {
     return (err.textContent = e.message);
   }
-  const chain = val('chain');
+  const chain = ui.lnCreate || val('chain');
   const passphrase = val('bip39pass');
   err.textContent = '';
   setBusy(btn, document.getElementById('backBtn'), t('action_creating'));
@@ -428,7 +469,7 @@ function renderRestore() {
     el('input', { id: 'passphrase', type: 'password', autocomplete: 'off' }),
     el('label', {}, t('field_wallet_name')),
     el('input', { id: 'name', value: nextWalletName(), maxlength: MAX_WALLET_NAME_LEN, autocomplete: 'off' }),
-    el('label', {}, t('field_chain')), chainPicker(),
+    el('label', {}, t('field_chain')), chainPicker('xbt', true),
     el('div', { id: 'err', class: 'err' }),
     el('div', { class: 'row' },
       el('button', { id: 'backBtn', class: 'ghost', onclick: () => go('main') }, t('action_back')),
@@ -665,6 +706,15 @@ async function finishHwWallet(name, account) {
  *  app's documented behavior) rather than leaving the wallet with nothing:
  *  this is an automatic resilience step, not a user-facing choice. */
 async function autoConnectBackend(wallet) {
+  if (isLnWallet(wallet)) {
+    // The account lives behind the hosted edge: there is no public-explorer fallback to fall back on.
+    try {
+      wallet.backend = { kind: 'edge', url: DEFAULT_EDGE, token: await edgeRegister(DEFAULT_EDGE) };
+    } catch {
+      throw new Error(t('wln_err_edge_unreachable'));
+    }
+    return;
+  }
   try {
     const token = await edgeRegister(DEFAULT_EDGE);
     wallet.backend = { kind: 'edge', url: DEFAULT_EDGE, token };
@@ -720,6 +770,8 @@ setInterval(retryEdgeUpgrades, 10_000);
 /** First wallet ever -> app-lock setup first. Otherwise (adding wallet #2+,
  *  already unlocked) seal straight under the in-memory `appSecret`. */
 async function finishNewWallet(chain, network, mnemonic, passphrase, name) {
+  // One Lightning wallet per chain in the browser (as on Android).
+  if (isLnWallet({ chain }) && state?.wallets.some((x) => x.chain === chain)) throw new Error(t('wln_err_exists'));
   // A signing wallet always needs an app-lock to seal its mnemonic under —
   // check for "no lock exists yet", not "no state exists yet": a device can
   // already hold `state` full of watch-only wallets (which need no lock at
@@ -739,6 +791,7 @@ async function finishNewWallet(chain, network, mnemonic, passphrase, name) {
   await saveState(state);
   ui.addingWallet = false;
   ui.draftMnemonic = null;
+  ui.lnCreate = null;
   ui.screen = 'main';
   ui.nav = 'wallet';
   ui.tab = 'receive';
@@ -797,6 +850,7 @@ async function onLockSetupSubmit() {
     await saveState(state);
     ui.pendingWallet = null;
     ui.draftMnemonic = null;
+    ui.lnCreate = null;
     // Was never reachable while true before watch-only wallets existed (you
     // can't be "adding an additional wallet" before a device has its first
     // one) — now it can be, e.g. a watch-only-only device adding its first
@@ -921,6 +975,7 @@ function onLock() {
   for (const s of sessions.values()) s.free();
   sessions.clear();
   backends.clear();
+  lnFeeds.clear();
   appSecret = null;
   overview.balances.clear();
   overview.prices = {};
@@ -928,6 +983,7 @@ function onLock() {
   ui.dialog = null;
   ui.pendingPlan = null;
   ui.draftMnemonic = null;
+  ui.lnCreate = null;
   ui.pendingWallet = null;
   ui.addingWallet = false;
   ui.screen = null;
@@ -995,7 +1051,7 @@ function renderShellIfIdle() {
   // data was fetched and detail.status updated correctly, the screen just
   // never got told to redraw, so it looked permanently stuck connecting.
   // Typing a Lightning invoice/address: a background re-render would drop the caret and focus.
-  if (ui.nav === 'wallet' && ui.tab === 'lightning' && document.activeElement?.closest?.('[data-ln-input]')) return;
+  if (ui.nav === 'wallet' && isLnWallet(currentWallet()) && document.activeElement?.closest?.('[data-ln-input]')) return;
   if (state && (!state.lock || appSecret) && !ui.addingWallet && !ui.pendingPlan && !ui.dialog) renderShell();
 }
 
@@ -1011,7 +1067,8 @@ function renderHomeTab() {
             const sat = overview.balances.get(w.id);
             const usd = fiatText(overview.prices[w.chain], sat);
             // The unit already shows with the balance; only what sets this wallet apart.
-            const kind = [w.network === 'regtest' ? 'regtest' : null, walletBadgeText(w) || null]
+            const kind = [w.network === 'regtest' ? 'regtest' : null, walletBadgeText(w) || null,
+              isLnWallet(w) ? `⚡ ${t(w.chain === 'ln-xbt' ? 'wln_chain_ln_xbt' : 'wln_chain_ln')}` : null]
               .filter(Boolean).join(' · ');
             const tile = el('button', {
               class: `tile${w.id === state.selected ? ' on' : ''}`,
@@ -1047,9 +1104,19 @@ function explorerTxUrl(w, txid) {
   return base ? `${base}/tx/${txid}` : null;
 }
 
+/** A Lightning wallet: its own screen, the Fortis account's Account / Receive / Send / Withdraw (no on-chain tabs). */
+function renderLnWalletTab(w) {
+  ensureLnFeed(w);
+  const top = el('div', { class: 'topbar' },
+    el('div', { class: 'name' }, `⚡ ${w.name}`),
+    el('div', { class: 'status' }, el('span', { class: 'dot ok' }), `${t(w.chain === 'ln-xbt' ? 'wln_chain_ln_xbt' : 'wln_chain_ln')} · fortis`));
+  return el('div', { style: 'display:flex;flex-direction:column;gap:.9rem' }, top, renderLightningTab(w));
+}
+
 function renderWalletTab() {
   const w = currentWallet();
   if (!w) return el('div', { class: 'card center hint' }, t('wallet_choose'));
+  if (isLnWallet(w)) return renderLnWalletTab(w);
   const unit = UNIT[w.chain];
   const b = detail.balances;
   const st = detail.status;
@@ -1080,7 +1147,6 @@ function renderWalletTab() {
   // Building (not signing) a transaction needs no key, so a watch-only
   // wallet keeps Send too — for air-gapped signing, see paneSend().
   const tabIds = ['receive', 'send', 'history'];
-  if (lightningEligible(w)) tabIds.push('lightning');
   if (!tabIds.includes(ui.tab)) ui.tab = 'receive'; // e.g. stale 'send' on a watch-only wallet
   const tabs = el('div', { class: 'tabs', role: 'tablist' },
     tabIds.map((tid) =>
@@ -1092,7 +1158,6 @@ function renderWalletTab() {
   let body;
   if (ui.tab === 'receive') body = paneReceive(w);
   else if (ui.tab === 'send') body = paneSend(w);
-  else if (ui.tab === 'lightning') body = renderLightningTab(w);
   else body = paneHistory(w);
 
   return el('div', { style: 'display:flex;flex-direction:column;gap:.9rem' }, top, tabs, body);
@@ -1524,7 +1589,8 @@ function renderWalletCard(w) {
   // A BitBox02 (or any generic hardware wallet) can never sign for the XBT
   // chain — see wallet-core's psbt.rs module doc — so cloning across chains
   // is never offered for one, unlike an ordinary watch-only/seed wallet.
-  const canClone = state.wallets.length < MAX_WALLETS && !w.hwType
+  const ln = isLnWallet(w); // a Lightning wallet has no xpub, no on-chain backend and no other chain to copy to
+  const canClone = !ln && state.wallets.length < MAX_WALLETS && !w.hwType
     && !state.wallets.some((x) => x.chain === otherChain && x.name === w.name);
   const connLabel = !w.backend ? '—'
     : w.backend.kind === 'edge' ? 'fortis'
@@ -1532,17 +1598,17 @@ function renderWalletCard(w) {
     : t('wallet_via_node');
   return el('div', { class: 'card stack wallet-card' },
     el('div', { class: 'row', style: 'align-items:center' },
-      el('b', { style: 'font-weight:500;flex:1;min-width:0;overflow-wrap:anywhere' }, w.name), el('span', { class: 'chip' }, UNIT[w.chain]),
+      el('b', { style: 'font-weight:500;flex:1;min-width:0;overflow-wrap:anywhere' }, w.name), el('span', { class: 'chip' }, ln ? t(w.chain === 'ln-xbt' ? 'wln_chain_ln_xbt' : 'wln_chain_ln') : UNIT[w.chain]),
       walletBadgeText(w) ? el('span', { class: 'chip' }, walletBadgeText(w)) : null),
     el('div', { class: 'hint' }, `${t('settings_connection')}: ${connLabel}`),
     w.hwType ? el('div', { class: 'hint' }, t('error_bitbox_xbt_unsupported')) : null,
     el('div', { class: 'actions-wrap' },
       el('button', { onclick: () => actionRename(w.id) }, t('action_rename')),
-      el('button', { onclick: () => actionCopyXpub(w.id) }, t('action_copy_xpub')),
-      w.watchOnly ? null : el('button', { onclick: () => actionCopyFingerprint(w.id) }, t('action_copy_fingerprint')),
+      ln ? null : el('button', { onclick: () => actionCopyXpub(w.id) }, t('action_copy_xpub')),
+      w.watchOnly || ln ? null : el('button', { onclick: () => actionCopyFingerprint(w.id) }, t('action_copy_fingerprint')),
       w.watchOnly ? null : el('button', { onclick: () => actionReveal(w.id) }, t('action_recovery_phrase')),
-      w.watchOnly ? null : el('button', { onclick: () => actionImportSignOffline(w.id) }, t('action_import_sign_offline')),
-      el('button', { onclick: () => actionChangeBackend(w.id) }, t('action_reconnect')),
+      w.watchOnly || ln ? null : el('button', { onclick: () => actionImportSignOffline(w.id) }, t('action_import_sign_offline')),
+      ln ? null : el('button', { onclick: () => actionChangeBackend(w.id) }, t('action_reconnect')),
       canClone ? el('button', { onclick: () => actionClone(w.id) }, t('also_add_on', UNIT[otherChain])) : null,
       el('button', { class: 'danger', onclick: () => actionRemove(w.id) }, t('action_remove'))));
 }
@@ -1572,6 +1638,7 @@ function actionRemove(id) {
       sessions.get(id)?.free();
       sessions.delete(id);
       backends.delete(id);
+      lnFeeds.delete(id);
       overview.balances.delete(id);
       state.wallets = state.wallets.filter((x) => x.id !== id);
       if (state.selected === id) { state.selected = state.wallets[0]?.id || null; resetDetail(); }
@@ -2156,6 +2223,8 @@ async function refreshAllBalances() {
 
 function startPolling() {
   if (ui.nav === 'wallet') {
+    // A Lightning wallet's account is read when it opens and on demand: no on-chain scan to poll.
+    if (isLnWallet(currentWallet())) return;
     if (detailPoll) return;
     // Self-rescheduling rather than a fixed setInterval so the cadence can
     // react to the last result: still on the yellow "connecting…" dot
@@ -2172,8 +2241,10 @@ function startPolling() {
     tick();
   } else {
     if (overviewPoll) return;
-    refreshAllBalances();
+    // Set the timer first: with nothing to wait for (only Lightning wallets, no on-chain backend) the first
+    // refresh redraws at once, and that redraw must find the poll already running, not start another.
     overviewPoll = setInterval(refreshAllBalances, 45_000);
+    refreshAllBalances();
   }
 }
 function stopPolling() {
