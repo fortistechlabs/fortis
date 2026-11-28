@@ -2433,7 +2433,7 @@ fn respond(req: Request, reply: Reply, allow_origin: &str) -> std::io::Result<()
     for (k, v) in [
         ("Access-Control-Allow-Origin", allow_origin),
         ("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS"),
-        ("Access-Control-Allow-Headers", "authorization, content-type, x-swap-secret"),
+        ("Access-Control-Allow-Headers", "authorization, content-type, x-swap-secret, x-fortis-sig"),
         ("Content-Type", ctype.as_str()),
     ] {
         if let Ok(h) = Header::from_bytes(k.as_bytes(), v.as_bytes()) {

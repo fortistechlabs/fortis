@@ -873,6 +873,12 @@ fn a_lightning_address_is_claimed_looked_up_paid_and_released() {
     let (s, h, v) = get_json(&edge, "/.well-known/lnurlp/donal");
     assert_eq!(s, 200);
     assert!(header(&h, "access-control-allow-origin").is_some(), "CORS on the lookup");
+    // The web wallet signs Fortis account requests with an `X-Fortis-Sig` header: the browser's
+    // preflight must be told it may send it.
+    assert!(
+        header(&h, "access-control-allow-headers").is_some_and(|v| v.to_ascii_lowercase().contains("x-fortis-sig")),
+        "CORS allows X-Fortis-Sig"
+    );
     assert_eq!(v["tag"], "payRequest");
     assert_eq!(v["callback"], "https://fortis.cash/lnurlp/callback/donal");
     assert_eq!((v["minSendable"].as_u64(), v["maxSendable"].as_u64()), (Some(1_000), Some(50_000_000)));
