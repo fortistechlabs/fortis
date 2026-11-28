@@ -25,6 +25,7 @@ pub mod entropy;
 pub mod error;
 pub mod htlc;
 pub mod keys;
+pub mod ln_account;
 pub mod psbt;
 pub mod sighash;
 pub mod storage;

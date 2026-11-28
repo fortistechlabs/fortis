@@ -484,3 +484,8 @@ button.tile.on { outline: 1.5px solid var(--signal); outline-offset: -1.5px; }
     transition-duration: 0.001ms !important;
   }
 }
+
+/* ---- Lightning tab ---- */
+.ln-bal { font-size: 32px; font-weight: 500; letter-spacing: -0.01em; line-height: 1.2; overflow-wrap: anywhere; }
+.ln-bal .unit { font-size: 14px; color: var(--signal); letter-spacing: 0.06em; }
+.hist .item .amt.neg { color: var(--text); }

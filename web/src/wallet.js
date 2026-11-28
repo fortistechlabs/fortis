@@ -11,6 +11,8 @@ import init, {
   sealMnemonicWithPassword,
   unsealMnemonicWithPassword,
   finalizeHardwareSignedPsbt as wasmFinalizeHardwareSignedPsbt,
+  decodeInvoice as wasmDecodeInvoice,
+  decodeOffer as wasmDecodeOffer,
 } from '../pkg/wallet_wasm.js';
 
 let ready;
@@ -29,6 +31,10 @@ export function activateNetwork(network) {
 const rand = (n) => crypto.getRandomValues(new Uint8Array(n));
 const toHex = (u8) => [...u8].map((b) => b.toString(16).padStart(2, '0')).join('');
 const fromHex = (h) => new Uint8Array(h.match(/../g).map((x) => parseInt(x, 16)));
+
+/** Decode a BOLT11 invoice / BOLT12 offer for display and checks (throws on junk). Absent fields are `undefined`. */
+export const decodeInvoice = (text) => wasmDecodeInvoice(text);
+export const decodeOffer = (text) => wasmDecodeOffer(text);
 
 /** `words` is 12 or 24. `extra` (optional Uint8Array from `EntropyPool.bytes()`)
  *  is folded into the CSPRNG bytes inside wasm — it can only strengthen the seed. */
@@ -159,6 +165,11 @@ export class Session {
   receiveAddress(index) {
     return this.addressAt(0, index);
   }
+  /** This wallet's Lightning node id (same as the phone's for the same phrase) and the signature over a
+   *  Fortis account request body — both computed in wasm; the node key never reaches JS. */
+  lnNodeId() { return this.wallet.lnNodeId(this.chain); }
+  lnSign(body) { return this.wallet.lnSignAccount(this.chain, body); }
+
   /** Throws "… is not a valid address" if `address` doesn't parse on this
    *  network. Cheap — call before any network I/O so a bad address isn't
    *  masked by a later "no coins" error. */

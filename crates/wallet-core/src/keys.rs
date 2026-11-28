@@ -18,6 +18,13 @@ pub struct MasterKey {
     xpriv: Xpriv,
 }
 
+impl MasterKey {
+    /// The BIP-32 master key (for sibling modules that derive further, e.g. Lightning).
+    pub(crate) fn master_xpriv(&self) -> &Xpriv {
+        &self.xpriv
+    }
+}
+
 impl Drop for MasterKey {
     fn drop(&mut self) {
         self.xpriv.private_key.non_secure_erase();
@@ -408,7 +415,7 @@ pub fn bip85_hex(
 }
 
 /// [`bip85_hex`] from a BIP-32 master key — the form BIP-85's test vectors use.
-fn bip85_hex_from_master(master: &Xpriv, num_bytes: u8, index: u32) -> Zeroizing<Vec<u8>> {
+pub(crate) fn bip85_hex_from_master(master: &Xpriv, num_bytes: u8, index: u32) -> Zeroizing<Vec<u8>> {
     assert!(
         (16..=64).contains(&num_bytes),
         "BIP-85 HEX num_bytes must be 16..=64, got {num_bytes}"

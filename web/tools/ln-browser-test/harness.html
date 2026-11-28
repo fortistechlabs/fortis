@@ -1,0 +1,146 @@
+<!doctype html><meta charset="utf-8"><div id="app"></div><pre id="results"></pre>
+<script src="/vendor/qrcode.js"></script>
+<script type="module">
+import { init as i18nInit } from '/src/i18n.js';
+import { ensureWasm, Session } from '/src/wallet.js';
+import { initLightning, renderLightningTab, resetLightning, lightningBusy } from '/src/lightning-ui.js';
+window.__held = [];
+const out = []; const ok = (n, c, extra = '') => out.push(`${c ? 'PASS' : 'FAIL'} ${n}${c ? '' : ' ' + extra}`);
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const app = () => document.getElementById('app');
+const text = () => app().innerText;
+const waitFor = async (fn, ms = 4000) => { const t0 = Date.now(); while (Date.now() - t0 < ms) { if (fn()) return true; await sleep(50); } return false; };
+const btn = (label) => [...app().querySelectorAll('button')].find((b) => b.textContent.trim() === label);
+const btnLast = (label) => [...app().querySelectorAll('button')].filter((b) => b.textContent.trim() === label).pop();
+const setInput = (id, v) => { const i = document.getElementById(id); i.value = v; i.dispatchEvent(new Event('input')); };
+const state = async () => (await fetch('/__state')).json();
+try {
+  await i18nInit();
+  await ensureWasm();
+  const session = new Session('btc', 'mainnet', 'abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about', '');
+  const w = { id: 'w1', chain: 'btc', network: 'mainnet', backend: { kind: 'edge', url: location.origin, token: 't1' } };
+  let mount = () => app().replaceChildren(renderLightningTab(w));
+  initLightning({
+    session: () => session, wallet: () => w, confirm: (cb) => (window.__manual ? window.__held.push(cb) : setTimeout(cb, 0)), askConfirm: (_t, _b, y) => y(),
+    rerender: mount, fiat: () => null, feerate: () => ({ 6: 2 }), txUrl: () => null,
+    token: { get: () => 't1', refresh: async () => 't1' }, isActive: () => true,
+  });
+  mount();
+  ok('loads the account', await waitFor(() => /500,000/.test(text())), text());
+  ok('shows BTC Lightning title and cap', /BTC Lightning/.test(text()) && /50,000 sat/.test(text()), text());
+  ok('history itemised and sums to the balance', /Received/.test(text()) && !/Unexplained/.test(text()), text());
+
+  btn('Receive').click(); await sleep(100);
+  ok('receive shows claim form with chain heading', /BTC Lightning address/.test(text()) && !!document.getElementById('wln-name'), text());
+  setInput('wln-name', 'Ab'); await sleep(50);
+  ok('bad name explained live', /3 to 32/.test(document.getElementById('wln-name-hint').textContent), document.getElementById('wln-name-hint').textContent);
+  setInput('wln-name', 'harness1'); btn('Claim').click();
+  ok('claim shows the address', await waitFor(() => /harness1@fortis.cash/.test(text())), text());
+  ok('QR drawn for the address', !!app().querySelector('.qr svg'));
+  setInput('wln-inv-amount', '1000'); btn('Create invoice').click();
+  ok('invoice created with QR', await waitFor(() => /lnbc25m1/.test(text())), text());
+  btn('Show my offer').click();
+  ok('offer shown', await waitFor(() => /lno1pqps7/.test(text())), text());
+  btn('Release address').click();
+  ok('release returns to claim form', await waitFor(() => !!document.getElementById('wln-name')), text());
+
+  btn('Send').click(); await sleep(100);
+  // amountless invoice
+  const NOAMT = 'lnbc1pvjluezsp5zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zygspp5qqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqypqdpl2pkx2ctnv5sxxmmwwd5kgetjypeh2ursdae8g6twvus8g6rfwvs8qun0dfjkxaq9qrsgq357wnc5r2ueh7ck6q93dj32dlqnls087fxdwk8qakdyafkq3yap2r09nt4ndd0unm3z9u5t48y6ucv4r5sg7lk98c77ctvjczkspk5qprc90gx';
+  setInput('wln-send-to', NOAMT); btn('Review').click();
+  ok('old invoice is refused as expired, not paid', await waitFor(() => /expired/i.test(text())), text());
+  setInput('wln-send-to', 'garbage'); btn('Review').click(); await sleep(100);
+  ok('junk refused', /Paste a Lightning invoice/.test(text()), text());
+  setInput('wln-send-to', 'bob@example.invalid'); setInput('wln-send-amount', '10'); btn('Review').click();
+  ok('address on a blocked domain says so', await waitFor(() => /cannot be reached from a browser/.test(text())), text());
+
+  // A payable invoice: the vector invoices are from 2017, so run the page's clock inside their lifetime.
+  const T = 1496314668, realNow = Date.now(), realSecs = Math.floor(realNow / 1000);
+  await fetch('/__offset?o=' + (T - realSecs), { method: 'POST' });
+  Date.now = () => T * 1000 + (performance.now() - 0);
+  btn('Send').click(); await sleep(100);
+  setInput('wln-send-to', NOAMT); setInput('wln-send-amount', '1000'); btn('Review').click();
+  ok('review shows amount, fee cap and total', await waitFor(() => /Confirm payment/.test(text()) && /1,000 sat/.test(text()) && /1,010 sat/.test(text())), text());
+  let sawPaying = false;
+  const obs = new MutationObserver(() => { const b = btn('Paying…'); if (b && b.disabled) sawPaying = true; });
+  obs.observe(app(), { childList: true, subtree: true });
+  const pay = btn('Pay'); pay.click(); pay.click();
+  ok('the button showed Paying… and was disabled meanwhile', await waitFor(() => sawPaying, 3000), String(sawPaying));
+  ok('payment completes', await waitFor(() => /Paid\./.test(text()), 60000), text());
+  ok('double click sent one payment', (await state()).pays === 1, String((await state()).pays));
+  ok('not busy once the payment ended', !lightningBusy());
+  btn('Done').click(); await sleep(100); [...app().querySelectorAll('.seg button')].find((b) => b.textContent.trim() === 'Account').click(); await sleep(100);
+  ok('the account was debited by the ledger entry, not by the answer', /\+?498,98\d/.test(text()) || /498,\d{3}/.test(text()), text());
+  // The same invoice and amount again: the LSP says duplicate; the screen must not say "nothing was taken".
+  btn('Send').click(); await sleep(100);
+  setInput('wln-send-to', NOAMT); setInput('wln-send-amount', '1000'); btn('Review').click(); await waitFor(() => /Confirm payment/.test(text()));
+  btn('Pay').click();
+  ok('a duplicate says it may already be paid', await waitFor(() => /already paid or being paid/.test(text())), text());
+  btn('Done').click(); await waitFor(() => /Account/.test(text()));
+  // A payment whose route fails: started, then the hold is released with nothing debited.
+  await fetch('/__pay_fail?on=1', { method: 'POST' });
+  const balBefore = (await state()).balance;
+  btn('Send').click(); await sleep(100);
+  setInput('wln-send-to', NOAMT); setInput('wln-send-amount', '2000'); btn('Review').click(); await waitFor(() => /Confirm payment/.test(text()));
+  btn('Pay').click();
+  ok('a failed route is reported as not paid', await waitFor(() => /payment failed\. Nothing was taken/.test(text()), 60000), text());
+  ok('and nothing was taken', (await state()).balance === balBefore, String((await state()).balance));
+  await fetch('/__pay_fail?on=0', { method: 'POST' });
+  btn('Done').click(); await waitFor(() => /Account/.test(text()));
+  btn('Send').click(); await sleep(100);
+  const allBox = document.querySelector('#app input[type=checkbox]');
+  const allInput = document.getElementById('wln-send-amount');
+  ok('send all is a checkbox, not a button', !!allBox && ![...app().querySelectorAll('button')].some((b) => /^Send all/.test(b.textContent)), text());
+  ok('the checkbox is above the amount box and says the amount', !!allBox && !!(allBox.compareDocumentPosition(allInput) & Node.DOCUMENT_POSITION_FOLLOWING) && /Send all \(\d/.test(allBox.parentElement.textContent), text());
+  ok('unticked it leaves the amount alone', !!allBox && !allBox.checked && allInput.value === '');
+  allBox.click(); await sleep(100);
+  const tickedBox = document.querySelector('#app input[type=checkbox]');
+  const tickedAmount = document.getElementById('wln-send-amount').value;
+  ok('ticking fills the amount with the balance less the fee cap', tickedBox.checked && /^\d+$/.test(tickedAmount) && Number(tickedAmount) > 0, tickedAmount);
+  setInput('wln-send-to', NOAMT); btn('Review').click();
+  ok('send all fits within the balance (not refused)', await waitFor(() => /Confirm payment/.test(text())), text());
+  btn('Cancel').click(); await sleep(100);
+  ok('the tick and the amount survive Cancel', document.querySelector('#app input[type=checkbox]').checked && document.getElementById('wln-send-amount').value === tickedAmount);
+  const typed = document.getElementById('wln-send-amount'); typed.value = '1234'; typed.dispatchEvent(new Event('input', { bubbles: true })); await sleep(50);
+  ok('typing unticks the box on screen at once', !document.querySelector('#app input[type=checkbox]').checked);
+  btn('Review').click(); await waitFor(() => /Confirm payment/.test(text())); btn('Cancel').click(); await sleep(100);
+  ok('typing an amount unticks it and keeps what was typed', !document.querySelector('#app input[type=checkbox]').checked && document.getElementById('wln-send-amount').value === '1234');
+
+  btn('Withdraw').click(); await sleep(100);
+  setInput('wln-wd-address', 'notanaddress'); setInput('wln-wd-amount', '100000');
+  ok('withdraw preview matches the LSP rule', /You receive 99,?\d{3} sat; fee/.test(document.getElementById('wln-wd-preview').textContent), document.getElementById('wln-wd-preview').textContent);
+  btnLast('Withdraw').click(); await sleep(100);
+  ok('bad address refused before any call', /not a valid address/.test(text()), text());
+  const before = (await state()).withdrawals;
+  setInput('wln-wd-address', 'bc1qar0srrr7xfkvy5l643lydnw9re59gtzzwf5mdq');
+  window.__manual = true; window.__held.length = 0;
+  const wd = btnLast('Withdraw'); wd.click(); wd.click();
+  await sleep(50);
+  ok('two clicks opened two re-asks', window.__held.length === 2, String(window.__held.length));
+  for (const cb of window.__held.slice()) cb();           // both re-asks are answered
+  await waitFor(() => /Sent\. Transaction/.test(text()));
+  for (const cb of window.__held.slice()) cb();           // ...and answered again, late
+  await sleep(300);
+  window.__manual = false;
+  ok('withdrawal done once', await waitFor(() => /Sent\. Transaction/.test(text())), text());
+  ok('two answered re-asks and late ones sent exactly one withdrawal', (await state()).withdrawals === before + 1, JSON.stringify(await state()));
+  btn('Done').click();
+
+  await fetch('/__full', { method: 'POST' });
+  btn('Receive').click(); await sleep(100);
+  setInput('wln-inv-amount', '5'); btn('Create invoice').click();
+  ok('a full account says the limit and the channel option', await waitFor(() => /limit 50,000 sat/.test(text())), text());
+  await fetch('/__fail_clock', { method: 'POST' });
+  btn('Receive').click(); await sleep(100);
+  setInput('wln-inv-amount', '5'); btn('Create invoice').click();
+  await fetch('/__unfull', { method: 'POST' });
+  setInput('wln-inv-amount', '6'); btn('Create invoice').click();
+  ok('a clock-skew refusal says to fix the clock', await waitFor(() => /clock looks wrong/.test(text())), text());
+
+  const s = await state();
+  ok('every request was signed (104 zbase32 chars) with the token', s.log.every((l) => l.sigLen === 104 && l.auth === 'Bearer t1'), JSON.stringify(s.log.filter((l) => l.sigLen !== 104)));
+  ok('exactly two payments were sent in the whole run (one real, one failed route)', s.pays === 2, String(s.pays));
+  window.__shot = true;
+} catch (e) { out.push('ERROR ' + e.stack); }
+document.getElementById('results').textContent = out.join('\n') + '\nDONE';
+</script>

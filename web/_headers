@@ -43,4 +43,4 @@
 #   img-src needs data: for style.css's inline SVG noise-texture background.
 /*
   Cache-Control: no-cache
-  Content-Security-Policy: default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; connect-src 'self' https://api.fortistechlabs.com https://mempool.guide https://blockstream.info http://127.0.0.1:8178 ws://127.0.0.1:8178; img-src 'self' data:; style-src 'self' 'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; object-src 'none'
+  Content-Security-Policy: default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; connect-src 'self' https://api.fortistechlabs.com https://fortis.cash https://mempool.guide https://blockstream.info http://127.0.0.1:8178 ws://127.0.0.1:8178; img-src 'self' data:; style-src 'self' 'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; object-src 'none'

@@ -18,6 +18,7 @@ use wallet_core::{
 };
 
 mod dto;
+mod ln_decode;
 
 #[wasm_bindgen(start)]
 pub fn start() {
@@ -50,6 +51,18 @@ fn network() -> String {
         let v = n.borrow();
         if v.is_empty() { "mainnet".into() } else { v.clone() }
     })
+}
+
+fn parse_ln_chain(chain: &str) -> Option<wallet_core::ln_account::LnChainId> {
+    match chain {
+        "btc" => Some(wallet_core::ln_account::LnChainId::Btc),
+        "xbt" => Some(wallet_core::ln_account::LnChainId::Xbt),
+        _ => None,
+    }
+}
+
+fn ln_chain(chain: &str) -> Result<wallet_core::ln_account::LnChainId, JsError> {
+    parse_ln_chain(chain).ok_or_else(|| JsError::new("chain must be \"btc\" or \"xbt\""))
 }
 
 fn params(chain: &str) -> Result<ChainParams, JsError> {
@@ -125,6 +138,20 @@ impl Wallet {
     #[wasm_bindgen(js_name = accountXpub)]
     pub fn account_xpub(&self, chain: &str, account: u32) -> Result<String, JsError> {
         Ok(self.key.account_xpub(&params(chain)?, account).map_err(js)?.to_string())
+    }
+
+    /// Lightning node id (hex) of this wallet's `chain` ("btc"/"xbt"): the identity of its
+    /// Fortis account, the same one the phone has for the same recovery phrase.
+    #[wasm_bindgen(js_name = lnNodeId)]
+    pub fn ln_node_id(&self, chain: &str) -> Result<String, JsError> {
+        Ok(self.key.ln_node_id(ln_chain(chain)?))
+    }
+
+    /// Signs a Fortis account request body with the node key (LN message signature, zbase32).
+    /// The node key never leaves wasm.
+    #[wasm_bindgen(js_name = lnSignAccount)]
+    pub fn ln_sign_account(&self, chain: &str, body: &str) -> Result<String, JsError> {
+        Ok(self.key.ln_sign_account(ln_chain(chain)?, body))
     }
 
     /// Master key fingerprint (8 hex chars) — the descriptor key-origin the gateway
@@ -896,4 +923,58 @@ impl SwapSession {
     pub fn on_timelock_expired(&mut self) -> String {
         state_tag(self.inner.on_event(SwapEvent::TimelockExpired))
     }
+}
+
+#[cfg(test)]
+mod ln_tests {
+    use super::*;
+
+    const PHRASE: &str = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
+
+    #[test]
+    fn lightning_identity_matches_the_pinned_ldk_ids() {
+        let w = Wallet::new(PHRASE, "").ok().unwrap();
+        assert_eq!(
+            w.ln_node_id("btc").ok().unwrap(),
+            "038244e129da7c5e62de4a34437903945413d7b5a134643070afb0dc35474ffb41"
+        );
+        assert_eq!(
+            w.ln_node_id("xbt").ok().unwrap(),
+            "0309072b38c3750ede9e3b866a5887c309fe9bf49cefdb7f7786a0a1e4473dc1f8"
+        );
+    }
+
+    #[test]
+    fn account_requests_are_signed_with_the_node_key() {
+        let w = Wallet::new(PHRASE, "").ok().unwrap();
+        let sig = w.ln_sign_account("btc", "{\"op\":\"balance\"}").ok().unwrap();
+        assert!(!sig.is_empty() && sig.len() == 104, "65 bytes in zbase32 are 104 chars, got {}", sig.len());
+        assert_ne!(sig, w.ln_sign_account("xbt", "{\"op\":\"balance\"}").ok().unwrap());
+    }
+
+    #[test]
+    fn only_btc_and_xbt_are_lightning_chains() {
+        assert!(parse_ln_chain("btc").is_some());
+        assert!(parse_ln_chain("xbt").is_some());
+        assert!(parse_ln_chain("ltc").is_none());
+        assert!(parse_ln_chain("").is_none());
+        assert!(parse_ln_chain("BTC").is_none());
+    }
+}
+
+/// Decodes a BOLT11 invoice (also `lightning:`-prefixed or upper case) for display and checks:
+/// `{ amountMsat, description, descriptionHash, paymentHash, createdSecs, expirySecs, payee, network }`.
+/// Throws on anything that is not a valid invoice.
+#[wasm_bindgen(js_name = decodeInvoice)]
+pub fn decode_invoice(text: &str) -> Result<JsValue, JsError> {
+    let info = ln_decode::decode_invoice(text).map_err(js)?;
+    serde_wasm_bindgen::to_value(&info).map_err(js)
+}
+
+/// Decodes a BOLT12 offer: `{ amountMsat, description }` (`amountMsat` is null for an offer in
+/// another currency or with no amount). Throws on anything that is not a valid offer.
+#[wasm_bindgen(js_name = decodeOffer)]
+pub fn decode_offer(text: &str) -> Result<JsValue, JsError> {
+    let info = ln_decode::decode_offer(text).map_err(js)?;
+    serde_wasm_bindgen::to_value(&info).map_err(js)
 }

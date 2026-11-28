@@ -15,6 +15,7 @@ import {
   finalizeHardwareSignedPsbt,
 } from './wallet.js';
 import * as bitbox from './bitbox.js';
+import { initLightning, resetLightning, renderLightningTab, lightningEligible, lightningBusy } from './lightning-ui.js';
 import { EntropyPool } from './entropy.js';
 import { registerPrf, unlockPrf, prfPossible } from './webauthn.js';
 import { AutoLock, AUTO_LOCK_MS, sameSecret } from './relock.js';
@@ -69,6 +70,44 @@ let overviewPoll = null;
 const i18nReady = i18nInit().catch(() => {});
 
 start();
+
+const tokenRefreshes = new Map(); // walletId -> in-flight install-token refresh
+
+// The Lightning tab (Fortis account): everything it needs from this controller.
+initLightning({
+  session: ensureSession,
+  wallet: (id) => state?.wallets.find((x) => x.id === id) || null,
+  confirm: confirmIdentity,
+  askConfirm: (title, body, onYes) => {
+    ui.dialog = { kind: 'confirm', title, body, confirmLabel: t('wln_addr_release'), danger: true, onConfirm: onYes };
+    renderDialogSheet();
+  },
+  rerender: () => { if (ui.nav === 'wallet' && ui.tab === 'lightning' && !ui.dialog) renderShell(); },
+  fiat: (sat) => fiatText(detail.prices, sat),
+  feerate: () => detail.feerate,
+  txUrl: (w, txid) => explorerTxUrl(w, txid),
+  idle: () => { if (lockWhenIdle) { lockWhenIdle = false; if (appSecret) onLock(); } },
+  token: {
+    get: (w) => w.backend.token,
+    // One refresh at a time per wallet: several account calls that all meet a stale token must not each
+    // register (the edge limits registrations per IP) or race on saving.
+    refresh: (w) => {
+      let p = tokenRefreshes.get(w.id);
+      if (!p) {
+        p = (async () => {
+          w.backend.token = await edgeRegister(w.backend.url);
+          const be = backends.get(w.id);
+          if (be?.auth) be.auth.token = w.backend.token; // the on-chain backend shares the install token
+          await saveState(state);
+          return w.backend.token;
+        })().finally(() => tokenRefreshes.delete(w.id));
+        tokenRefreshes.set(w.id, p);
+      }
+      return p;
+    },
+  },
+  isActive: (id) => ui.nav === 'wallet' && ui.tab === 'lightning' && state?.selected === id,
+});
 
 async function start() {
   try {
@@ -878,6 +917,7 @@ function onWipe() {
 }
 
 function onLock() {
+  resetLightning();
   for (const s of sessions.values()) s.free();
   sessions.clear();
   backends.clear();
@@ -954,6 +994,8 @@ function renderShellIfIdle() {
   // background poll's re-render was silently a no-op on such a device: the
   // data was fetched and detail.status updated correctly, the screen just
   // never got told to redraw, so it looked permanently stuck connecting.
+  // Typing a Lightning invoice/address: a background re-render would drop the caret and focus.
+  if (ui.nav === 'wallet' && ui.tab === 'lightning' && document.activeElement?.closest?.('[data-ln-input]')) return;
   if (state && (!state.lock || appSecret) && !ui.addingWallet && !ui.pendingPlan && !ui.dialog) renderShell();
 }
 
@@ -1038,6 +1080,7 @@ function renderWalletTab() {
   // Building (not signing) a transaction needs no key, so a watch-only
   // wallet keeps Send too — for air-gapped signing, see paneSend().
   const tabIds = ['receive', 'send', 'history'];
+  if (lightningEligible(w)) tabIds.push('lightning');
   if (!tabIds.includes(ui.tab)) ui.tab = 'receive'; // e.g. stale 'send' on a watch-only wallet
   const tabs = el('div', { class: 'tabs', role: 'tablist' },
     tabIds.map((tid) =>
@@ -1049,6 +1092,7 @@ function renderWalletTab() {
   let body;
   if (ui.tab === 'receive') body = paneReceive(w);
   else if (ui.tab === 'send') body = paneSend(w);
+  else if (ui.tab === 'lightning') body = renderLightningTab(w);
   else body = paneHistory(w);
 
   return el('div', { style: 'display:flex;flex-direction:column;gap:.9rem' }, top, tabs, body);
@@ -2172,9 +2216,13 @@ async function offerUpdate(reg) {
 // Hidden for a minute or more (another tab, the browser minimised): lock, so a
 // session left open doesn't stay unlocked.
 const autoLock = new AutoLock(AUTO_LOCK_MS);
+let lockWhenIdle = false;
 document.addEventListener('visibilitychange', () => {
   if (document.hidden) autoLock.wentToBackground();
-  else if (autoLock.shouldLockOnReturn() && appSecret) onLock();
+  else if (autoLock.shouldLockOnReturn() && appSecret) {
+    // A Lightning payment or withdrawal still running needs its key and must report its result: lock after it.
+    if (lightningBusy()) lockWhenIdle = true; else onLock();
+  }
 });
 
 if ('serviceWorker' in navigator) {

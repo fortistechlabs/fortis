@@ -3563,6 +3563,8 @@ version = "0.1.0"
 dependencies = [
  "console_error_panic_hook",
  "hex",
+ "lightning",
+ "lightning-invoice",
  "serde",
  "serde-wasm-bindgen",
  "serde_json",

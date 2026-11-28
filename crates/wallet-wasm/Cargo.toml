@@ -18,3 +18,7 @@ serde_json = { workspace = true }
 serde-wasm-bindgen = { workspace = true }
 console_error_panic_hook = { workspace = true }
 hex = { workspace = true }
+# Decoding only (amounts, description, expiry) so the browser can show what a payment is
+# before the account pays it. The vendored XBT fork, as in fortis-lightning.
+lightning-invoice = { version = "0.34", default-features = false, features = ["std"] }
+lightning = { version = "0.2", default-features = false, features = ["std"] }
