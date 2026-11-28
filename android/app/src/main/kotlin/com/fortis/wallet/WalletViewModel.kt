@@ -2027,9 +2027,10 @@ class WalletViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /** "Create a Lightning wallet": the create screen opens with Lightning chosen. Only while the app has none. */
-    fun goCreateLightning() {
-        // The first Lightning wallet the app can still add: BTC while it has none, else XBT.
-        val chain = lightningOnboardChoices(restoring = false).firstOrNull()
+    fun goCreateLightning(wanted: String? = null) {
+        // The button's own chain, or (no button) the first Lightning wallet the app can still add.
+        val choices = lightningOnboardChoices(restoring = false)
+        val chain = if (wanted != null) com.fortis.wallet.lightning.lightningCreateTarget(wanted, choices) else choices.firstOrNull()
         if (chain == null) { error = str(R.string.error_lightning_wallet_exists); return }
         onboardChain = chain
         phase = if (draftMnemonic != null) Phase.Create else Phase.Gen

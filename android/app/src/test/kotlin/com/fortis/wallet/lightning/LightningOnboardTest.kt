@@ -126,6 +126,21 @@ class LightningOnboardTest {
         assertEquals(emptyList<String>(), lightningOnboardChoices(listOf(ln, lnXbt), restoring = true, xbtEnabled = true, debug = true))
     }
 
+    /** The home screen's two buttons ("⚡ Create XBT Lightning wallet", "⚡ Create BTC Lightning wallet"):
+     *  XBT first, each only while that chain can still be created; a tap opens that chain, never another. */
+    @Test
+    fun createButtonsAreOnePerChainXbtFirst() {
+        assertEquals(listOf(LN_XBT_CHAIN, LN_CHAIN), lightningCreateButtons(listOf(LN_CHAIN, LN_XBT_CHAIN)))
+        assertEquals(listOf(LN_XBT_CHAIN), lightningCreateButtons(listOf(LN_XBT_CHAIN)))
+        assertEquals(listOf(LN_CHAIN), lightningCreateButtons(listOf(LN_CHAIN)))
+        assertEquals(emptyList<String>(), lightningCreateButtons(emptyList()))
+        assertEquals(LN_CHAIN, lightningCreateTarget(LN_CHAIN, listOf(LN_CHAIN, LN_XBT_CHAIN)))
+        assertEquals(LN_XBT_CHAIN, lightningCreateTarget(LN_XBT_CHAIN, listOf(LN_CHAIN, LN_XBT_CHAIN)))
+        // A chain the app cannot create (already made, or XBT not offered) opens nothing, not the other one.
+        assertEquals(null, lightningCreateTarget(LN_XBT_CHAIN, listOf(LN_CHAIN)))
+        assertEquals(null, lightningCreateTarget(LN_CHAIN, emptyList()))
+    }
+
     /** The other Lightning wallet's seed, read as a typed result: compared when read; a lock
      *  race (the app locked meanwhile) refuses a restore with "unlock and try again"; a seed that
      *  can't be read under the valid app secret (corrupt) never blocks — the new wallet goes

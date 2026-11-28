@@ -66,6 +66,14 @@ fun lightningOnboardChoices(wallets: List<WalletConfig>, restoring: Boolean, xbt
         if (restoring) canRestoreLightningWallet(wallets, it) else canAddLightningWallet(wallets, it, xbtEnabled, debug)
     }
 
+/** The home screen's "⚡ Create … Lightning wallet" buttons, in order: XBT first, then BTC, each only
+ *  while that chain is in [choices] (one wallet per chain). */
+fun lightningCreateButtons(choices: List<String>): List<String> =
+    listOf(LN_XBT_CHAIN, LN_CHAIN).filter { it in choices }
+
+/** The chain a create button opens: [chain] if it is in [choices], else nothing (never the other chain). */
+fun lightningCreateTarget(chain: String, choices: List<String>): String? = chain.takeIf { it in choices }
+
 /** The app's Lightning wallet on [chain] ([LN_CHAIN] or [LN_XBT_CHAIN]), if it has one. */
 fun lightningWalletOf(wallets: List<WalletConfig>, chain: String): WalletConfig? = wallets.firstOrNull { it.chain == chain }
 

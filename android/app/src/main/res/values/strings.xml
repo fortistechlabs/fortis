@@ -41,6 +41,8 @@
     <string name="onboard_tagline">a non-custodial wallet for Bitcoin XBT and Bitcoin BTC</string>
     <string name="onboard_create">Create a new wallet</string>
     <string name="onboard_create_lightning">Create a Lightning wallet</string>
+    <string name="onboard_create_lightning_xbt">⚡ Create XBT Lightning wallet</string>
+    <string name="onboard_create_lightning_btc">⚡ Create BTC Lightning wallet</string>
     <string name="onboard_restore">Restore from a recovery phrase</string>
     <string name="onboard_watch">Watch an address (no spending key)</string>
 

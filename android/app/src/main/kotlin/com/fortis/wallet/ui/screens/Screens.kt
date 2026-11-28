@@ -217,8 +217,11 @@ fun OnboardScreen(vm: WalletViewModel) = Screen {
     LaunchedEffect(Unit) { vm.refreshXbtLightningOffered() }
     // One Lightning wallet per chain: offered while the app lacks one of them (BTC, or XBT once the
     // edge offers it). Found 2026-11-16: with the BTC one made, the button vanished and XBT could not be added.
-    if (vm.lightningOnboardChoices(restoring = false).isNotEmpty()) {
-        GhostButton(stringResource(R.string.onboard_create_lightning)) { vm.goCreateLightning() }
+    // One button per chain, XBT first, each with the chain in its name; a tap opens that chain.
+    for (chain in com.fortis.wallet.lightning.lightningCreateButtons(vm.lightningOnboardChoices(restoring = false))) {
+        GhostButton(
+            stringResource(if (chain == com.fortis.wallet.data.LN_XBT_CHAIN) R.string.onboard_create_lightning_xbt else R.string.onboard_create_lightning_btc),
+        ) { vm.goCreateLightning(chain) }
     }
     GhostButton(stringResource(R.string.onboard_restore)) { vm.goRestore() }
     GhostButton(stringResource(R.string.onboard_hardware)) { vm.goHwConnect() }

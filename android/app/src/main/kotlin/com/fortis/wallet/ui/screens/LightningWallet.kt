@@ -530,6 +530,9 @@ internal fun LightningSendTab(vm: WalletViewModel) {
     var to by remember { mutableStateOf(vm.consumePendingSendText() ?: "") }
     var amount by remember { mutableStateOf("") }
     var amountInSat by remember { mutableStateOf(true) }
+    // "Send all" is a tick above the amount: while ticked the amount follows the most one payment can carry.
+    // Typing an amount or changing the unit unticks it.
+    var sendAll by remember { mutableStateOf(false) }
     val c = vm.config
     val network = c?.network ?: "bitcoin"
     val walletChain = c?.chain ?: LN_CHAIN
@@ -692,28 +695,41 @@ internal fun LightningSendTab(vm: WalletViewModel) {
                         style = FxType.meta, color = Fx.textDim,
                     )
                 }
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(Fx.s2),
-                    verticalAlignment = Alignment.Top,
-                ) {
-                    Field(
-                        amount, { amount = it }, null,
-                        keyboardType = if (amountInSat) KeyboardType.Number else KeyboardType.Decimal,
-                        modifier = Modifier.weight(1f),
-                    )
-                    AmountUnitPicker(amountInSat, unit) { amountInSat = it }
-                }
                 // Send all: the most one payment can carry (the channel's sendable or the Fortis balance,
                 // whichever is larger, since one payment uses one of them) less its own routing-fee cap,
                 // within what the recipient accepts. The unused part of the cap stays in the balance.
                 val availableMsat = maxOf(sendableNow, vm.accountBalance?.freeMsat ?: 0uL)
                 val allSat = minOf(com.fortis.wallet.lightning.sendAllSat(availableMsat), maxSat.toULong()).toLong()
-                if (allSat >= minSat && allSat > 0L) {
-                    GhostButton(stringResource(R.string.send_ln_all, fmtSat(allSat))) {
-                        amountInSat = true
-                        amount = allSat.toString()
+                val canSendAll = allSat >= minSat && allSat > 0L
+                // Ticked: the amount is the most that can be sent, and follows it when the balance moves.
+                // When that is no longer possible the tick goes.
+                LaunchedEffect(sendAll, allSat, canSendAll) {
+                    if (sendAll) {
+                        if (canSendAll) {
+                            amountInSat = true
+                            amount = allSat.toString()
+                        } else {
+                            sendAll = false
+                        }
+                    }
+                }
+                if (canSendAll) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Checkbox(sendAll, { sendAll = it })
+                        Text(stringResource(R.string.send_ln_all, fmtSat(allSat)), color = Fx.text)
                     }
                     Text(stringResource(R.string.send_ln_all_note), style = FxType.meta, color = Fx.textDim)
+                }
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(Fx.s2),
+                    verticalAlignment = Alignment.Top,
+                ) {
+                    Field(
+                        amount, { amount = it; sendAll = false }, null,
+                        keyboardType = if (amountInSat) KeyboardType.Number else KeyboardType.Decimal,
+                        modifier = Modifier.weight(1f),
+                    )
+                    AmountUnitPicker(amountInSat, unit) { amountInSat = it; sendAll = false }
                 }
             }
 
