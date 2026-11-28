@@ -64,4 +64,15 @@ class ClipboardTargetTest {
         assertNull(targetFromText("   \n"))
         assertNull(targetFromText(null))
     }
+    @Test
+    fun aBigPictureIsShrunkByWholeStepsToFitAndASmallOneIsLeftAlone() {
+        assertEquals(1, sampleSizeFor(1000, 800))
+        assertEquals(1, sampleSizeFor(2000, 2000))
+        assertEquals(2, sampleSizeFor(2001, 100))
+        assertEquals(2, sampleSizeFor(4000, 3000))
+        assertEquals(4, sampleSizeFor(8000, 6000))
+        // A picture whose size could not be read is not shrunk (decoding it then simply finds nothing).
+        assertEquals(1, sampleSizeFor(0, 0))
+        assertEquals(1, sampleSizeFor(-1, -1))
+    }
 }

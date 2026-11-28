@@ -88,12 +88,25 @@ fun readClipboard(ctx: Context): ClipResult {
 private fun isImage(ctx: Context, uri: Uri, clip: ClipData): Boolean =
     clip.description.hasMimeType("image/*") || (runCatching { ctx.contentResolver.getType(uri) }.getOrNull()?.startsWith("image/") == true)
 
+/** The power of two a [width] by [height] picture is shrunk by to fit [maxSide]: 1 for a small one, or one whose
+ *  size could not be read. */
+fun sampleSizeFor(width: Int, height: Int, maxSide: Int = MAX_IMAGE_SIDE): Int {
+    var sample = 1
+    while (maxOf(width, height) / sample > maxSide) sample *= 2
+    return sample
+}
+
+/** The QR text in the picture at [uri] (the clipboard's, or one the user chose), as a Send target; null when it
+ *  cannot be read or has no QR code. Call off the main thread. */
+fun readQrFromImage(ctx: Context, uri: Uri): String? = decodeImage(ctx, uri)
+
 private fun decodeImage(ctx: Context, uri: Uri): String? = runCatching {
     val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
     ctx.contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, bounds) }
-    var sample = 1
-    while (maxOf(bounds.outWidth, bounds.outHeight) / sample > MAX_IMAGE_SIDE) sample *= 2
-    val opts = BitmapFactory.Options().apply { inSampleSize = sample; inPreferredConfig = Bitmap.Config.ARGB_8888 }
+    val opts = BitmapFactory.Options().apply {
+        inSampleSize = sampleSizeFor(bounds.outWidth, bounds.outHeight)
+        inPreferredConfig = Bitmap.Config.ARGB_8888
+    }
     val bmp = ctx.contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, opts) } ?: return@runCatching null
     val px = IntArray(bmp.width * bmp.height)
     bmp.getPixels(px, 0, bmp.width, 0, 0, bmp.width, bmp.height)

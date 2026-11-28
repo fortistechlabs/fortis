@@ -30,6 +30,8 @@
     <string name="action_new_address">New address</string>
     <string name="action_scan_qr">Scan QR code</string>
     <string name="action_paste_clipboard">Paste from clipboard</string>
+    <string name="action_pick_image">Read QR from an image</string>
+    <string name="pick_no_qr">No QR code found in that image.</string>
     <string name="paste_nothing">The clipboard has no text or picture to use.</string>
     <string name="paste_no_qr">No QR code found in the picture on the clipboard.</string>
     <string name="action_lock">Lock</string>

@@ -13,6 +13,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.*
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.launch
@@ -643,6 +644,15 @@ internal fun LightningSendTab(vm: WalletViewModel) {
         // Paste: a text (invoice, offer, LNURL, address) or a picture of its QR code from the clipboard goes in
         // the To field; the checks and the review below are the same as for anything typed or scanned.
         val pasteScope = rememberCoroutineScope()
+        // From image: pick a picture (Downloads, Photos, a screenshot) with a QR code in it, same result.
+        val pickImage = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+            if (uri != null) pasteScope.launch {
+                val found = withContext(kotlinx.coroutines.Dispatchers.Default) { com.fortis.wallet.ui.readQrFromImage(ctx, uri) }
+                if (found != null) { to = found; pasteFocus.clearFocus() }
+                else Toast.makeText(ctx, R.string.pick_no_qr, Toast.LENGTH_SHORT).show()
+            }
+        }
+        GhostButton(stringResource(R.string.action_pick_image)) { pickImage.launch("image/*") }
         GhostButton(stringResource(R.string.action_paste_clipboard)) {
             pasteScope.launch {
                 when (val r = withContext(kotlinx.coroutines.Dispatchers.Default) { com.fortis.wallet.ui.readClipboard(ctx) }) {
