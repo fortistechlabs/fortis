@@ -14,6 +14,9 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.launch
+import android.widget.Toast
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -637,6 +640,18 @@ internal fun LightningSendTab(vm: WalletViewModel) {
             to = cleaned
         }, stringResource(R.string.field_to_address), mono = true)
         GhostButton(stringResource(R.string.action_scan_qr)) { scanning = true }
+        // Paste: a text (invoice, offer, LNURL, address) or a picture of its QR code from the clipboard goes in
+        // the To field; the checks and the review below are the same as for anything typed or scanned.
+        val pasteScope = rememberCoroutineScope()
+        GhostButton(stringResource(R.string.action_paste_clipboard)) {
+            pasteScope.launch {
+                when (val r = withContext(kotlinx.coroutines.Dispatchers.Default) { com.fortis.wallet.ui.readClipboard(ctx) }) {
+                    is com.fortis.wallet.ui.ClipResult.Target -> { to = r.text; pasteFocus.clearFocus() }
+                    com.fortis.wallet.ui.ClipResult.NoQr -> Toast.makeText(ctx, R.string.paste_no_qr, Toast.LENGTH_SHORT).show()
+                    com.fortis.wallet.ui.ClipResult.Empty -> Toast.makeText(ctx, R.string.paste_nothing, Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
 
         if (lnState is LnState.Off || lnState is LnState.Starting) {
             Text(lightningStatusText(lnState), style = FxType.meta, color = Fx.textDim)

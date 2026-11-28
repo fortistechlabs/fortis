@@ -29,6 +29,9 @@
     <string name="action_sign_send">Sign &amp; send</string>
     <string name="action_new_address">New address</string>
     <string name="action_scan_qr">Scan QR code</string>
+    <string name="action_paste_clipboard">Paste from clipboard</string>
+    <string name="paste_nothing">The clipboard has no text or picture to use.</string>
+    <string name="paste_no_qr">No QR code found in the picture on the clipboard.</string>
     <string name="action_lock">Lock</string>
     <string name="action_lock_app">Lock app</string>
     <string name="action_copy_xpub">Copy xpub</string>
